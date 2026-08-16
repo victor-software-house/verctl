@@ -1,36 +1,16 @@
 # yaml-language-server: $schema=https://github.com/victor-software-house/qctl/releases/download/v0.0.1/tasks.schema.json
 schema_version: 1
 prefix: VER
-active: VER-003
+active: VER-004
 
 queue:
-  - id: VER-003
-    title: Write Cargo.toml and package.json versions
-    scope: verctl
-    outcome: >-
-      prepare (local, no PR yet) applies the max bump per declared
-      package to Cargo.toml and/or package.json and refreshes the
-      matching lockfile.
-    blocked_by: []
-    acceptance:
-      - "[workspace.package].version is the default Rust path; [package].version is used when there is no workspace version."
-      - toml_edit keeps comments and key order in Cargo.toml.
-      - package.json version is rewritten without reformatting unrelated keys.
-      - Cargo.lock or bun.lock is refreshed after the bump, or the command names the exact follow-up.
-      - A major fragment on a 0.x version is rejected.
-      - Packages named in a fragment but missing from [release] config fail closed.
-      - Unit tests cover patch, minor, 0.x-major-reject, and a comment-preserving Cargo.toml fixture (indoc).
-    notes: >-
-      Declare packages in mise.toml or verctl.toml later. This slice does
-      not open a GitHub PR.
-
   - id: VER-004
     title: Open or update the Version PR
     scope: verctl
     outcome: >-
       One prepare-release PR consumes fragments, commits version files
       and CHANGELOG, and deletes the consumed .changeset files.
-    blocked_by: [VER-003]
+    blocked_by: []
     acceptance:
       - Uses GITHUB_TOKEN only. No PAT.
       - Opens a new PR or force-updates the existing version-packages branch.
@@ -76,27 +56,35 @@ horizon:
     open: Trusted Publishing and bun publish paths are a later slice. actions/publish is only the hook.
 
 archive:
+  - id: VER-003
+    title: Write Cargo.toml and package.json versions
+    scope: verctl
+    completed: 2026-08-16
+    disposition: completed
+    outcome: >-
+      prepare --no-pr applies the max bump per declared package to
+      Cargo.toml and package.json.
+    evidence:
+      - verctl prepare --no-pr
+      - toml_edit for Cargo.toml; surgical version string for package.json
+      - tests/bump.rs and prepare CLI test
+
   - id: VER-002
     title: Render changelogs with minijinja
     scope: verctl
     completed: 2026-08-16
     disposition: completed
-    outcome: >-
-      Defaults are Jinja2 templates rendered by minijinja 2.x. Author
-      filtering is in the adapter.
+    outcome: Defaults are Jinja2 templates rendered by minijinja 2.x.
     evidence:
       - templates/changelog.jinja and dependency-changelog.jinja
-      - tests/changelog.rs indoc goldens for internal PR, external byline, commit fallback, bare period, terminal punct, PR-over-SHA, override template, invalid template, empty login, dependencies
+      - tests/changelog.rs
 
   - id: VER-001
     title: Parse Changesets YAML fragments (quoted and unquoted)
     scope: verctl
     completed: 2026-08-16
     disposition: completed
-    outcome: >-
-      verctl reads .changeset/*.md via YAML and reports pending packages
-      and max bumps. check fails closed.
+    outcome: YAML fragments via gray_matter. status and check fail closed.
     evidence:
-      - src/fragment.rs (BOM/CRLF normalize, skip README, fail closed)
-      - verctl status and verctl check
+      - src/fragment.rs
       - tests/fragment.rs and tests/status.rs

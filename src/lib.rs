@@ -2,5 +2,8 @@
 
 #![allow(clippy::missing_errors_doc)]
 
+pub mod bump;
 pub mod changelog;
+pub mod config;
 pub mod fragment;
+pub mod prepare;
