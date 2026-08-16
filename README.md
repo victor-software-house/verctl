@@ -1,6 +1,7 @@
-# verctl
-
-Version PRs from Changesets-format fragments. Any stack.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/banner-dark.svg">
+  <img src="docs/banner.svg" alt="verctl — Version PRs from Changesets-format fragments. Any stack.">
+</picture>
 
 It reads `.changeset/*.md`, bumps declared version files, writes
 changelogs, and opens or updates one prepare-release PR.
