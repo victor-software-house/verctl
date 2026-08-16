@@ -38,6 +38,15 @@ No `Thanks` line. PR over SHA, never both.
 
 Batteries: Cargo.toml / Cargo.lock, package.json + a lockfile task.
 Generic regex writer later. Conventional Commits later (synthesizes the
-same `.md` files). Publish stays GitHub Actions + OIDC.
+same `.md` files).
+
+Shipped Actions (not a GitHub App):
+
+| Action | Job |
+|:--|:--|
+| `victor-software-house/verctl/actions/version-pr` | Version PR (`changesets/action` `version:` replacement) |
+| `victor-software-house/verctl/actions/publish` | Post-merge publish hook (backends land with VER-007) |
+
+See `examples/workflows/version-pr.yml`. Mise owns tools. OIDC stays on Actions.
 
 Do not name this `changesets` or `knope`.

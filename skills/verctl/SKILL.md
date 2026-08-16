@@ -13,9 +13,11 @@ license: MIT
 `verctl instructions` is the installed contract. Prefer `mise run ver --`.
 
 Fragments are `.changeset/*.md` with YAML fences (quoted or unquoted
-keys). Changelog Markdown is rendered from Liquid templates, same output
-as greenfield-release / pi-stuff. Do not assemble changelog strings in
-ad-hoc Rust. Do not add a Node adapter.
+keys). Changelog Markdown is rendered from Go templates, same output as
+greenfield-release / pi-stuff. Author filtering is `internalAuthors` in
+config, not template branches. Consumers use
+`victor-software-house/verctl/actions/version-pr`, not changesets/action.
+Do not assemble changelog strings in ad-hoc Rust. Do not add a Node adapter.
 
 Stop when a 0.x package gets `major`, or when a fragment package is not
 in `[release]` config.

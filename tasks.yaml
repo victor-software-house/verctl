@@ -17,17 +17,18 @@ queue:
       - Invalid YAML or unknown bump types fail closed.
 
   - id: VER-002
-    title: Render changelogs through Liquid templates
+    title: Render changelogs through Go templates
     scope: verctl
     outcome: >-
-      Default templates match greenfield-release / pi-stuff output.
-      Repos can override the two .liquid paths. No Markdown is assembled
-      in Rust beyond the typed Liquid context.
+      Default templates match greenfield-release / pi-stuff output, written
+      as chezmoi-style Go templates. Author filtering is in the adapter
+      (internalAuthors). Repos may override the two .tmpl paths.
     blocked_by: [VER-001]
     acceptance:
       - Internal PR, external PR, commit fallback, and no-link cases match the greenfield-release table.
       - Continuations indent by two spaces. No Thanks line. PR over SHA, never both.
-      - dependency-changelog.liquid renders the Updated dependencies list.
+      - internalAuthors omits the byline; everyone else gets by [@user](url).
+      - dependency-changelog.tmpl renders the Updated dependencies list.
 
   - id: VER-003
     title: Write Cargo.toml and package.json versions
@@ -52,6 +53,7 @@ queue:
       - "No PAT. Allow GitHub Actions to create PRs."
       - Fragments are deleted by consume, same as changeset version.
       - Local prepare is possible; the happy path is CI.
+      - Consumers use victor-software-house/verctl/actions/version-pr, not changesets/action.
 
   - id: VER-005
     title: "Publish native verctl so mise github: can install it"

@@ -32,20 +32,26 @@ Do not invent a third fragment format. Do not infer bumps from
 
 ## Changelog
 
-Render through Liquid templates. Defaults live in this crate
-(`templates/changelog.liquid`, `templates/dependency-changelog.liquid`).
-Repos may override the paths. The adapter does not concatenate Markdown
-in Rust beyond passing a typed context into Liquid.
+Render through Go `text/template` files (chezmoi-style). Defaults live
+in this crate (`templates/changelog.tmpl`,
+`templates/dependency-changelog.tmpl`). Repos may override the paths.
+The adapter does not concatenate Markdown in Rust beyond a typed context.
 
-Context matches greenfield-release / pi-stuff: `release.summary`,
-`release.pullRequest`, `release.commit`, `release.continuations`,
-`release.summaryHasTerminal`, `internalAuthors`, `dependencies`.
+`internalAuthors` is adapter policy, not a template `if`. Match the
+GitHub login GitHub actually resolves from the commit author. Those
+logins omit the byline.
+
+Context: `.Summary`, `.PullRequest`, `.Commit`, `.Continuations`,
+`.SummaryHasTerminal`, `.Dependencies`.
 
 ## Version PR
 
 `prepare` consumes fragments, writes declared version files and
 CHANGELOG sections, opens or updates one PR. Nobody hand-edits
 `Cargo.toml` version or CHANGELOG on the happy path.
+
+Consumers call `victor-software-house/verctl/actions/version-pr`, not
+`changesets/action`. Publish uses `actions/publish` after that PR merges.
 
 ## Stop conditions
 

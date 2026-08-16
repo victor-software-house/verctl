@@ -1,0 +1,37 @@
+name: verctl version PR
+description: >-
+  Open or update the Version PR. Consumes .changeset fragments, writes
+  versions and changelogs. Replacement for changesets/action version: input.
+author: victor-software-house
+branding:
+  icon: git-pull-request
+  color: gray-dark
+
+inputs:
+  command:
+    description: Prepare command. Default uses the mise-mounted ver task.
+    required: false
+    default: mise run ver -- prepare
+  commit-message:
+    description: Commit message on the Version PR.
+    required: false
+    default: "chore(release): version packages"
+  title:
+    description: Version PR title.
+    required: false
+    default: "chore(release): version packages"
+  token:
+    description: Token that can open PRs. Default GITHUB_TOKEN.
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare release
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        VERCTL_COMMIT_MESSAGE: ${{ inputs.commit-message }}
+        VERCTL_PR_TITLE: ${{ inputs.title }}
+      run: ${{ inputs.command }}

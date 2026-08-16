@@ -1,6 +1,0 @@
-- {{ release.summary }}{% if release.pullRequest %} ([#{{ release.pullRequest.number }}]({{ release.pullRequest.url }}){% if release.pullRequest.externalAuthor %} by [@{{ release.pullRequest.user }}]({{ release.pullRequest.userUrl }}){% endif %}).{% elsif release.commit %} ([`{{ release.commit.short }}`]({{ release.commit.url }})).{% elsif release.summaryHasTerminal %}{% else %}.{% endif %}
-{% for continuation in release.continuations -%}
-{% if continuation != empty %}  {{ continuation }}
-{% else %}
-{% endif -%}
-{% endfor -%}

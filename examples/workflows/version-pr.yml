@@ -1,0 +1,32 @@
+# Consumer workflow. Mise owns tools. This action owns the Version PR.
+name: Version PR
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: version-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up mise
+        uses: jdx/mise-action@v4.2.4
+        with:
+          install: false
+          cache: true
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - run: mise install --locked
+      - uses: victor-software-house/verctl/actions/version-pr@main
+        with:
+          command: mise run ver -- prepare

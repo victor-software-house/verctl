@@ -1,0 +1,5 @@
+- {{ .Summary }}{{ if .PullRequest }} ([#{{ .PullRequest.Number }}]({{ .PullRequest.URL }}){{ if .PullRequest.ExternalAuthor }} by [@{{ .PullRequest.User }}]({{ .PullRequest.UserURL }}){{ end }}).{{ else if .Commit }} ([`{{ .Commit.Short }}`]({{ .Commit.URL }})).{{ else if .SummaryHasTerminal }}{{ else }}.{{ end }}
+{{- range .Continuations }}
+{{- if . }}  {{ . }}
+{{ end }}
+{{- end -}}
