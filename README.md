@@ -15,18 +15,20 @@ mise run ver -- prepare
 
 Rust, same 1.97 / clap / `mise github:` shape as forkctl and qctl. The
 binary is the changelog adapter (`changelog.ts` is Node glue; this crate
-replaces it). Templates are **Go `text/template`** (chezmoi-style). Defaults:
+replaces it). Runtime templates use **minijinja 2.x** (Jinja2) — the
+current Rust crate for user-overridable templates. Askama is compile-time;
+`gtmpl` is a Go port. Defaults:
 
 | File | Job |
 |:--|:--|
-| `templates/changelog.tmpl` | Release bullets, PR preferred, commit fallback, external-author byline, continuations |
-| `templates/dependency-changelog.tmpl` | `- Updated dependencies:` list |
+| `templates/changelog.jinja` | Release bullets, PR preferred, commit fallback, external-author byline, continuations |
+| `templates/dependency-changelog.jinja` | `- Updated dependencies:` list |
 
 **Author filtering is adapter policy, not a template `if`.** Config
 `internalAuthors` is matched against the GitHub login resolved from the
 commit. Those logins get no byline. Everyone else does.
 
-Consumers may override the two `.tmpl` paths. Default output:
+Consumers may override the two `.jinja` paths. Default output:
 
 | Case | Output |
 |:--|:--|

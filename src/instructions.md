@@ -32,17 +32,17 @@ Do not invent a third fragment format. Do not infer bumps from
 
 ## Changelog
 
-Render through Go `text/template` files (chezmoi-style). Defaults live
-in this crate (`templates/changelog.tmpl`,
-`templates/dependency-changelog.tmpl`). Repos may override the paths.
-The adapter does not concatenate Markdown in Rust beyond a typed context.
+Render through minijinja (Jinja2) files. Defaults live in this crate
+(`templates/changelog.jinja`, `templates/dependency-changelog.jinja`).
+Repos may override the paths. The adapter does not concatenate Markdown
+in Rust beyond a typed context.
 
 `internalAuthors` is adapter policy, not a template `if`. Match the
 GitHub login GitHub actually resolves from the commit author. Those
 logins omit the byline.
 
-Context: `.Summary`, `.PullRequest`, `.Commit`, `.Continuations`,
-`.SummaryHasTerminal`, `.Dependencies`.
+Context: `summary`, `pull_request`, `commit`, `continuations`,
+`summary_has_terminal`, `dependencies`.
 
 ## Version PR
 

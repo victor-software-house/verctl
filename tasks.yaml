@@ -17,18 +17,19 @@ queue:
       - Invalid YAML or unknown bump types fail closed.
 
   - id: VER-002
-    title: Render changelogs through Go templates
+    title: Render changelogs with minijinja
     scope: verctl
     outcome: >-
-      Default templates are chezmoi-style Go templates. Author filtering
-      is in the adapter (internalAuthors). Repos may override the two
-      .tmpl paths.
+      Defaults are Jinja2 templates rendered by minijinja 2.x. Author
+      filtering is in the adapter (internalAuthors). Repos may override
+      the two .jinja paths.
     blocked_by: [VER-001]
     acceptance:
       - Internal PR, external PR, commit fallback, and no-link cases match the README output table.
       - Continuations indent by two spaces. No Thanks line. PR over SHA, never both.
       - internalAuthors omits the byline; everyone else gets by [@user](url).
-      - dependency-changelog.tmpl renders the Updated dependencies list.
+      - dependency-changelog.jinja renders the Updated dependencies list.
+      - Engine is minijinja 2.x, not a Go-template port and not compile-time Askama.
 
   - id: VER-003
     title: Write Cargo.toml and package.json versions

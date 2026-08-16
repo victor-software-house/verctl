@@ -1,0 +1,5 @@
+- {{ summary }}{% if pull_request %} ([#{{ pull_request.number }}]({{ pull_request.url }}){% if pull_request.external_author %} by [@{{ pull_request.user }}]({{ pull_request.user_url }}){% endif %}).{% elif commit %} ([`{{ commit.short }}`]({{ commit.url }})).{% elif summary_has_terminal %}{% else %}.{% endif %}
+{% for continuation in continuations -%}
+{% if continuation %}  {{ continuation }}
+{% endif -%}
+{% endfor -%}
