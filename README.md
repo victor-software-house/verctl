@@ -1,9 +1,5 @@
 # verctl
 
-<p align="left">
-  <img src="docs/logo.svg" width="96" height="96" alt="verctl mark: open diamond with a version bump on top">
-</p>
-
 Version PRs from Changesets-format fragments. Any stack.
 
 It reads `.changeset/*.md`, bumps declared version files, writes
