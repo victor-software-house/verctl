@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="verctl">
+  <title>verctl</title>
+  <rect width="32" height="32" fill="#f3efe6"/>
+  <!-- Open diamond (version graph). Gap at the top is the next bump. -->
+  <path
+    fill="none"
+    stroke="#161616"
+    stroke-width="2.5"
+    stroke-linecap="square"
+    stroke-linejoin="miter"
+    d="M8 16 L16 24 L24 16 L19.5 11.5 M12.5 11.5 L8 16"
+  />
+  <rect
+    x="13.4"
+    y="5.6"
+    width="5.2"
+    height="5.2"
+    fill="#161616"
+    transform="rotate(45 16 8.2)"
+  />
+</svg>
