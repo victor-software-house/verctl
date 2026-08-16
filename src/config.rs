@@ -150,8 +150,11 @@ struct StockFile {
 fn stock_file() -> &'static StockFile {
     static STOCK: OnceLock<StockFile> = OnceLock::new();
     STOCK.get_or_init(|| {
-        toml::from_str(include_str!("../drivers.toml"))
-            .unwrap_or_else(|error| panic!("drivers.toml is invalid: {error}"))
+        toml::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/drivers.toml"
+        )))
+        .unwrap_or_else(|error| panic!("drivers.toml is invalid: {error}"))
     })
 }
 
