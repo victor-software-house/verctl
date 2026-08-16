@@ -17,11 +17,19 @@ pub enum Driver {
         keys: Vec<String>,
         after: Option<String>,
     },
-    Shell {
-        read: String,
-        write: String,
+    Command {
+        read: CommandSpec,
+        write: CommandSpec,
         after: Option<String>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommandSpec {
+    /// `mise run <task>` — stdin is the file, stdout is the version or new file.
+    Mise(String),
+    /// Execvp. No shell.
+    Argv(Vec<String>),
 }
 
 impl Driver {
@@ -46,7 +54,7 @@ impl Driver {
     #[must_use]
     pub fn after(&self) -> Option<&str> {
         match self {
-            Self::Path { after, .. } | Self::Shell { after, .. } => after.as_deref(),
+            Self::Path { after, .. } | Self::Command { after, .. } => after.as_deref(),
         }
     }
 
@@ -56,7 +64,7 @@ impl Driver {
                 Format::Toml => read_toml(raw, keys),
                 Format::Json => read_json(raw, keys),
             },
-            Self::Shell { read, .. } => run_filter(read, raw, None),
+            Self::Command { read, .. } => run_filter(read, raw, None),
         }
     }
 
@@ -66,7 +74,7 @@ impl Driver {
                 Format::Toml => write_toml(raw, keys, new_version),
                 Format::Json => write_json(raw, keys, new_version),
             },
-            Self::Shell { write, .. } => run_filter(write, raw, Some(new_version)),
+            Self::Command { write, .. } => run_filter(write, raw, Some(new_version)),
         }
     }
 }
@@ -185,11 +193,21 @@ fn replace_json_string_field(
     ))
 }
 
-fn run_filter(script: &str, stdin: &str, new_version: Option<&str>) -> Result<String> {
-    let mut command = Command::new("sh");
+fn run_filter(spec: &CommandSpec, stdin: &str, new_version: Option<&str>) -> Result<String> {
+    let mut command = match spec {
+        CommandSpec::Mise(task) => {
+            let mut command = Command::new("mise");
+            command.args(["run", task.as_str()]);
+            command
+        }
+        CommandSpec::Argv(argv) => {
+            ensure!(!argv.is_empty(), "driver argv is empty");
+            let mut command = Command::new(&argv[0]);
+            command.args(&argv[1..]);
+            command
+        }
+    };
     command
-        .arg("-c")
-        .arg(script)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

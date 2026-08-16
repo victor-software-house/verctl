@@ -11,6 +11,13 @@ format = "json"
 keys = ["version"]
 after = "bun install"
 
+# String form is a mise task (no shell):
+# read = "ver-read-version"
+# write = "ver-write-version"
+#
+# Array form is execvp:
+# read = ["jq", "-r", ".version"]
+#
 # [[packages]]
 # name = "verctl"
 # path = "Cargo.toml"

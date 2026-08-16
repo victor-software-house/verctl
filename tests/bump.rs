@@ -217,12 +217,15 @@ fn declared_toml_keys_are_the_same_as_cargo() {
 }
 
 #[test]
-fn shell_driver_reads_and_writes_stdin_stdout() {
-    let driver = Driver::Shell {
-        read: "tr -d '\\n'".into(),
-        write: "printf '%s' \"$VERCTL_VERSION\"".into(),
+fn argv_driver_reads_and_writes_without_a_shell() {
+    let driver = Driver::Command {
+        read: verctl::driver::CommandSpec::Argv(vec!["tr".into(), "-d".into(), "\n".into()]),
+        write: verctl::driver::CommandSpec::Argv(vec!["printenv".into(), "VERCTL_VERSION".into()]),
         after: None,
     };
     assert_eq!(driver.read("1.2.3\n").expect("read"), "1.2.3");
-    assert_eq!(driver.write("1.2.3\n", "1.2.4").expect("write"), "1.2.4");
+    assert_eq!(
+        driver.write("1.2.3\n", "1.2.4").expect("write").trim(),
+        "1.2.4"
+    );
 }

@@ -104,12 +104,13 @@ path = "Cargo.toml"
 [[packages]]
 name = "other"
 path = "VERSION"
-read = "tr -d '\\n'"
-write = "printf '%s' \"$VERCTL_VERSION\""
+read = "ver-read-version"          # mise run ver-read-version
+write = ["printenv", "VERCTL_VERSION"]
 ```
 
-Read command: file on stdin, version on stdout.
-Write command: file on stdin, `VERCTL_VERSION` in the env, new file on stdout.
+A string is a **mise task**. An array is execvp (no shell).
+Stdin is the file. Write drivers also get `VERCTL_VERSION`.
+Stdout is the version (read) or the new file (write).
 `after` is printed, not run.
 
 `0.x` rejects a `major` fragment.

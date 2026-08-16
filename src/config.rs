@@ -1,25 +1,49 @@
-use crate::driver::{Driver, Format};
-use anyhow::{Context, Result, bail};
+use crate::driver::{CommandSpec, Driver, Format};
+use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum CommandField {
+    Mise(String),
+    Argv(Vec<String>),
+}
+
+impl CommandField {
+    fn into_spec(self) -> Result<CommandSpec> {
+        match self {
+            Self::Mise(task) => {
+                if task.is_empty() {
+                    bail!("mise task name is empty");
+                }
+                Ok(CommandSpec::Mise(task))
+            }
+            Self::Argv(argv) => {
+                ensure!(!argv.is_empty(), "driver argv is empty");
+                Ok(CommandSpec::Argv(argv))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct DriverSpec {
     pub format: Option<String>,
     pub keys: Option<Vec<String>>,
-    pub read: Option<String>,
-    pub write: Option<String>,
+    pub read: Option<CommandField>,
+    pub write: Option<CommandField>,
     pub after: Option<String>,
 }
 
 impl DriverSpec {
     pub fn into_driver(self, name: &str) -> Result<Driver> {
         if let (Some(read), Some(write)) = (self.read, self.write) {
-            return Ok(Driver::Shell {
-                read,
-                write,
+            return Ok(Driver::Command {
+                read: read.into_spec()?,
+                write: write.into_spec()?,
                 after: self.after,
             });
         }
@@ -48,8 +72,8 @@ pub struct PackageSpec {
     pub driver: Option<String>,
     pub format: Option<String>,
     pub keys: Option<Vec<String>>,
-    pub read: Option<String>,
-    pub write: Option<String>,
+    pub read: Option<CommandField>,
+    pub write: Option<CommandField>,
     pub after: Option<String>,
 }
 

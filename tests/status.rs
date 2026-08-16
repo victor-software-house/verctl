@@ -42,7 +42,13 @@ fn check_fails_closed_on_bad_fragment() {
     let root = TempDir::new().expect("tempdir");
     let dir = root.path().join(".changeset");
     fs::create_dir_all(&dir).expect("dir");
-    fs::write(dir.join("bad.md"), "nope\n").expect("write");
+    fs::write(
+        dir.join("bad.md"),
+        indoc! {"
+            nope
+        "},
+    )
+    .expect("write");
     let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
         .args(["check", "-d"])
         .arg(&dir)
@@ -61,17 +67,35 @@ fn prepare_cli_writes_cargo() {
     let root = TempDir::new().expect("tmp");
     fs::write(
         root.path().join("verctl.toml"),
-        "[[packages]]\nname = \"demo\"\npath = \"Cargo.toml\"\n",
+        indoc! {r#"
+            [[packages]]
+            name = "demo"
+            path = "Cargo.toml"
+        "#},
     )
     .expect("cfg");
     fs::write(
         root.path().join("Cargo.toml"),
-        "[package]\nname = \"demo\"\nversion = \"1.0.0\"\n",
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.0.0"
+        "#},
     )
     .expect("cargo");
     let changes = root.path().join(".changeset");
     fs::create_dir_all(&changes).expect("dir");
-    fs::write(changes.join("bump.md"), "---\ndemo: patch\n---\n\nPatch.\n").expect("frag");
+    fs::write(
+        changes.join("bump.md"),
+        indoc! {"
+            ---
+            demo: patch
+            ---
+
+            Patch.
+        "},
+    )
+    .expect("frag");
     let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
         .current_dir(root.path())
         .args(["prepare", "--no-pr"])
