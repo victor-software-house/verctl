@@ -21,9 +21,9 @@ pedantic = { level = "deny", priority = -1 }
 [dependencies]
 anyhow = "1.0.100"
 clap = { version = "4.6.5", features = ["derive"] }
+gray_matter = { version = "0.3.2", default-features = false, features = ["yaml"] }
 minijinja = { version = "2.24.0", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
-serde_yml = "0.0.12"
 
 [dev-dependencies]
 indoc = "2.0.7"
