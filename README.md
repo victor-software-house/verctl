@@ -82,11 +82,35 @@ byline. Everyone else does.
 
 ## Version files
 
-Planned batteries (not shipped yet):
+`verctl prepare --no-pr` applies fragment bumps through **drivers**.
+Cargo and npm are stock drivers, not a separate code path.
 
-- Rust: `Cargo.toml` (`[workspace.package].version` or `[package].version`)
-  plus `Cargo.lock`
-- JS: `package.json` plus the repo's lockfile task
+```toml
+[drivers.cargo]
+format = "toml"
+keys = ["workspace.package.version", "package.version"]
+after = "cargo generate-lockfile"
+
+[drivers.npm]
+format = "json"
+keys = ["version"]
+after = "bun install"
+
+[[packages]]
+name = "verctl"
+path = "Cargo.toml"
+# driver = "cargo"   # inferred from the file name
+
+[[packages]]
+name = "other"
+path = "VERSION"
+read = "tr -d '\\n'"
+write = "printf '%s' \"$VERCTL_VERSION\""
+```
+
+Read command: file on stdin, version on stdout.
+Write command: file on stdin, `VERCTL_VERSION` in the env, new file on stdout.
+`after` is printed, not run.
 
 `0.x` rejects a `major` fragment.
 

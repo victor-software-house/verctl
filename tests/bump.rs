@@ -1,8 +1,9 @@
 use indoc::indoc;
 use std::fs;
 use tempfile::TempDir;
-use verctl::bump::{apply, read_version, write_version};
-use verctl::config::{Config, ManifestKind};
+use verctl::bump::apply;
+use verctl::config::Config;
+use verctl::driver::Driver;
 use verctl::fragment::{Bump, parse_str};
 use verctl::prepare;
 
@@ -36,14 +37,12 @@ fn cargo_workspace_keeps_comments() {
         [workspace]
         members = ["crates/app"]
     "#};
-    let next = write_version(ManifestKind::Cargo, raw, "0.0.22").expect("write");
+    let driver = Driver::cargo();
+    let next = driver.write(raw, "0.0.22").expect("write");
     assert!(next.contains("# keep me"), "{next}");
     assert!(next.contains("edition = \"2024\""), "{next}");
     assert!(!next.contains("members = [\"other\"]"), "{next}");
-    assert_eq!(
-        read_version(ManifestKind::Cargo, &next).expect("read"),
-        "0.0.22"
-    );
+    assert_eq!(driver.read(&next).expect("read"), "0.0.22");
 }
 
 #[test]
@@ -53,11 +52,9 @@ fn cargo_package_table() {
         name = "demo"
         version = "1.0.0"
     "#};
-    let next = write_version(ManifestKind::Cargo, raw, "1.0.1").expect("write");
-    assert_eq!(
-        read_version(ManifestKind::Cargo, &next).expect("read"),
-        "1.0.1"
-    );
+    let driver = Driver::cargo();
+    let next = driver.write(raw, "1.0.1").expect("write");
+    assert_eq!(driver.read(&next).expect("read"), "1.0.1");
     assert!(next.contains("name = \"demo\""));
 }
 
@@ -70,7 +67,7 @@ fn npm_replaces_only_the_version_string() {
           "private": true
         }
     "#};
-    let next = write_version(ManifestKind::Npm, raw, "2.1.0").expect("write");
+    let next = Driver::npm().write(raw, "2.1.0").expect("write");
     assert_eq!(
         next,
         indoc! {r#"
@@ -172,4 +169,60 @@ fn prepare_applies_max_bump_across_fragments() {
     assert_eq!(follow, ["cargo generate-lockfile"]);
     let after = fs::read_to_string(root.path().join("Cargo.toml")).expect("read");
     assert!(after.contains("version = \"1.3.0\""));
+}
+
+#[test]
+fn declared_toml_keys_are_the_same_as_cargo() {
+    let root = TempDir::new().expect("tmp");
+    fs::write(
+        root.path().join("verctl.toml"),
+        indoc! {r#"
+            [drivers.crate]
+            format = "toml"
+            keys = ["package.version"]
+            after = "echo locked"
+
+            [[packages]]
+            name = "demo"
+            path = "Cargo.toml"
+            driver = "crate"
+        "#},
+    )
+    .expect("cfg");
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.0.0"
+        "#},
+    )
+    .expect("cargo");
+    let config = Config::load(&root.path().join("verctl.toml")).expect("load");
+    let fragment = parse_str(
+        indoc! {"
+            ---
+            demo: patch
+            ---
+
+            Patch.
+        "},
+        "a.md",
+    )
+    .expect("frag");
+    let plan = prepare::plan(&config, &[fragment], root.path()).expect("plan");
+    assert_eq!(plan[0].to, "1.0.1");
+    let follow = prepare::apply_plan(&plan).expect("apply");
+    assert_eq!(follow, ["echo locked"]);
+}
+
+#[test]
+fn shell_driver_reads_and_writes_stdin_stdout() {
+    let driver = Driver::Shell {
+        read: "tr -d '\\n'".into(),
+        write: "printf '%s' \"$VERCTL_VERSION\"".into(),
+        after: None,
+    };
+    assert_eq!(driver.read("1.2.3\n").expect("read"), "1.2.3");
+    assert_eq!(driver.write("1.2.3\n", "1.2.4").expect("write"), "1.2.4");
 }

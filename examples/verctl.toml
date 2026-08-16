@@ -1,0 +1,17 @@
+# Built-in drivers `cargo` and `npm` are the same Path driver with
+# stock keys. Redefine or add drivers here.
+
+[drivers.cargo]
+format = "toml"
+keys = ["workspace.package.version", "package.version"]
+after = "cargo generate-lockfile"
+
+[drivers.npm]
+format = "json"
+keys = ["version"]
+after = "bun install"
+
+# [[packages]]
+# name = "verctl"
+# path = "Cargo.toml"
+# driver = "cargo"

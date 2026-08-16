@@ -1,25 +1,43 @@
+use crate::driver::{Driver, Format};
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ManifestKind {
-    Cargo,
-    Npm,
+#[derive(Debug, Clone, Deserialize)]
+pub struct DriverSpec {
+    pub format: Option<String>,
+    pub keys: Option<Vec<String>>,
+    pub read: Option<String>,
+    pub write: Option<String>,
+    pub after: Option<String>,
 }
 
-impl ManifestKind {
-    fn infer(path: &Path) -> Result<Self> {
-        match path.file_name().and_then(|name| name.to_str()) {
-            Some("Cargo.toml") => Ok(Self::Cargo),
-            Some("package.json") => Ok(Self::Npm),
-            _ => bail!(
-                "cannot infer manifest kind from {} (set kind = \"cargo\" or \"npm\")",
-                path.display()
-            ),
+impl DriverSpec {
+    pub fn into_driver(self, name: &str) -> Result<Driver> {
+        if let (Some(read), Some(write)) = (self.read, self.write) {
+            return Ok(Driver::Shell {
+                read,
+                write,
+                after: self.after,
+            });
         }
+        let format = match self.format.as_deref() {
+            Some("toml") => Format::Toml,
+            Some("json") => Format::Json,
+            Some(other) => bail!("driver {name:?} has unknown format {other:?}"),
+            None => bail!("driver {name:?} needs format+keys or read+write"),
+        };
+        let keys = self
+            .keys
+            .filter(|keys| !keys.is_empty())
+            .with_context(|| format!("driver {name:?} needs keys"))?;
+        Ok(Driver::Path {
+            format,
+            keys,
+            after: self.after,
+        })
     }
 }
 
@@ -27,18 +45,48 @@ impl ManifestKind {
 pub struct PackageSpec {
     pub name: String,
     pub path: PathBuf,
-    pub kind: Option<ManifestKind>,
+    pub driver: Option<String>,
+    pub format: Option<String>,
+    pub keys: Option<Vec<String>>,
+    pub read: Option<String>,
+    pub write: Option<String>,
+    pub after: Option<String>,
 }
 
 impl PackageSpec {
-    pub fn kind(&self) -> Result<ManifestKind> {
-        self.kind
-            .map_or_else(|| ManifestKind::infer(&self.path), Ok)
+    pub fn resolve(&self, config: &Config) -> Result<Driver> {
+        if self.read.is_some() || self.write.is_some() || self.format.is_some() {
+            return DriverSpec {
+                format: self.format.clone(),
+                keys: self.keys.clone(),
+                read: self.read.clone(),
+                write: self.write.clone(),
+                after: self.after.clone(),
+            }
+            .into_driver(&self.name);
+        }
+        if let Some(name) = &self.driver {
+            return config.driver(name);
+        }
+        infer_driver(&self.path)
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+fn infer_driver(path: &Path) -> Result<Driver> {
+    match path.file_name().and_then(|name| name.to_str()) {
+        Some("Cargo.toml") => Ok(Driver::cargo()),
+        Some("package.json") => Ok(Driver::npm()),
+        _ => bail!(
+            "cannot infer driver from {} (set driver, format+keys, or read+write)",
+            path.display()
+        ),
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct Config {
+    #[serde(default)]
+    pub drivers: BTreeMap<String, DriverSpec>,
     pub packages: Vec<PackageSpec>,
 }
 
@@ -58,5 +106,18 @@ impl Config {
             .iter()
             .find(|package| package.name == name)
             .with_context(|| format!("package {name:?} is not in verctl config"))
+    }
+
+    pub fn driver(&self, name: &str) -> Result<Driver> {
+        match name {
+            "cargo" => Ok(Driver::cargo()),
+            "npm" | "bun" => Ok(Driver::npm()),
+            other => self
+                .drivers
+                .get(other)
+                .cloned()
+                .with_context(|| format!("unknown driver {other:?}"))?
+                .into_driver(other),
+        }
     }
 }

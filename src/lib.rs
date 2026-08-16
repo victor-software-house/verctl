@@ -5,5 +5,6 @@
 pub mod bump;
 pub mod changelog;
 pub mod config;
+pub mod driver;
 pub mod fragment;
 pub mod prepare;

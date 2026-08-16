@@ -1,9 +1,10 @@
 use crate::bump;
-use crate::config::{Config, ManifestKind};
+use crate::config::Config;
+use crate::driver::Driver;
 use crate::fragment::{Bump, Fragment};
 use anyhow::{Context, Result, bail};
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlanEntry {
@@ -11,8 +12,8 @@ pub struct PlanEntry {
     pub from: String,
     pub to: String,
     pub bump: Bump,
-    pub path: std::path::PathBuf,
-    pub kind: ManifestKind,
+    pub path: PathBuf,
+    pub driver: Driver,
 }
 
 pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<PlanEntry>> {
@@ -31,10 +32,10 @@ pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<
             continue;
         }
         let spec = config.find(name)?;
-        let kind = spec.kind()?;
+        let driver = spec.resolve(config)?;
         let path = root.join(&spec.path);
         let raw = std::fs::read_to_string(&path).with_context(|| path.display().to_string())?;
-        let from = bump::read_version(kind, &raw)?;
+        let from = driver.read(&raw)?.trim().to_owned();
         let to = bump::apply(&from, bump)?;
         plan.push(PlanEntry {
             name: name.to_owned(),
@@ -42,7 +43,7 @@ pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<
             to,
             bump,
             path,
-            kind,
+            driver,
         });
     }
     if plan.is_empty() {
@@ -59,11 +60,10 @@ pub fn apply_plan(entries: &[PlanEntry]) -> Result<Vec<String>> {
         }
         let raw = std::fs::read_to_string(&entry.path)
             .with_context(|| entry.path.display().to_string())?;
-        let updated = bump::write_version(entry.kind, &raw, &entry.to)?;
+        let updated = entry.driver.write(&raw, &entry.to)?;
         std::fs::write(&entry.path, updated).with_context(|| entry.path.display().to_string())?;
-        match entry.kind {
-            ManifestKind::Cargo => follow_up.push("cargo generate-lockfile".into()),
-            ManifestKind::Npm => follow_up.push("bun install".into()),
+        if let Some(after) = entry.driver.after() {
+            follow_up.push(after.to_owned());
         }
     }
     follow_up.sort();

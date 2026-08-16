@@ -66,8 +66,9 @@ archive:
       Cargo.toml and package.json.
     evidence:
       - verctl prepare --no-pr
-      - toml_edit for Cargo.toml; surgical version string for package.json
-      - tests/bump.rs and prepare CLI test
+      - cargo/npm are stock Path drivers (format + keys + after)
+      - custom drivers via format+keys or read/write shell
+      - tests/bump.rs (including declared keys and shell driver)
 
   - id: VER-002
     title: Render changelogs with minijinja
