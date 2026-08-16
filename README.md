@@ -15,17 +15,19 @@ mise run ver -- prepare
 
 Rust, same 1.97 / clap / `mise github:` shape as forkctl and qctl. The
 binary is the changelog adapter (`changelog.ts` is Node glue; this crate
-replaces it). Templates stay **Liquid**, the same files greenfield-release
-already documents:
+replaces it). Templates are **Go `text/template`** (chezmoi-style). Defaults:
 
 | File | Job |
 |:--|:--|
-| `templates/changelog.liquid` | Release bullets, PR preferred, commit fallback, external-author byline, continuations |
-| `templates/dependency-changelog.liquid` | `- Updated dependencies:` list |
+| `templates/changelog.tmpl` | Release bullets, PR preferred, commit fallback, external-author byline, continuations |
+| `templates/dependency-changelog.tmpl` | `- Updated dependencies:` list |
 
-Consumers may override those two paths. Defaults match
-[greenfield-release](https://github.com/victor-software-house) /
-pi-stuff output:
+**Author filtering is adapter policy, not a template `if`.** Config
+`internalAuthors` is matched against the GitHub login resolved from the
+commit. Those logins get no byline. Everyone else does.
+
+Consumers may override the two `.tmpl` paths. Defaults match
+greenfield-release / pi-stuff output:
 
 | Case | Output |
 |:--|:--|
