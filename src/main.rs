@@ -24,6 +24,8 @@ enum Command {
     Instructions,
     /// List pending .changeset fragments.
     Status(StatusArgs),
+    /// Validate every fragment in a directory (fail closed).
+    Check(StatusArgs),
 }
 
 #[derive(clap::Args)]
@@ -49,6 +51,10 @@ fn run() -> Result<()> {
             io::stdout().write_all(INSTRUCTIONS.as_bytes())?;
         }
         Command::Status(args) => print_status(&args)?,
+        Command::Check(args) => {
+            let fragments = fragment::load_dir(&args.dir)?;
+            println!("ok      {} fragment(s)", fragments.len());
+        }
     }
     Ok(())
 }

@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, bail, ensure};
 use serde_yml::Value;
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -59,7 +60,9 @@ impl Fragment {
 
 pub fn parse_str(raw: &str, path: impl Into<PathBuf>) -> Result<Fragment> {
     let path = path.into();
-    let (front, body) = split_front_matter(raw).with_context(|| path.display().to_string())?;
+    let normalized = normalize_source(raw);
+    let (front, body) =
+        split_front_matter(&normalized).with_context(|| path.display().to_string())?;
     let yaml: Value =
         serde_yml::from_str(front).with_context(|| format!("yaml in {}", path.display()))?;
     let mapping = yaml.as_mapping().with_context(|| {
@@ -74,6 +77,7 @@ pub fn parse_str(raw: &str, path: impl Into<PathBuf>) -> Result<Fragment> {
         path.display()
     );
     let mut packages = Vec::new();
+    let mut seen = BTreeSet::new();
     for (key, value) in mapping {
         let name = match key {
             Value::String(name) => name.clone(),
@@ -82,9 +86,17 @@ pub fn parse_str(raw: &str, path: impl Into<PathBuf>) -> Result<Fragment> {
                 path.display()
             ),
         };
-        let bump_raw = value
-            .as_str()
-            .with_context(|| format!("{} bump for {name} must be a string", path.display()))?;
+        ensure!(
+            seen.insert(name.clone()),
+            "{} lists {name} more than once",
+            path.display()
+        );
+        let bump_raw = value.as_str().with_context(|| {
+            format!(
+                "{} bump for {name} must be a string (major, minor, patch, or none)",
+                path.display()
+            )
+        })?;
         packages.push(PackageBump {
             name,
             bump: Bump::parse(bump_raw)?,
@@ -105,10 +117,7 @@ pub fn load_dir(dir: &Path) -> Result<Vec<Fragment>> {
         .with_context(|| dir.display().to_string())?
         .filter_map(std::result::Result::ok)
         .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension().is_some_and(|ext| ext == "md")
-                && path.file_name().is_some_and(|name| name != "README.md")
-        })
+        .filter(|path| is_fragment_path(path))
         .collect();
     paths.sort();
     let mut fragments = Vec::new();
@@ -117,6 +126,22 @@ pub fn load_dir(dir: &Path) -> Result<Vec<Fragment>> {
         fragments.push(parse_str(&raw, path)?);
     }
     Ok(fragments)
+}
+
+fn is_fragment_path(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    path.extension().is_some_and(|ext| ext == "md")
+        && name != "README.md"
+        && !name.eq_ignore_ascii_case("config.md")
+}
+
+fn normalize_source(raw: &str) -> String {
+    raw.strip_prefix('\u{feff}')
+        .unwrap_or(raw)
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
 }
 
 fn split_front_matter(raw: &str) -> Result<(&str, &str)> {

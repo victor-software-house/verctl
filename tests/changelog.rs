@@ -132,6 +132,76 @@ fn pr_wins_over_commit() {
 }
 
 #[test]
+fn question_and_bang_are_terminal() {
+    for summary in ["Ship it?", "Ship it!"] {
+        let rendered = render_release(&ReleaseInput {
+            summary: summary.into(),
+            continuations: vec![],
+            pull_request: None,
+            commit: None,
+        })
+        .expect("render");
+        assert_eq!(rendered, format!("- {summary}"));
+    }
+}
+
+#[test]
+fn override_template_is_used() {
+    let rendered = verctl::changelog::render_release_template(
+        "{{ summary }}\n",
+        &ReleaseInput {
+            summary: "plain".into(),
+            continuations: vec![],
+            pull_request: None,
+            commit: None,
+        },
+    )
+    .expect("render");
+    assert_eq!(rendered, "plain");
+}
+
+#[test]
+fn invalid_template_fails() {
+    let error = verctl::changelog::render_release_template(
+        "{% if %}",
+        &ReleaseInput {
+            summary: "x".into(),
+            continuations: vec![],
+            pull_request: None,
+            commit: None,
+        },
+    )
+    .expect_err("bad template");
+    assert!(format!("{error:#}").contains("parse"), "{error:#}");
+}
+
+#[test]
+fn empty_login_is_not_external() {
+    let rendered = render_release(
+        &ReleaseInput {
+            summary: "Restore mise.toml".into(),
+            continuations: vec![],
+            pull_request: Some(PullRequest {
+                number: 12,
+                url: "https://github.com/org/repo/pull/12".into(),
+                user: None,
+                user_url: None,
+                external_author: true,
+            }),
+            commit: None,
+        }
+        .with_author_filter(&["owner".into()]),
+    )
+    .expect("render");
+    assert_eq!(
+        rendered,
+        one_line(indoc! {"
+            - Restore mise.toml ([#12](https://github.com/org/repo/pull/12)).
+        "})
+    );
+}
+
+#[test]
 fn dependency_list() {
     let rendered = render_dependencies(&[
         Dependency {

@@ -8,37 +8,59 @@ queue:
     title: Write Cargo.toml and package.json versions
     scope: verctl
     outcome: >-
-      prepare bumps declared version files. Cargo.lock is refreshed.
-      A package.json writer exists. Surgical TOML edits keep comments.
+      prepare (local, no PR yet) applies the max bump per declared
+      package to Cargo.toml and/or package.json and refreshes the
+      matching lockfile.
     blocked_by: []
     acceptance:
-      - A Cargo workspace [workspace.package].version bump is the default Rust path.
-      - A package.json version bump is the default JS path.
-      - 0.x rejects a major fragment.
+      - "[workspace.package].version is the default Rust path; [package].version is used when there is no workspace version."
+      - toml_edit keeps comments and key order in Cargo.toml.
+      - package.json version is rewritten without reformatting unrelated keys.
+      - Cargo.lock or bun.lock is refreshed after the bump, or the command names the exact follow-up.
+      - A major fragment on a 0.x version is rejected.
+      - Packages named in a fragment but missing from [release] config fail closed.
+      - Unit tests cover patch, minor, 0.x-major-reject, and a comment-preserving Cargo.toml fixture (indoc).
+    notes: >-
+      Declare packages in mise.toml or verctl.toml later. This slice does
+      not open a GitHub PR.
 
   - id: VER-004
     title: Open or update the Version PR
     scope: verctl
     outcome: >-
-      GitHub Actions (GITHUB_TOKEN) opens one prepare-release PR that
-      consumes fragments and commits versions plus CHANGELOG.
+      One prepare-release PR consumes fragments, commits version files
+      and CHANGELOG, and deletes the consumed .changeset files.
     blocked_by: [VER-003]
     acceptance:
-      - "No PAT. Allow GitHub Actions to create PRs."
-      - Fragments are deleted by consume, same as changeset version.
-      - Local prepare is possible; the happy path is CI.
-      - Consumers use victor-software-house/verctl/actions/version-pr, not changesets/action.
+      - Uses GITHUB_TOKEN only. No PAT.
+      - Opens a new PR or force-updates the existing version-packages branch.
+      - CHANGELOG sections are minijinja output from VER-002.
+      - Consumed fragment files are deleted in the same commit.
+      - examples/workflows/version-pr.yml and actions/version-pr stay the consumer API.
+      - Local prepare still works without GitHub when --no-pr is set.
+    notes: Happy path is the shipped Action. Local is recovery.
 
   - id: VER-005
     title: "Publish native verctl so mise github: can install it"
     scope: release
-    outcome: crates.io plus darwin-arm64 and linux-x64 assets.
+    outcome: >-
+      crates.io plus GitHub Release assets for darwin-arm64 and linux-x64.
     blocked_by: []
     acceptance:
-      - cargo install verctl works.
-      - mise x github:victor-software-house/verctl@<tag> -- verctl --version works.
+      - cargo publish --locked succeeds for this crate.
+      - gh release vX.Y.Z includes both native tarballs.
+      - mise x github:victor-software-house/verctl@vX.Y.Z -- verctl --version matches the tag.
+      - tasks/ver/ver and examples/mise.toml pin that tag.
+    notes: Same cut as qctl 0.0.1. linux-x64 may wait for a Linux runner.
 
 horizon:
+  - id: VER-008
+    title: Generic regex version writer
+    scope: verctl
+    kind: evaluation
+    outcome: Packages that are not Cargo or package.json can still bump via a declared pattern.
+    open: Need a real third manifest (not a hypothetical) before adding a regex writer.
+
   - id: VER-006
     title: Conventional Commits synthesize the same fragments
     scope: verctl
@@ -51,7 +73,7 @@ horizon:
     scope: verctl
     kind: deferred
     outcome: A publish verb runs after the Version PR merges.
-    open: Trusted Publishing and bun publish paths are a later slice.
+    open: Trusted Publishing and bun publish paths are a later slice. actions/publish is only the hook.
 
 archive:
   - id: VER-002
@@ -64,7 +86,7 @@ archive:
       filtering is in the adapter.
     evidence:
       - templates/changelog.jinja and dependency-changelog.jinja
-      - tests/changelog.rs goldens via indoc for the four README cases plus dependencies
+      - tests/changelog.rs indoc goldens for internal PR, external byline, commit fallback, bare period, terminal punct, PR-over-SHA, override template, invalid template, empty login, dependencies
 
   - id: VER-001
     title: Parse Changesets YAML fragments (quoted and unquoted)
@@ -73,8 +95,8 @@ archive:
     disposition: completed
     outcome: >-
       verctl reads .changeset/*.md via YAML and reports pending packages
-      and max bumps.
+      and max bumps. check fails closed.
     evidence:
-      - src/fragment.rs parse_str / load_dir
-      - verctl status
+      - src/fragment.rs (BOM/CRLF normalize, skip README, fail closed)
+      - verctl status and verctl check
       - tests/fragment.rs and tests/status.rs
