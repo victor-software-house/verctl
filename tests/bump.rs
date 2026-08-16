@@ -166,7 +166,7 @@ fn prepare_applies_max_bump_across_fragments() {
     assert_eq!(plan[0].from, "1.2.3");
     assert_eq!(plan[0].to, "1.3.0");
     let follow = prepare::apply_plan(&plan).expect("apply");
-    assert_eq!(follow, ["cargo generate-lockfile"]);
+    assert!(follow.is_empty(), "{follow:?}");
     let after = fs::read_to_string(root.path().join("Cargo.toml")).expect("read");
     assert!(after.contains("version = \"1.3.0\""));
 }

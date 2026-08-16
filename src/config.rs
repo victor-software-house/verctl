@@ -63,6 +63,10 @@ impl DriverSpec {
             after: self.after,
         })
     }
+
+    fn is_declared(&self) -> bool {
+        self.format.is_some() || self.keys.is_some() || self.read.is_some() || self.write.is_some()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -70,24 +74,14 @@ pub struct PackageSpec {
     pub name: String,
     pub path: PathBuf,
     pub driver: Option<String>,
-    pub format: Option<String>,
-    pub keys: Option<Vec<String>>,
-    pub read: Option<CommandField>,
-    pub write: Option<CommandField>,
-    pub after: Option<String>,
+    #[serde(flatten)]
+    pub spec: DriverSpec,
 }
 
 impl PackageSpec {
     pub fn resolve(&self, config: &Config) -> Result<Driver> {
-        if self.read.is_some() || self.write.is_some() || self.format.is_some() {
-            return DriverSpec {
-                format: self.format.clone(),
-                keys: self.keys.clone(),
-                read: self.read.clone(),
-                write: self.write.clone(),
-                after: self.after.clone(),
-            }
-            .into_driver(&self.name);
+        if self.spec.is_declared() {
+            return self.spec.clone().into_driver(&self.name);
         }
         if let Some(name) = &self.driver {
             return config.driver(name);
@@ -97,14 +91,15 @@ impl PackageSpec {
 }
 
 fn infer_driver(path: &Path) -> Result<Driver> {
-    match path.file_name().and_then(|name| name.to_str()) {
-        Some("Cargo.toml") => Ok(Driver::cargo()),
-        Some("package.json") => Ok(Driver::npm()),
-        _ => bail!(
-            "cannot infer driver from {} (set driver, format+keys, or read+write)",
-            path.display()
-        ),
-    }
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .with_context(|| format!("invalid path {}", path.display()))?;
+    let name = crate::generated::infer_name(file_name).with_context(|| {
+        format!("cannot infer driver from {file_name} (set driver, format+keys, or read+write)")
+    })?;
+    crate::generated::stock(name)
+        .with_context(|| format!("stock driver {name:?} missing from generated table"))
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -133,15 +128,9 @@ impl Config {
     }
 
     pub fn driver(&self, name: &str) -> Result<Driver> {
-        match name {
-            "cargo" => Ok(Driver::cargo()),
-            "npm" | "bun" => Ok(Driver::npm()),
-            other => self
-                .drivers
-                .get(other)
-                .cloned()
-                .with_context(|| format!("unknown driver {other:?}"))?
-                .into_driver(other),
+        if let Some(spec) = self.drivers.get(name) {
+            return spec.clone().into_driver(name);
         }
+        crate::generated::stock(name).with_context(|| format!("unknown driver {name:?}"))
     }
 }

@@ -108,7 +108,6 @@ fn prepare_cli_writes_cargo() {
     );
     let cargo = fs::read_to_string(root.path().join("Cargo.toml")).expect("read");
     assert!(cargo.contains("version = \"1.0.1\""), "{cargo}");
-    assert!(String::from_utf8_lossy(&output.stdout).contains("cargo generate-lockfile"));
 }
 
 #[test]

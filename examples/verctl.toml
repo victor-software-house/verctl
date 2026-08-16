@@ -4,12 +4,11 @@
 [drivers.cargo]
 format = "toml"
 keys = ["workspace.package.version", "package.version"]
-after = "cargo generate-lockfile"
 
 [drivers.npm]
 format = "json"
 keys = ["version"]
-after = "bun install"
+# after = "npm install"   # or bun / pnpm / a mise task
 
 # String form is a mise task (no shell):
 # read = "ver-read-version"

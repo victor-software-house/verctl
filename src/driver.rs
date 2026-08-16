@@ -35,20 +35,12 @@ pub enum CommandSpec {
 impl Driver {
     #[must_use]
     pub fn cargo() -> Self {
-        Self::Path {
-            format: Format::Toml,
-            keys: vec!["workspace.package.version".into(), "package.version".into()],
-            after: Some("cargo generate-lockfile".into()),
-        }
+        crate::generated::stock("cargo").unwrap_or_else(|| unreachable!("stock cargo"))
     }
 
     #[must_use]
     pub fn npm() -> Self {
-        Self::Path {
-            format: Format::Json,
-            keys: vec!["version".into()],
-            after: Some("bun install".into()),
-        }
+        crate::generated::stock("npm").unwrap_or_else(|| unreachable!("stock npm"))
     }
 
     #[must_use]
