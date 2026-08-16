@@ -4,7 +4,6 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
@@ -65,6 +64,25 @@ impl DriverSpec {
         })
     }
 
+    fn stock(name: &str) -> Option<Self> {
+        match name {
+            "cargo" => Some(Self {
+                format: Some("toml".into()),
+                keys: Some(vec![
+                    "workspace.package.version".into(),
+                    "package.version".into(),
+                ]),
+                ..Self::default()
+            }),
+            "npm" => Some(Self {
+                format: Some("json".into()),
+                keys: Some(vec!["version".into()]),
+                ..Self::default()
+            }),
+            _ => None,
+        }
+    }
+
     fn merge(self, over: Self) -> Self {
         Self {
             format: over.format.or(self.format),
@@ -91,7 +109,7 @@ impl PackageSpec {
             .path
             .file_name()
             .and_then(|name| name.to_str())
-            .and_then(infer_stock_name);
+            .and_then(stock_name_for_file);
         let driver_name = self.driver.as_deref().or(inferred);
         let mut spec = driver_name
             .and_then(|name| config.driver_spec(name))
