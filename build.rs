@@ -52,6 +52,22 @@ fn render(parsed: &toml::Value) -> String {
     }
     rust.push_str("        _ => None,\n    }\n}\n\n");
     rust.push_str(
+        "pub fn stock_keys(name: &str) -> Option<(&'static str, &'static [&'static str])> {\n    match name {\n",
+    );
+    for (name, spec) in drivers {
+        let format = spec.get("format").and_then(toml::Value::as_str).unwrap();
+        let keys = spec.get("keys").and_then(toml::Value::as_array).unwrap();
+        let key_lits: Vec<String> = keys
+            .iter()
+            .map(|key| format!("\"{}\"", key.as_str().unwrap()))
+            .collect();
+        rust.push_str(&format!(
+            "        \"{name}\" => Some((\"{format}\", &[{}])),\n",
+            key_lits.join(", ")
+        ));
+    }
+    rust.push_str("        _ => None,\n    }\n}\n\n");
+    rust.push_str(
         "pub fn infer_name(file_name: &str) -> Option<&'static str> {\n    match file_name {\n",
     );
     let Some(names) = parsed.get("filenames").and_then(toml::Value::as_table) else {

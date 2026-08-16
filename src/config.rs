@@ -29,7 +29,7 @@ impl CommandField {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct DriverSpec {
     pub format: Option<String>,
     pub keys: Option<Vec<String>>,
@@ -64,8 +64,25 @@ impl DriverSpec {
         })
     }
 
-    fn is_declared(&self) -> bool {
-        self.format.is_some() || self.keys.is_some() || self.read.is_some() || self.write.is_some()
+    fn merge(self, over: Self) -> Self {
+        Self {
+            format: over.format.or(self.format),
+            keys: over.keys.or(self.keys),
+            read: over.read.or(self.read),
+            write: over.write.or(self.write),
+            after: over.after.or(self.after),
+        }
+    }
+
+    fn from_stock(name: &str) -> Option<Self> {
+        let (format, keys) = crate::generated::stock_keys(name)?;
+        Some(Self {
+            format: Some(format.to_owned()),
+            keys: Some(keys.iter().map(|key| (*key).to_owned()).collect()),
+            read: None,
+            write: None,
+            after: None,
+        })
     }
 }
 
@@ -79,27 +96,22 @@ pub struct PackageSpec {
 }
 
 impl PackageSpec {
-    pub fn resolve(&self, config: &Config) -> Result<Driver> {
-        if self.spec.is_declared() {
-            return self.spec.clone().into_driver(&self.name);
+    pub fn resolve(&self, config: &Config, root: &Path) -> Result<Driver> {
+        let inferred = self
+            .path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(crate::generated::infer_name);
+        let driver_name = self.driver.as_deref().or(inferred);
+        let mut spec = driver_name
+            .and_then(|name| config.driver_spec(name))
+            .unwrap_or_default();
+        spec = spec.merge(self.spec.clone());
+        if spec.after.is_none() {
+            spec.after = crate::detect::follow_up(&root.join(&self.path));
         }
-        if let Some(name) = &self.driver {
-            return config.driver(name);
-        }
-        infer_driver(&self.path)
+        spec.into_driver(driver_name.unwrap_or(self.name.as_str()))
     }
-}
-
-fn infer_driver(path: &Path) -> Result<Driver> {
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .with_context(|| format!("invalid path {}", path.display()))?;
-    let name = crate::generated::infer_name(file_name).with_context(|| {
-        format!("cannot infer driver from {file_name} (set driver, format+keys, or read+write)")
-    })?;
-    crate::generated::stock(name)
-        .with_context(|| format!("stock driver {name:?} missing from generated table"))
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -127,10 +139,13 @@ impl Config {
             .with_context(|| format!("package {name:?} is not in verctl config"))
     }
 
-    pub fn driver(&self, name: &str) -> Result<Driver> {
-        if let Some(spec) = self.drivers.get(name) {
-            return spec.clone().into_driver(name);
-        }
-        crate::generated::stock(name).with_context(|| format!("unknown driver {name:?}"))
+    #[must_use]
+    pub fn driver_spec(&self, name: &str) -> Option<DriverSpec> {
+        let stock = DriverSpec::from_stock(name).unwrap_or_default();
+        Some(match self.drivers.get(name) {
+            Some(over) => stock.merge(over.clone()),
+            None if crate::generated::stock_keys(name).is_some() => stock,
+            None => return None,
+        })
     }
 }

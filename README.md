@@ -89,12 +89,13 @@ Cargo and npm are stock drivers, not a separate code path.
 [drivers.cargo]
 format = "toml"
 keys = ["workspace.package.version", "package.version"]
-# after = "cargo generate-lockfile"   # you choose
+# after is optional. If omitted, verctl looks at lockfiles /
+# packageManager (bun, pnpm, yarn, npm) and Cargo.lock.
 
 [drivers.npm]
 format = "json"
 keys = ["version"]
-# after = "npm install"               # or bun / pnpm / mise run install
+# after = "mise run install"          # overrides detection
 
 [[packages]]
 name = "verctl"

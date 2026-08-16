@@ -217,6 +217,115 @@ fn declared_toml_keys_are_the_same_as_cargo() {
 }
 
 #[test]
+fn detects_bun_from_lockfile() {
+    let root = TempDir::new().expect("tmp");
+    fs::write(
+        root.path().join("verctl.toml"),
+        indoc! {r#"
+            [[packages]]
+            name = "app"
+            path = "package.json"
+        "#},
+    )
+    .expect("cfg");
+    fs::write(
+        root.path().join("package.json"),
+        indoc! {r#"
+            { "name": "app", "version": "1.0.0" }
+        "#},
+    )
+    .expect("pkg");
+    fs::write(root.path().join("bun.lock"), "{}\n").expect("lock");
+    let config = Config::load(&root.path().join("verctl.toml")).expect("load");
+    let fragment = parse_str(
+        indoc! {"
+            ---
+            app: patch
+            ---
+
+            Patch.
+        "},
+        "a.md",
+    )
+    .expect("frag");
+    let plan = prepare::plan(&config, &[fragment], root.path()).expect("plan");
+    assert_eq!(plan[0].driver.after(), Some("bun install"));
+}
+
+#[test]
+fn detects_pnpm_from_lockfile() {
+    let root = TempDir::new().expect("tmp");
+    fs::write(
+        root.path().join("verctl.toml"),
+        indoc! {r#"
+            [[packages]]
+            name = "app"
+            path = "package.json"
+        "#},
+    )
+    .expect("cfg");
+    fs::write(
+        root.path().join("package.json"),
+        indoc! {r#"
+            { "name": "app", "version": "1.0.0" }
+        "#},
+    )
+    .expect("pkg");
+    fs::write(root.path().join("pnpm-lock.yaml"), "lockfileVersion: '9'\n").expect("lock");
+    let config = Config::load(&root.path().join("verctl.toml")).expect("load");
+    let fragment = parse_str(
+        indoc! {"
+            ---
+            app: patch
+            ---
+
+            Patch.
+        "},
+        "a.md",
+    )
+    .expect("frag");
+    let plan = prepare::plan(&config, &[fragment], root.path()).expect("plan");
+    assert_eq!(plan[0].driver.after(), Some("pnpm install"));
+}
+
+#[test]
+fn package_after_overrides_detection() {
+    let root = TempDir::new().expect("tmp");
+    fs::write(
+        root.path().join("verctl.toml"),
+        indoc! {r#"
+            [[packages]]
+            name = "app"
+            path = "package.json"
+            after = "mise run install"
+        "#},
+    )
+    .expect("cfg");
+    fs::write(
+        root.path().join("package.json"),
+        indoc! {r#"
+            { "name": "app", "version": "1.0.0" }
+        "#},
+    )
+    .expect("pkg");
+    fs::write(root.path().join("bun.lock"), "{}\n").expect("lock");
+    let config = Config::load(&root.path().join("verctl.toml")).expect("load");
+    let fragment = parse_str(
+        indoc! {"
+            ---
+            app: patch
+            ---
+
+            Patch.
+        "},
+        "a.md",
+    )
+    .expect("frag");
+    let plan = prepare::plan(&config, &[fragment], root.path()).expect("plan");
+    assert_eq!(plan[0].driver.after(), Some("mise run install"));
+}
+
+#[test]
 fn argv_driver_reads_and_writes_without_a_shell() {
     let driver = Driver::Command {
         read: verctl::driver::CommandSpec::Argv(vec!["tr".into(), "-d".into(), "\n".into()]),
