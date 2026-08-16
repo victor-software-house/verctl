@@ -26,8 +26,7 @@ replaces it). Templates are **Go `text/template`** (chezmoi-style). Defaults:
 `internalAuthors` is matched against the GitHub login resolved from the
 commit. Those logins get no byline. Everyone else does.
 
-Consumers may override the two `.tmpl` paths. Defaults match
-greenfield-release / pi-stuff output:
+Consumers may override the two `.tmpl` paths. Default output:
 
 | Case | Output |
 |:--|:--|
