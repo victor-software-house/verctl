@@ -49,12 +49,12 @@ queue:
       consumes fragments and commits versions plus CHANGELOG.
     blocked_by: [VER-002, VER-003]
     acceptance:
-      - No PAT. Allow GitHub Actions to create PRs.
+      - "No PAT. Allow GitHub Actions to create PRs."
       - Fragments are deleted by consume, same as changeset version.
       - Local prepare is possible; the happy path is CI.
 
   - id: VER-005
-    title: Publish native verctl so mise github: can install it
+    title: "Publish native verctl so mise github: can install it"
     scope: release
     outcome: crates.io plus darwin-arm64 and linux-x64 assets.
     blocked_by: [VER-001]
