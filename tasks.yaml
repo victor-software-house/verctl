@@ -1,43 +1,16 @@
 # yaml-language-server: $schema=https://github.com/victor-software-house/qctl/releases/download/v0.0.1/tasks.schema.json
 schema_version: 1
 prefix: VER
-active: VER-001
+active: VER-003
 
 queue:
-  - id: VER-001
-    title: Parse Changesets YAML fragments (quoted and unquoted)
-    scope: verctl
-    outcome: >-
-      verctl reads .changeset/*.md via YAML, not a line splitter, and
-      reports pending packages and max bumps.
-    blocked_by: []
-    acceptance:
-      - Mixed quoted npm names and unquoted crate names parse in one file.
-      - major, minor, patch, and none are accepted.
-      - Invalid YAML or unknown bump types fail closed.
-
-  - id: VER-002
-    title: Render changelogs with minijinja
-    scope: verctl
-    outcome: >-
-      Defaults are Jinja2 templates rendered by minijinja 2.x. Author
-      filtering is in the adapter (internalAuthors). Repos may override
-      the two .jinja paths.
-    blocked_by: [VER-001]
-    acceptance:
-      - Internal PR, external PR, commit fallback, and no-link cases match the README output table.
-      - Continuations indent by two spaces. No Thanks line. PR over SHA, never both.
-      - internalAuthors omits the byline; everyone else gets by [@user](url).
-      - dependency-changelog.jinja renders the Updated dependencies list.
-      - Engine is minijinja 2.x, not a Go-template port and not compile-time Askama.
-
   - id: VER-003
     title: Write Cargo.toml and package.json versions
     scope: verctl
     outcome: >-
       prepare bumps declared version files. Cargo.lock is refreshed.
       A package.json writer exists. Surgical TOML edits keep comments.
-    blocked_by: [VER-001]
+    blocked_by: []
     acceptance:
       - A Cargo workspace [workspace.package].version bump is the default Rust path.
       - A package.json version bump is the default JS path.
@@ -49,7 +22,7 @@ queue:
     outcome: >-
       GitHub Actions (GITHUB_TOKEN) opens one prepare-release PR that
       consumes fragments and commits versions plus CHANGELOG.
-    blocked_by: [VER-002, VER-003]
+    blocked_by: [VER-003]
     acceptance:
       - "No PAT. Allow GitHub Actions to create PRs."
       - Fragments are deleted by consume, same as changeset version.
@@ -60,7 +33,7 @@ queue:
     title: "Publish native verctl so mise github: can install it"
     scope: release
     outcome: crates.io plus darwin-arm64 and linux-x64 assets.
-    blocked_by: [VER-001]
+    blocked_by: []
     acceptance:
       - cargo install verctl works.
       - mise x github:victor-software-house/verctl@<tag> -- verctl --version works.
@@ -80,4 +53,28 @@ horizon:
     outcome: A publish verb runs after the Version PR merges.
     open: Trusted Publishing and bun publish paths are a later slice.
 
-archive: []
+archive:
+  - id: VER-002
+    title: Render changelogs with minijinja
+    scope: verctl
+    completed: 2026-08-16
+    disposition: completed
+    outcome: >-
+      Defaults are Jinja2 templates rendered by minijinja 2.x. Author
+      filtering is in the adapter.
+    evidence:
+      - templates/changelog.jinja and dependency-changelog.jinja
+      - tests/changelog.rs goldens via indoc for the four README cases plus dependencies
+
+  - id: VER-001
+    title: Parse Changesets YAML fragments (quoted and unquoted)
+    scope: verctl
+    completed: 2026-08-16
+    disposition: completed
+    outcome: >-
+      verctl reads .changeset/*.md via YAML and reports pending packages
+      and max bumps.
+    evidence:
+      - src/fragment.rs parse_str / load_dir
+      - verctl status
+      - tests/fragment.rs and tests/status.rs
