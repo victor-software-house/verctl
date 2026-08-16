@@ -37,7 +37,7 @@ fn cargo_workspace_keeps_comments() {
         [workspace]
         members = ["crates/app"]
     "#};
-    let driver = Driver::cargo();
+    let driver = Driver::cargo().expect("cargo");
     let next = driver.write(raw, "0.0.22").expect("write");
     assert!(next.contains("# keep me"), "{next}");
     assert!(next.contains("edition = \"2024\""), "{next}");
@@ -52,7 +52,7 @@ fn cargo_package_table() {
         name = "demo"
         version = "1.0.0"
     "#};
-    let driver = Driver::cargo();
+    let driver = Driver::cargo().expect("cargo");
     let next = driver.write(raw, "1.0.1").expect("write");
     assert_eq!(driver.read(&next).expect("read"), "1.0.1");
     assert!(next.contains("name = \"demo\""));
@@ -67,7 +67,10 @@ fn npm_replaces_only_the_version_string() {
           "private": true
         }
     "#};
-    let next = Driver::npm().write(raw, "2.1.0").expect("write");
+    let next = Driver::npm()
+        .expect("npm")
+        .write(raw, "2.1.0")
+        .expect("write");
     assert_eq!(
         next,
         indoc! {r#"

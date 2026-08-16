@@ -4,6 +4,7 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
@@ -73,17 +74,6 @@ impl DriverSpec {
             after: over.after.or(self.after),
         }
     }
-
-    fn from_stock(name: &str) -> Option<Self> {
-        let (format, keys) = crate::generated::stock_keys(name)?;
-        Some(Self {
-            format: Some(format.to_owned()),
-            keys: Some(keys.iter().map(|key| (*key).to_owned()).collect()),
-            read: None,
-            write: None,
-            after: None,
-        })
-    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -101,7 +91,7 @@ impl PackageSpec {
             .path
             .file_name()
             .and_then(|name| name.to_str())
-            .and_then(crate::generated::infer_name);
+            .and_then(infer_stock_name);
         let driver_name = self.driver.as_deref().or(inferred);
         let mut spec = driver_name
             .and_then(|name| config.driver_spec(name))
@@ -141,11 +131,39 @@ impl Config {
 
     #[must_use]
     pub fn driver_spec(&self, name: &str) -> Option<DriverSpec> {
-        let stock = DriverSpec::from_stock(name).unwrap_or_default();
-        Some(match self.drivers.get(name) {
-            Some(over) => stock.merge(over.clone()),
-            None if crate::generated::stock_keys(name).is_some() => stock,
-            None => return None,
-        })
+        let stock = stock_file().drivers.get(name).cloned();
+        match (stock, self.drivers.get(name)) {
+            (Some(stock), Some(over)) => Some(stock.merge(over.clone())),
+            (Some(stock), None) => Some(stock),
+            (None, Some(over)) => Some(over.clone()),
+            (None, None) => None,
+        }
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct StockFile {
+    drivers: BTreeMap<String, DriverSpec>,
+    filenames: BTreeMap<String, String>,
+}
+
+fn stock_file() -> &'static StockFile {
+    static STOCK: OnceLock<StockFile> = OnceLock::new();
+    STOCK.get_or_init(|| {
+        toml::from_str(include_str!("../drivers.toml"))
+            .unwrap_or_else(|error| panic!("drivers.toml is invalid: {error}"))
+    })
+}
+
+fn infer_stock_name(file_name: &str) -> Option<&str> {
+    stock_file().filenames.get(file_name).map(String::as_str)
+}
+
+pub(crate) fn stock_driver(name: &str) -> Result<Driver> {
+    stock_file()
+        .drivers
+        .get(name)
+        .cloned()
+        .with_context(|| format!("unknown stock driver {name:?}"))?
+        .into_driver(name)
 }

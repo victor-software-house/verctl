@@ -9,7 +9,3 @@ pub mod detect;
 pub mod driver;
 pub mod fragment;
 pub mod prepare;
-
-mod generated {
-    include!(concat!(env!("OUT_DIR"), "/generated.rs"));
-}

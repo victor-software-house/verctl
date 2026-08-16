@@ -33,14 +33,12 @@ pub enum CommandSpec {
 }
 
 impl Driver {
-    #[must_use]
-    pub fn cargo() -> Self {
-        crate::generated::stock("cargo").unwrap_or_else(|| unreachable!("stock cargo"))
+    pub fn cargo() -> Result<Self> {
+        crate::config::stock_driver("cargo")
     }
 
-    #[must_use]
-    pub fn npm() -> Self {
-        crate::generated::stock("npm").unwrap_or_else(|| unreachable!("stock npm"))
+    pub fn npm() -> Result<Self> {
+        crate::config::stock_driver("npm")
     }
 
     #[must_use]
