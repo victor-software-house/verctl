@@ -149,8 +149,7 @@ impl Config {
 
     #[must_use]
     pub fn driver_spec(&self, name: &str) -> Option<DriverSpec> {
-        let stock = stock_file().drivers.get(name).cloned();
-        match (stock, self.drivers.get(name)) {
+        match (DriverSpec::stock(name), self.drivers.get(name)) {
             (Some(stock), Some(over)) => Some(stock.merge(over.clone())),
             (Some(stock), None) => Some(stock),
             (None, Some(over)) => Some(over.clone()),
@@ -159,32 +158,16 @@ impl Config {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct StockFile {
-    drivers: BTreeMap<String, DriverSpec>,
-    filenames: BTreeMap<String, String>,
-}
-
-fn stock_file() -> &'static StockFile {
-    static STOCK: OnceLock<StockFile> = OnceLock::new();
-    STOCK.get_or_init(|| {
-        toml::from_str(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/drivers.toml"
-        )))
-        .unwrap_or_else(|error| panic!("drivers.toml is invalid: {error}"))
-    })
-}
-
-fn infer_stock_name(file_name: &str) -> Option<&str> {
-    stock_file().filenames.get(file_name).map(String::as_str)
+fn stock_name_for_file(file_name: &str) -> Option<&'static str> {
+    match file_name {
+        "Cargo.toml" => Some("cargo"),
+        "package.json" => Some("npm"),
+        _ => None,
+    }
 }
 
 pub(crate) fn stock_driver(name: &str) -> Result<Driver> {
-    stock_file()
-        .drivers
-        .get(name)
-        .cloned()
+    DriverSpec::stock(name)
         .with_context(|| format!("unknown stock driver {name:?}"))?
         .into_driver(name)
 }
