@@ -1,0 +1,11 @@
+min_version = "2026.7.7"
+
+[settings]
+experimental = true
+lockfile = true
+
+[task_config]
+includes = [
+  "git::https://github.com/victor-software-house/verctl.git//tasks/ver?ref=v0.0.0",
+  "mise-tasks",
+]

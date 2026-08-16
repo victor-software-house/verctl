@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=https://github.com/victor-software-house/qctl/releases/download/v0.0.1/tasks.schema.json
+schema_version: 1
+prefix: VER
+active: VER-001
+
+queue:
+  - id: VER-001
+    title: Parse Changesets YAML fragments (quoted and unquoted)
+    scope: verctl
+    outcome: >-
+      verctl reads .changeset/*.md via YAML, not a line splitter, and
+      reports pending packages and max bumps.
+    blocked_by: []
+    acceptance:
+      - Mixed quoted npm names and unquoted crate names parse in one file.
+      - major, minor, patch, and none are accepted.
+      - Invalid YAML or unknown bump types fail closed.
+
+  - id: VER-002
+    title: Render changelogs through Liquid templates
+    scope: verctl
+    outcome: >-
+      Default templates match greenfield-release / pi-stuff output.
+      Repos can override the two .liquid paths. No Markdown is assembled
+      in Rust beyond the typed Liquid context.
+    blocked_by: [VER-001]
+    acceptance:
+      - Internal PR, external PR, commit fallback, and no-link cases match the greenfield-release table.
+      - Continuations indent by two spaces. No Thanks line. PR over SHA, never both.
+      - dependency-changelog.liquid renders the Updated dependencies list.
+
+  - id: VER-003
+    title: Write Cargo.toml and package.json versions
+    scope: verctl
+    outcome: >-
+      prepare bumps declared version files. Cargo.lock is refreshed.
+      A package.json writer exists. Surgical TOML edits keep comments.
+    blocked_by: [VER-001]
+    acceptance:
+      - A Cargo workspace [workspace.package].version bump is the default Rust path.
+      - A package.json version bump is the default JS path.
+      - 0.x rejects a major fragment.
+
+  - id: VER-004
+    title: Open or update the Version PR
+    scope: verctl
+    outcome: >-
+      GitHub Actions (GITHUB_TOKEN) opens one prepare-release PR that
+      consumes fragments and commits versions plus CHANGELOG.
+    blocked_by: [VER-002, VER-003]
+    acceptance:
+      - No PAT. Allow GitHub Actions to create PRs.
+      - Fragments are deleted by consume, same as changeset version.
+      - Local prepare is possible; the happy path is CI.
+
+  - id: VER-005
+    title: Publish native verctl so mise github: can install it
+    scope: release
+    outcome: crates.io plus darwin-arm64 and linux-x64 assets.
+    blocked_by: [VER-001]
+    acceptance:
+      - cargo install verctl works.
+      - mise x github:victor-software-house/verctl@<tag> -- verctl --version works.
+
+horizon:
+  - id: VER-006
+    title: Conventional Commits synthesize the same fragments
+    scope: verctl
+    kind: deferred
+    outcome: An opt-in mode writes .changeset/*.md from commit types.
+    open: Fragment consume and Version PR must exist first. Default stays off.
+
+  - id: VER-007
+    title: OIDC publish backends for cargo and bun
+    scope: verctl
+    kind: deferred
+    outcome: A publish verb runs after the Version PR merges.
+    open: Trusted Publishing and bun publish paths are a later slice.
+
+archive: []

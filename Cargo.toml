@@ -1,0 +1,29 @@
+[package]
+name = "verctl"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.97.1"
+description = "Stack-agnostic version PRs from Changesets-format fragments"
+license = "MIT"
+repository = "https://github.com/victor-software-house/verctl"
+homepage = "https://github.com/victor-software-house/verctl"
+readme = "README.md"
+keywords = ["version", "changelog", "mise", "changeset", "release"]
+categories = ["command-line-utilities", "development-tools"]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+
+[dependencies]
+anyhow = "1.0.100"
+clap = { version = "4.6.5", features = ["derive"] }
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+panic = "abort"
+strip = "symbols"

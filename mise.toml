@@ -1,0 +1,15 @@
+min_version = "2026.7.7"
+
+[settings]
+lockfile = true
+
+[tools]
+rust = "1.97.1"
+
+[tasks.verify]
+description = "Format, lint, and test"
+run = "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test --all-features"
+
+[tasks.build]
+description = "Build the release binary"
+run = "cargo build --release"
