@@ -590,6 +590,7 @@ dependencies = [
  "indoc",
  "jsonc-parser",
  "minijinja",
+ "os_pipe",
  "semver",
  "serde",
  "serde_json",
