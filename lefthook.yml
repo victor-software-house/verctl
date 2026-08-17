@@ -1,0 +1,21 @@
+pre-commit:
+  skip:
+    - run: test -n "$CI"
+  commands:
+    format:
+      glob: "**/*.rs"
+      run: mise run format
+
+commit-msg:
+  skip:
+    - run: test -n "$CI"
+  commands:
+    conventional:
+      run: mise run commitlint -- {1}
+
+pre-push:
+  skip:
+    - run: test -n "$CI"
+  commands:
+    verify:
+      run: mise run verify
