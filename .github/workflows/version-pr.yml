@@ -13,6 +13,7 @@ env:
   GIT_CONFIG_KEY_0: init.defaultBranch
   GIT_CONFIG_VALUE_0: main
   MISE_ENV: dev
+  CARGO_TARGET_DIR: ${{ runner.temp }}/cargo-target
 
 concurrency:
   group: version-pr-${{ github.ref }}
