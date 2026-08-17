@@ -1,5 +1,5 @@
 ---
-verctl: minor
+verctl: patch
 ---
 
 Runners are configuration. A machine is declared once as `[runners.NAME]` with
