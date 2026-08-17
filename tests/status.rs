@@ -42,7 +42,13 @@ fn check_fails_closed_on_bad_fragment() {
     let root = TempDir::new().expect("tempdir");
     let dir = root.path().join(".changeset");
     fs::create_dir_all(&dir).expect("dir");
-    fs::write(dir.join("bad.md"), "nope\n").expect("write");
+    fs::write(
+        dir.join("bad.md"),
+        indoc! {"
+            nope
+        "},
+    )
+    .expect("write");
     let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
         .args(["check", "-d"])
         .arg(&dir)
@@ -53,6 +59,114 @@ fn check_fails_closed_on_bad_fragment() {
         String::from_utf8_lossy(&output.stderr).contains("must start with ---")
             || String::from_utf8_lossy(&output.stderr).contains("changeset")
     );
+}
+
+#[test]
+fn prepare_cli_writes_cargo() {
+    use std::process::Command;
+    let root = TempDir::new().expect("tmp");
+    fs::write(
+        root.path().join("verctl.toml"),
+        indoc! {r#"
+            [[packages]]
+            name = "demo"
+            path = "Cargo.toml"
+        "#},
+    )
+    .expect("cfg");
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.0.0"
+        "#},
+    )
+    .expect("cargo");
+    let changes = root.path().join(".changeset");
+    fs::create_dir_all(&changes).expect("dir");
+    fs::write(
+        changes.join("bump.md"),
+        indoc! {"
+            ---
+            demo: patch
+            ---
+
+            Patch.
+        "},
+    )
+    .expect("frag");
+    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+        .current_dir(root.path())
+        .args(["prepare"])
+        .output()
+        .expect("spawn");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let cargo = fs::read_to_string(root.path().join("Cargo.toml")).expect("read");
+    assert!(cargo.contains("version = \"1.0.1\""), "{cargo}");
+}
+
+#[test]
+fn prepare_no_pr_still_writes() {
+    let root = TempDir::new().expect("tmp");
+    fs::write(
+        root.path().join("verctl.toml"),
+        indoc! {r#"
+            [[packages]]
+            name = "demo"
+            path = "Cargo.toml"
+        "#},
+    )
+    .expect("cfg");
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.0.0"
+        "#},
+    )
+    .expect("cargo");
+    let changes = root.path().join(".changeset");
+    fs::create_dir_all(&changes).expect("dir");
+    fs::write(
+        changes.join("bump.md"),
+        indoc! {"
+            ---
+            demo: patch
+            ---
+
+            Patch.
+        "},
+    )
+    .expect("frag");
+    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+        .current_dir(root.path())
+        .args(["prepare", "--no-pr"])
+        .output()
+        .expect("spawn");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let cargo = fs::read_to_string(root.path().join("Cargo.toml")).expect("read");
+    assert!(cargo.contains("version = \"1.0.1\""), "{cargo}");
+}
+
+#[test]
+fn prepare_pr_fails_closed() {
+    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+        .args(["prepare", "--pr"])
+        .output()
+        .expect("spawn");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("not implemented yet"), "{stderr}");
 }
 
 #[test]

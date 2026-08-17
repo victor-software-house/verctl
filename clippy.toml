@@ -1,0 +1,8 @@
+msrv = "1.97.1"
+avoid-breaking-exported-api = false
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+disallowed-macros = [
+    { path = "core::concat", reason = "use indoc for multiline strings" },
+    { path = "std::concat", reason = "use indoc for multiline strings" },
+]

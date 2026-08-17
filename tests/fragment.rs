@@ -4,7 +4,10 @@ use tempfile::TempDir;
 use verctl::fragment::{Bump, load_dir, parse_str};
 
 fn err_text(result: anyhow::Result<impl std::fmt::Debug>) -> String {
-    format!("{:#}", result.expect_err("expected error"))
+    match result {
+        Ok(value) => panic!("expected error, got {value:?}"),
+        Err(error) => format!("{error:#}"),
+    }
 }
 
 #[test]

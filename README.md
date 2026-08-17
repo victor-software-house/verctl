@@ -82,11 +82,39 @@ byline. Everyone else does.
 
 ## Version files
 
-Planned batteries (not shipped yet):
+`verctl prepare` applies fragment bumps through **drivers**.
+Local writes are the default. `--pr` is reserved and fails closed
+until the Version PR slice lands. `--no-pr` is the explicit default.
+Cargo and npm are stock drivers, not a separate code path.
 
-- Rust: `Cargo.toml` (`[workspace.package].version` or `[package].version`)
-  plus `Cargo.lock`
-- JS: `package.json` plus the repo's lockfile task
+```toml
+[drivers.cargo]
+format = "toml"
+keys = ["workspace.package.version", "package.version"]
+# after is optional. If omitted, verctl looks at lockfiles /
+# packageManager (bun, pnpm, yarn, npm) and Cargo.lock.
+
+[drivers.npm]
+format = "json"
+keys = ["version"]
+# after = "mise run install"          # overrides detection
+
+[[packages]]
+name = "verctl"
+path = "Cargo.toml"
+# driver = "cargo"   # inferred from the file name
+
+[[packages]]
+name = "other"
+path = "VERSION"
+read = "ver-read-version"          # mise run ver-read-version
+write = ["printenv", "VERCTL_VERSION"]
+```
+
+A string is a **mise task**. An array is execvp (no shell).
+Stdin is the file. Write drivers also get `VERCTL_VERSION`.
+Stdout is the version (read) or the new file (write).
+`after` is printed, not run.
 
 `0.x` rejects a `major` fragment.
 
