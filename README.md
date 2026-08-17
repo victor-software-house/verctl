@@ -82,7 +82,9 @@ byline. Everyone else does.
 
 ## Version files
 
-`verctl prepare --no-pr` applies fragment bumps through **drivers**.
+`verctl prepare` applies fragment bumps through **drivers**.
+Local writes are the default. `--pr` is reserved and fails closed
+until the Version PR slice lands. `--no-pr` is the explicit default.
 Cargo and npm are stock drivers, not a separate code path.
 
 ```toml

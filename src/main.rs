@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::Parser;
 use std::io::{self, Write};
 use std::path::Path;
@@ -36,7 +36,9 @@ fn run() -> Result<()> {
 }
 
 fn prepare_local(args: &PrepareArgs) -> Result<()> {
-    let _ = args.no_pr;
+    if args.open_pr() {
+        bail!("prepare --pr is not implemented yet; omit it (or pass --no-pr) for local writes");
+    }
     let config = Config::load(&args.config)?;
     let fragments = fragment::load_dir(&args.dir)?;
     let root = args

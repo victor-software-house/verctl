@@ -42,7 +42,64 @@ pub struct PrepareArgs {
     /// Print the plan and leave files alone.
     #[arg(long)]
     pub dry_run: bool,
-    /// Local only. The Version PR lands in a later slice.
-    #[arg(long, default_value_t = true)]
+    /// Open or update the Version PR. Not implemented yet; fails closed.
+    #[arg(long, overrides_with = "no_pr")]
+    pub pr: bool,
+    /// Write files only. This is the default. Opposite of --pr.
+    #[arg(long, overrides_with = "pr")]
     pub no_pr: bool,
+}
+
+impl PrepareArgs {
+    /// `true` when the operator asked to open a Version PR.
+    #[must_use]
+    pub fn open_pr(&self) -> bool {
+        self.pr
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Cli, Command};
+    use clap::Parser;
+
+    fn prepare_from(args: &[&str]) -> super::PrepareArgs {
+        let mut words = vec!["verctl", "prepare"];
+        words.extend_from_slice(args);
+        match Cli::try_parse_from(words).expect("parse") {
+            Cli {
+                command: Command::Prepare(args),
+            } => args,
+            _ => panic!("expected prepare"),
+        }
+    }
+
+    #[test]
+    fn prepare_defaults_to_local() {
+        let args = prepare_from(&[]);
+        assert!(!args.open_pr());
+        assert!(!args.no_pr);
+        assert!(!args.pr);
+    }
+
+    #[test]
+    fn prepare_no_pr_is_local() {
+        let args = prepare_from(&["--no-pr"]);
+        assert!(!args.open_pr());
+        assert!(args.no_pr);
+    }
+
+    #[test]
+    fn prepare_pr_is_settable() {
+        let args = prepare_from(&["--pr"]);
+        assert!(args.open_pr());
+        assert!(args.pr);
+        assert!(!args.no_pr);
+    }
+
+    #[test]
+    fn last_pr_flag_wins() {
+        assert!(!prepare_from(&["--pr", "--no-pr"]).open_pr());
+        assert!(prepare_from(&["--no-pr", "--pr"]).open_pr());
+    }
 }
