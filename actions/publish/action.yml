@@ -1,7 +1,7 @@
 name: verctl publish
 description: >-
   After the Version PR merges, publish cargo and bun packages and open
-  the GitHub Release from a pinned released verctl tarball.
+  the GitHub Release. Requires `verctl` on PATH.
 author: victor-software-house
 branding:
   icon: package
@@ -20,10 +20,6 @@ inputs:
     description: Preview only. Set to `true` to skip cargo/bun/GitHub.
     required: false
     default: "false"
-  version:
-    description: Released verctl pin (`github:victor-software-house/verctl@…`).
-    required: false
-    default: "0.0.1"
 
 runs:
   using: composite
@@ -46,17 +42,10 @@ runs:
         GITHUB_TOKEN: ${{ inputs.token }}
         VERCTL_CONFIG: ${{ inputs.config }}
         VERCTL_DRY_RUN: ${{ inputs.dry-run }}
-        VERCTL_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
         extra=()
         if [ "${VERCTL_DRY_RUN}" = true ]; then
           extra+=(--dry-run)
         fi
-        scratch=$(mktemp -d)
-        mkdir "${scratch}/tool"
-        export MISE_CEILING_PATHS="${scratch}"
-        export MISE_CONFIG_DIR="${scratch}"
-        exec mise x -C "${scratch}/tool" \
-          "github:victor-software-house/verctl@${VERCTL_VERSION}" \
-          -- verctl publish -c "${VERCTL_CONFIG}" "${extra[@]}"
+        exec verctl publish -c "${VERCTL_CONFIG}" "${extra[@]}"

@@ -26,4 +26,10 @@ jobs:
           version: 2026.8.2
           cache: true
           install: false
+      - name: Install released verctl
+        run: |
+          set -euo pipefail
+          pin="github:victor-software-house/verctl@0.0.1"
+          mise install "$pin"
+          echo "$(mise where "$pin")" >> "$GITHUB_PATH"
       - uses: victor-software-house/verctl/actions/version-pr@main

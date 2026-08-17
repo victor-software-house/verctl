@@ -40,19 +40,15 @@ jobs:
           version: 2026.8.2
           cache: true
       - run: mise install --locked
-      - name: Plan native assets
-        id: plan
-        env:
-          VERCTL_VERSION: "0.0.1"
+      - name: Install released verctl
         run: |
           set -euo pipefail
-          scratch=$(mktemp -d)
-          mkdir "${scratch}/tool"
-          export MISE_CEILING_PATHS="${scratch}"
-          export MISE_CONFIG_DIR="${scratch}"
-          mise x -C "${scratch}/tool" \
-            "github:victor-software-house/verctl@${VERCTL_VERSION}" \
-            -- verctl assets --github-output "$GITHUB_OUTPUT"
+          pin="github:victor-software-house/verctl@0.0.1"
+          mise install "$pin"
+          echo "$(mise where "$pin")" >> "$GITHUB_PATH"
+      - name: Plan native assets
+        id: plan
+        run: verctl assets --github-output "$GITHUB_OUTPUT"
       - uses: ./actions/publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -77,6 +73,12 @@ jobs:
           version: 2026.8.2
           cache: true
       - run: mise install --locked
+      - name: Install released verctl
+        run: |
+          set -euo pipefail
+          pin="github:victor-software-house/verctl@0.0.1"
+          mise install "$pin"
+          echo "$(mise where "$pin")" >> "$GITHUB_PATH"
       - uses: ./actions/asset
         with:
           target: ${{ matrix.id }}

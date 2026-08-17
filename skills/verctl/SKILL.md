@@ -11,8 +11,8 @@ license: MIT
 # verctl
 
 `verctl instructions` is the installed contract. `mise run ver --` is
-for developing this repo (`cargo run`). The Version PR / publish
-actions run the published GitHub Release tarball.
+for developing this repo (`cargo run`). The actions run `verctl` from
+PATH; workflows install the released GitHub tarball.
 
 Fragments are `.changeset/*.md` with YAML fences (quoted or unquoted
 keys). Changelog Markdown is rendered with minijinja. Author

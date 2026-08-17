@@ -1,7 +1,6 @@
 name: verctl version PR
 description: >-
-  Open or update the Version PR from a pinned released verctl
-  tarball. Does not compile this checkout.
+  Open or update the Version PR. Requires `verctl` on PATH.
 author: victor-software-house
 branding:
   icon: git-pull-request
@@ -28,10 +27,6 @@ inputs:
     description: Preview only. Set to `true` to write nothing.
     required: false
     default: "false"
-  version:
-    description: Released verctl pin (`github:victor-software-house/verctl@…`).
-    required: false
-    default: "0.0.1"
 
 runs:
   using: composite
@@ -44,17 +39,10 @@ runs:
         VERCTL_DRY_RUN: ${{ inputs.dry-run }}
         VERCTL_PR_TITLE: ${{ inputs.title }}
         VERCTL_COMMIT_MESSAGE: ${{ inputs.commit-message }}
-        VERCTL_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
         extra=()
         if [ "${VERCTL_DRY_RUN}" = true ]; then
           extra+=(--dry-run)
         fi
-        scratch=$(mktemp -d)
-        mkdir "${scratch}/tool"
-        export MISE_CEILING_PATHS="${scratch}"
-        export MISE_CONFIG_DIR="${scratch}"
-        exec mise x -C "${scratch}/tool" \
-          "github:victor-software-house/verctl@${VERCTL_VERSION}" \
-          -- verctl prepare --pr -c "${VERCTL_CONFIG}" "${extra[@]}"
+        exec verctl prepare --pr -c "${VERCTL_CONFIG}" "${extra[@]}"

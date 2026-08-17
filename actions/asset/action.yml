@@ -22,10 +22,6 @@ inputs:
   tag:
     description: Release tag (`v0.0.1`).
     required: true
-  version:
-    description: Released verctl pin (`github:victor-software-house/verctl@…`).
-    required: false
-    default: "0.0.1"
 
 runs:
   using: composite
@@ -37,13 +33,6 @@ runs:
         VERCTL_CONFIG: ${{ inputs.config }}
         VERCTL_TARGET: ${{ inputs.target }}
         VERCTL_TAG: ${{ inputs.tag }}
-        VERCTL_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
-        scratch=$(mktemp -d)
-        mkdir "${scratch}/tool"
-        export MISE_CEILING_PATHS="${scratch}"
-        export MISE_CONFIG_DIR="${scratch}"
-        exec mise x -C "${scratch}/tool" \
-          "github:victor-software-house/verctl@${VERCTL_VERSION}" \
-          -- verctl assets -c "${VERCTL_CONFIG}" --build "${VERCTL_TARGET}" --upload --tag "${VERCTL_TAG}"
+        exec verctl assets -c "${VERCTL_CONFIG}" --build "${VERCTL_TARGET}" --upload --tag "${VERCTL_TAG}"
