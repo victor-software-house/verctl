@@ -27,6 +27,9 @@ forkctl: patch
 What changed.
 ```
 
+Write the fragment on the same PR that ships the behavior. Do not
+save them up for a release dump.
+
 Do not invent a third fragment format. Do not infer bumps from
 `feat:` / `fix:` unless the repo has turned that mode on (not first slice).
 

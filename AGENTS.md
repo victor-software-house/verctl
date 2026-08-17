@@ -52,7 +52,9 @@ mise tasks only.
 
 ## Release loop
 
-Human writes `.changeset/*.md` only. Never hand-edit versions or
+Human writes `.changeset/*.md` only. **Write the fragment on the same
+PR that ships the behavior.** Do not save them up for a release dump.
+Never hand-edit versions or
 CHANGELOG. `prepare --pr` is the Version PR. `verctl check --versions`
 compares each manifest to the merge-base of HEAD and the default
 branch. Only `version-packages` is exempt. CI does not skip.
