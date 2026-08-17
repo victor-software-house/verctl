@@ -113,7 +113,7 @@ jobs:
             exit 1
           fi
           mise x "github:victor-software-house/verctl@${version}" -- \
-            verctl --format json pin >"$RUNNER_TEMP/pin.json"
+            verctl pin --format json >"$RUNNER_TEMP/pin.json"
       - run: mise -E release lock
       - name: Commit released pins
         run: |
