@@ -1,6 +1,6 @@
 use crate::github::Repo;
 use anyhow::{Context, Result, bail};
-use git2::{Cred, PushOptions, RemoteCallbacks, Repository, Signature};
+use git2::{Cred, PushOptions, RemoteCallbacks, Repository, Signature, StatusOptions};
 use std::env;
 use std::path::{Path, PathBuf};
 
@@ -205,11 +205,18 @@ fn default_upstream_commit<'a>(
 }
 
 /// Fail if the worktree has dirty paths outside `allowed` and `globs`.
+///
+/// `statuses(None)` uses libgit2 defaults, which list ignored files.
+/// Ask for untracked only, same as `git status`.
 pub fn assert_only_allowed(root: &Path, allowed: &[PathBuf], globs: &[String]) -> Result<()> {
     let Ok(repo) = Repository::open(root).or_else(|_| Repository::discover(root)) else {
         return Ok(());
     };
-    let statuses = repo.statuses(None).context("git status")?;
+    let mut opts = StatusOptions::new();
+    opts.include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .include_ignored(false);
+    let statuses = repo.statuses(Some(&mut opts)).context("git status")?;
     let workdir = repo.workdir().unwrap_or(root);
     let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let workdir = workdir
@@ -455,6 +462,35 @@ mod tests {
         let err = super::assert_only_allowed(dir.path(), &allowed, &[]).unwrap_err();
         assert!(format!("{err:#}").contains("secret.env"), "{err:#}");
         super::assert_only_allowed(dir.path(), &allowed, &["*.env".into()]).unwrap();
+    }
+
+    #[test]
+    fn ignored_workdir_paths_are_not_unexpected() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let sig = Signature::now("t", "t@example.com").unwrap();
+        std::fs::write(dir.path().join(".gitignore"), "/target\n").unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                version = "1.0.0"
+            "#},
+        )
+        .unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new(".gitignore")).unwrap();
+            index.add_path(Path::new("Cargo.toml")).unwrap();
+            index.write().unwrap();
+            let tid = index.write_tree().unwrap();
+            let tree = repo.find_tree(tid).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+                .unwrap();
+        }
+        std::fs::create_dir_all(dir.path().join("target/debug")).unwrap();
+        std::fs::write(dir.path().join("target/debug/verctl"), "bin\n").unwrap();
+        super::assert_only_allowed(dir.path(), &[dir.path().join("Cargo.toml")], &[]).unwrap();
     }
 
     #[test]
