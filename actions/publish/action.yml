@@ -1,7 +1,7 @@
 name: verctl publish
 description: >-
   After the Version PR merges, publish cargo and bun packages and open
-  the GitHub Release. Finds `verctl` on PATH, otherwise `mise run ver`.
+  the GitHub Release. Requires `verctl` on PATH.
 author: victor-software-house
 branding:
   icon: package
@@ -48,7 +48,4 @@ runs:
         if [ "${VERCTL_DRY_RUN}" = true ]; then
           extra+=(--dry-run)
         fi
-        if command -v verctl >/dev/null 2>&1; then
-          exec verctl publish -c "${VERCTL_CONFIG}" "${extra[@]}"
-        fi
-        exec mise run ver -- publish -c "${VERCTL_CONFIG}" "${extra[@]}"
+        exec verctl publish -c "${VERCTL_CONFIG}" "${extra[@]}"

@@ -1,7 +1,6 @@
 name: verctl version PR
 description: >-
-  Open or update the Version PR. Finds `verctl` on PATH, otherwise
-  `mise run ver`. Replacement for changesets/action version: input.
+  Open or update the Version PR. Requires `verctl` on PATH.
 author: victor-software-house
 branding:
   icon: git-pull-request
@@ -46,7 +45,4 @@ runs:
         if [ "${VERCTL_DRY_RUN}" = true ]; then
           extra+=(--dry-run)
         fi
-        if command -v verctl >/dev/null 2>&1; then
-          exec verctl prepare --pr -c "${VERCTL_CONFIG}" "${extra[@]}"
-        fi
-        exec mise run ver -- prepare --pr -c "${VERCTL_CONFIG}" "${extra[@]}"
+        exec verctl prepare --pr -c "${VERCTL_CONFIG}" "${extra[@]}"

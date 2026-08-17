@@ -5,6 +5,18 @@
 name = "verctl"
 path = "Cargo.toml"
 
+# When this package is bumped, the Version PR also rewrites the
+# released-binary pin so the next cycle installs that tarball.
+[[pins]]
+file = "mise.release.toml"
+tool = "github:victor-software-house/verctl"
+package = "verctl"
+
+[[pins]]
+file = "examples/mise.toml"
+tool = "github:victor-software-house/verctl"
+package = "verctl"
+
 # Omit this table for a library. List one id when a single host
 # binary is enough. PR CI never builds these.
 [assets]

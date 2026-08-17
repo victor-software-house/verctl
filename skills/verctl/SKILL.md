@@ -10,7 +10,9 @@ license: MIT
 
 # verctl
 
-`verctl instructions` is the installed contract. Prefer `mise run ver --`.
+`verctl instructions` is the installed contract. `MISE_ENV=dev` (local
+default) compiles this checkout. `MISE_ENV=release` is the published
+tarball. Actions run `verctl` from PATH.
 
 Fragments are `.changeset/*.md` with YAML fences (quoted or unquoted
 keys). Changelog Markdown is rendered with minijinja. Author

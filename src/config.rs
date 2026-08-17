@@ -225,6 +225,17 @@ pub struct Config {
     pub assets: Option<Assets>,
     #[serde(default)]
     pub prepare: Prepare,
+    /// Collocated tool pins rewritten when `package` is bumped.
+    #[serde(default)]
+    pub pins: Vec<Pin>,
+}
+
+/// A mise `[tools]` entry that must track a package version.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Pin {
+    pub file: PathBuf,
+    pub tool: String,
+    pub package: String,
 }
 
 /// Extra work after version bumps, committed on the Version PR.

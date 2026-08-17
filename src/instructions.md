@@ -55,6 +55,14 @@ declared manifest to the merge-base of HEAD and the default branch.
 It fails when they differ. Only `version-packages` is exempt. CI
 does not skip. A fragment-only commit does not change versions.
 
+This repo splits mise envs: `dev` compiles this checkout, `release`
+is the published tarball. Local default is `dev` (`.miserc.toml`).
+Version PR sets `MISE_ENV=release`. Publish sets `dev,release`.
+`verctl pin` rewrites collocated `github:…/verctl` entries (and
+`?ref=v…` includes) to the versions on HEAD. Run it after the
+GitHub Release tarball exists, then `mise -E release lock`. The
+Version PR still installs the previous tarball.
+
 `prepare` writes versions, per-package CHANGELOG.md (next to each
 manifest), and consumes fragments (same as `changeset version`).
 `[prepare].after` is one argv run after bumps; `[prepare].stage`

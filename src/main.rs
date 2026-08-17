@@ -4,11 +4,12 @@ use serde::Serialize;
 use std::io::{self, Write};
 use std::path::Path;
 use verctl::assets;
-use verctl::cli::{CheckArgs, Cli, Command, PrepareArgs, StatusArgs};
+use verctl::cli::{CheckArgs, Cli, Command, PrepareArgs, PublishArgs, StatusArgs};
 use verctl::config::Config;
 use verctl::fragment::{self, Bump};
 use verctl::git;
 use verctl::github;
+use verctl::pins;
 use verctl::prepare;
 use verctl::process;
 use verctl::publish;
@@ -35,6 +36,7 @@ fn main() -> ExitCode {
             }
             Command::Prepare(args) => view.show(&prepare_report(&args)?)?,
             Command::Publish(args) => view.show(&publish_report(&args)?)?,
+            Command::Pin(args) => view.show(&pin_report(&args)?)?,
             Command::Assets(args) => view.show(&assets_report(&args)?)?,
         }
         Ok(())
@@ -466,6 +468,51 @@ fn publish_report(args: &verctl::cli::PublishArgs) -> Result<PublishReport> {
         packages: outcome.packages,
         release: outcome.release,
         dry_run: args.dry_run(),
+    })
+}
+
+#[derive(Serialize)]
+struct PinReport {
+    files: Vec<String>,
+}
+
+impl PinReport {
+    fn pretty(&self, color: ColorMode) -> String {
+        if self.files.is_empty() {
+            return kv(color, [("pins", "none")]);
+        }
+        kv(color, self.files.iter().map(|file| ("pin", file.clone())))
+    }
+}
+
+impl Render for PinReport {
+    fn render_pretty(&self) -> String {
+        self.pretty(ColorMode::Always)
+    }
+
+    fn render_pretty_colored(&self, color: ColorMode) -> String {
+        self.pretty(color)
+    }
+}
+
+fn pin_report(args: &PublishArgs) -> Result<PinReport> {
+    let config = Config::load(&args.config)?;
+    let root = args
+        .config
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let versions = pins::current_versions(root, &config)?;
+    let files = if args.dry_run() {
+        pins::plan(root, &config.pins, &versions)?
+    } else {
+        pins::write(root, &config.pins, &versions)?
+    };
+    Ok(PinReport {
+        files: files
+            .into_iter()
+            .map(|path| path.display().to_string())
+            .collect(),
     })
 }
 

@@ -1,4 +1,4 @@
-# Consumer workflow. Mise owns tools. This action owns the Version PR.
+# Consumer workflow. Pin github:victor-software-house/verctl in your mise.toml.
 name: Version PR
 
 on:

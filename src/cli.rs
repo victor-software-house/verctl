@@ -29,6 +29,8 @@ pub enum Command {
     Prepare(PrepareArgs),
     /// Publish the versions on HEAD (cargo / bun + GitHub Release).
     Publish(PublishArgs),
+    /// Rewrite collocated tool pins to the versions on HEAD.
+    Pin(PublishArgs),
     /// Plan or build native GitHub Release tarballs declared in `[assets]`.
     Assets(AssetsArgs),
 }
@@ -179,5 +181,18 @@ mod tests {
         assert!(prepare_from(&["--preview"]).dry_run());
         assert!(prepare_from(&["--dry-run"]).dry_run());
         assert!(prepare_from(&["-n"]).dry_run());
+    }
+
+    #[test]
+    fn format_json_works_before_and_after_the_verb() {
+        for args in [
+            ["verctl", "--format", "json", "pin"].as_slice(),
+            ["verctl", "pin", "--format", "json"].as_slice(),
+            ["verctl", "status", "--format", "json"].as_slice(),
+            ["verctl", "-f", "json", "pin"].as_slice(),
+        ] {
+            let cli = Cli::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
+            assert!(cli.format.format.is_json(), "{args:?}");
+        }
     }
 }
