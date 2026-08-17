@@ -8,7 +8,12 @@ keys = ["workspace.package.version", "package.version"]
 [drivers.npm]
 format = "json"
 keys = ["version"]
-# after = "npm install"   # or bun / pnpm / a mise task
+# after = "bun install"
+
+# [[packages]]
+# name = "@org/pkg"
+# path = "package.json"
+# registry = "github"   # bun publish --tolerate-republish --registry npm.pkg.github.com
 
 # String form is a mise task (no shell):
 # read = "ver-read-version"

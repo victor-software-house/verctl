@@ -27,7 +27,7 @@ disallowed_macros = "deny"
 [dependencies]
 anyhow = "1.0.100"
 clap = { version = "4.6.5", features = ["derive"] }
-ctl-core = { git = "https://github.com/victor-software-house/ctl-core", rev = "3ea878a04d036bdf55c93bf0f3b6ccf82e39e78d" }
+ctl-core = "0.0.1"
 duct = "1.1.1"
 git2 = { version = "0.21.0", features = ["https", "vendored-libgit2", "vendored-openssl"] }
 gray_matter = { version = "0.3.2", default-features = false, features = ["yaml"] }

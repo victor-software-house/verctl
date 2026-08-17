@@ -99,6 +99,14 @@ pub struct PackageSpec {
     pub name: String,
     pub path: PathBuf,
     pub driver: Option<String>,
+    /// Where `publish` ships this package.
+    ///
+    /// Cargo: omit or `crates-io`. Any other name is `cargo publish --registry`.
+    /// Bun: omit or `npm` is registry.npmjs.org (`--access public`).
+    /// `github` is `bun publish --registry https://npm.pkg.github.com`.
+    /// A URL is passed through as `--registry`. Always
+    /// `--tolerate-republish`.
+    pub registry: Option<String>,
     #[serde(flatten)]
     pub spec: DriverSpec,
 }

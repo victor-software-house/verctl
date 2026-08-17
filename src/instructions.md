@@ -64,10 +64,11 @@ and whether the Version PR would open or update. Preview does not
 require GitHub auth.
 
 `publish` ships the versions already on HEAD: `cargo publish --locked`
-for Cargo.toml packages, `npm publish` for package.json, then a GitHub
-Release `v{version}` via octocrab. Auth is `GITHUB_TOKEN` plus
-`CARGO_REGISTRY_TOKEN` / `NPM_TOKEN`. Already-published crates are
-skipped. `--dry-run` / `--preview` print the plan and write nothing.
+for Cargo.toml, `bun publish --tolerate-republish` for package.json
+(never `npm publish`), then a GitHub Release `v{version}`. GitHub
+Packages is `registry = "github"` (`--registry npm.pkg.github.com`);
+auth is `bunfig.toml` + `GITHUB_TOKEN`, not `.npmrc`. Cargo already
+on crates.io is treated as success. `--dry-run` prints the plan.
 
 Happy path after the Version PR merges is
 `victor-software-house/verctl/actions/publish`. It runs when the
