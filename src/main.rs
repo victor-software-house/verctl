@@ -503,6 +503,11 @@ fn pin_report(args: &PublishArgs) -> Result<PinReport> {
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
     let versions = pins::current_versions(root, &config)?;
+    if args.dry_run() {
+        return Ok(PinReport {
+            files: pins::planned_files(root, &config.pins, &versions),
+        });
+    }
     let files = pins::write(root, &config.pins, &versions)?;
     Ok(PinReport {
         files: files

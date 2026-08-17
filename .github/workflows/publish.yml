@@ -83,7 +83,7 @@ jobs:
       (needs.crate.outputs.has_assets != 'true' || needs.assets.result == 'success')
     runs-on: ubuntu-latest
     env:
-      MISE_ENV: dev
+      MISE_ENV: release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -93,9 +93,14 @@ jobs:
         with:
           version: 2026.8.2
           cache: true
-      - run: mise install --locked
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: mise run ver -- pin
+          install: false
+      - name: Pin with the tarball just published
+        env:
+          TAG: ${{ needs.crate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          mise x "github:victor-software-house/verctl@${version}" -- verctl pin
       - run: mise -E release lock
       - name: Commit released pins
         run: |
