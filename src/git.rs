@@ -22,11 +22,12 @@ pub fn upstream_default_branch(root: &Path) -> Option<String> {
     (!name.is_empty()).then(|| name.to_owned())
 }
 
-/// Fail unless HEAD is on the default-branch history (`origin/HEAD`).
+/// Fail unless HEAD is on the default-branch history.
 ///
-/// No repository, or no remote-tracking default branch, is a skip — local
-/// fixtures and first clones have nothing to prove. A shallow clone that
-/// cannot walk the graph fails closed.
+/// No repository, and no `origin` remote, is a skip — local fixtures
+/// have nothing to prove. A repo that has `origin` but no peelable
+/// default-tracking ref fails closed. A shallow clone that cannot walk
+/// the graph also fails closed.
 pub fn require_on_default_history(root: &Path) -> Result<()> {
     let Some(repo) = repo_covering(root) else {
         return Ok(());
@@ -37,7 +38,7 @@ pub fn require_on_default_history(root: &Path) -> Result<()> {
     let Ok(head) = head.peel_to_commit() else {
         return Ok(());
     };
-    let Some(upstream) = default_upstream_commit(&repo) else {
+    let Some(upstream) = default_upstream_commit(&repo)? else {
         return Ok(());
     };
     if head.id() == upstream.id() {
@@ -66,23 +67,60 @@ fn repo_covering(root: &Path) -> Option<Repository> {
     root.starts_with(workdir).then_some(repo)
 }
 
-fn default_upstream_commit(repo: &Repository) -> Option<git2::Commit<'_>> {
-    let from_head = repo
-        .find_reference("refs/remotes/origin/HEAD")
+fn peel_remote<'a>(repo: &'a Repository, name: &str) -> Option<git2::Commit<'a>> {
+    repo.find_reference(name)
         .ok()
-        .and_then(|reference| {
-            let target = reference.symbolic_target().ok()??;
-            let name = target.trim_start_matches("refs/remotes/origin/");
-            (!name.is_empty()).then(|| format!("refs/remotes/origin/{name}"))
-        });
-    from_head
-        .and_then(|name| repo.find_reference(&name).ok())
         .and_then(|reference| reference.peel_to_commit().ok())
-        .or_else(|| {
-            repo.find_reference("refs/remotes/origin/main")
-                .ok()
-                .and_then(|reference| reference.peel_to_commit().ok())
-        })
+}
+
+fn origin_head_ref(repo: &Repository) -> Option<String> {
+    let reference = repo.find_reference("refs/remotes/origin/HEAD").ok()?;
+    let target = reference.symbolic_target().ok()??;
+    let name = target.trim_start_matches("refs/remotes/origin/");
+    (!name.is_empty()).then(|| format!("refs/remotes/origin/{name}"))
+}
+
+fn default_branch_names() -> Vec<String> {
+    let mut names = Vec::new();
+    if let Ok(value) = env::var("GITHUB_BASE_REF") {
+        let value = value.trim();
+        if !value.is_empty() {
+            names.push(value.to_owned());
+        }
+    }
+    if let Ok(value) = env::var("GITHUB_REF_NAME") {
+        let value = value.trim();
+        // PR events set this to `{n}/merge`. A real branch name does not.
+        if !value.is_empty() && !value.contains('/') {
+            names.push(value.to_owned());
+        }
+    }
+    for stock in ["main", "master"] {
+        if !names.iter().any(|name| name == stock) {
+            names.push(stock.to_owned());
+        }
+    }
+    names
+}
+
+fn default_upstream_commit(repo: &Repository) -> Result<Option<git2::Commit<'_>>> {
+    if let Some(name) = origin_head_ref(repo)
+        && let Some(commit) = peel_remote(repo, &name)
+    {
+        return Ok(Some(commit));
+    }
+    for name in default_branch_names() {
+        let reference = format!("refs/remotes/origin/{name}");
+        if let Some(commit) = peel_remote(repo, &reference) {
+            return Ok(Some(commit));
+        }
+    }
+    if repo.find_remote("origin").is_ok() {
+        bail!(
+            "publish cannot prove HEAD is on the default branch (origin exists but origin/HEAD, origin/main, and origin/master are missing; fetch the default branch)"
+        );
+    }
+    Ok(None)
 }
 
 /// Fail if the worktree has dirty paths outside `allowed` and `globs`.
@@ -492,5 +530,46 @@ mod tests {
         commit_tree(&repo, "ahead");
         let err = super::require_on_default_history(dir.path()).unwrap_err();
         assert!(format!("{err:#}").contains("not an ancestor"), "{err:#}");
+    }
+
+    #[test]
+    fn origin_without_default_tracking_ref_fails() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        commit_tree(&repo, "init");
+        repo.remote(
+            "origin",
+            "https://github.com/victor-software-house/verctl.git",
+        )
+        .unwrap();
+        let err = super::require_on_default_history(dir.path()).unwrap_err();
+        assert!(format!("{err:#}").contains("origin exists"), "{err:#}");
+    }
+
+    #[test]
+    fn origin_master_without_head_is_ok() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let oid = commit_tree(&repo, "init");
+        repo.reference("refs/remotes/origin/master", oid, true, "test")
+            .unwrap();
+        super::require_on_default_history(dir.path()).unwrap();
+    }
+
+    #[test]
+    fn origin_head_to_non_main_is_ok() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let oid = commit_tree(&repo, "init");
+        repo.reference("refs/remotes/origin/trunk", oid, true, "test")
+            .unwrap();
+        repo.reference_symbolic(
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/trunk",
+            true,
+            "test",
+        )
+        .unwrap();
+        super::require_on_default_history(dir.path()).unwrap();
     }
 }
