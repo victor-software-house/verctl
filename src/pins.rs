@@ -1,18 +1,30 @@
 //! Rewrite collocated tool pins when a package version changes.
 
-use crate::config::Pin;
-use crate::prepare::PlanEntry;
+use crate::config::{Config, Pin};
 use anyhow::{Context, Result, bail};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use toml_edit::{DocumentMut, Item, value};
 
-pub fn write(root: &Path, pins: &[Pin], plan: &[PlanEntry]) -> Result<Vec<PathBuf>> {
+/// Current declared versions of every configured package.
+pub fn current_versions(root: &Path, config: &Config) -> Result<Vec<(String, String)>> {
+    let mut versions = Vec::new();
+    for spec in &config.packages {
+        let path = root.join(&spec.path);
+        let driver = spec.resolve(config, root)?;
+        let raw = fs::read_to_string(&path).with_context(|| path.display().to_string())?;
+        versions.push((spec.name.clone(), driver.read(&raw)?.trim().to_owned()));
+    }
+    Ok(versions)
+}
+
+pub fn write(root: &Path, pins: &[Pin], versions: &[(String, String)]) -> Result<Vec<PathBuf>> {
     let mut written = Vec::new();
     for pin in pins {
-        let Some(entry) = plan.iter().find(|entry| entry.name == pin.package) else {
+        let Some((_, version)) = versions.iter().find(|(name, _)| name == &pin.package) else {
             continue;
         };
+        ensure_inside(root, &pin.file)?;
         let path = root.join(&pin.file);
         let raw =
             fs::read_to_string(&path).with_context(|| format!("read pin {}", path.display()))?;
@@ -23,39 +35,55 @@ pub fn write(root: &Path, pins: &[Pin], plan: &[PlanEntry]) -> Result<Vec<PathBu
             .get_mut("tools")
             .and_then(Item::as_table_like_mut)
             .with_context(|| format!("{} has no [tools]", path.display()))?;
-        if tools.get(&pin.tool).is_none() {
+        let previous = tools
+            .get(&pin.tool)
+            .and_then(Item::as_str)
+            .map(ToOwned::to_owned);
+        if previous.is_none() {
             bail!("{} has no tools.{tool}", path.display(), tool = pin.tool);
         }
-        tools.insert(&pin.tool, value(entry.to.as_str()));
-        fs::write(&path, doc.to_string())
-            .with_context(|| format!("write pin {}", path.display()))?;
+        tools.insert(&pin.tool, value(version.as_str()));
+        let mut body = doc.to_string();
+        if let Some(previous) = previous {
+            let from = format!("?ref=v{previous}");
+            let to = format!("?ref=v{version}");
+            body = body.replace(&from, &to);
+        }
+        fs::write(&path, body).with_context(|| format!("write pin {}", path.display()))?;
         written.push(path);
     }
     Ok(written)
+}
+
+fn ensure_inside(root: &Path, file: &Path) -> Result<()> {
+    if file.is_absolute()
+        || file
+            .components()
+            .any(|part| matches!(part, Component::ParentDir))
+    {
+        bail!("pin file must stay inside the repo: {}", file.display());
+    }
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let path = root.join(file);
+    let parent = path.parent().unwrap_or(&path);
+    let parent = parent
+        .canonicalize()
+        .unwrap_or_else(|_| parent.to_path_buf());
+    if !parent.starts_with(&root) {
+        bail!("pin file must stay inside the repo: {}", file.display());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::driver::{Driver, Format};
-    use crate::fragment::Bump;
     use indoc::indoc;
     use tempfile::TempDir;
 
-    fn plan(to: &str) -> Vec<PlanEntry> {
-        vec![PlanEntry {
-            name: "verctl".into(),
-            from: "0.0.1".into(),
-            to: to.into(),
-            bump: Bump::Patch,
-            path: PathBuf::from("Cargo.toml"),
-            driver: Driver::Path {
-                format: Format::Toml,
-                keys: vec!["package.version".into()],
-                after: None,
-            },
-        }]
+    fn versions(to: &str) -> Vec<(String, String)> {
+        vec![("verctl".into(), to.into())]
     }
 
     #[test]
@@ -76,7 +104,7 @@ mod tests {
             tool: "github:victor-software-house/verctl".into(),
             package: "verctl".into(),
         }];
-        write(root.path(), &pins, &plan("0.0.2")).unwrap();
+        write(root.path(), &pins, &versions("0.0.2")).unwrap();
         let body = fs::read_to_string(&path).unwrap();
         assert!(body.contains("0.0.2"), "{body}");
         assert!(body.contains("leftover"), "{body}");
@@ -101,10 +129,41 @@ mod tests {
             package: "other".into(),
         }];
         assert_eq!(
-            write(root.path(), &pins, &plan("0.0.2")).unwrap(),
+            write(root.path(), &pins, &versions("0.0.2")).unwrap(),
             Vec::<PathBuf>::new()
         );
         let body = fs::read_to_string(&path).unwrap();
         assert!(body.contains("0.0.1"), "{body}");
+    }
+
+    #[test]
+    fn rejects_parent_dir_pins() {
+        let err = ensure_inside(Path::new("/tmp"), Path::new("../secret")).unwrap_err();
+        assert!(format!("{err:#}").contains("inside the repo"), "{err:#}");
+    }
+
+    #[test]
+    fn rewrites_task_include_ref() {
+        let root = TempDir::new().unwrap();
+        let path = root.path().join("mise.toml");
+        fs::write(
+            &path,
+            indoc! {r#"
+                [tools]
+                "github:victor-software-house/verctl" = "0.0.1"
+                [task_config]
+                includes = ["git::https://example.com/verctl.git//tasks/ver?ref=v0.0.1"]
+            "#},
+        )
+        .unwrap();
+        let pins = [Pin {
+            file: PathBuf::from("mise.toml"),
+            tool: "github:victor-software-house/verctl".into(),
+            package: "verctl".into(),
+        }];
+        write(root.path(), &pins, &versions("0.0.2")).unwrap();
+        let body = fs::read_to_string(&path).unwrap();
+        assert!(body.contains("?ref=v0.0.2"), "{body}");
+        assert!(!body.contains("?ref=v0.0.1"), "{body}");
     }
 }

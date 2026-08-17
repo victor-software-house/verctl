@@ -29,6 +29,8 @@ pub enum Command {
     Prepare(PrepareArgs),
     /// Publish the versions on HEAD (cargo / bun + GitHub Release).
     Publish(PublishArgs),
+    /// Rewrite collocated tool pins to the versions on HEAD.
+    Pin(PublishArgs),
     /// Plan or build native GitHub Release tarballs declared in `[assets]`.
     Assets(AssetsArgs),
 }

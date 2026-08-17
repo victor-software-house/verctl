@@ -4,7 +4,7 @@ use serde::Serialize;
 use std::io::{self, Write};
 use std::path::Path;
 use verctl::assets;
-use verctl::cli::{CheckArgs, Cli, Command, PrepareArgs, StatusArgs};
+use verctl::cli::{CheckArgs, Cli, Command, PrepareArgs, PublishArgs, StatusArgs};
 use verctl::config::Config;
 use verctl::fragment::{self, Bump};
 use verctl::git;
@@ -36,6 +36,7 @@ fn main() -> ExitCode {
             }
             Command::Prepare(args) => view.show(&prepare_report(&args)?)?,
             Command::Publish(args) => view.show(&publish_report(&args)?)?,
+            Command::Pin(args) => view.show(&pin_report(&args)?)?,
             Command::Assets(args) => view.show(&assets_report(&args)?)?,
         }
         Ok(())
@@ -308,7 +309,6 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     let consumed = release::contributing_fragments(&plan, &fragments);
     let changelog = release::changelog_sections(&plan, &fragments)?;
     let changelogs = release::write_changelogs(&config, root, &plan, &fragments)?;
-    let pin_files = pins::write(root, &config.pins, &plan)?;
     if let Some(after) = &config.prepare.after {
         process::run_inherit(after, std::time::Duration::from_mins(5)).context("prepare.after")?;
     }
@@ -325,7 +325,6 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
         .collect();
     let mut paths: Vec<std::path::PathBuf> = plan.iter().map(|entry| entry.path.clone()).collect();
     paths.extend(changelogs);
-    paths.extend(pin_files);
     paths.extend(consumed.iter().map(|fragment| fragment.path.clone()));
     git::assert_only_allowed(root, &paths, &config.prepare.stage)?;
     release::consume_fragments(consumed)?;
@@ -469,6 +468,47 @@ fn publish_report(args: &verctl::cli::PublishArgs) -> Result<PublishReport> {
         packages: outcome.packages,
         release: outcome.release,
         dry_run: args.dry_run(),
+    })
+}
+
+#[derive(Serialize)]
+struct PinReport {
+    files: Vec<String>,
+}
+
+impl PinReport {
+    fn pretty(&self, color: ColorMode) -> String {
+        if self.files.is_empty() {
+            return kv(color, [("pins", "none")]);
+        }
+        kv(color, self.files.iter().map(|file| ("pin", file.clone())))
+    }
+}
+
+impl Render for PinReport {
+    fn render_pretty(&self) -> String {
+        self.pretty(ColorMode::Always)
+    }
+
+    fn render_pretty_colored(&self, color: ColorMode) -> String {
+        self.pretty(color)
+    }
+}
+
+fn pin_report(args: &PublishArgs) -> Result<PinReport> {
+    let config = Config::load(&args.config)?;
+    let root = args
+        .config
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let versions = pins::current_versions(root, &config)?;
+    let files = pins::write(root, &config.pins, &versions)?;
+    Ok(PinReport {
+        files: files
+            .into_iter()
+            .map(|path| path.display().to_string())
+            .collect(),
     })
 }
 
