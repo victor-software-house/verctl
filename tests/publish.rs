@@ -1,27 +1,10 @@
 //! `publish --dry-run` prints the stock command plan and writes nothing.
 #![allow(missing_docs)]
 
-use ctl_core::{grid, kv};
+use ctl_core::{ColorMode, grid, kv};
 use indoc::indoc;
 use std::fs;
 use tempfile::TempDir;
-
-fn strip_ansi(text: &str) -> String {
-    let mut out = String::new();
-    let mut chars = text.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '\u{1b}' {
-            for next in chars.by_ref() {
-                if next == 'm' {
-                    break;
-                }
-            }
-        } else {
-            out.push(ch);
-        }
-    }
-    out
-}
 
 #[allow(clippy::unwrap_used)]
 fn publish_stdout(root: &std::path::Path) -> String {
@@ -32,7 +15,7 @@ fn publish_stdout(root: &std::path::Path) -> String {
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stderr}");
-    strip_ansi(&String::from_utf8_lossy(&output.stdout))
+    String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
 #[test]
@@ -57,15 +40,19 @@ fn dry_run_lists_one_cargo_crate() {
     )
     .unwrap();
     let mut expected = grid(
+        ColorMode::Never,
         &["name", "version", "via"],
         [vec!["demo".into(), "0.0.1".into(), "cargo".into()]],
     );
     expected.push('\n');
-    expected.push_str(&kv([
-        ("release", "would create v0.0.1"),
-        ("dry-run", "nothing published"),
-    ]));
-    assert_eq!(publish_stdout(root.path()), strip_ansi(&expected));
+    expected.push_str(&kv(
+        ColorMode::Never,
+        [
+            ("release", "would create v0.0.1"),
+            ("dry-run", "nothing published"),
+        ],
+    ));
+    assert_eq!(publish_stdout(root.path()), expected);
 }
 
 #[test]
@@ -101,6 +88,7 @@ fn dry_run_lists_many_packages() {
     )
     .unwrap();
     let mut expected = grid(
+        ColorMode::Never,
         &["name", "version", "via"],
         [
             vec!["demo".into(), "0.0.1".into(), "cargo".into()],
@@ -108,9 +96,12 @@ fn dry_run_lists_many_packages() {
         ],
     );
     expected.push('\n');
-    expected.push_str(&kv([
-        ("release", "would create v0.0.1"),
-        ("dry-run", "nothing published"),
-    ]));
-    assert_eq!(publish_stdout(root.path()), strip_ansi(&expected));
+    expected.push_str(&kv(
+        ColorMode::Never,
+        [
+            ("release", "would create v0.0.1"),
+            ("dry-run", "nothing published"),
+        ],
+    ));
+    assert_eq!(publish_stdout(root.path()), expected);
 }

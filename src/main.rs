@@ -284,10 +284,10 @@ struct PublishReport {
     dry_run: bool,
 }
 
-impl fmt::Display for PublishReport {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl PublishReport {
+    fn pretty(&self, color: ColorMode) -> String {
         if self.packages.is_empty() && self.release.is_none() {
-            return writedoc!(f, "{}", kv([("no-op", "nothing to publish")]));
+            return kv(color, [("no-op", "nothing to publish")]);
         }
         let with_notes = self.packages.iter().any(|entry| entry.note.is_some());
         let headers: &[&str] = if with_notes {
@@ -306,7 +306,7 @@ impl fmt::Display for PublishReport {
                 row
             })
             .collect();
-        let mut out = grid(headers, rows);
+        let mut out = grid(color, headers, rows);
         let mut extra = Vec::new();
         if let Some(url) = &self.release {
             extra.push(("release", url.as_str()));
@@ -316,15 +316,19 @@ impl fmt::Display for PublishReport {
         }
         if !extra.is_empty() {
             out.push('\n');
-            out.push_str(&kv(extra));
+            out.push_str(&kv(color, extra));
         }
-        writedoc!(f, "{out}")
+        out
     }
 }
 
 impl Render for PublishReport {
     fn render_pretty(&self) -> String {
-        self.to_string()
+        self.pretty(ColorMode::Always)
+    }
+
+    fn render_pretty_colored(&self, color: ColorMode) -> String {
+        self.pretty(color)
     }
 }
 
@@ -351,13 +355,12 @@ struct AssetsReport {
     uploaded: Option<String>,
 }
 
-impl fmt::Display for AssetsReport {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl AssetsReport {
+    fn pretty(&self, color: ColorMode) -> String {
         if !self.plan.has_assets {
-            return writedoc!(
-                f,
-                "{}",
-                kv([("assets", "none (library or one host build is enough)")])
+            return kv(
+                color,
+                [("assets", "none (library or one host build is enough)")],
             );
         }
         let rows: Vec<Vec<String>> = self
@@ -367,7 +370,7 @@ impl fmt::Display for AssetsReport {
             .iter()
             .map(|row| vec![row.id.clone(), row.runner.clone(), row.asset.clone()])
             .collect();
-        let mut out = grid(&["target", "runner", "asset"], rows);
+        let mut out = grid(color, &["target", "runner", "asset"], rows);
         let mut extra = vec![("tag", self.plan.tag.as_str())];
         if let Some(path) = &self.tarball {
             extra.push(("tarball", path.as_str()));
@@ -376,14 +379,18 @@ impl fmt::Display for AssetsReport {
             extra.push(("upload", url.as_str()));
         }
         out.push('\n');
-        out.push_str(&kv(extra));
-        writedoc!(f, "{out}")
+        out.push_str(&kv(color, extra));
+        out
     }
 }
 
 impl Render for AssetsReport {
     fn render_pretty(&self) -> String {
-        self.to_string()
+        self.pretty(ColorMode::Always)
+    }
+
+    fn render_pretty_colored(&self, color: ColorMode) -> String {
+        self.pretty(color)
     }
 }
 

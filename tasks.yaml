@@ -1,9 +1,27 @@
 # yaml-language-server: $schema=https://github.com/victor-software-house/qctl/releases/download/v0.0.1/tasks.schema.json
 schema_version: 1
 prefix: VER
-active: VER-005
+active: VER-011
 
 queue:
+  - id: VER-011
+    title: Finish the Changesets-shaped release loop
+    scope: verctl
+    outcome: >-
+      Fragment in, Version PR, exact-SHA publish, CHANGELOG, lockfile,
+      already-published, optional natives. No hand-edited versions.
+    blocked_by: []
+    acceptance:
+      - prepare writes versions + CHANGELOG and consumes fragments.
+      - Version PR is the only version-authority path (CI / --pr).
+      - publish is cargo/bun stock recipes plus overridable publishers.
+      - Lockfile is committed; cargo publish --locked works after bump.
+      - Pretty is ctl-core ColorMode tables; tests use --color never.
+      - Native assets only when [assets] is set; PR CI stays one runner.
+    notes: >-
+      This is the original product goal. Do not name the private
+      release-skill in repo docs. Rust and bun are stock examples.
+
   - id: VER-005
     title: "Publish native verctl so mise github: can install it"
     scope: release
@@ -15,7 +33,9 @@ queue:
       - gh release vX.Y.Z includes both native tarballs.
       - mise x github:victor-software-house/verctl@vX.Y.Z -- verctl --version matches the tag.
       - tasks/ver/ver and examples/mise.toml pin that tag.
-    notes: Same cut as qctl 0.0.1. linux-x64 may wait for a Linux runner.
+    notes: >-
+      Same cut as qctl 0.0.1. Runners default *-latest, overridable.
+      Omit [assets] for libraries. One target when one binary is enough.
 
 horizon:
   - id: VER-010
