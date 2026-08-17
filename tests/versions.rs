@@ -77,8 +77,11 @@ fn is_host_actions_key(key: &str) -> bool {
 
 fn check_cmd(root: &Path) -> std::process::Command {
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"));
+    // `vars()` panics on a non-Unicode entry; the env_remove chain this
+    // replaced never decoded the environment at all. Keep that property:
+    // a key we cannot read is not a key we are stripping.
     cmd.env_clear()
-        .envs(std::env::vars().filter(|(key, _)| !is_host_actions_key(key)))
+        .envs(std::env::vars_os().filter(|(key, _)| !key.to_str().is_some_and(is_host_actions_key)))
         .current_dir(root)
         .args(["check", "--versions", "--color", "never"]);
     cmd
