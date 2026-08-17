@@ -84,8 +84,10 @@ byline. Everyone else does.
 ## Version files
 
 `verctl prepare` applies fragment bumps through **drivers**.
-Local writes are the default. `--pr` is reserved and fails closed
-until the Version PR slice lands. `--no-pr` is the explicit default.
+Local writes are the default. `prepare --pr` is the Version PR
+(Action happy path; the token is `GITHUB_TOKEN`, not the `gh` account).
+`prepare --dry-run` / `--preview` prints the plan and writes nothing.
+`prepare --pr --preview` also shows consumed fragments and open vs update.
 Cargo and npm are stock drivers, not a separate code path.
 
 ```toml
@@ -121,7 +123,10 @@ Stdout is the version (read) or the new file (write).
 
 ## Actions
 
-These replace `changesets/action`. They are GitHub Actions, not an App.
+These replace `changesets/action`. They are **GitHub Actions, not a
+GitHub App**. The runner already has `git` and `GITHUB_TOKEN`. PRs are
+opened with octocrab. Commits and push are `git2` with that token,
+not the `git`/`gh` CLIs. There is no local token setup.
 
 | Action | Role |
 |:--|:--|

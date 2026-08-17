@@ -1,4 +1,5 @@
 use clap::{Args, Parser, Subcommand};
+use ctl_core::{ColorLong, DryRunArgs, FormatArgs};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -8,6 +9,10 @@ use std::path::PathBuf;
     arg_required_else_help = true
 )]
 pub struct Cli {
+    #[command(flatten)]
+    pub format: FormatArgs,
+    #[command(flatten)]
+    pub color: ColorLong,
     #[command(subcommand)]
     pub command: Command,
 }
@@ -20,7 +25,7 @@ pub enum Command {
     Status(StatusArgs),
     /// Validate every fragment in a directory (fail closed).
     Check(StatusArgs),
-    /// Apply fragment bumps to declared version files. Does not open a PR.
+    /// Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews.
     Prepare(PrepareArgs),
 }
 
@@ -39,10 +44,9 @@ pub struct PrepareArgs {
     /// Package map. Defaults to verctl.toml in the current directory.
     #[arg(short = 'c', long, default_value = "verctl.toml", value_hint = clap::ValueHint::FilePath)]
     pub config: PathBuf,
-    /// Print the plan and leave files alone.
-    #[arg(long)]
-    pub dry_run: bool,
-    /// Open or update the Version PR. Not implemented yet; fails closed.
+    #[command(flatten)]
+    pub dry: DryRunArgs,
+    /// Open or update the Version PR. Uses `GITHUB_TOKEN` / `GH_TOKEN` (not `gh`).
     #[arg(long, overrides_with = "no_pr")]
     pub pr: bool,
     /// Write files only. This is the default. Opposite of --pr.
@@ -55,6 +59,11 @@ impl PrepareArgs {
     #[must_use]
     pub fn open_pr(&self) -> bool {
         self.pr
+    }
+
+    #[must_use]
+    pub fn dry_run(&self) -> bool {
+        self.dry.dry_run
     }
 }
 
@@ -69,6 +78,7 @@ mod tests {
         match Cli::try_parse_from(words).expect("parse") {
             Cli {
                 command: Command::Prepare(args),
+                ..
             } => args,
             _ => panic!("expected prepare"),
         }
@@ -101,5 +111,12 @@ mod tests {
     fn last_pr_flag_wins() {
         assert!(!prepare_from(&["--pr", "--no-pr"]).open_pr());
         assert!(prepare_from(&["--no-pr", "--pr"]).open_pr());
+    }
+
+    #[test]
+    fn preview_is_dry_run() {
+        assert!(prepare_from(&["--preview"]).dry_run());
+        assert!(prepare_from(&["--dry-run"]).dry_run());
+        assert!(prepare_from(&["-n"]).dry_run());
     }
 }

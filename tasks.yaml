@@ -18,7 +18,11 @@ queue:
       - Consumed fragment files are deleted in the same commit.
       - examples/workflows/version-pr.yml and actions/version-pr stay the consumer API.
       - Local prepare still works without GitHub when --no-pr is set.
-    notes: Happy path is the shipped Action. Local is recovery.
+    notes: >-
+      Happy path is actions/version-pr on GitHub Actions (github.token).
+      Local --pr uses GITHUB_TOKEN already in the env. No PAT, no App,
+      no gh, no git CLI. git2 commits/pushes with that token. octocrab
+      opens the PR.
 
   - id: VER-005
     title: "Publish native verctl so mise github: can install it"

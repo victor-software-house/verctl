@@ -46,12 +46,24 @@ Context: `summary`, `pull_request`, `commit`, `continuations`,
 
 ## Version PR
 
-`prepare` consumes fragments, writes declared version files and
-CHANGELOG sections, opens or updates one PR. Nobody hand-edits
-`Cargo.toml` version or CHANGELOG on the happy path.
+Happy path is GitHub Actions: `victor-software-house/verctl/actions/version-pr`,
+not `changesets/action`, not a GitHub App. The workflow already has
+`git`, `gh`, and `${{ github.token }}`. No PAT. No App install.
 
-Consumers call `victor-software-house/verctl/actions/version-pr`, not
-`changesets/action`. Publish uses `actions/publish` after that PR merges.
+`prepare` writes version files only (local / recovery).
+`prepare --pr` writes CHANGELOG, deletes consumed fragments, and opens
+or force-updates `version-packages` through `git2` + `octocrab`.
+Auth is `GITHUB_TOKEN` / `GH_TOKEN` only. Push uses that token over
+HTTPS, not the machine git/ssh account. We do not call `git` or `gh`
+as commands. Local `--pr` is recovery when that same token is already
+in the environment.
+
+`prepare --dry-run` and `prepare --preview` print the same plan and
+write nothing. `prepare --pr --dry-run` also lists consumed fragments
+and whether the Version PR would open or update. Preview does not
+require GitHub auth.
+
+Publish uses `actions/publish` after that PR merges (OIDC, not a PAT).
 
 ## Stop conditions
 
