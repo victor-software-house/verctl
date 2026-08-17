@@ -5,10 +5,10 @@ experimental = true
 lockfile = true
 
 [tools]
-"github:victor-software-house/verctl" = "0.0.1"
+"github:victor-software-house/verctl" = "0.0.2"
 
 [task_config]
 includes = [
-  "git::https://github.com/victor-software-house/verctl.git//tasks/ver?ref=v0.0.1",
+  "git::https://github.com/victor-software-house/verctl.git//tasks/ver?ref=v0.0.2",
   "mise-tasks",
 ]
