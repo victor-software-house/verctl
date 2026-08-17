@@ -24,6 +24,8 @@ queue:
     notes: >-
       Original product goal. Do not name the private release-skill in
       repo docs. Rust and bun are stock examples, not the architecture.
+      Adopt ctl-core fixture trees (CTC-006) instead of more fs::write
+      + indoc copies.
 
   - id: VER-012
     title: Block hand-edited versions on the default branch
