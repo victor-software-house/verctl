@@ -258,6 +258,15 @@ fn missing_changelog_section_fails_closed() {
 }
 
 #[test]
+fn pr_body_is_the_changelog() {
+    assert_eq!(release::pr_body(""), "Prepared by verctl.");
+    assert_eq!(
+        release::pr_body("## demo 1.0.1\n\n- Patch.\n"),
+        "## demo 1.0.1\n\n- Patch."
+    );
+}
+
+#[test]
 fn named_or_bare_heading_covers_the_version() {
     assert!(
         release::changelog_section_for("# Changelog\n\n## demo 1.0.1\n\n- x\n", "demo", "1.0.1")

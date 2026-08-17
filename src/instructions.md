@@ -54,7 +54,8 @@ not `changesets/action`, not a GitHub App. The workflow already has
 manifest), and consumes fragments (same as `changeset version`).
 `[prepare].after` is one argv run after bumps; `[prepare].stage`
 lists extra globs that command may write. Any other dirty path
-fails. `--pr` also opens or force-updates `version-packages`.
+fails. `--pr` also opens or force-updates `version-packages` (body is the
+changelog).
 Auth is `GITHUB_TOKEN` / `GH_TOKEN` only. Push uses that token over
 HTTPS, not the machine git/ssh account. We do not call `git` or `gh`
 as commands. Local `--pr` is recovery when that same token is already

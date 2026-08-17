@@ -260,7 +260,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
         let title = std::env::var("VERCTL_PR_TITLE")
             .unwrap_or_else(|_| "chore(release): version packages".into());
         let message = std::env::var("VERCTL_COMMIT_MESSAGE").unwrap_or_else(|_| title.clone());
-        pr = release::open_or_update_pr(root, &token, &title, &message, &paths)?;
+        pr = release::open_or_update_pr(root, &token, &title, &message, &paths, &changelog)?;
     }
     Ok(PrepareReport {
         changelog,
@@ -300,7 +300,7 @@ fn preview_report(
             Ok(token) => match github::repo(root)
                 .and_then(|repo| github::existing_pr(&token, &repo, release::VERSION_BRANCH))
             {
-                Ok(Some(url)) => formatdoc!("update {url}"),
+                Ok(Some(existing)) => formatdoc!("update {url}", url = existing.url),
                 Ok(None) => formatdoc!("open {branch}", branch = release::VERSION_BRANCH),
                 Err(_) => formatdoc!(
                     "open or update {branch} (lookup failed)",

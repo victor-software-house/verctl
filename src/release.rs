@@ -233,23 +233,27 @@ pub fn open_or_update_pr(
     title: &str,
     message: &str,
     paths: &[std::path::PathBuf],
+    changelog: &str,
 ) -> Result<Option<String>> {
     let repo = github::repo(root)?;
     match git::commit_branch_and_push(root, VERSION_BRANCH, message, token, &repo, paths)? {
         git::PushOutcome::Empty => return Ok(None),
         git::PushOutcome::Pushed => {}
     }
-    if let Some(url) = github::existing_pr(token, &repo, VERSION_BRANCH)? {
-        return Ok(Some(url));
+    let body = pr_body(changelog);
+    if let Some(existing) = github::existing_pr(token, &repo, VERSION_BRANCH)? {
+        return github::update_pr(token, &repo, existing.number, title, &body).map(Some);
     }
     let base = github::base_branch(root);
-    github::create_pr(
-        token,
-        &repo,
-        title,
-        VERSION_BRANCH,
-        &base,
-        "Prepared by verctl.",
-    )
-    .map(Some)
+    github::create_pr(token, &repo, title, VERSION_BRANCH, &base, &body).map(Some)
+}
+
+#[must_use]
+pub fn pr_body(changelog: &str) -> String {
+    let body = changelog.trim();
+    if body.is_empty() {
+        "Prepared by verctl.".into()
+    } else {
+        body.to_owned()
+    }
 }
