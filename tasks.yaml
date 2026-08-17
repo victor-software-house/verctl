@@ -1,35 +1,15 @@
 # yaml-language-server: $schema=https://github.com/victor-software-house/qctl/releases/download/v0.0.1/tasks.schema.json
 schema_version: 1
 prefix: VER
-active: VER-004
+active: VER-005
 
 queue:
-  - id: VER-004
-    title: Open or update the Version PR
-    scope: verctl
-    outcome: >-
-      One prepare-release PR consumes fragments, commits version files
-      and CHANGELOG, and deletes the consumed .changeset files.
-    blocked_by: []
-    acceptance:
-      - Uses GITHUB_TOKEN only. No PAT.
-      - Opens a new PR or force-updates the existing version-packages branch.
-      - CHANGELOG sections are minijinja output from VER-002.
-      - Consumed fragment files are deleted in the same commit.
-      - examples/workflows/version-pr.yml and actions/version-pr stay the consumer API.
-      - Local prepare still works without GitHub when --no-pr is set.
-    notes: >-
-      Implemented on ver-004-version-pr (not on main). git2 + octocrab +
-      GITHUB_TOKEN. ctl-core for help/views/formatdoc. --preview writes
-      nothing. Leftover: open the PR, merge, then one live prepare --pr
-      so 0.0.0 -> 0.0.1 exists. Do not archive until that lands.
-
   - id: VER-005
     title: "Publish native verctl so mise github: can install it"
     scope: release
     outcome: >-
       crates.io plus GitHub Release assets for darwin-arm64 and linux-x64.
-    blocked_by: [VER-004]
+    blocked_by: []
     acceptance:
       - cargo publish --locked succeeds for this crate.
       - gh release vX.Y.Z includes both native tarballs.
@@ -37,22 +17,20 @@ queue:
       - tasks/ver/ver and examples/mise.toml pin that tag.
     notes: Same cut as qctl 0.0.1. linux-x64 may wait for a Linux runner.
 
-  - id: VER-009
-    title: Keep verctl on ctl-core after the chassis hardens
-    scope: verctl
-    outcome: >-
-      verctl stays on ctl-core prelude/View/formatdoc. No local help
-      or color copy comes back.
-    blocked_by: [VER-004]
-    acceptance:
-      - No forkctl-style help.rs or ColorMode lives in verctl.
-      - Pin is a ctl-core version or git rev, not an unpublished path.
-    notes: >-
-      Partial adoption is on feat/004-version-pr. Wait for ctl-core
-      CTC-004 (harden) before calling migration done. qctl cannot
-      name a foreign prefix in blocked_by.
-
 horizon:
+  - id: VER-010
+    title: Stock JS publish for npm, pnpm, and yarn
+    scope: verctl
+    kind: evaluation
+    outcome: >-
+      package.json still publishes through one table of argv. Bun stays
+      the default. npm/pnpm/yarn are extra rows, not new verbs or
+      Action commands.
+    open: >-
+      Need a consumer that is not Bun. Infer from packageManager /
+      lockfile the same way detect.rs already does for install. Action
+      stays `verctl publish`.
+
   - id: VER-008
     title: Generic regex version writer
     scope: verctl
@@ -71,10 +49,35 @@ horizon:
     title: OIDC publish backends for cargo and bun
     scope: verctl
     kind: deferred
-    outcome: A publish verb runs after the Version PR merges.
-    open: Trusted Publishing and bun publish paths are a later slice. actions/publish is only the hook.
+    outcome: Public npm uses trusted publishing, not NPM_TOKEN.
+    open: bun publish --tolerate-republish already ships. OIDC is the remaining auth path.
 
 archive:
+  - id: VER-009
+    title: Keep verctl on ctl-core after the chassis hardens
+    scope: verctl
+    completed: "2026-08-17"
+    disposition: completed
+    outcome: >-
+      verctl stays on ctl-core prelude/View/formatdoc. No local help
+      or color copy comes back.
+    evidence:
+      - "ctl-core = \"0.0.1\" on crates.io"
+      - "no local help.rs or ColorMode"
+
+  - id: VER-004
+    title: Open or update the Version PR
+    scope: verctl
+    completed: "2026-08-17"
+    disposition: completed
+    outcome: >-
+      One prepare-release PR consumes fragments, commits version files
+      and CHANGELOG, and deletes the consumed .changeset files.
+    evidence:
+      - "github.com/victor-software-house/verctl/pull/7"
+      - "crates.io verctl 0.0.1"
+      - "actions/version-pr and actions/publish"
+
   - id: VER-003
     title: Write Cargo.toml and package.json versions
     scope: verctl

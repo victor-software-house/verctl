@@ -1,4 +1,4 @@
-//! `publish --dry-run` prints the crates on HEAD and writes nothing.
+//! `publish --dry-run` prints the stock command plan and writes nothing.
 #![allow(missing_docs)]
 
 use indoc::indoc;
@@ -34,39 +34,50 @@ fn dry_run_lists_cargo_crate() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stderr}");
-    assert!(stdout.contains("demo@0.0.1"), "{stdout}");
-    assert!(stdout.contains("dry-run"), "{stdout}");
+    assert_eq!(
+        stdout,
+        indoc! {"
+            crate   demo@0.0.1 (cargo)
+            release would create v0.0.1
+            dry-run (nothing published)
+        "}
+    );
 }
 
 #[test]
-fn empty_prepare_pr_is_noop() {
+fn dry_run_lists_bun_package() {
     let root = TempDir::new().unwrap();
     fs::write(
         root.path().join("verctl.toml"),
         indoc! {r#"
             [[packages]]
-            name = "demo"
-            path = "Cargo.toml"
+            name = "@org/pkg"
+            path = "package.json"
+            registry = "github"
         "#},
     )
     .unwrap();
     fs::write(
-        root.path().join("Cargo.toml"),
+        root.path().join("package.json"),
         indoc! {r#"
-            [package]
-            name = "demo"
-            version = "0.0.1"
+            { "name": "@org/pkg", "version": "0.0.1" }
         "#},
     )
     .unwrap();
-    fs::create_dir_all(root.path().join(".changeset")).unwrap();
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
         .current_dir(root.path())
-        .args(["prepare", "--pr"])
+        .args(["publish", "--dry-run"])
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stderr}");
-    assert!(stdout.contains("no-op"), "{stdout}");
+    assert_eq!(
+        stdout,
+        indoc! {"
+            crate   @org/pkg@0.0.1 (bun github)
+            release would create v0.0.1
+            dry-run (nothing published)
+        "}
+    );
 }
