@@ -1,0 +1,6 @@
+# This repo's own package. A .changeset fragment plus
+# `mise run ver -- prepare --pr` opens the first Version PR.
+
+[[packages]]
+name = "verctl"
+path = "Cargo.toml"

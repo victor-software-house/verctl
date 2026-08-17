@@ -1,4 +1,3 @@
-# Consumer workflow. Mise owns tools. This action owns the Version PR.
 name: Version PR
 
 on:

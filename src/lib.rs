@@ -9,5 +9,8 @@ pub mod config;
 pub mod detect;
 pub mod driver;
 pub mod fragment;
+pub mod git;
+pub mod github;
 pub mod prepare;
 pub mod process;
+pub mod release;
