@@ -24,6 +24,18 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Point origin/HEAD at the repository default branch
+      shell: bash
+      env:
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      run: |
+        set -euo pipefail
+        # actions/checkout never creates origin/HEAD. Do not use
+        # GITHUB_REF_NAME: on push it is the branch being pushed.
+        if [ -n "${DEFAULT_BRANCH}" ]; then
+          git symbolic-ref refs/remotes/origin/HEAD \
+            "refs/remotes/origin/${DEFAULT_BRANCH}"
+        fi
     - name: Publish
       shell: bash
       env:

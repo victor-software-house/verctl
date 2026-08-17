@@ -84,6 +84,8 @@ fn default_branch_names() -> Vec<String> {
     let mut names = Vec::new();
     // PR events only. Do not use GITHUB_REF_NAME: on push it is the
     // branch being pushed, so origin/<that branch> would always match HEAD.
+    // A non-main default on Actions is origin/HEAD, which
+    // actions/publish writes from github.event.repository.default_branch.
     if let Ok(value) = env::var("GITHUB_BASE_REF") {
         let value = value.trim();
         if !value.is_empty() {

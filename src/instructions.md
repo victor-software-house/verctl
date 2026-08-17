@@ -69,8 +69,13 @@ require GitHub auth.
 `publish` ships the versions already on HEAD, then a GitHub Release.
 It refuses unless each package version has a matching CHANGELOG
 heading (the Version PR writes those) and, when `origin` exists,
-HEAD is an ancestor of the default branch. It does not sniff the
-commit subject. How is `[publishers.NAME]`: argv + placeholders.
+HEAD is an ancestor of the default branch (`origin/HEAD`, then
+`GITHUB_BASE_REF`, then `main`/`master`). It does not sniff the
+commit subject and does not treat `GITHUB_REF_NAME` as the default
+(that is the branch being pushed). `actions/publish` points
+`origin/HEAD` at `github.event.repository.default_branch` because
+checkout never creates that symref. Locally `git clone` already
+has it; otherwise `git remote set-head origin --auto`. How is `[publishers.NAME]`: argv + placeholders.
 Cargo and bun are stock recipes (first-class examples). Override or
 add another stack without a new verb. GitHub Packages for bun uses a
 nearby `bunfig.toml` as `--config`. Pretty output is ctl-core
