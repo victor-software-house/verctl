@@ -85,6 +85,8 @@ fn after_may_write_declared_globs() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(root.path().join("src/version.rs").exists());
+    let staged = verctl::git::stage_matches(root.path(), &["src/version.rs".into()]).unwrap();
+    assert_eq!(staged, vec![root.path().join("src/version.rs")]);
 }
 
 #[test]

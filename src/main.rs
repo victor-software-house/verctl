@@ -326,6 +326,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     let mut paths: Vec<std::path::PathBuf> = plan.iter().map(|entry| entry.path.clone()).collect();
     paths.extend(changelogs);
     paths.extend(consumed.iter().map(|fragment| fragment.path.clone()));
+    paths.extend(git::stage_matches(root, &config.prepare.stage)?);
     git::assert_only_allowed(root, &paths, &config.prepare.stage)?;
     release::consume_fragments(consumed)?;
     let mut pr = None;

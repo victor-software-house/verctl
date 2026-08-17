@@ -204,6 +204,22 @@ fn default_upstream_commit<'a>(
     Ok(None)
 }
 
+/// Paths matching `[prepare].stage` that exist under `root`.
+pub fn stage_matches(root: &Path, globs: &[String]) -> Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    for pattern in globs {
+        let full = if Path::new(pattern).is_absolute() {
+            pattern.clone()
+        } else {
+            root.join(pattern).to_string_lossy().into_owned()
+        };
+        for entry in glob::glob(&full).with_context(|| pattern.clone())? {
+            paths.push(entry.with_context(|| pattern.clone())?);
+        }
+    }
+    Ok(paths)
+}
+
 /// Fail if the worktree has dirty paths outside `allowed` and `globs`.
 ///
 /// `statuses(None)` uses libgit2 defaults, which list ignored files.
