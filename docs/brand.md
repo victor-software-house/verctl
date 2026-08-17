@@ -30,8 +30,9 @@ Banner-only tints: `#6f675c` (muted on cream), `#8d857a` (muted on ink),
 A 32-unit square, corner radius 6. Line from `4,28` to `26,6` at 2 units
 wide; nodes on that line at `6.5,25.5` and `15.25,16.75` at r 3.5; the new
 tag at `24,8` at r 5.75. Every node centre satisfies `x + y = 32`, so the
-line needs no separate alignment. It is checked at 16px — keep the node
-gaps, they are what stop it reading as one blob.
+line needs no separate alignment. The figure is then scaled `0.88` about
+the square centre so the field has air. It is checked at 16px — keep the
+node gaps, they are what stop it reading as one blob.
 
 ## Banner text
 
