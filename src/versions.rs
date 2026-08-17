@@ -5,7 +5,6 @@ use crate::git;
 use crate::release::VERSION_BRANCH;
 use anyhow::{Result, ensure};
 use serde::Serialize;
-use std::env;
 use std::fs;
 use std::path::Path;
 
@@ -19,9 +18,6 @@ pub enum Skip {
 impl Skip {
     #[must_use]
     pub fn from_env(root: &Path) -> Self {
-        if env_flag("CI") || env_flag("GITHUB_ACTIONS") {
-            return Self::Ci;
-        }
         if git::current_branch(root).as_deref() == Some(VERSION_BRANCH) {
             return Self::VersionBranch;
         }
@@ -36,10 +32,6 @@ impl Skip {
             Self::VersionBranch => Some("version-packages"),
         }
     }
-}
-
-fn env_flag(name: &str) -> bool {
-    env::var(name).is_ok_and(|value| matches!(value.trim(), "true" | "1" | "yes"))
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -75,7 +67,7 @@ impl VersionReport {
         let drifted = self.drifted();
         ensure!(
             drifted.is_empty(),
-            "manifest versions differ from the default branch ({}); write a .changeset fragment instead of editing versions",
+            "manifest versions differ from the merge-base of the default branch ({}); write a .changeset fragment instead of editing versions",
             drifted
                 .iter()
                 .map(|row| format!(
@@ -112,18 +104,24 @@ pub fn report_with(
             rows: Vec::new(),
         });
     }
+    let rels: Vec<&Path> = config
+        .packages
+        .iter()
+        .map(|spec| spec.path.as_path())
+        .collect();
+    let remotes = git::files_on_merge_base(root, &rels, candidates)?;
     let mut rows = Vec::new();
-    for spec in &config.packages {
+    for (spec, remote_raw) in config.packages.iter().zip(remotes) {
         let path = root.join(&spec.path);
         let Ok(local_raw) = fs::read_to_string(&path) else {
             continue;
         };
         let driver = spec.resolve(config, root)?;
         let local = driver.read(&local_raw)?;
-        let remote = match git::file_on_default_with(root, &spec.path, candidates)? {
-            Some(raw) => Some(driver.read(&raw)?),
-            None => None,
-        };
+        let remote = remote_raw
+            .as_deref()
+            .map(|raw| driver.read(raw))
+            .transpose()?;
         rows.push(VersionRow {
             name: spec.name.clone(),
             path: spec.path.display().to_string(),

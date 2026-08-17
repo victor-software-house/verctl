@@ -37,8 +37,8 @@ description = "Fail if manifest versions differ from the default branch"
 run = "cargo run -- check --versions"
 
 [tasks.verify]
-description = "Format, lint, and test"
-run = "mise run format && mise run lint && cargo test --all-features"
+description = "Format, lint, test, and version guard"
+run = "mise run format && mise run lint && cargo test --all-features && mise run versions"
 
 [tasks.build]
 description = "Build the release binary"

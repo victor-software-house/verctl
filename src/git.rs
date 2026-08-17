@@ -12,32 +12,57 @@ pub fn current_branch(root: &Path) -> Option<String> {
     (name != "HEAD").then(|| name.to_owned())
 }
 
-/// File contents on the default-branch tip, if that path exists there.
-pub fn file_on_default(root: &Path, rel: &Path) -> Result<Option<String>> {
-    file_on_default_with(root, rel, &candidate_names(env_base_ref().as_deref()))
+/// File contents at the merge-base of HEAD and the default branch.
+///
+/// Paths are relative to `root` (the config directory) and are mapped
+/// onto the git workdir so `-c crates/foo/verctl.toml` still hits the
+/// right blob. One repository open for the whole list.
+pub fn files_on_merge_base(
+    root: &Path,
+    rels: &[&Path],
+    candidates: &[String],
+) -> Result<Vec<Option<String>>> {
+    let Some(repo) = repo_covering(root) else {
+        return Ok(vec![None; rels.len()]);
+    };
+    let Some(upstream) = default_upstream_commit(&repo, candidates)? else {
+        return Ok(vec![None; rels.len()]);
+    };
+    let tree = match repo.head().ok().and_then(|head| head.peel_to_commit().ok()) {
+        Some(head) => match repo.merge_base(head.id(), upstream.id()) {
+            Ok(oid) => repo.find_commit(oid)?.tree()?,
+            Err(_) => upstream.tree()?,
+        },
+        None => upstream.tree()?,
+    };
+    let workdir = repo.workdir().map(Path::to_path_buf);
+    Ok(rels
+        .iter()
+        .map(|rel| blob_at(&repo, &tree, &git_path(root, rel, workdir.as_deref())))
+        .collect())
 }
 
-pub fn file_on_default_with(
-    root: &Path,
-    rel: &Path,
-    candidates: &[String],
-) -> Result<Option<String>> {
-    let Some(repo) = repo_covering(root) else {
-        return Ok(None);
+fn git_path(root: &Path, rel: &Path, workdir: Option<&Path>) -> PathBuf {
+    let abs = if rel.is_absolute() {
+        rel.to_path_buf()
+    } else {
+        root.join(rel)
     };
-    let Some(commit) = default_upstream_commit(&repo, candidates)? else {
-        return Ok(None);
-    };
-    let tree = commit.tree().context("default-branch tree")?;
-    let Ok(entry) = tree.get_path(rel) else {
-        return Ok(None);
-    };
-    let blob = entry
-        .to_object(&repo)
-        .context("default-branch object")?
-        .peel_to_blob()
-        .with_context(|| format!("default-branch path is not a file: {}", rel.display()))?;
-    Ok(Some(String::from_utf8_lossy(blob.content()).into_owned()))
+    let abs = abs.canonicalize().unwrap_or(abs);
+    workdir
+        .and_then(|workdir| {
+            let workdir = workdir
+                .canonicalize()
+                .unwrap_or_else(|_| workdir.to_path_buf());
+            abs.strip_prefix(workdir).ok().map(Path::to_path_buf)
+        })
+        .unwrap_or_else(|| rel.to_path_buf())
+}
+
+fn blob_at(repo: &Repository, tree: &git2::Tree<'_>, rel: &Path) -> Option<String> {
+    let entry = tree.get_path(rel).ok()?;
+    let blob = entry.to_object(repo).ok()?.peel_to_blob().ok()?;
+    Some(String::from_utf8_lossy(blob.content()).into_owned())
 }
 
 pub fn origin_url(root: &Path) -> Result<String> {

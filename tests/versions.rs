@@ -12,7 +12,7 @@ fn commit_tree(repo: &Repository, message: &str) -> git2::Oid {
     let sig = Signature::now("t", "t@example.com").unwrap();
     let mut index = repo.index().unwrap();
     index
-        .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
+        .add_all(["."].iter(), git2::IndexAddOption::DEFAULT, None)
         .unwrap();
     index.write().unwrap();
     let tid = index.write_tree().unwrap();
@@ -215,20 +215,90 @@ fn cli_hand_edit_fails_and_prints_table() {
 }
 
 #[test]
-fn cli_ci_is_exempt() {
+fn ci_env_does_not_skip() {
     let (dir, _) = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
         .current_dir(dir.path())
         .env("CI", "true")
+        .env("GITHUB_ACTIONS", "true")
         .args(["check", "--versions", "--color", "never"])
         .output()
         .unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(output.status.success(), "{stdout}{stderr}");
-    assert!(stdout.contains("exempt"), "{stdout}");
-    assert!(stdout.contains("ci"), "{stdout}");
+    assert!(!output.status.success());
+}
+
+#[test]
+fn behind_released_main_without_local_edit_is_ok() {
+    let (dir, repo) = repo_with_origin_main("1.0.0");
+    repo.branch(
+        "feature",
+        &repo.head().unwrap().peel_to_commit().unwrap(),
+        false,
+    )
+    .unwrap();
+    repo.set_head("refs/heads/main").unwrap();
+    write_crate(dir.path(), "1.1.0");
+    let released = commit_tree(&repo, "release");
+    repo.reference("refs/remotes/origin/main", released, true, "test")
+        .unwrap();
+    repo.set_head("refs/heads/feature").unwrap();
+    repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+        .unwrap();
+    check(dir.path(), Skip::None).unwrap();
+}
+
+#[test]
+fn nested_config_maps_onto_the_git_tree() {
+    let dir = TempDir::new().unwrap();
+    let repo = Repository::init(dir.path()).unwrap();
+    fs::create_dir_all(dir.path().join("crates/demo")).unwrap();
+    fs::write(
+        dir.path().join("crates/demo/verctl.toml"),
+        indoc! {r#"
+            [[packages]]
+            name = "demo"
+            path = "Cargo.toml"
+        "#},
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("crates/demo/Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.0.0"
+        "#},
+    )
+    .unwrap();
+    let oid = commit_tree(&repo, "init");
+    repo.remote(
+        "origin",
+        "https://github.com/victor-software-house/verctl.git",
+    )
+    .unwrap();
+    repo.reference("refs/remotes/origin/main", oid, true, "test")
+        .unwrap();
+    fs::write(
+        dir.path().join("crates/demo/Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.0.1"
+        "#},
+    )
+    .unwrap();
+    let err = versions::require_with(
+        &dir.path().join("crates/demo"),
+        &Config::load(&dir.path().join("crates/demo/verctl.toml")).unwrap(),
+        Skip::None,
+        &versions::stock_candidates(),
+    )
+    .unwrap_err();
+    assert!(
+        format!("{err:#}").contains("demo 1.0.0 -> 1.0.1"),
+        "{err:#}"
+    );
 }
 
 #[test]

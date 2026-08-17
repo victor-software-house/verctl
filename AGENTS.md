@@ -54,10 +54,8 @@ mise tasks only.
 
 Human writes `.changeset/*.md` only. Never hand-edit versions or
 CHANGELOG. `prepare --pr` is the Version PR. `verctl check --versions`
-(and the pre-push `mise run versions` hook) fails when a declared
-manifest version differs from the default branch. Exempt:
-`version-packages` and CI. `publish` is exact-SHA plus a matching
-per-package CHANGELOG heading.
+compares each manifest to the merge-base of HEAD and the default
+branch. Only `version-packages` is exempt. CI does not skip.
 Cargo and bun are stock recipes, not the architecture. Do not name
 private release skills in this repo.
 
