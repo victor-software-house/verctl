@@ -23,8 +23,8 @@ pub enum Command {
     Instructions,
     /// List pending .changeset fragments.
     Status(StatusArgs),
-    /// Validate every fragment in a directory (fail closed).
-    Check(StatusArgs),
+    /// Validate fragments, or `--versions` against the default branch.
+    Check(CheckArgs),
     /// Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews.
     Prepare(PrepareArgs),
     /// Publish the versions on HEAD (cargo / bun + GitHub Release).
@@ -73,6 +73,19 @@ pub struct StatusArgs {
     /// Directory of fragments. Defaults to .changeset.
     #[arg(short = 'd', long, default_value = ".changeset", value_hint = clap::ValueHint::DirPath)]
     pub dir: PathBuf,
+}
+
+#[derive(Args)]
+pub struct CheckArgs {
+    /// Directory of fragments. Defaults to .changeset.
+    #[arg(short = 'd', long, default_value = ".changeset", value_hint = clap::ValueHint::DirPath)]
+    pub dir: PathBuf,
+    /// Package map. Used with `--versions`.
+    #[arg(short = 'c', long, default_value = "verctl.toml", value_hint = clap::ValueHint::FilePath)]
+    pub config: PathBuf,
+    /// Fail when a declared manifest version differs from the default branch.
+    #[arg(long)]
+    pub versions: bool,
 }
 
 #[derive(Args)]
@@ -150,6 +163,15 @@ mod tests {
     fn last_pr_flag_wins() {
         assert!(!prepare_from(&["--pr", "--no-pr"]).open_pr());
         assert!(prepare_from(&["--no-pr", "--pr"]).open_pr());
+    }
+
+    #[test]
+    fn check_versions_flag_parses() {
+        let cli = Cli::try_parse_from(["verctl", "check", "--versions"]).expect("parse");
+        match cli.command {
+            Command::Check(args) => assert!(args.versions),
+            _ => panic!("expected check"),
+        }
     }
 
     #[test]

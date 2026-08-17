@@ -17,3 +17,4 @@ pub mod process;
 pub mod publish;
 pub mod publisher;
 pub mod release;
+pub mod versions;

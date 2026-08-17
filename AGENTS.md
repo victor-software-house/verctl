@@ -52,8 +52,10 @@ mise tasks only.
 
 ## Release loop
 
-Human writes `.changeset/*.md` only. `prepare --pr` is the Version PR.
-`publish` is exact-SHA plus a matching per-package CHANGELOG heading.
+Human writes `.changeset/*.md` only. Never hand-edit versions or
+CHANGELOG. `prepare --pr` is the Version PR. `verctl check --versions`
+compares each manifest to the merge-base of HEAD and the default
+branch. Only `version-packages` is exempt. CI does not skip.
 Cargo and bun are stock recipes, not the architecture. Do not name
 private release skills in this repo.
 

@@ -50,6 +50,11 @@ Happy path is GitHub Actions: `victor-software-house/verctl/actions/version-pr`,
 not `changesets/action`, not a GitHub App. The workflow already has
 `git`, `gh`, and `${{ github.token }}`. No PAT. No App install.
 
+Do not hand-edit versions. `verctl check --versions` compares each
+declared manifest to the merge-base of HEAD and the default branch.
+It fails when they differ. Only `version-packages` is exempt. CI
+does not skip. A fragment-only commit does not change versions.
+
 `prepare` writes versions, per-package CHANGELOG.md (next to each
 manifest), and consumes fragments (same as `changeset version`).
 `[prepare].after` is one argv run after bumps; `[prepare].stage`

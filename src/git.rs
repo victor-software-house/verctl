@@ -4,6 +4,64 @@ use git2::{Cred, PushOptions, RemoteCallbacks, Repository, Signature};
 use std::env;
 use std::path::{Path, PathBuf};
 
+#[must_use]
+pub fn current_branch(root: &Path) -> Option<String> {
+    let repo = repo_covering(root)?;
+    let head = repo.head().ok()?;
+    let name = head.shorthand().ok()?;
+    (name != "HEAD").then(|| name.to_owned())
+}
+
+/// File contents at the merge-base of HEAD and the default branch.
+///
+/// Paths are relative to `root` (the config directory) and are mapped
+/// onto the git workdir so `-c crates/foo/verctl.toml` still hits the
+/// right blob. One repository open for the whole list.
+pub fn files_on_merge_base(
+    root: &Path,
+    rels: &[&Path],
+    candidates: &[String],
+) -> Result<Vec<Option<String>>> {
+    let Some(repo) = repo_covering(root) else {
+        return Ok(vec![None; rels.len()]);
+    };
+    let Some(upstream) = default_upstream_commit(&repo, candidates)? else {
+        return Ok(vec![None; rels.len()]);
+    };
+    let head = repo.head().context("cannot compare versions (need HEAD)")?;
+    let head = head
+        .peel_to_commit()
+        .context("cannot compare versions (need HEAD)")?;
+    let base = repo.merge_base(head.id(), upstream.id()).context(
+        "cannot compare versions against the default branch (need a full fetch, not a shallow clone)",
+    )?;
+    let tree = repo.find_commit(base)?.tree()?;
+    let workdir = repo.workdir().map(Path::to_path_buf);
+    Ok(rels
+        .iter()
+        .map(|rel| {
+            git_path(root, rel, workdir.as_deref()).and_then(|path| blob_at(&repo, &tree, &path))
+        })
+        .collect())
+}
+
+fn git_path(root: &Path, rel: &Path, workdir: Option<&Path>) -> Option<PathBuf> {
+    let abs = if rel.is_absolute() {
+        rel.to_path_buf()
+    } else {
+        root.join(rel)
+    };
+    let abs = abs.canonicalize().ok()?;
+    let workdir = workdir?.canonicalize().ok()?;
+    abs.strip_prefix(workdir).ok().map(Path::to_path_buf)
+}
+
+fn blob_at(repo: &Repository, tree: &git2::Tree<'_>, rel: &Path) -> Option<String> {
+    let entry = tree.get_path(rel).ok()?;
+    let blob = entry.to_object(repo).ok()?.peel_to_blob().ok()?;
+    Some(String::from_utf8_lossy(blob.content()).into_owned())
+}
+
 pub fn origin_url(root: &Path) -> Result<String> {
     let repo = Repository::discover(root).context("open git repository")?;
     let remote = repo.find_remote("origin").context("git remote origin")?;
@@ -97,6 +155,16 @@ fn env_base_ref() -> Option<String> {
 /// being pushed, so `origin/<that branch>` would always match HEAD.
 /// A non-main default on Actions is `origin/HEAD`, which
 /// `actions/publish` writes from `github.event.repository.default_branch`.
+#[must_use]
+pub fn default_branch_candidates() -> Vec<String> {
+    candidate_names(env_base_ref().as_deref())
+}
+
+#[must_use]
+pub fn default_branch_candidates_from(base_ref: Option<&str>) -> Vec<String> {
+    candidate_names(base_ref)
+}
+
 fn candidate_names(base_ref: Option<&str>) -> Vec<String> {
     let mut names = Vec::new();
     if let Some(value) = base_ref.map(str::trim).filter(|value| !value.is_empty()) {
@@ -118,7 +186,7 @@ fn default_upstream_commit<'a>(
         return match peel_remote(repo, &name) {
             Some(commit) => Ok(Some(commit)),
             None => bail!(
-                "publish cannot prove HEAD is on the default branch ({name} is missing; fetch the default branch)"
+                "cannot resolve the default branch ({name} is missing; fetch the default branch)"
             ),
         };
     }
@@ -130,7 +198,7 @@ fn default_upstream_commit<'a>(
     }
     if repo.find_remote("origin").is_ok() {
         bail!(
-            "publish cannot prove HEAD is on the default branch (origin exists but origin/HEAD, origin/main, and origin/master are missing; fetch the default branch)"
+            "cannot resolve the default branch (origin exists but origin/HEAD, origin/main, and origin/master are missing; fetch the default branch)"
         );
     }
     Ok(None)

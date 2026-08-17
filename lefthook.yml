@@ -19,5 +19,7 @@ pre-push:
   commands:
     committed:
       run: mise run commits
+    versions:
+      run: mise run versions
     verify:
       run: mise run verify
