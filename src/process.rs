@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_mins(1);
 pub const DEFAULT_OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
 
 /// Run an argv with stdin piped and stdout captured.
