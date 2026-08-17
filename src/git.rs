@@ -28,12 +28,13 @@ pub fn files_on_merge_base(
     let Some(upstream) = default_upstream_commit(&repo, candidates)? else {
         return Ok(vec![None; rels.len()]);
     };
-    let Some(head) = repo.head().ok().and_then(|head| head.peel_to_commit().ok()) else {
-        return Ok(vec![None; rels.len()]);
-    };
-    let Ok(base) = repo.merge_base(head.id(), upstream.id()) else {
-        return Ok(vec![None; rels.len()]);
-    };
+    let head = repo.head().context("cannot compare versions (need HEAD)")?;
+    let head = head
+        .peel_to_commit()
+        .context("cannot compare versions (need HEAD)")?;
+    let base = repo.merge_base(head.id(), upstream.id()).context(
+        "cannot compare versions against the default branch (need a full fetch, not a shallow clone)",
+    )?;
     let tree = repo.find_commit(base)?.tree()?;
     let workdir = repo.workdir().map(Path::to_path_buf);
     Ok(rels
