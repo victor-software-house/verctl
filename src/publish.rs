@@ -92,13 +92,9 @@ fn publish_package(entry: &PublishEntry) -> Result<String> {
     let coord = format!("{}@{}", entry.name, entry.version);
     match entry.kind {
         PublishKind::Cargo => {
-            let argv = vec![
-                "cargo".into(),
-                "publish".into(),
-                "--locked".into(),
-                "--manifest-path".into(),
-                entry.path.display().to_string(),
-            ];
+            let manifest = entry.path.display().to_string();
+            let argv =
+                process::argv(&["cargo", "publish", "--locked", "--manifest-path", &manifest]);
             match process::run_limited(&argv, &[], PUBLISH_TIMEOUT) {
                 Ok(_) => Ok(coord),
                 Err(error) if already_published(&format!("{error:#}")) => {
@@ -113,14 +109,9 @@ fn publish_package(entry: &PublishEntry) -> Result<String> {
                 .parent()
                 .filter(|parent| !parent.as_os_str().is_empty())
                 .unwrap_or_else(|| Path::new("."));
-            let argv = vec![
-                "npm".into(),
-                "publish".into(),
-                "--prefix".into(),
-                dir.display().to_string(),
-                "--access".into(),
-                "public".into(),
-            ];
+            let prefix = dir.display().to_string();
+            let argv =
+                process::argv(&["npm", "publish", "--prefix", &prefix, "--access", "public"]);
             match process::run_limited(&argv, &[], PUBLISH_TIMEOUT) {
                 Ok(_) => Ok(coord),
                 Err(error) if already_published(&format!("{error:#}")) => {

@@ -37,7 +37,8 @@ struct CheckReport {
 
 impl Render for CheckReport {
     fn render_pretty(&self) -> String {
-        formatdoc!("ok      {n} fragment(s)", n = self.ok)
+        let n = self.ok;
+        formatdoc!("ok      {n} fragment(s)")
     }
 }
 
@@ -76,29 +77,24 @@ impl Render for StatusReport {
                     .packages
                     .iter()
                     .map(|package| {
-                        formatdoc!(
-                            "  {name:<32} {bump:<6} {file}",
-                            name = package.name,
-                            bump = package.bump,
-                            file = file,
-                        )
+                        let name = package.name.as_str();
+                        let bump = package.bump.as_str();
+                        formatdoc!("  {name:<32} {bump:<6} {file}")
                     })
                     .collect::<Vec<_>>();
                 let mut lines = pkgs;
-                lines.push(formatdoc!("    max {max}", max = max));
+                lines.push(formatdoc!("    max {max}"));
                 lines
             })
             .collect::<Vec<_>>()
             .join("\n");
+        let pending = self.pending;
+        let max = self.max.as_str();
         formatdoc! {"
             pending  {pending}
             {rows}
             max     {max}
-            ",
-            pending = self.pending,
-            rows = rows,
-            max = self.max,
-        }
+        "}
     }
 }
 
@@ -128,13 +124,11 @@ impl Render for PrepareReport {
                 self.bumps
                     .iter()
                     .map(|bump| {
-                        formatdoc!(
-                            "bump    {name}  {from} -> {to}  ({kind})",
-                            name = bump.name,
-                            from = bump.from,
-                            to = bump.to,
-                            kind = bump.bump,
-                        )
+                        let name = bump.name.as_str();
+                        let from = bump.from.as_str();
+                        let to = bump.to.as_str();
+                        let kind = bump.bump.as_str();
+                        formatdoc!("bump    {name}  {from} -> {to}  ({kind})")
                     })
                     .collect::<Vec<_>>()
                     .join("\n"),
@@ -144,7 +138,7 @@ impl Render for PrepareReport {
             blocks.push(
                 self.changelog
                     .lines()
-                    .map(|line| formatdoc!("log     {line}", line = line))
+                    .map(|line| formatdoc!("log     {line}"))
                     .collect::<Vec<_>>()
                     .join("\n"),
             );
@@ -153,19 +147,19 @@ impl Render for PrepareReport {
             blocks.push(
                 self.consume
                     .iter()
-                    .map(|file| formatdoc!("consume {file}", file = file))
+                    .map(|file| formatdoc!("consume {file}"))
                     .collect::<Vec<_>>()
                     .join("\n"),
             );
         }
         if let Some(pr) = &self.pr {
-            blocks.push(formatdoc!("pr      {pr}", pr = pr));
+            blocks.push(formatdoc!("pr      {pr}"));
         }
         if !self.next.is_empty() {
             blocks.push(
                 self.next
                     .iter()
-                    .map(|cmd| formatdoc!("next    {cmd}", cmd = cmd))
+                    .map(|cmd| formatdoc!("next    {cmd}"))
                     .collect::<Vec<_>>()
                     .join("\n"),
             );
@@ -195,7 +189,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
             bumps: Vec::new(),
             changelog: String::new(),
             consume: Vec::new(),
-            pr: args.open_pr().then(|| "no-op".into()),
+            pr: args.open_pr().then(|| "no-op".to_owned()),
             next: Vec::new(),
             dry_run,
         });
@@ -320,22 +314,30 @@ struct PublishReport {
 
 impl Render for PublishReport {
     fn render_pretty(&self) -> String {
-        let mut lines: Vec<String> = self
+        if self.crates.is_empty() && self.release.is_none() {
+            return formatdoc!("no-op   nothing to publish");
+        }
+        let crates = self
             .crates
             .iter()
-            .map(|entry| formatdoc!("crate   {entry}", entry = entry))
-            .collect();
-        if let Some(release) = &self.release {
-            lines.push(formatdoc!("release {release}", release = release));
-        }
-        if self.dry_run {
-            lines.push(formatdoc!("dry-run (nothing published)"));
-        }
-        if lines.is_empty() {
-            formatdoc!("no-op   nothing to publish")
+            .map(|entry| format!("crate   {entry}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let release = self
+            .release
+            .as_deref()
+            .map(|url| format!("release {url}"))
+            .unwrap_or_default();
+        let dry = if self.dry_run {
+            "dry-run (nothing published)"
         } else {
-            lines.join("\n")
-        }
+            ""
+        };
+        [crates.as_str(), release.as_str(), dry]
+            .into_iter()
+            .filter(|block| !block.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 }
 

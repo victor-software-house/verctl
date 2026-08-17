@@ -1,29 +1,33 @@
 name: verctl version PR
 description: >-
-  Open or update the Version PR. Consumes .changeset fragments, writes
-  versions and changelogs. Replacement for changesets/action version: input.
+  Open or update the Version PR. Finds `verctl` on PATH, otherwise
+  `mise run ver`. Replacement for changesets/action version: input.
 author: victor-software-house
 branding:
   icon: git-pull-request
   color: gray-dark
 
 inputs:
-  command:
-    description: Prepare command. Default uses the mise-mounted ver task.
-    required: false
-    default: mise run ver -- prepare --pr
-  commit-message:
-    description: Commit message on the Version PR.
-    required: false
-    default: "chore(release): version packages"
-  title:
-    description: Version PR title.
-    required: false
-    default: "chore(release): version packages"
   token:
     description: Token that can open PRs. Default GITHUB_TOKEN.
     required: false
     default: ${{ github.token }}
+  config:
+    description: Path to verctl.toml.
+    required: false
+    default: verctl.toml
+  title:
+    description: Version PR title.
+    required: false
+    default: "chore(release): version packages"
+  commit-message:
+    description: Commit message on the Version PR.
+    required: false
+    default: "chore(release): version packages"
+  dry-run:
+    description: Preview only. Set to `true` to write nothing.
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -32,6 +36,17 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.token }}
-        VERCTL_COMMIT_MESSAGE: ${{ inputs.commit-message }}
+        VERCTL_CONFIG: ${{ inputs.config }}
+        VERCTL_DRY_RUN: ${{ inputs.dry-run }}
         VERCTL_PR_TITLE: ${{ inputs.title }}
-      run: ${{ inputs.command }}
+        VERCTL_COMMIT_MESSAGE: ${{ inputs.commit-message }}
+      run: |
+        set -euo pipefail
+        extra=()
+        if [ "${VERCTL_DRY_RUN}" = true ]; then
+          extra+=(--dry-run)
+        fi
+        if command -v verctl >/dev/null 2>&1; then
+          exec verctl prepare --pr -c "${VERCTL_CONFIG}" "${extra[@]}"
+        fi
+        exec mise run ver -- prepare --pr -c "${VERCTL_CONFIG}" "${extra[@]}"

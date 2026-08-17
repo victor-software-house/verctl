@@ -22,6 +22,12 @@ pub fn run_limited(argv: &[String], env: &[(&str, &str)], timeout: Duration) -> 
     filter_limited(argv, "", env, timeout, DEFAULT_OUTPUT_LIMIT)
 }
 
+/// `["cargo", "publish"]` without a `.into()` on every word.
+#[must_use]
+pub fn argv(parts: &[&str]) -> Vec<String> {
+    parts.iter().map(|part| (*part).to_owned()).collect()
+}
+
 pub fn filter_limited(
     argv: &[String],
     stdin: &str,

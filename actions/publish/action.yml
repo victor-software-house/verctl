@@ -1,20 +1,25 @@
 name: verctl publish
 description: >-
-  After the Version PR merges, publish from that SHA: cargo/npm plus a
-  GitHub Release. OIDC trusted publishing is VER-007.
+  After the Version PR merges, publish cargo/npm packages and open the
+  GitHub Release. Finds `verctl` on PATH, otherwise `mise run ver`.
 author: victor-software-house
 branding:
   icon: package
   color: gray-dark
 
 inputs:
-  command:
-    description: Publish command.
-    required: false
-    default: mise run ver -- publish
   token:
+    description: Token for the GitHub Release. Default GITHUB_TOKEN.
     required: false
     default: ${{ github.token }}
+  config:
+    description: Path to verctl.toml.
+    required: false
+    default: verctl.toml
+  dry-run:
+    description: Preview only. Set to `true` to skip cargo/npm/GitHub.
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -23,4 +28,15 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.token }}
-      run: ${{ inputs.command }}
+        VERCTL_CONFIG: ${{ inputs.config }}
+        VERCTL_DRY_RUN: ${{ inputs.dry-run }}
+      run: |
+        set -euo pipefail
+        extra=()
+        if [ "${VERCTL_DRY_RUN}" = true ]; then
+          extra+=(--dry-run)
+        fi
+        if command -v verctl >/dev/null 2>&1; then
+          exec verctl publish -c "${VERCTL_CONFIG}" "${extra[@]}"
+        fi
+        exec mise run ver -- publish -c "${VERCTL_CONFIG}" "${extra[@]}"

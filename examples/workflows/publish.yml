@@ -1,9 +1,9 @@
-# Consumer workflow. Runs after the Version PR lands on main.
+# Fires when the Version PR (`version-packages`) merges, not on a commit title.
 name: Publish
 
 on:
-  push:
-    branches: [main]
+  pull_request:
+    types: [closed]
   workflow_dispatch:
 
 permissions:
@@ -15,10 +15,15 @@ concurrency:
 
 jobs:
   publish:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.head_commit.message, 'chore(release): version packages')
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged &&
+       github.event.pull_request.head.ref == 'version-packages')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
       - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         with:
           version: 2026.8.2

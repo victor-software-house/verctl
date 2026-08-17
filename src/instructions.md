@@ -70,8 +70,10 @@ Release `v{version}` via octocrab. Auth is `GITHUB_TOKEN` plus
 skipped. `--dry-run` / `--preview` print the plan and write nothing.
 
 Happy path after the Version PR merges is
-`victor-software-house/verctl/actions/publish`. OIDC trusted
-publishing is later (VER-007).
+`victor-software-house/verctl/actions/publish`. It runs when the
+`version-packages` PR is merged (not on a commit-title prefix).
+The action calls `verctl` on PATH, otherwise `mise run ver`.
+OIDC trusted publishing is later (VER-007).
 
 ## Stop conditions
 
