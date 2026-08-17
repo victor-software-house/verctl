@@ -88,6 +88,29 @@ fn after_may_write_declared_globs() {
 }
 
 #[test]
+fn after_deleted_staged_file_is_collected() {
+    let root = TempDir::new().unwrap();
+    write_min(
+        root.path(),
+        indoc! {r#"
+            [prepare]
+            after = ["rm", "src/gone.rs"]
+            stage = ["src/gone.rs"]
+        "#},
+    );
+    fs::create_dir_all(root.path().join("src")).unwrap();
+    fs::write(root.path().join("src/gone.rs"), "old\n").unwrap();
+    init_repo(root.path());
+    let output = prepare(root.path());
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!root.path().join("src/gone.rs").exists());
+}
+
+#[test]
 fn after_unexpected_path_fails() {
     let root = TempDir::new().unwrap();
     write_min(

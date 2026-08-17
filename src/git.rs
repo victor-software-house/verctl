@@ -1,6 +1,6 @@
 use crate::github::Repo;
 use anyhow::{Context, Result, bail};
-use git2::{Cred, PushOptions, RemoteCallbacks, Repository, Signature, StatusOptions};
+use git2::{Cred, PushOptions, RemoteCallbacks, Repository, Signature, Status, StatusOptions};
 use std::env;
 use std::path::{Path, PathBuf};
 
@@ -204,13 +204,24 @@ fn default_upstream_commit<'a>(
     Ok(None)
 }
 
+fn matches_stage(pattern: &str, rel: &str) -> bool {
+    glob::Pattern::new(pattern)
+        .is_ok_and(|compiled| compiled.matches(rel) || compiled.matches(&format!("./{rel}")))
+}
+
 /// Fail if the worktree has dirty paths outside `allowed` and `globs`.
 ///
-/// `statuses(None)` uses libgit2 defaults, which list ignored files.
-/// Ask for untracked only, same as `git status`.
-pub fn assert_only_allowed(root: &Path, allowed: &[PathBuf], globs: &[String]) -> Result<()> {
+/// Returns dirty paths that match `globs` (modified, untracked, or
+/// deleted files). Directories are skipped. Same `git status` walk as
+/// the unexpected-dirty check; not a filesystem glob.
+pub fn assert_only_allowed(
+    root: &Path,
+    allowed: &[PathBuf],
+    globs: &[String],
+    stage_ignored: bool,
+) -> Result<Vec<PathBuf>> {
     let Ok(repo) = Repository::open(root).or_else(|_| Repository::discover(root)) else {
-        return Ok(());
+        return Ok(Vec::new());
     };
     let mut opts = StatusOptions::new();
     opts.include_untracked(true)
@@ -223,6 +234,7 @@ pub fn assert_only_allowed(root: &Path, allowed: &[PathBuf], globs: &[String]) -
         .canonicalize()
         .unwrap_or_else(|_| workdir.to_path_buf());
     let mut extra = Vec::new();
+    let mut staged = Vec::new();
     for entry in statuses.iter() {
         let Ok(rel) = entry.path() else {
             continue;
@@ -231,23 +243,53 @@ pub fn assert_only_allowed(root: &Path, allowed: &[PathBuf], globs: &[String]) -
         if !abs.starts_with(&root) {
             continue;
         }
+        if abs.is_dir() {
+            continue;
+        }
         if allowed
             .iter()
             .any(|path| path == &abs || path.ends_with(rel))
         {
             continue;
         }
-        if globs.iter().any(|pattern| {
-            glob::Pattern::new(pattern).is_ok_and(|compiled| {
-                compiled.matches(rel) || compiled.matches(&format!("./{rel}"))
-            })
-        }) {
+        if globs.iter().any(|pattern| matches_stage(pattern, rel)) {
+            staged.push(abs);
             continue;
         }
         extra.push(rel.to_owned());
     }
+    if stage_ignored && !globs.is_empty() {
+        let mut ignored = StatusOptions::new();
+        ignored
+            .include_ignored(true)
+            .recurse_ignored_dirs(true)
+            .include_untracked(false);
+        for pattern in globs {
+            ignored.pathspec(pattern.as_str());
+        }
+        let ignored = repo
+            .statuses(Some(&mut ignored))
+            .context("git status (ignored)")?;
+        for entry in ignored.iter() {
+            if !entry.status().intersects(Status::IGNORED) {
+                continue;
+            }
+            let Ok(rel) = entry.path() else {
+                continue;
+            };
+            let abs = workdir.join(rel);
+            if !abs.starts_with(&root) || abs.is_dir() {
+                continue;
+            }
+            if globs.iter().any(|pattern| matches_stage(pattern, rel))
+                && !staged.iter().any(|path| path == &abs)
+            {
+                staged.push(abs);
+            }
+        }
+    }
     if extra.is_empty() {
-        return Ok(());
+        return Ok(staged);
     }
     bail!(
         "prepare produced unexpected paths (declare them in [prepare].stage): {}",
@@ -459,9 +501,85 @@ mod tests {
         }
         std::fs::write(dir.path().join("secret.env"), "TOKEN=leak\n").unwrap();
         let allowed = [dir.path().join("Cargo.toml")];
-        let err = super::assert_only_allowed(dir.path(), &allowed, &[]).unwrap_err();
+        let err = super::assert_only_allowed(dir.path(), &allowed, &[], false).unwrap_err();
         assert!(format!("{err:#}").contains("secret.env"), "{err:#}");
-        super::assert_only_allowed(dir.path(), &allowed, &["*.env".into()]).unwrap();
+        let staged =
+            super::assert_only_allowed(dir.path(), &allowed, &["*.env".into()], false).unwrap();
+        assert_eq!(staged.len(), 1);
+        assert!(staged[0].ends_with("secret.env"), "{staged:?}");
+    }
+
+    #[test]
+    fn stage_glob_collects_a_deleted_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let sig = Signature::now("t", "t@example.com").unwrap();
+        std::fs::write(dir.path().join("Cargo.lock"), "old\n").unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                version = "1.0.0"
+            "#},
+        )
+        .unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new("Cargo.toml")).unwrap();
+            index.add_path(Path::new("Cargo.lock")).unwrap();
+            index.write().unwrap();
+            let tid = index.write_tree().unwrap();
+            let tree = repo.find_tree(tid).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+                .unwrap();
+        }
+        std::fs::remove_file(dir.path().join("Cargo.lock")).unwrap();
+        let staged = super::assert_only_allowed(
+            dir.path(),
+            &[dir.path().join("Cargo.toml")],
+            &["Cargo.lock".into()],
+            false,
+        )
+        .unwrap();
+        assert_eq!(staged.len(), 1);
+        assert!(staged[0].ends_with("Cargo.lock"), "{staged:?}");
+        assert!(!dir.path().join("Cargo.lock").exists());
+    }
+
+    #[test]
+    fn stage_glob_collects_files_under_a_tree_not_the_directory() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let sig = Signature::now("t", "t@example.com").unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                version = "1.0.0"
+            "#},
+        )
+        .unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new("Cargo.toml")).unwrap();
+            index.write().unwrap();
+            let tid = index.write_tree().unwrap();
+            let tree = repo.find_tree(tid).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+                .unwrap();
+        }
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/lib.rs"), "fn x() {}\n").unwrap();
+        let staged = super::assert_only_allowed(
+            dir.path(),
+            &[dir.path().join("Cargo.toml")],
+            &["src/**".into()],
+            false,
+        )
+        .unwrap();
+        assert_eq!(staged.len(), 1);
+        assert!(staged[0].ends_with("src/lib.rs"), "{staged:?}");
+        assert!(!staged.iter().any(|path| path.ends_with("src")));
     }
 
     #[test]
@@ -490,7 +608,171 @@ mod tests {
         }
         std::fs::create_dir_all(dir.path().join("target/debug")).unwrap();
         std::fs::write(dir.path().join("target/debug/verctl"), "bin\n").unwrap();
-        super::assert_only_allowed(dir.path(), &[dir.path().join("Cargo.toml")], &[]).unwrap();
+        super::assert_only_allowed(dir.path(), &[dir.path().join("Cargo.toml")], &[], false)
+            .unwrap();
+    }
+
+    #[test]
+    fn stage_ignored_opt_in_collects_gitignored_files() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let sig = Signature::now("t", "t@example.com").unwrap();
+        std::fs::write(dir.path().join(".gitignore"), "/generated.rs\n").unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                version = "1.0.0"
+            "#},
+        )
+        .unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new(".gitignore")).unwrap();
+            index.add_path(Path::new("Cargo.toml")).unwrap();
+            index.write().unwrap();
+            let tid = index.write_tree().unwrap();
+            let tree = repo.find_tree(tid).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+                .unwrap();
+        }
+        std::fs::write(dir.path().join("generated.rs"), "gen\n").unwrap();
+        let allowed = [dir.path().join("Cargo.toml")];
+        let off = super::assert_only_allowed(dir.path(), &allowed, &["generated.rs".into()], false)
+            .unwrap();
+        assert!(off.is_empty(), "{off:?}");
+        let on = super::assert_only_allowed(dir.path(), &allowed, &["generated.rs".into()], true)
+            .unwrap();
+        assert_eq!(on.len(), 1);
+        assert!(on[0].ends_with("generated.rs"), "{on:?}");
+    }
+
+    #[test]
+    fn stage_ignored_recurses_a_gitignored_directory() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let sig = Signature::now("t", "t@example.com").unwrap();
+        std::fs::write(dir.path().join(".gitignore"), "/dist\n").unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                version = "1.0.0"
+            "#},
+        )
+        .unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new(".gitignore")).unwrap();
+            index.add_path(Path::new("Cargo.toml")).unwrap();
+            index.write().unwrap();
+            let tid = index.write_tree().unwrap();
+            let tree = repo.find_tree(tid).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+                .unwrap();
+        }
+        std::fs::create_dir_all(dir.path().join("dist")).unwrap();
+        std::fs::write(dir.path().join("dist/out.js"), "ok\n").unwrap();
+        let allowed = [dir.path().join("Cargo.toml")];
+        let staged =
+            super::assert_only_allowed(dir.path(), &allowed, &["dist/**".into()], true).unwrap();
+        assert_eq!(staged.len(), 1);
+        assert!(staged[0].ends_with("dist/out.js"), "{staged:?}");
+    }
+
+    #[test]
+    fn stage_ignored_pathspec_does_not_collect_other_ignored_trees() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let sig = Signature::now("t", "t@example.com").unwrap();
+        std::fs::write(dir.path().join(".gitignore"), "/dist\n/target\n").unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                version = "1.0.0"
+            "#},
+        )
+        .unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new(".gitignore")).unwrap();
+            index.add_path(Path::new("Cargo.toml")).unwrap();
+            index.write().unwrap();
+            let tid = index.write_tree().unwrap();
+            let tree = repo.find_tree(tid).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+                .unwrap();
+        }
+        std::fs::create_dir_all(dir.path().join("dist")).unwrap();
+        std::fs::write(dir.path().join("dist/out.js"), "ok\n").unwrap();
+        std::fs::create_dir_all(dir.path().join("target/debug")).unwrap();
+        std::fs::write(dir.path().join("target/debug/verctl"), "bin\n").unwrap();
+        std::fs::write(dir.path().join("target/CACHEDIR.TAG"), "tag\n").unwrap();
+        let staged = super::assert_only_allowed(
+            dir.path(),
+            &[dir.path().join("Cargo.toml")],
+            &["dist/**".into()],
+            true,
+        )
+        .unwrap();
+        assert_eq!(staged.len(), 1, "{staged:?}");
+        assert!(staged[0].ends_with("dist/out.js"), "{staged:?}");
+        assert!(
+            !staged
+                .iter()
+                .any(|path| path.to_string_lossy().contains("target")),
+            "{staged:?}"
+        );
+    }
+
+    #[test]
+    fn write_commit_on_branch_removes_a_deleted_staged_path() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let sig = Signature::now("t", "t@example.com").unwrap();
+        std::fs::write(dir.path().join("Cargo.lock"), "old\n").unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                version = "1.0.0"
+            "#},
+        )
+        .unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new("Cargo.toml")).unwrap();
+            index.add_path(Path::new("Cargo.lock")).unwrap();
+            index.write().unwrap();
+            let tid = index.write_tree().unwrap();
+            let tree = repo.find_tree(tid).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+                .unwrap();
+        }
+        std::fs::remove_file(dir.path().join("Cargo.lock")).unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        let workdir = repo.workdir().unwrap().to_path_buf();
+        let staged = super::assert_only_allowed(
+            dir.path(),
+            &[dir.path().join("Cargo.toml")],
+            &["Cargo.lock".into()],
+            false,
+        )
+        .unwrap();
+        let oid = super::write_commit_on_branch(
+            &repo,
+            &workdir,
+            &parent,
+            "version-packages",
+            "chore",
+            &staged,
+        )
+        .unwrap()
+        .expect("deletion should commit");
+        let tree = repo.find_commit(oid).unwrap().tree().unwrap();
+        assert!(tree.get_name("Cargo.lock").is_none());
+        assert!(tree.get_name("Cargo.toml").is_some());
     }
 
     #[test]

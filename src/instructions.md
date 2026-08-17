@@ -55,7 +55,10 @@ not `changesets/action`, not a GitHub App. The workflow already has
 
 Do not hand-edit versions. `verctl check --versions` compares each
 declared manifest to the merge-base of HEAD and the default branch.
-It fails when they differ. Only `version-packages` is exempt. CI
+It fails when they differ. Exempt only on the `version-packages`
+branch locally, or when the GitHub event carries the Version PR
+label (`verctl:version` by default, `[prepare].version_label`).
+`prepare --pr` applies that label. Not `GITHUB_HEAD_REF`. CI
 does not skip. A fragment-only commit does not change versions.
 
 This repo splits mise envs: `dev` compiles this checkout, `release`

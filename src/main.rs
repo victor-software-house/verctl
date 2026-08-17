@@ -326,14 +326,28 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     let mut paths: Vec<std::path::PathBuf> = plan.iter().map(|entry| entry.path.clone()).collect();
     paths.extend(changelogs);
     paths.extend(consumed.iter().map(|fragment| fragment.path.clone()));
-    git::assert_only_allowed(root, &paths, &config.prepare.stage)?;
+    let staged = git::assert_only_allowed(
+        root,
+        &paths,
+        &config.prepare.stage,
+        config.prepare.stage_ignored,
+    )?;
+    paths.extend(staged);
     release::consume_fragments(consumed)?;
     let mut pr = None;
     if let Some(token) = token {
         let title = std::env::var("VERCTL_PR_TITLE")
             .unwrap_or_else(|_| "chore(release): version packages".into());
         let message = std::env::var("VERCTL_COMMIT_MESSAGE").unwrap_or_else(|_| title.clone());
-        pr = release::open_or_update_pr(root, &token, &title, &message, &paths, &changelog)?;
+        pr = release::open_or_update_pr(
+            root,
+            &token,
+            &title,
+            &message,
+            &paths,
+            &changelog,
+            config.prepare.version_label(),
+        )?;
     }
     Ok(PrepareReport {
         changelog,

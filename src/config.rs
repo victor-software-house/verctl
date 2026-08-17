@@ -246,6 +246,24 @@ pub struct Prepare {
     /// Extra paths `after` may write. Anything else dirty fails.
     #[serde(default)]
     pub stage: Vec<String>,
+    /// Collect gitignored paths that match `stage`. Off by default.
+    #[serde(default)]
+    pub stage_ignored: bool,
+    /// Label `prepare --pr` applies. `check --versions` trusts this
+    /// on the GitHub event, not `GITHUB_HEAD_REF`.
+    pub version_label: Option<String>,
+}
+
+impl Prepare {
+    pub const DEFAULT_VERSION_LABEL: &'static str = "verctl:version";
+
+    #[must_use]
+    pub fn version_label(&self) -> &str {
+        self.version_label
+            .as_deref()
+            .filter(|label| !label.is_empty())
+            .unwrap_or(Self::DEFAULT_VERSION_LABEL)
+    }
 }
 
 impl Config {
