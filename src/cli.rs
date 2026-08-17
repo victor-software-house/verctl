@@ -33,7 +33,7 @@ pub enum Command {
     Pin(PublishArgs),
     /// Plan or build native GitHub Release tarballs declared in `[assets]`.
     Assets(AssetsArgs),
-    /// Plan the validation jobs declared in `[[ci.jobs]]`.
+    /// Plan the validation jobs declared in `[ci]`.
     Ci(CiArgs),
 }
 

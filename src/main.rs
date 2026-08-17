@@ -553,7 +553,7 @@ impl AssetsReport {
             .matrix
             .include
             .iter()
-            .map(|row| vec![row.id.clone(), row.runs_on.join(", "), row.asset.clone()])
+            .map(|row| vec![row.id.clone(), row.labels.join(", "), row.asset.clone()])
             .collect();
         let mut out = grid(color, &["target", "runs-on", "asset"], rows);
         let mut extra = vec![("tag", self.plan.tag.as_str())];
@@ -625,9 +625,9 @@ impl CiReport {
             .matrix
             .include
             .iter()
-            .map(|job| vec![job.id.clone(), job.runs_on.join(", ")])
+            .map(|job| vec![job.name.clone(), job.labels.join(", ")])
             .collect();
-        grid(color, &["job", "runs-on"], rows)
+        grid(color, &["check", "runs-on"], rows)
     }
 }
 

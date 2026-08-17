@@ -47,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.crate.outputs.matrix) }}
-    runs-on: ${{ matrix.runs_on }}
+    runs-on: ${{ matrix.labels }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

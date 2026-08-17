@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   # runs-on must be known before a job exists, so the machine cannot come
-  # from a tool running inside that job. This reads [[ci.jobs]] and hands
+  # from a tool running inside that job. This reads [ci] and hands
   # the labels down, the same bootstrap the publish lane uses for assets.
   plan:
     name: Plan
@@ -48,12 +48,12 @@ jobs:
         run: mise run ver -- ci --github-output "$GITHUB_OUTPUT"
 
   verify:
-    name: ${{ matrix.id }}
+    name: ${{ matrix.name }}
     needs: plan
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
-    runs-on: ${{ matrix.runs_on }}
+    runs-on: ${{ matrix.labels }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

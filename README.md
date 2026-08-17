@@ -125,57 +125,64 @@ Stdout is the version (read) or the new file (write).
 
 ## Runners
 
-Which machines run the work is configuration. It is declared on the thing
-that runs, in two places, with the same two fields in both.
-
-| section | one row is | `id` is | `runs_on` defaults to |
-|:--|:--|:--|:--|
-| `[[ci.jobs]]` | a PR / push validation job | the job name | `["ubuntu-latest"]` |
-| `[[assets.targets]]` | a release build job and its tarball | the job name, the `--build` argument, part of the filename | the built-in record for `id` |
+Which machines run the work is configuration. A **machine** is declared once
+under `[runners]`; the jobs that run on it name it.
 
 ```toml
-# Omit for one `verify` job on ubuntu-latest, which is the default.
-[[ci.jobs]]
-id = "verify"
-runs_on = ["nscloud-ubuntu-24.04-amd64-4x8"]
+# One machine. `labels` is how GitHub finds it — every label at once, so this
+# is a single machine carrying three labels, not three machines.
+[runners.big]
+labels = ["self-hosted", "linux", "x64"]
 
-# Omit for a library. Both spellings below are the same TOML.
-[[assets.targets]]
-id = "darwin-arm64"
+# One validation job per [ci.NAME]. Naming two machines gives two checks,
+# `verify (big)` and `verify (ns)`. Omit [ci] for one `verify` on ubuntu-latest.
+[ci.verify]
+runners = ["big"]
 
-[[assets.targets]]
-id = "linux-x64"
-runs_on = ["self-hosted", "linux", "x64"]
+# One build target per [assets.NAME]: the name is the job, the tarball, and
+# the platform. One tarball is one machine, so `runner` is not a list.
+[assets.darwin-arm64]
+
+[assets.linux-x64]
+runner = "big"
 ```
 
-`runs_on` is the literal GitHub label list — verctl resolves nothing and
-knows no aliases, so what is written here is what `runs-on:` receives, and a
-label no machine carries queues the way any wrong label queues. A list of
-several labels means AND, as GitHub reads it. A row is always a table:
-`targets = ["linux-x64"]` is rejected, `targets = [{ id = "linux-x64" }]` is
-the same document as the block form above.
+| section | one table is | its name is | with no `runners` / `runner` |
+|:--|:--|:--|:--|
+| `[runners.NAME]` | one machine | how jobs refer to it | — |
+| `[ci.NAME]` | a PR / push validation job | the check name | `ubuntu-latest` |
+| `[assets.NAME]` | a release build job and its tarball | the check name, the `--build` argument, part of the filename | the built-in record for that name |
+
+Only `labels` reaches GitHub. A runner **name** is a name in the file: it
+resolves against `[runners]` or fails there, listing what is declared, so a
+label can never pass itself off as a machine and verctl never invents a label.
+A label GitHub does not know queues the way any wrong label queues — verctl
+cannot tell which machines carry which labels, so it passes them through.
 
 Built-in target records, so a public repo needs no config to stay on free
 hosted minutes:
 
-| `id` | `runs_on` | `os` | `arch` | `triple` |
+| name | labels | `os` | `arch` | `triple` |
 |:--|:--|:--|:--|:--|
 | `darwin-arm64` | `["macos-latest"]` | `darwin` | `arm64` | `aarch64-apple-darwin` |
 | `linux-x64` | `["ubuntu-latest"]` | `linux` | `x64` | `x86_64-unknown-linux-gnu` |
 
-An `id` outside that set describes a platform verctl knows nothing about, so
-it must describe all of it — `runs_on`, `os`, `arch`, and `triple` are all
-required, and a partial record is an error rather than a build against an
-empty target triple. `os = "darwin"` renders as `macos` in the filename;
-that is the only rename.
+Each field is a default the repo overrides one at a time: naming a `runner`
+moves the machine and leaves the platform alone. A name outside that set
+describes a platform verctl knows nothing about, so it must describe all of it
+— `runner`, `os`, `arch`, and `triple` are all required, and a partial record
+is an error rather than a build against an empty target triple. `os = "darwin"`
+renders as `macos` in the filename; that is the only rename. `triple` stays
+its own field because the machine and what it builds need not match: an x64
+linux runner can build `aarch64-unknown-linux-gnu`.
 
-`[[ci.jobs]]` is exactly as trusted as `.github/workflows/ci.yml`: for a
+`[ci]` is exactly as trusted as `.github/workflows/ci.yml`: for a
 `pull_request` event both come from the pull request's own tree, so a fork PR
-that can add a `runs_on` label could equally have written that label into the
+that can declare a label could equally have written that label into the
 workflow file. Neither is a reason to expose a self-hosted runner group to a
 public repository — keep `allows_public_repositories=false` there and keep
-fork-PR approval on, and read the declared labels as untrusted input in a
-repo where that is not true.
+fork-PR approval on, and read declared labels as untrusted input in a repo
+where that is not true.
 
 `verctl ci` and `verctl assets` print what resolved, so a default is visible
 output rather than an assumption. Both also write a matrix for

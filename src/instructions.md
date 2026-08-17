@@ -107,15 +107,18 @@ only when `[assets].targets` is non-empty. `verctl assets` prints the
 matrix; `--build` + `--upload` is `actions/asset`. OIDC trusted
 publishing is later (VER-007).
 
-Machines are configuration, not a hardcoded map. `[[ci.jobs]]` and
-`[[assets.targets]]` are both lists of `id` + `runs_on`: `id` is the
-job name, `runs_on` is the literal GitHub label list, resolved by
-nothing. A row is a table, never a bare string. Omit `[ci]` for one
-`verify` on `ubuntu-latest`; PR CI stays unary by default because
-compiling on two hosts for a PR is waste. A built-in `id`
-(`darwin-arm64`, `linux-x64`) fills in `runs_on`, `os`, `arch`, and
-`triple`; any other `id` must name all four. `verctl ci` writes the
-matrix for a `plan` job, since `runs-on` exists before the job does.
+Machines are configuration, not a hardcoded map. A machine is declared
+once as `[runners.NAME]` with `labels`, the literal GitHub label list
+that GitHub reads as AND — one machine, however many labels. Jobs name
+machines: `[ci.NAME]` takes `runners = [...]`, one check each, and
+`[assets.NAME]` takes a single `runner`, because one tarball is one
+machine. A name resolves against `[runners]` or fails; only labels
+reach `runs-on`. Omit `[ci]` for one `verify` on `ubuntu-latest`; PR CI
+stays unary by default because compiling on two hosts for a PR is
+waste. A built-in target (`darwin-arm64`, `linux-x64`) fills in
+`runner`, `os`, `arch`, and `triple`; any other name must state all
+four. `verctl ci` writes the matrix for a `plan` job, since `runs-on`
+exists before the job does.
 
 ## Stop conditions
 

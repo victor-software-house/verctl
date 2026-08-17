@@ -40,11 +40,12 @@ queue:
       hosted minutes and a private one can point at its own labels.
     blocked_by: []
     acceptance:
-      - "`[[ci.jobs]]` and `[[assets.targets]]` are both lists of id + runs_on; omitted uses a documented default."
+      - A machine is declared once as [runners.NAME] with labels; [ci.NAME] names several, [assets.NAME] exactly one.
       - verctl ci and verctl assets print what resolved and the matrix carries it.
       - A public repo needs no config to keep macos-latest / ubuntu-latest, and no [ci] to keep one verify job.
-      - A declared self-hosted or nscloud label set reaches runs-on unchanged.
-      - Tests cover default, override, multi-label, empty list, duplicate id, and a partial undeclared target.
+      - A declared self-hosted or nscloud label set reaches runs-on unchanged, in order.
+      - An undeclared machine name fails listing the declared ones; a label is never accepted as a name.
+      - Tests cover default, override, multi-label, fan-out naming, empty list, and a partial undeclared target.
     notes: >-
       2026-08-17: found while adopting the lane in qctl (qctl#3). Two
       claims first written here were wrong and are corrected: a per-target
@@ -52,11 +53,22 @@ queue:
       by an earlier job. The real defects are that `runner` is one string
       where GitHub takes a label set, that CI has no configuration surface
       at all, and that an unknown id with a partial record is accepted and
-      reaches `cargo build --target ""`. Aliases were considered and
-      rejected: an alias makes "vps" look resolved when nothing resolved
-      it. M1 (generating ci.yml) and M3 (a repo variable) were considered
+      reaches `cargo build --target ""`. Shape settled after several wrong
+      turns, recorded so they are not retried: anonymous list rows needing
+      an `id` field (`[[ci.jobs]]`, `runners = [{ labels = [...] }]`) were
+      rejected as ceremony — names are table headers instead; a `runners`
+      list on an asset target was rejected because two machines would
+      overwrite one tarball, which the shape now makes unsayable; and one
+      identical shape per phase was abandoned once it put `os`/`arch` on a
+      job while its labels sat a level below. A name→labels registry is
+      deliberately not the alias table rejected earlier: an alias made an
+      invented word look like a resolved label, whereas a machine name
+      resolves against `[runners]` or fails and never reaches GitHub.
+      M1 (generating ci.yml) and M3 (a repo variable) were considered
       and rejected for M2, the plan-job bootstrap the publish lane already
       uses; M3 would move the value out of verctl.toml entirely.
+      `[release]` jobs are the same idea and are deliberately not in this
+      slice: config with no workflow plumbing would ship unused.
 
 horizon:
   - id: VER-013

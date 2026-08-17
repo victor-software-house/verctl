@@ -1,4 +1,4 @@
-# Validation jobs come from `[[ci.jobs]]`. Omit that table and this runs
+# Validation jobs come from `[ci]`. Omit that table and this runs
 # one `verify` on ubuntu-latest.
 #
 # runs-on must be known before a job exists, so the machine cannot come from
@@ -38,12 +38,12 @@ jobs:
         run: verctl ci --github-output "$GITHUB_OUTPUT"
 
   verify:
-    name: ${{ matrix.id }}
+    name: ${{ matrix.name }}
     needs: plan
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
-    runs-on: ${{ matrix.runs_on }}
+    runs-on: ${{ matrix.labels }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

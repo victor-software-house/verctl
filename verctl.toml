@@ -21,15 +21,15 @@ file = "examples/mise.toml"
 tool = "github:victor-software-house/verctl"
 package = "verctl"
 
-# One row per host binary; `id` names the job and the tarball. Omit for a
-# library. `runs_on` defaults to the built-in record for the id, so this
-# repo stays on free hosted minutes without saying so.
-[[assets.targets]]
-id = "darwin-arm64"
+# One table per host binary; the name is the job, the tarball, and the
+# platform. Omit for a library. Both are built-in records, so `runner`, `os`,
+# `arch`, and `triple` come from verctl and this repo stays on free hosted
+# minutes without saying so.
+[assets.darwin-arm64]
 
-[[assets.targets]]
-id = "linux-x64"
+[assets.linux-x64]
 
-# [[ci.jobs]] is deliberately absent: the default is one `verify` job on
-# ubuntu-latest, which is exactly what this repo wants. Declaring it would
-# only restate the default.
+# [runners] and [ci] are deliberately absent. This repo is public, so the
+# defaults — one `verify` job on ubuntu-latest, built-in machines for the two
+# targets above — are exactly what it wants; declaring them would only restate
+# them. A private repo adds `[runners.NAME]` and points jobs at it.
