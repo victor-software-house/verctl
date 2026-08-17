@@ -13,135 +13,144 @@ fn pr(external: bool) -> PullRequest {
     }
 }
 
-fn one_line(text: &str) -> String {
+fn commit() -> Commit {
+    Commit {
+        short: "96fb0bc".into(),
+        url: "https://github.com/org/repo/commit/96fb0bc".into(),
+    }
+}
+
+fn trimmed(text: &str) -> String {
     text.trim_end().to_owned()
 }
 
-#[test]
-fn internal_pr_has_no_byline() {
-    let rendered = render_release(
-        &ReleaseInput {
-            summary: "Restore mise.toml".into(),
-            continuations: vec![],
-            pull_request: Some(pr(false)),
-            commit: Some(Commit {
-                short: "96fb0bc".into(),
-                url: "https://github.com/org/repo/commit/96fb0bc".into(),
-            }),
-        }
-        .with_author_filter(&["ext".into()]),
-    )
-    .expect("render");
-    assert_eq!(
-        rendered,
-        one_line(indoc! {"
-            - Restore mise.toml ([#12](https://github.com/org/repo/pull/12)).
-        "})
-    );
+struct ReleaseCase {
+    name: &'static str,
+    input: ReleaseInput,
+    authors: &'static [&'static str],
+    expected: &'static str,
 }
 
 #[test]
-fn external_pr_has_byline() {
-    let rendered = render_release(
-        &ReleaseInput {
-            summary: "Restore mise.toml".into(),
-            continuations: vec![],
-            pull_request: Some(pr(true)),
-            commit: None,
-        }
-        .with_author_filter(&["owner".into()]),
-    )
-    .expect("render");
-    assert_eq!(
-        rendered,
-        one_line(indoc! {"
-            - Restore mise.toml ([#12](https://github.com/org/repo/pull/12) by [@ext](https://github.com/ext)).
-        "})
-    );
-}
+#[allow(clippy::too_many_lines)]
+fn release_template_varies_by_data() {
+    let cases = [
+        ReleaseCase {
+            name: "internal pr, no byline",
+            input: ReleaseInput {
+                summary: "Restore mise.toml".into(),
+                continuations: vec![],
+                pull_request: Some(pr(false)),
+                commit: Some(commit()),
+            },
+            authors: &["ext"],
+            expected: "- Restore mise.toml ([#12](https://github.com/org/repo/pull/12)).",
+        },
+        ReleaseCase {
+            name: "external pr, byline",
+            input: ReleaseInput {
+                summary: "Restore mise.toml".into(),
+                continuations: vec![],
+                pull_request: Some(pr(true)),
+                commit: None,
+            },
+            authors: &["owner"],
+            expected: "- Restore mise.toml ([#12](https://github.com/org/repo/pull/12) by [@ext](https://github.com/ext)).",
+        },
+        ReleaseCase {
+            name: "commit when there is no pr",
+            input: ReleaseInput {
+                summary: "Restore mise.toml".into(),
+                continuations: vec![],
+                pull_request: None,
+                commit: Some(commit()),
+            },
+            authors: &[],
+            expected: "- Restore mise.toml ([`96fb0bc`](https://github.com/org/repo/commit/96fb0bc)).",
+        },
+        ReleaseCase {
+            name: "bare period plus continuation",
+            input: ReleaseInput {
+                summary: "Restore mise.toml".into(),
+                continuations: vec!["More detail.".into(), String::new()],
+                pull_request: None,
+                commit: None,
+            },
+            authors: &[],
+            expected: "- Restore mise.toml.\n  More detail.",
+        },
+        ReleaseCase {
+            name: "summary already terminal",
+            input: ReleaseInput {
+                summary: "Restore mise.toml.".into(),
+                continuations: vec![],
+                pull_request: None,
+                commit: None,
+            },
+            authors: &[],
+            expected: "- Restore mise.toml.",
+        },
+        ReleaseCase {
+            name: "question is terminal",
+            input: ReleaseInput {
+                summary: "Ship it?".into(),
+                continuations: vec![],
+                pull_request: None,
+                commit: None,
+            },
+            authors: &[],
+            expected: "- Ship it?",
+        },
+        ReleaseCase {
+            name: "bang is terminal",
+            input: ReleaseInput {
+                summary: "Ship it!".into(),
+                continuations: vec![],
+                pull_request: None,
+                commit: None,
+            },
+            authors: &[],
+            expected: "- Ship it!",
+        },
+        ReleaseCase {
+            name: "empty login is not external",
+            input: ReleaseInput {
+                summary: "Restore mise.toml".into(),
+                continuations: vec![],
+                pull_request: Some(PullRequest {
+                    number: 12,
+                    url: "https://github.com/org/repo/pull/12".into(),
+                    user: None,
+                    user_url: None,
+                    external_author: true,
+                }),
+                commit: None,
+            },
+            authors: &["owner"],
+            expected: "- Restore mise.toml ([#12](https://github.com/org/repo/pull/12)).",
+        },
+        ReleaseCase {
+            name: "pr wins over commit",
+            input: ReleaseInput {
+                summary: "Restore mise.toml".into(),
+                continuations: vec![],
+                pull_request: Some(pr(false)),
+                commit: Some(commit()),
+            },
+            authors: &[],
+            expected: "- Restore mise.toml ([#12](https://github.com/org/repo/pull/12)).",
+        },
+    ];
 
-#[test]
-fn commit_fallback_when_no_pr() {
-    let rendered = render_release(&ReleaseInput {
-        summary: "Restore mise.toml".into(),
-        continuations: vec![],
-        pull_request: None,
-        commit: Some(Commit {
-            short: "96fb0bc".into(),
-            url: "https://github.com/org/repo/commit/96fb0bc".into(),
-        }),
-    })
-    .expect("render");
-    assert_eq!(
-        rendered,
-        one_line(indoc! {"
-            - Restore mise.toml ([`96fb0bc`](https://github.com/org/repo/commit/96fb0bc)).
-        "})
-    );
-}
-
-#[test]
-fn bare_period_when_no_link_and_no_terminal() {
-    let rendered = render_release(&ReleaseInput {
-        summary: "Restore mise.toml".into(),
-        continuations: vec!["More detail.".into(), String::new()],
-        pull_request: None,
-        commit: None,
-    })
-    .expect("render");
-    assert_eq!(
-        rendered,
-        one_line(indoc! {"
-            - Restore mise.toml.
-              More detail.
-        "})
-    );
-}
-
-#[test]
-fn no_extra_period_when_summary_has_terminal() {
-    let rendered = render_release(&ReleaseInput {
-        summary: "Restore mise.toml.".into(),
-        continuations: vec![],
-        pull_request: None,
-        commit: None,
-    })
-    .expect("render");
-    assert_eq!(
-        rendered,
-        one_line(indoc! {"
-            - Restore mise.toml.
-        "})
-    );
-}
-
-#[test]
-fn pr_wins_over_commit() {
-    let rendered = render_release(&ReleaseInput {
-        summary: "Restore mise.toml".into(),
-        continuations: vec![],
-        pull_request: Some(pr(false)),
-        commit: Some(Commit {
-            short: "96fb0bc".into(),
-            url: "https://github.com/org/repo/commit/96fb0bc".into(),
-        }),
-    })
-    .expect("render");
-    assert!(rendered.contains("#12"));
-    assert!(!rendered.contains("96fb0bc"));
-}
-
-#[test]
-fn question_and_bang_are_terminal() {
-    for summary in ["Ship it?", "Ship it!"] {
-        let rendered = render_release(&ReleaseInput {
-            summary: summary.into(),
-            continuations: vec![],
-            pull_request: None,
-            commit: None,
-        })
-        .expect("render");
-        assert_eq!(rendered, format!("- {summary}"));
+    for case in cases {
+        let authors: Vec<String> = case.authors.iter().map(|name| (*name).to_owned()).collect();
+        let input = if authors.is_empty() {
+            case.input
+        } else {
+            case.input.with_author_filter(&authors)
+        };
+        let rendered = render_release(&input).expect(case.name);
+        assert_eq!(trimmed(&rendered), case.expected, "{}", case.name);
     }
 }
 
@@ -175,51 +184,48 @@ fn invalid_template_fails() {
     assert!(format!("{error:#}").contains("parse"), "{error:#}");
 }
 
-#[test]
-fn empty_login_is_not_external() {
-    let rendered = render_release(
-        &ReleaseInput {
-            summary: "Restore mise.toml".into(),
-            continuations: vec![],
-            pull_request: Some(PullRequest {
-                number: 12,
-                url: "https://github.com/org/repo/pull/12".into(),
-                user: None,
-                user_url: None,
-                external_author: true,
-            }),
-            commit: None,
-        }
-        .with_author_filter(&["owner".into()]),
-    )
-    .expect("render");
-    assert_eq!(
-        rendered,
-        one_line(indoc! {"
-            - Restore mise.toml ([#12](https://github.com/org/repo/pull/12)).
-        "})
-    );
+struct DepsCase {
+    name: &'static str,
+    deps: &'static [(&'static str, &'static str)],
+    expected: &'static str,
 }
 
 #[test]
-fn dependency_list() {
-    let rendered = render_dependencies(&[
-        Dependency {
-            name: "left".into(),
-            new_version: "1.2.3".into(),
+fn dependency_template_varies_by_data() {
+    let cases = [
+        DepsCase {
+            name: "two crates",
+            deps: &[("left", "1.2.3"), ("right", "4.5.6")],
+            expected: indoc! {"
+                - Updated dependencies:
+                  - left@1.2.3
+                  - right@4.5.6
+            "},
         },
-        Dependency {
-            name: "right".into(),
-            new_version: "4.5.6".into(),
+        DepsCase {
+            name: "one crate",
+            deps: &[("only", "0.1.0")],
+            expected: indoc! {"
+                - Updated dependencies:
+                  - only@0.1.0
+            "},
         },
-    ])
-    .expect("render");
-    assert_eq!(
-        rendered,
-        one_line(indoc! {"
-            - Updated dependencies:
-              - left@1.2.3
-              - right@4.5.6
-        "})
-    );
+        DepsCase {
+            name: "empty list",
+            deps: &[],
+            expected: "- Updated dependencies:\n",
+        },
+    ];
+    for case in cases {
+        let deps: Vec<Dependency> = case
+            .deps
+            .iter()
+            .map(|(name, version)| Dependency {
+                name: (*name).to_owned(),
+                new_version: (*version).to_owned(),
+            })
+            .collect();
+        let rendered = render_dependencies(&deps).expect(case.name);
+        assert_eq!(trimmed(&rendered), trimmed(case.expected), "{}", case.name);
+    }
 }
