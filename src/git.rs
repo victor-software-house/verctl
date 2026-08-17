@@ -22,6 +22,69 @@ pub fn upstream_default_branch(root: &Path) -> Option<String> {
     (!name.is_empty()).then(|| name.to_owned())
 }
 
+/// Fail unless HEAD is on the default-branch history (`origin/HEAD`).
+///
+/// No repository, or no remote-tracking default branch, is a skip — local
+/// fixtures and first clones have nothing to prove. A shallow clone that
+/// cannot walk the graph fails closed.
+pub fn require_on_default_history(root: &Path) -> Result<()> {
+    let Some(repo) = repo_covering(root) else {
+        return Ok(());
+    };
+    let Ok(head) = repo.head() else {
+        return Ok(());
+    };
+    let Ok(head) = head.peel_to_commit() else {
+        return Ok(());
+    };
+    let Some(upstream) = default_upstream_commit(&repo) else {
+        return Ok(());
+    };
+    if head.id() == upstream.id() {
+        return Ok(());
+    }
+    match repo.graph_descendant_of(upstream.id(), head.id()) {
+        Ok(true) => Ok(()),
+        Ok(false) => bail!(
+            "publish only from a Version PR commit on the default branch (HEAD {head} is not an ancestor of {upstream})",
+            head = head.id(),
+            upstream = upstream.id()
+        ),
+        Err(error) => Err(error).context(
+            "publish cannot prove HEAD is on the default branch (need a full fetch, not a shallow clone)",
+        ),
+    }
+}
+
+fn repo_covering(root: &Path) -> Option<Repository> {
+    if let Ok(repo) = Repository::open(root) {
+        return Some(repo);
+    }
+    let repo = Repository::discover(root).ok()?;
+    let workdir = repo.workdir()?.canonicalize().ok()?;
+    let root = root.canonicalize().ok()?;
+    root.starts_with(workdir).then_some(repo)
+}
+
+fn default_upstream_commit(repo: &Repository) -> Option<git2::Commit<'_>> {
+    let from_head = repo
+        .find_reference("refs/remotes/origin/HEAD")
+        .ok()
+        .and_then(|reference| {
+            let target = reference.symbolic_target().ok()??;
+            let name = target.trim_start_matches("refs/remotes/origin/");
+            (!name.is_empty()).then(|| format!("refs/remotes/origin/{name}"))
+        });
+    from_head
+        .and_then(|name| repo.find_reference(&name).ok())
+        .and_then(|reference| reference.peel_to_commit().ok())
+        .or_else(|| {
+            repo.find_reference("refs/remotes/origin/main")
+                .ok()
+                .and_then(|reference| reference.peel_to_commit().ok())
+        })
+}
+
 /// Fail if the worktree has dirty paths outside `allowed` and `globs`.
 pub fn assert_only_allowed(root: &Path, allowed: &[PathBuf], globs: &[String]) -> Result<()> {
     let Ok(repo) = Repository::open(root).or_else(|_| Repository::discover(root)) else {
@@ -379,5 +442,55 @@ mod tests {
                 .get_name("Cargo.toml")
                 .is_some()
         );
+    }
+
+    fn commit_tree(repo: &Repository, message: &str) -> git2::Oid {
+        let sig = Signature::now("t", "t@example.com").unwrap();
+        let mut index = repo.index().unwrap();
+        let tid = index.write_tree().unwrap();
+        let tree = repo.find_tree(tid).unwrap();
+        let parent = repo.head().ok().and_then(|head| head.peel_to_commit().ok());
+        let parents: Vec<&git2::Commit<'_>> = parent.as_ref().into_iter().collect();
+        repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)
+            .unwrap()
+    }
+
+    #[test]
+    fn default_history_skips_when_origin_is_missing() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        commit_tree(&repo, "init");
+        super::require_on_default_history(dir.path()).unwrap();
+    }
+
+    #[test]
+    fn head_on_origin_main_is_ok() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let oid = commit_tree(&repo, "init");
+        repo.reference("refs/remotes/origin/main", oid, true, "test")
+            .unwrap();
+        super::require_on_default_history(dir.path()).unwrap();
+    }
+
+    #[test]
+    fn head_off_default_history_fails() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let first = commit_tree(&repo, "init");
+        repo.reference("refs/remotes/origin/main", first, true, "test")
+            .unwrap();
+        repo.reference("refs/heads/other", first, true, "branch")
+            .unwrap();
+        repo.set_head("refs/heads/other").unwrap();
+        std::fs::write(dir.path().join("extra.txt"), "x\n").unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new("extra.txt")).unwrap();
+            index.write().unwrap();
+        }
+        commit_tree(&repo, "ahead");
+        let err = super::require_on_default_history(dir.path()).unwrap_err();
+        assert!(format!("{err:#}").contains("not an ancestor"), "{err:#}");
     }
 }

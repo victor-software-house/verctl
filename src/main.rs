@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use ctl_core::prelude::*;
 use serde::Serialize;
-use std::fmt;
 use std::io::{self, Write};
 use std::path::Path;
 use verctl::assets;
@@ -40,10 +39,19 @@ struct CheckReport {
     ok: usize,
 }
 
+impl CheckReport {
+    fn pretty(&self, color: ColorMode) -> String {
+        kv(color, [("ok", format!("{n} fragment(s)", n = self.ok))])
+    }
+}
+
 impl Render for CheckReport {
     fn render_pretty(&self) -> String {
-        let n = self.ok;
-        formatdoc!("ok      {n} fragment(s)")
+        self.pretty(ColorMode::Always)
+    }
+
+    fn render_pretty_colored(&self, color: ColorMode) -> String {
+        self.pretty(color)
     }
 }
 
@@ -67,31 +75,44 @@ struct StatusPackage {
     bump: String,
 }
 
-impl fmt::Display for StatusReport {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl StatusReport {
+    fn pretty(&self, color: ColorMode) -> String {
         if self.pending == 0 {
-            return writedoc!(f, "pending  0");
+            return kv(color, [("pending", "0")]);
         }
-        let pending = self.pending;
-        writedoc!(f, "pending  {pending}\n")?;
-        for fragment in &self.fragments {
-            let file = fragment.file.as_str();
-            for package in &fragment.packages {
-                let name = package.name.as_str();
-                let bump = package.bump.as_str();
-                writedoc!(f, "  {name:<32} {bump:<6} {file}\n")?;
-            }
-            let max = fragment.max.as_str();
-            writedoc!(f, "    max {max}\n")?;
-        }
-        let max = self.max.as_str();
-        writedoc!(f, "max     {max}")
+        let rows: Vec<Vec<String>> = self
+            .fragments
+            .iter()
+            .flat_map(|fragment| {
+                fragment.packages.iter().map(|package| {
+                    vec![
+                        fragment.file.clone(),
+                        package.name.clone(),
+                        package.bump.clone(),
+                    ]
+                })
+            })
+            .collect();
+        let mut out = grid(color, &["file", "package", "bump"], rows);
+        out.push('\n');
+        out.push_str(&kv(
+            color,
+            [
+                ("pending", self.pending.to_string()),
+                ("max", self.max.clone()),
+            ],
+        ));
+        out
     }
 }
 
 impl Render for StatusReport {
     fn render_pretty(&self) -> String {
-        self.to_string()
+        self.pretty(ColorMode::Always)
+    }
+
+    fn render_pretty_colored(&self, color: ColorMode) -> String {
+        self.pretty(color)
     }
 }
 
@@ -113,40 +134,64 @@ struct PrepareBump {
     bump: String,
 }
 
-impl fmt::Display for PrepareReport {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl PrepareReport {
+    fn pretty(&self, color: ColorMode) -> String {
         if self.pr.as_deref() == Some("no-op") && self.bumps.is_empty() {
-            return writedoc!(f, "no-op   no version-changing fragments");
+            return kv(color, [("no-op", "no version-changing fragments")]);
         }
-        for bump in &self.bumps {
-            let name = bump.name.as_str();
-            let from = bump.from.as_str();
-            let to = bump.to.as_str();
-            let kind = bump.bump.as_str();
-            writedoc!(f, "bump    {name}  {from} -> {to}  ({kind})\n")?;
+        let mut out = String::new();
+        if !self.bumps.is_empty() {
+            let rows: Vec<Vec<String>> = self
+                .bumps
+                .iter()
+                .map(|bump| {
+                    vec![
+                        bump.name.clone(),
+                        bump.from.clone(),
+                        bump.to.clone(),
+                        bump.bump.clone(),
+                    ]
+                })
+                .collect();
+            out.push_str(&grid(color, &["name", "from", "to", "bump"], rows));
         }
-        for line in self.changelog.lines() {
-            writedoc!(f, "log     {line}\n")?;
+        if !self.changelog.trim().is_empty() {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str(self.changelog.trim_end());
+            out.push('\n');
         }
+        let mut extra: Vec<(&str, String)> = Vec::new();
         for file in &self.consume {
-            writedoc!(f, "consume {file}\n")?;
+            extra.push(("consume", file.clone()));
         }
         if let Some(pr) = &self.pr {
-            writedoc!(f, "pr      {pr}\n")?;
+            extra.push(("pr", pr.clone()));
         }
         for cmd in &self.next {
-            writedoc!(f, "next    {cmd}\n")?;
+            extra.push(("next", cmd.clone()));
         }
         if self.dry_run {
-            writedoc!(f, "dry-run (no files written)\n")?;
+            extra.push(("dry-run", "nothing written".into()));
         }
-        Ok(())
+        if !extra.is_empty() {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str(&kv(color, extra));
+        }
+        out
     }
 }
 
 impl Render for PrepareReport {
     fn render_pretty(&self) -> String {
-        self.to_string()
+        self.pretty(ColorMode::Always)
+    }
+
+    fn render_pretty_colored(&self, color: ColorMode) -> String {
+        self.pretty(color)
     }
 }
 

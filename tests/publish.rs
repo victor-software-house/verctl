@@ -105,3 +105,80 @@ fn dry_run_lists_many_packages() {
     ));
     assert_eq!(publish_stdout(root.path()), expected);
 }
+
+#[test]
+fn publish_without_changelog_section_fails() {
+    let root = TempDir::new().unwrap();
+    fs::write(
+        root.path().join("verctl.toml"),
+        indoc! {r#"
+            [[packages]]
+            name = "demo"
+            path = "Cargo.toml"
+        "#},
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "0.0.1"
+        "#},
+    )
+    .unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+        .current_dir(root.path())
+        .args(["publish", "--color", "never"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("changelog section"), "{stderr}");
+    assert!(stderr.contains("demo@0.0.1"), "{stderr}");
+}
+
+#[test]
+fn publish_with_matching_changelog_asks_for_token() {
+    let root = TempDir::new().unwrap();
+    fs::write(
+        root.path().join("verctl.toml"),
+        indoc! {r#"
+            [[packages]]
+            name = "demo"
+            path = "Cargo.toml"
+        "#},
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "0.0.1"
+        "#},
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("CHANGELOG.md"),
+        indoc! {"
+            # Changelog
+
+            ## demo 0.0.1
+
+            - First.
+        "},
+    )
+    .unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+        .current_dir(root.path())
+        .env_remove("GITHUB_TOKEN")
+        .env_remove("GH_TOKEN")
+        .args(["publish", "--color", "never"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("GITHUB_TOKEN"), "{stderr}");
+    assert!(!stderr.contains("changelog section"), "{stderr}");
+}

@@ -66,10 +66,14 @@ and whether the Version PR would open or update. Preview does not
 require GitHub auth.
 
 `publish` ships the versions already on HEAD, then a GitHub Release.
-How is `[publishers.NAME]`: argv + placeholders. Cargo and bun are
-stock recipes (first-class examples). Override or add another stack
-without a new verb. GitHub Packages for bun uses a nearby
-`bunfig.toml` as `--config`.
+It refuses unless each package version has a matching CHANGELOG
+heading (the Version PR writes those) and, when `origin` exists,
+HEAD is an ancestor of the default branch. It does not sniff the
+commit subject. How is `[publishers.NAME]`: argv + placeholders.
+Cargo and bun are stock recipes (first-class examples). Override or
+add another stack without a new verb. GitHub Packages for bun uses a
+nearby `bunfig.toml` as `--config`. Pretty output is ctl-core
+tables; tests pass `--color never`.
 
 Happy path after the Version PR merges is
 `victor-software-house/verctl/actions/publish`. It runs when the

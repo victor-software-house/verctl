@@ -189,6 +189,91 @@ fn each_package_gets_its_own_changelog() {
 }
 
 #[test]
+fn notes_for_reads_each_package_changelog() {
+    let root = TempDir::new().unwrap();
+    fs::create_dir_all(root.path().join("crates/a")).unwrap();
+    fs::create_dir_all(root.path().join("crates/b")).unwrap();
+    fs::write(
+        root.path().join("verctl.toml"),
+        indoc! {r#"
+            [[packages]]
+            name = "a"
+            path = "crates/a/Cargo.toml"
+            [[packages]]
+            name = "b"
+            path = "crates/b/Cargo.toml"
+        "#},
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("crates/a/CHANGELOG.md"),
+        indoc! {"
+            # Changelog
+
+            ## a 1.0.1
+
+            - First crate.
+
+            ## a 1.0.0
+
+            - Birth.
+        "},
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("crates/b/CHANGELOG.md"),
+        indoc! {"
+            # Changelog
+
+            ## b 2.1.0
+
+            - Second crate.
+        "},
+    )
+    .unwrap();
+    let config = verctl::config::Config::load(&root.path().join("verctl.toml")).unwrap();
+    let notes = release::notes_for(&config, root.path(), [("a", "1.0.1"), ("b", "2.1.0")]);
+    assert!(notes.contains("## a 1.0.1"), "{notes}");
+    assert!(notes.contains("First crate"), "{notes}");
+    assert!(notes.contains("## b 2.1.0"), "{notes}");
+    assert!(!notes.contains("## a 1.0.0"), "{notes}");
+}
+
+#[test]
+fn missing_changelog_section_fails_closed() {
+    let root = TempDir::new().unwrap();
+    fs::write(
+        root.path().join("verctl.toml"),
+        indoc! {r#"
+            [[packages]]
+            name = "demo"
+            path = "Cargo.toml"
+        "#},
+    )
+    .unwrap();
+    let config = verctl::config::Config::load(&root.path().join("verctl.toml")).unwrap();
+    let err =
+        release::require_changelog_versions(&config, root.path(), [("demo", "1.0.1")]).unwrap_err();
+    assert!(format!("{err:#}").contains("demo@1.0.1"), "{err:#}");
+}
+
+#[test]
+fn named_or_bare_heading_covers_the_version() {
+    assert!(
+        release::changelog_section_for("# Changelog\n\n## demo 1.0.1\n\n- x\n", "demo", "1.0.1")
+            .is_some()
+    );
+    assert!(
+        release::changelog_section_for("# Changelog\n\n## 1.0.1\n\n- x\n", "demo", "1.0.1")
+            .is_some()
+    );
+    assert!(
+        release::changelog_section_for("# Changelog\n\n## demo 1.0.0\n\n- x\n", "demo", "1.0.1")
+            .is_none()
+    );
+}
+
+#[test]
 fn local_prepare_writes_changelog_and_consumes() {
     let root = TempDir::new().unwrap();
     fs::write(
