@@ -8,36 +8,55 @@ queue:
     title: Finish the Changesets-shaped release loop
     scope: verctl
     outcome: >-
-      Fragment in, Version PR, exact-SHA publish, CHANGELOG, lockfile,
-      already-published, optional natives. No hand-edited versions.
+      Fragment in, Version PR, exact-SHA publish, per-package CHANGELOG,
+      lockfile, already-published, optional natives. No hand-edited
+      versions.
     blocked_by: []
     acceptance:
-      - prepare writes versions + CHANGELOG and consumes fragments.
+      - prepare writes versions + per-package CHANGELOG and consumes fragments.
       - Version PR is the only version-authority path (CI / --pr).
-      - publish is cargo/bun stock recipes plus overridable publishers.
+      - "`[prepare].after` plus stage globs; unexpected dirty files fail."
+      - publish is overridable recipes; cargo and bun are stock examples.
       - Lockfile is committed; cargo publish --locked works after bump.
       - Pretty is ctl-core ColorMode tables; tests use --color never.
       - Native assets only when [assets] is set; PR CI stays one runner.
+      - Asset jobs are named by target id; cargo/bun inherit stdio.
     notes: >-
-      This is the original product goal. Do not name the private
-      release-skill in repo docs. Rust and bun are stock examples.
+      Original product goal. Do not name the private release-skill in
+      repo docs. Rust and bun are stock examples, not the architecture.
 
-  - id: VER-005
-    title: "Publish native verctl so mise github: can install it"
-    scope: release
+  - id: VER-012
+    title: Block hand-edited versions on the default branch
+    scope: verctl
     outcome: >-
-      crates.io plus GitHub Release assets for darwin-arm64 and linux-x64.
-    blocked_by: []
+      A pre-push or check fails when a declared manifest version
+      differs from origin/main outside version-packages.
+    blocked_by: [VER-011]
     acceptance:
-      - cargo publish --locked succeeds for this crate.
-      - gh release vX.Y.Z includes both native tarballs.
-      - mise x github:victor-software-house/verctl@vX.Y.Z -- verctl --version matches the tag.
-      - tasks/ver/ver and examples/mise.toml pin that tag.
-    notes: >-
-      Same cut as qctl 0.0.1. Runners default *-latest, overridable.
-      Omit [assets] for libraries. One target when one binary is enough.
+      - version-packages and CI release jobs are exempt.
+      - Local fragment-only commits still push.
+      - Documented as verctl check --versions or a mise hook.
 
 horizon:
+  - id: VER-013
+    title: Stock lockfile refresh after cargo bumps
+    scope: verctl
+    kind: evaluation
+    outcome: >-
+      After a cargo version write, Cargo.lock is regenerated so
+      publish --locked does not fail.
+    open: >-
+      Decide whether this is default after for the cargo driver or a
+      [prepare].after the repo opts into.
+
+  - id: VER-014
+    title: First-party composite Action packages
+    scope: verctl
+    kind: evaluation
+    outcome: >-
+      action.yml packages get floating major tags without npm.
+    open: Need a first-party Action that is not this repo's own actions/.
+
   - id: VER-010
     title: Stock JS publish for npm, pnpm, and yarn
     scope: verctl
@@ -63,7 +82,7 @@ horizon:
     scope: verctl
     kind: deferred
     outcome: An opt-in mode writes .changeset/*.md from commit types.
-    open: Fragment consume and Version PR must exist first. Default stays off.
+    open: Default stays off. Fragments remain the human input.
 
   - id: VER-007
     title: OIDC publish backends for cargo and bun
@@ -73,6 +92,19 @@ horizon:
     open: bun publish --tolerate-republish already ships. OIDC is the remaining auth path.
 
 archive:
+  - id: VER-005
+    title: "Publish native verctl so mise github: can install it"
+    scope: release
+    completed: "2026-08-17"
+    disposition: completed
+    outcome: >-
+      crates.io plus GitHub Release assets for darwin-arm64 and linux-x64.
+    evidence:
+      - "crates.io verctl 0.0.1"
+      - "github.com/victor-software-house/verctl/releases/tag/v0.0.1"
+      - "verctl_0.0.1_linux_x64.tar.gz and verctl_0.0.1_macos_arm64.tar.gz"
+      - "mise x github:victor-software-house/verctl@0.0.1 -- verctl --version"
+
   - id: VER-009
     title: Keep verctl on ctl-core after the chassis hardens
     scope: verctl
@@ -82,8 +114,8 @@ archive:
       verctl stays on ctl-core prelude/View/formatdoc. No local help
       or color copy comes back.
     evidence:
-      - "ctl-core = \"0.0.1\" on crates.io"
-      - "no local help.rs or ColorMode"
+      - "ctl-core = \"0.0.3\" on crates.io"
+      - "ColorMode tables; no path = \"../ctl-core\""
 
   - id: VER-004
     title: Open or update the Version PR

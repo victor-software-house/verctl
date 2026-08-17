@@ -24,17 +24,24 @@ pub fn upstream_default_branch(root: &Path) -> Option<String> {
 
 /// Fail if the worktree has dirty paths outside `allowed` and `globs`.
 pub fn assert_only_allowed(root: &Path, allowed: &[PathBuf], globs: &[String]) -> Result<()> {
-    let Ok(repo) = Repository::discover(root) else {
+    let Ok(repo) = Repository::open(root).or_else(|_| Repository::discover(root)) else {
         return Ok(());
     };
     let statuses = repo.statuses(None).context("git status")?;
     let workdir = repo.workdir().unwrap_or(root);
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let workdir = workdir
+        .canonicalize()
+        .unwrap_or_else(|_| workdir.to_path_buf());
     let mut extra = Vec::new();
     for entry in statuses.iter() {
         let Ok(rel) = entry.path() else {
             continue;
         };
         let abs = workdir.join(rel);
+        if !abs.starts_with(&root) {
+            continue;
+        }
         if allowed
             .iter()
             .any(|path| path == &abs || path.ends_with(rel))
@@ -238,6 +245,34 @@ mod tests {
         .unwrap();
         assert_eq!(out, super::PushOutcome::Empty);
         assert_eq!(repo.head().unwrap().name().unwrap(), before);
+    }
+
+    #[test]
+    fn unexpected_dirty_fails_unless_globbed() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let sig = Signature::now("t", "t@example.com").unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                version = "1.0.0"
+            "#},
+        )
+        .unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new("Cargo.toml")).unwrap();
+            let tid = index.write_tree().unwrap();
+            let tree = repo.find_tree(tid).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+                .unwrap();
+        }
+        std::fs::write(dir.path().join("secret.env"), "TOKEN=leak\n").unwrap();
+        let allowed = [dir.path().join("Cargo.toml")];
+        let err = super::assert_only_allowed(dir.path(), &allowed, &[]).unwrap_err();
+        assert!(format!("{err:#}").contains("secret.env"), "{err:#}");
+        super::assert_only_allowed(dir.path(), &allowed, &["*.env".into()]).unwrap();
     }
 
     #[test]

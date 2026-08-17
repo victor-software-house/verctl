@@ -404,6 +404,36 @@ mod tests {
     }
 
     #[test]
+    fn github_matrix_is_only_id_and_runner() {
+        let config = load(indoc::indoc! {r#"
+            [[packages]]
+            name = "verctl"
+            path = "Cargo.toml"
+            [assets]
+            targets = ["linux-x64", "darwin-arm64"]
+        "#})
+        .unwrap();
+        let root = tempfile::TempDir::new().unwrap();
+        write_cargo(root.path(), "0.0.1");
+        let planned = plan(&config, root.path()).unwrap();
+        let out = root.path().join("out");
+        super::write_github_output(&planned, &out).unwrap();
+        let text = std::fs::read_to_string(&out).unwrap();
+        let matrix_line = text
+            .lines()
+            .find(|line| line.starts_with("matrix="))
+            .unwrap();
+        let json: serde_json::Value =
+            serde_json::from_str(matrix_line.trim_start_matches("matrix=")).unwrap();
+        let first = &json["include"][0];
+        assert_eq!(first["id"], "linux-x64");
+        assert_eq!(first["runner"], "ubuntu-latest");
+        assert!(first.get("triple").is_none(), "{first}");
+        assert!(first.get("asset").is_none(), "{first}");
+        assert!(text.contains("has_assets=true\n"), "{text}");
+    }
+
+    #[test]
     fn github_output_is_one_assignment_per_line() {
         let config = load(indoc::indoc! {r#"
             [[packages]]
