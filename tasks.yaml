@@ -37,6 +37,21 @@ queue:
       - tasks/ver/ver and examples/mise.toml pin that tag.
     notes: Same cut as qctl 0.0.1. linux-x64 may wait for a Linux runner.
 
+  - id: VER-009
+    title: Keep verctl on ctl-core after the chassis hardens
+    scope: verctl
+    outcome: >-
+      verctl stays on ctl-core prelude/View/formatdoc. No local help
+      or color copy comes back.
+    blocked_by: [VER-004]
+    acceptance:
+      - No forkctl-style help.rs or ColorMode lives in verctl.
+      - Pin is a ctl-core version or git rev, not an unpublished path.
+    notes: >-
+      Partial adoption is on feat/004-version-pr. Wait for ctl-core
+      CTC-004 (harden) before calling migration done. qctl cannot
+      name a foreign prefix in blocked_by.
+
 horizon:
   - id: VER-008
     title: Generic regex version writer
