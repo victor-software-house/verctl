@@ -21,6 +21,11 @@ impl Skip {
         if git::current_branch(root).as_deref() == Some(VERSION_BRANCH) {
             return Self::VersionBranch;
         }
+        // Actions checks out a detached merge; GITHUB_HEAD_REF is the PR branch.
+        // GITHUB_REF_NAME is the merge ref / push branch, not this.
+        if std::env::var("GITHUB_HEAD_REF").ok().as_deref() == Some(VERSION_BRANCH) {
+            return Self::VersionBranch;
+        }
         Self::None
     }
 
