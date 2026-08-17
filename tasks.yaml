@@ -25,7 +25,11 @@ queue:
       Original product goal. Do not name the private release-skill in
       repo docs. Rust and bun are stock examples, not the architecture.
       Adopt ctl-core fixture trees (CTC-006) instead of more fs::write
-      + indoc copies.
+      + indoc copies. 2026-08-17: status/check/prepare are ColorMode
+      tables; publish proves changelog headings + default-branch
+      history (no commit-subject sniff); GitHub notes come from each
+      package CHANGELOG. Still open for archive: lockfile-after-bump
+      (VER-013), hand-edit guard (VER-012).
 
   - id: VER-012
     title: Block hand-edited versions on the default branch

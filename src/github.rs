@@ -70,7 +70,13 @@ pub fn base_branch(root: &Path) -> String {
     crate::git::upstream_default_branch(root).unwrap_or_else(|| "main".into())
 }
 
-pub fn existing_pr(token: &str, repo: &Repo, head: &str) -> Result<Option<String>> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExistingPr {
+    pub url: String,
+    pub number: u64,
+}
+
+pub fn existing_pr(token: &str, repo: &Repo, head: &str) -> Result<Option<ExistingPr>> {
     block(async {
         let crab = client(token)?;
         let page = crab
@@ -82,11 +88,30 @@ pub fn existing_pr(token: &str, repo: &Repo, head: &str) -> Result<Option<String
             .send()
             .await
             .context("list pull requests")?;
-        Ok(page
-            .items
-            .into_iter()
-            .next()
-            .and_then(|pr| pr.html_url.map(|url| url.to_string())))
+        Ok(page.items.into_iter().next().and_then(|pr| {
+            let url = pr.html_url?.to_string();
+            Some(ExistingPr {
+                url,
+                number: pr.number,
+            })
+        }))
+    })
+}
+
+pub fn update_pr(token: &str, repo: &Repo, number: u64, title: &str, body: &str) -> Result<String> {
+    block(async {
+        let crab = client(token)?;
+        let pr = crab
+            .pulls(&repo.owner, &repo.name)
+            .update(number)
+            .title(title)
+            .body(body)
+            .send()
+            .await
+            .context("update pull request")?;
+        pr.html_url
+            .map(|url| url.to_string())
+            .context("updated PR has no html_url")
     })
 }
 

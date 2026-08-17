@@ -54,7 +54,8 @@ not `changesets/action`, not a GitHub App. The workflow already has
 manifest), and consumes fragments (same as `changeset version`).
 `[prepare].after` is one argv run after bumps; `[prepare].stage`
 lists extra globs that command may write. Any other dirty path
-fails. `--pr` also opens or force-updates `version-packages`.
+fails. `--pr` also opens or force-updates `version-packages` (body is the
+changelog).
 Auth is `GITHUB_TOKEN` / `GH_TOKEN` only. Push uses that token over
 HTTPS, not the machine git/ssh account. We do not call `git` or `gh`
 as commands. Local `--pr` is recovery when that same token is already
@@ -66,10 +67,19 @@ and whether the Version PR would open or update. Preview does not
 require GitHub auth.
 
 `publish` ships the versions already on HEAD, then a GitHub Release.
-How is `[publishers.NAME]`: argv + placeholders. Cargo and bun are
-stock recipes (first-class examples). Override or add another stack
-without a new verb. GitHub Packages for bun uses a nearby
-`bunfig.toml` as `--config`.
+It refuses unless each package version has a matching CHANGELOG
+heading (the Version PR writes those) and, when `origin` exists,
+HEAD is an ancestor of the default branch (`origin/HEAD`, then
+`GITHUB_BASE_REF`, then `main`/`master`). It does not sniff the
+commit subject and does not treat `GITHUB_REF_NAME` as the default
+(that is the branch being pushed). `actions/publish` points
+`origin/HEAD` at `github.event.repository.default_branch` because
+checkout never creates that symref. Locally `git clone` already
+has it; otherwise `git remote set-head origin --auto`. How is `[publishers.NAME]`: argv + placeholders.
+Cargo and bun are stock recipes (first-class examples). Override or
+add another stack without a new verb. GitHub Packages for bun uses a
+nearby `bunfig.toml` as `--config`. Pretty output is ctl-core
+tables; tests pass `--color never`.
 
 Happy path after the Version PR merges is
 `victor-software-house/verctl/actions/publish`. It runs when the

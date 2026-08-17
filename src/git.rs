@@ -22,6 +22,120 @@ pub fn upstream_default_branch(root: &Path) -> Option<String> {
     (!name.is_empty()).then(|| name.to_owned())
 }
 
+/// Fail unless HEAD is on the default-branch history.
+///
+/// No repository, and no `origin` remote, is a skip — local fixtures
+/// have nothing to prove. A repo that has `origin` but no peelable
+/// default-tracking ref fails closed. A shallow clone that cannot walk
+/// the graph also fails closed.
+pub fn require_on_default_history(root: &Path) -> Result<()> {
+    prove_default_history(root, &candidate_names(env_base_ref().as_deref()))
+}
+
+fn prove_default_history(root: &Path, candidates: &[String]) -> Result<()> {
+    let Some(repo) = repo_covering(root) else {
+        return Ok(());
+    };
+    let Ok(head) = repo.head() else {
+        return Ok(());
+    };
+    let Ok(head) = head.peel_to_commit() else {
+        return Ok(());
+    };
+    let Some(upstream) = default_upstream_commit(&repo, candidates)? else {
+        return Ok(());
+    };
+    if head.id() == upstream.id() {
+        return Ok(());
+    }
+    match repo.graph_descendant_of(upstream.id(), head.id()) {
+        Ok(true) => Ok(()),
+        Ok(false) => bail!(
+            "publish only from a Version PR commit on the default branch (HEAD {head} is not an ancestor of {upstream})",
+            head = head.id(),
+            upstream = upstream.id()
+        ),
+        Err(error) => Err(error).context(
+            "publish cannot prove HEAD is on the default branch (need a full fetch, not a shallow clone)",
+        ),
+    }
+}
+
+fn repo_covering(root: &Path) -> Option<Repository> {
+    if let Ok(repo) = Repository::open(root) {
+        return Some(repo);
+    }
+    let repo = Repository::discover(root).ok()?;
+    let workdir = repo.workdir()?.canonicalize().ok()?;
+    let root = root.canonicalize().ok()?;
+    root.starts_with(workdir).then_some(repo)
+}
+
+fn peel_remote<'a>(repo: &'a Repository, name: &str) -> Option<git2::Commit<'a>> {
+    repo.find_reference(name)
+        .ok()
+        .and_then(|reference| reference.peel_to_commit().ok())
+}
+
+fn origin_head_ref(repo: &Repository) -> Option<String> {
+    let reference = repo.find_reference("refs/remotes/origin/HEAD").ok()?;
+    let target = reference.symbolic_target().ok()??;
+    let name = target.trim_start_matches("refs/remotes/origin/");
+    (!name.is_empty()).then(|| format!("refs/remotes/origin/{name}"))
+}
+
+fn env_base_ref() -> Option<String> {
+    env::var("GITHUB_BASE_REF")
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
+/// `GITHUB_BASE_REF` (PR base) then `main` / `master`.
+///
+/// `GITHUB_REF_NAME` is not a candidate: on push it is the branch
+/// being pushed, so `origin/<that branch>` would always match HEAD.
+/// A non-main default on Actions is `origin/HEAD`, which
+/// `actions/publish` writes from `github.event.repository.default_branch`.
+fn candidate_names(base_ref: Option<&str>) -> Vec<String> {
+    let mut names = Vec::new();
+    if let Some(value) = base_ref.map(str::trim).filter(|value| !value.is_empty()) {
+        names.push(value.to_owned());
+    }
+    for stock in ["main", "master"] {
+        if !names.iter().any(|name| name == stock) {
+            names.push(stock.to_owned());
+        }
+    }
+    names
+}
+
+fn default_upstream_commit<'a>(
+    repo: &'a Repository,
+    candidates: &[String],
+) -> Result<Option<git2::Commit<'a>>> {
+    if let Some(name) = origin_head_ref(repo) {
+        return match peel_remote(repo, &name) {
+            Some(commit) => Ok(Some(commit)),
+            None => bail!(
+                "publish cannot prove HEAD is on the default branch ({name} is missing; fetch the default branch)"
+            ),
+        };
+    }
+    for name in candidates {
+        let reference = format!("refs/remotes/origin/{name}");
+        if let Some(commit) = peel_remote(repo, &reference) {
+            return Ok(Some(commit));
+        }
+    }
+    if repo.find_remote("origin").is_ok() {
+        bail!(
+            "publish cannot prove HEAD is on the default branch (origin exists but origin/HEAD, origin/main, and origin/master are missing; fetch the default branch)"
+        );
+    }
+    Ok(None)
+}
+
 /// Fail if the worktree has dirty paths outside `allowed` and `globs`.
 pub fn assert_only_allowed(root: &Path, allowed: &[PathBuf], globs: &[String]) -> Result<()> {
     let Ok(repo) = Repository::open(root).or_else(|_| Repository::discover(root)) else {
@@ -379,5 +493,206 @@ mod tests {
                 .get_name("Cargo.toml")
                 .is_some()
         );
+    }
+
+    fn commit_tree(repo: &Repository, message: &str) -> git2::Oid {
+        let sig = Signature::now("t", "t@example.com").unwrap();
+        let mut index = repo.index().unwrap();
+        let tid = index.write_tree().unwrap();
+        let tree = repo.find_tree(tid).unwrap();
+        let parent = repo.head().ok().and_then(|head| head.peel_to_commit().ok());
+        let parents: Vec<&git2::Commit<'_>> = parent.as_ref().into_iter().collect();
+        repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)
+            .unwrap()
+    }
+
+    fn stock() -> Vec<String> {
+        super::candidate_names(None)
+    }
+
+    fn fixture() -> (tempfile::TempDir, Repository, git2::Oid) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let oid = commit_tree(&repo, "init");
+        (dir, repo, oid)
+    }
+
+    fn add_origin(repo: &Repository) {
+        repo.remote(
+            "origin",
+            "https://github.com/victor-software-house/verctl.git",
+        )
+        .unwrap();
+    }
+
+    fn track(repo: &Repository, name: &str, oid: git2::Oid) {
+        repo.reference(&format!("refs/remotes/origin/{name}"), oid, true, "test")
+            .unwrap();
+    }
+
+    fn set_origin_head(repo: &Repository, name: &str) {
+        repo.reference_symbolic(
+            "refs/remotes/origin/HEAD",
+            &format!("refs/remotes/origin/{name}"),
+            true,
+            "test",
+        )
+        .unwrap();
+    }
+
+    fn prove(root: &std::path::Path, candidates: &[String]) -> anyhow::Result<()> {
+        super::prove_default_history(root, candidates)
+    }
+
+    #[test]
+    fn candidate_names_are_base_ref_then_main_master() {
+        assert_eq!(super::candidate_names(None), ["main", "master"]);
+        assert_eq!(super::candidate_names(Some("")), ["main", "master"]);
+        assert_eq!(super::candidate_names(Some("   ")), ["main", "master"]);
+        assert_eq!(
+            super::candidate_names(Some("trunk")),
+            ["trunk", "main", "master"]
+        );
+        assert_eq!(super::candidate_names(Some("main")), ["main", "master"]);
+        assert_eq!(
+            super::candidate_names(Some("release/1.0")),
+            ["release/1.0", "main", "master"]
+        );
+    }
+
+    #[test]
+    fn no_repository_skips() {
+        let dir = tempfile::TempDir::new().unwrap();
+        prove(dir.path(), &stock()).unwrap();
+    }
+
+    #[test]
+    fn default_history_skips_when_origin_is_missing() {
+        let (dir, _, _) = fixture();
+        prove(dir.path(), &stock()).unwrap();
+    }
+
+    #[test]
+    fn head_on_origin_main_is_ok() {
+        let (dir, repo, oid) = fixture();
+        add_origin(&repo);
+        track(&repo, "main", oid);
+        prove(dir.path(), &stock()).unwrap();
+    }
+
+    #[test]
+    fn origin_master_without_head_is_ok() {
+        let (dir, repo, oid) = fixture();
+        add_origin(&repo);
+        track(&repo, "master", oid);
+        prove(dir.path(), &stock()).unwrap();
+    }
+
+    #[test]
+    fn origin_head_to_non_main_is_ok() {
+        let (dir, repo, oid) = fixture();
+        add_origin(&repo);
+        track(&repo, "trunk", oid);
+        set_origin_head(&repo, "trunk");
+        prove(dir.path(), &stock()).unwrap();
+    }
+
+    #[test]
+    fn base_ref_trunk_without_origin_head_is_ok() {
+        let (dir, repo, oid) = fixture();
+        add_origin(&repo);
+        track(&repo, "trunk", oid);
+        prove(dir.path(), &super::candidate_names(Some("trunk"))).unwrap();
+    }
+
+    #[test]
+    fn origin_without_default_tracking_ref_fails() {
+        let (dir, repo, _) = fixture();
+        add_origin(&repo);
+        let err = prove(dir.path(), &stock()).unwrap_err();
+        assert!(format!("{err:#}").contains("origin exists"), "{err:#}");
+    }
+
+    #[test]
+    fn origin_trunk_alone_needs_head_or_base_ref() {
+        let (dir, repo, oid) = fixture();
+        add_origin(&repo);
+        track(&repo, "trunk", oid);
+        let err = prove(dir.path(), &stock()).unwrap_err();
+        assert!(format!("{err:#}").contains("origin exists"), "{err:#}");
+        prove(dir.path(), &super::candidate_names(Some("trunk"))).unwrap();
+        set_origin_head(&repo, "trunk");
+        prove(dir.path(), &stock()).unwrap();
+    }
+
+    #[test]
+    fn origin_hotfix_alone_is_not_the_default() {
+        let (dir, repo, oid) = fixture();
+        add_origin(&repo);
+        track(&repo, "hotfix", oid);
+        let err = prove(dir.path(), &stock()).unwrap_err();
+        assert!(format!("{err:#}").contains("origin exists"), "{err:#}");
+    }
+
+    #[test]
+    fn unpeelable_origin_head_does_not_fall_through_to_main() {
+        let (dir, repo, oid) = fixture();
+        add_origin(&repo);
+        track(&repo, "main", oid);
+        set_origin_head(&repo, "trunk");
+        let err = prove(dir.path(), &stock()).unwrap_err();
+        assert!(format!("{err:#}").contains("origin/trunk"), "{err:#}");
+    }
+
+    #[test]
+    fn origin_head_wins_over_main_when_they_differ() {
+        let (dir, repo, first) = fixture();
+        add_origin(&repo);
+        std::fs::write(dir.path().join("extra.txt"), "x\n").unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new("extra.txt")).unwrap();
+            index.write().unwrap();
+        }
+        let second = commit_tree(&repo, "ahead");
+        track(&repo, "main", first);
+        track(&repo, "trunk", second);
+        set_origin_head(&repo, "trunk");
+        prove(dir.path(), &stock()).unwrap();
+    }
+
+    #[test]
+    fn head_off_default_history_fails() {
+        let (dir, repo, first) = fixture();
+        add_origin(&repo);
+        track(&repo, "main", first);
+        repo.reference("refs/heads/other", first, true, "branch")
+            .unwrap();
+        repo.set_head("refs/heads/other").unwrap();
+        std::fs::write(dir.path().join("extra.txt"), "x\n").unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new("extra.txt")).unwrap();
+            index.write().unwrap();
+        }
+        commit_tree(&repo, "ahead");
+        let err = prove(dir.path(), &stock()).unwrap_err();
+        assert!(format!("{err:#}").contains("not an ancestor"), "{err:#}");
+    }
+
+    #[test]
+    fn head_behind_origin_main_is_ok() {
+        let (dir, repo, first) = fixture();
+        add_origin(&repo);
+        std::fs::write(dir.path().join("extra.txt"), "x\n").unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new("extra.txt")).unwrap();
+            index.write().unwrap();
+        }
+        let second = commit_tree(&repo, "ahead");
+        track(&repo, "main", second);
+        repo.set_head_detached(first).unwrap();
+        prove(dir.path(), &stock()).unwrap();
     }
 }

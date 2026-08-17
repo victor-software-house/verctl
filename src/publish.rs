@@ -4,9 +4,11 @@
 //! bun are stock recipes, not the only stacks.
 
 use crate::config::Config;
+use crate::git;
 use crate::github;
 use crate::process;
 use crate::publisher;
+use crate::release;
 use anyhow::{Context, Result};
 use ctl_core::formatdoc;
 use serde::Serialize;
@@ -76,7 +78,8 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
             release: Some(formatdoc!("would create {tag}", tag = planned.tag)),
         });
     }
-    let token = crate::release::resolve_token()?;
+    prove_version_commit(config, root, &planned)?;
+    let token = release::resolve_token()?;
     let mut packages = Vec::new();
     for entry in &planned.packages {
         let note = match publish_package(entry)? {
@@ -91,7 +94,14 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
         });
     }
     let repo = github::repo(root)?;
-    let notes = release_notes(root);
+    let notes = release::notes_for(
+        config,
+        root,
+        planned
+            .packages
+            .iter()
+            .map(|entry| (entry.name.as_str(), entry.version.as_str())),
+    );
     let name = planned.packages.first().map_or_else(
         || planned.tag.clone(),
         |entry| format!("{} {}", entry.name, entry.version),
@@ -123,6 +133,18 @@ impl From<&PublishEntry> for PublishLine {
     }
 }
 
+fn prove_version_commit(config: &Config, root: &Path, planned: &PublishPlan) -> Result<()> {
+    release::require_changelog_versions(
+        config,
+        root,
+        planned
+            .packages
+            .iter()
+            .map(|entry| (entry.name.as_str(), entry.version.as_str())),
+    )?;
+    git::require_on_default_history(root)
+}
+
 fn already_published(message: &str) -> bool {
     let lower = message.to_ascii_lowercase();
     lower.contains("already uploaded")
@@ -146,28 +168,6 @@ fn tag_for(packages: &[PublishEntry]) -> String {
             .first()
             .map_or_else(|| "v0.0.0".into(), |entry| format!("v{}", entry.version)),
     }
-}
-
-fn release_notes(root: &Path) -> String {
-    let Ok(body) = std::fs::read_to_string(root.join("CHANGELOG.md")) else {
-        return String::new();
-    };
-    let mut lines = body.lines();
-    while let Some(line) = lines.next() {
-        if line.starts_with("## ") {
-            let mut section = String::from(line);
-            section.push('\n');
-            for next in lines {
-                if next.starts_with("## ") {
-                    break;
-                }
-                section.push_str(next);
-                section.push('\n');
-            }
-            return section;
-        }
-    }
-    String::new()
 }
 
 #[cfg(test)]

@@ -24,7 +24,7 @@ fn status_lists_mixed_packages() {
     )
     .expect("write");
     let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
-        .args(["status", "-d"])
+        .args(["status", "--color", "never", "-d"])
         .arg(&dir)
         .output()
         .expect("spawn");
@@ -34,10 +34,11 @@ fn status_lists_mixed_packages() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("pending  1"));
-    assert!(stdout.contains("forkctl"));
-    assert!(stdout.contains("@scope/pkg"));
-    assert!(stdout.contains("max     minor"));
+    assert!(stdout.contains("forkctl"), "{stdout}");
+    assert!(stdout.contains("@scope/pkg"), "{stdout}");
+    assert!(stdout.contains("pending"), "{stdout}");
+    assert!(stdout.contains("minor"), "{stdout}");
+    assert!(stdout.contains('│') || stdout.contains('|'), "{stdout}");
 }
 
 #[test]
@@ -86,7 +87,7 @@ fn prepare_dry_run_writes_nothing() {
     let root = demo_root();
     let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
         .current_dir(root.path())
-        .args(["prepare", "-n"])
+        .args(["prepare", "-n", "--color", "never"])
         .output()
         .expect("spawn");
     assert!(
@@ -95,11 +96,16 @@ fn prepare_dry_run_writes_nothing() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("bump    demo  1.0.0 -> 1.0.1"), "{stdout}");
-    assert!(stdout.contains("log     ## demo 1.0.1"), "{stdout}");
+    assert!(stdout.contains("demo"), "{stdout}");
+    assert!(stdout.contains("1.0.0"), "{stdout}");
+    assert!(stdout.contains("1.0.1"), "{stdout}");
+    assert!(stdout.contains("patch"), "{stdout}");
+    assert!(stdout.contains("## demo 1.0.1"), "{stdout}");
     assert!(stdout.contains("Patch"), "{stdout}");
-    assert!(stdout.contains("dry-run (no files written)"), "{stdout}");
-    assert!(!stdout.contains("consume "), "{stdout}");
+    assert!(stdout.contains("dry-run"), "{stdout}");
+    assert!(stdout.contains("nothing written"), "{stdout}");
+    assert!(!stdout.contains("consume"), "{stdout}");
+    assert!(stdout.contains('│') || stdout.contains('|'), "{stdout}");
     let cargo = fs::read_to_string(root.path().join("Cargo.toml")).expect("read");
     assert!(cargo.contains("version = \"1.0.0\""), "{cargo}");
     assert!(root.path().join(".changeset/bump.md").exists());
@@ -113,7 +119,7 @@ fn prepare_pr_preview_needs_no_auth_and_writes_nothing() {
         .current_dir(root.path())
         .env_remove("GITHUB_TOKEN")
         .env_remove("GH_TOKEN")
-        .args(["prepare", "--pr", "--preview"])
+        .args(["prepare", "--pr", "--preview", "--color", "never"])
         .output()
         .expect("spawn");
     assert!(
@@ -122,11 +128,9 @@ fn prepare_pr_preview_needs_no_auth_and_writes_nothing() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("consume bump.md"), "{stdout}");
-    assert!(
-        stdout.contains("pr      open or update version-packages"),
-        "{stdout}"
-    );
+    assert!(stdout.contains("bump.md"), "{stdout}");
+    assert!(stdout.contains("consume"), "{stdout}");
+    assert!(stdout.contains("version-packages"), "{stdout}");
     let cargo = fs::read_to_string(root.path().join("Cargo.toml")).expect("read");
     assert!(cargo.contains("version = \"1.0.0\""), "{cargo}");
     assert!(root.path().join(".changeset/bump.md").exists());
@@ -174,7 +178,7 @@ fn prepare_pr_noops_without_fragments() {
         .current_dir(root.path())
         .env_remove("GITHUB_TOKEN")
         .env_remove("GH_TOKEN")
-        .args(["prepare", "--pr"])
+        .args(["prepare", "--pr", "--color", "never"])
         .output()
         .expect("spawn");
     assert!(
@@ -184,6 +188,7 @@ fn prepare_pr_noops_without_fragments() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("no-op"), "{stdout}");
+    assert!(stdout.contains("no version-changing fragments"), "{stdout}");
 }
 
 #[test]
@@ -235,7 +240,7 @@ fn help_has_short_and_long() {
 fn check_ok_when_dir_missing() {
     let root = TempDir::new().expect("tempdir");
     let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
-        .args(["check", "-d"])
+        .args(["check", "--color", "never", "-d"])
         .arg(root.path().join("missing"))
         .output()
         .expect("spawn");
@@ -244,8 +249,7 @@ fn check_ok_when_dir_missing() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout).trim(),
-        "ok      0 fragment(s)"
-    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("ok"), "{stdout}");
+    assert!(stdout.contains("0 fragment(s)"), "{stdout}");
 }

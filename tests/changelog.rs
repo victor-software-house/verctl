@@ -73,7 +73,10 @@ fn release_template_varies_by_data() {
                 commit: None,
             },
             authors: &[],
-            expected: "- Restore mise.toml.\n  More detail.",
+            expected: indoc! {"
+                - Restore mise.toml.
+                  More detail."
+            },
         },
         ReleaseCase {
             name: "summary already terminal",
@@ -215,7 +218,9 @@ fn dependency_template_varies_by_data() {
         DepsCase {
             name: "empty list",
             deps: &[],
-            expected: "- Updated dependencies:\n",
+            expected: indoc! {"
+                - Updated dependencies:
+            "},
         },
     ];
     for DepsCase {

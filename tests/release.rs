@@ -62,13 +62,35 @@ fn consume_fragments_deletes_the_files() {
 fn prepend_changelog_creates_and_inserts() {
     let root = TempDir::new().unwrap();
     let path = root.path().join("CHANGELOG.md");
-    release::prepend_changelog(&path, "## demo 1.0.1\n\n- first\n\n").unwrap();
+    release::prepend_changelog(
+        &path,
+        indoc! {"
+            ## demo 1.0.1
+
+            - first
+
+        "},
+    )
+    .unwrap();
     let first = fs::read_to_string(&path).unwrap();
     assert!(
-        first.starts_with("# Changelog\n\n## demo 1.0.1\n"),
+        first.starts_with(indoc! {"
+            # Changelog
+
+            ## demo 1.0.1
+        "}),
         "{first}"
     );
-    release::prepend_changelog(&path, "## demo 1.0.2\n\n- second\n\n").unwrap();
+    release::prepend_changelog(
+        &path,
+        indoc! {"
+            ## demo 1.0.2
+
+            - second
+
+        "},
+    )
+    .unwrap();
     let next = fs::read_to_string(&path).unwrap();
     assert!(next.contains("## demo 1.0.2"), "{next}");
     assert!(
@@ -186,6 +208,132 @@ fn each_package_gets_its_own_changelog() {
     assert!(b.contains("## b 2.1.0"), "{b}");
     assert!(!a.contains("## b "), "{a}");
     assert!(!b.contains("## a "), "{b}");
+}
+
+#[test]
+fn notes_for_reads_each_package_changelog() {
+    let root = TempDir::new().unwrap();
+    fs::create_dir_all(root.path().join("crates/a")).unwrap();
+    fs::create_dir_all(root.path().join("crates/b")).unwrap();
+    fs::write(
+        root.path().join("verctl.toml"),
+        indoc! {r#"
+            [[packages]]
+            name = "a"
+            path = "crates/a/Cargo.toml"
+            [[packages]]
+            name = "b"
+            path = "crates/b/Cargo.toml"
+        "#},
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("crates/a/CHANGELOG.md"),
+        indoc! {"
+            # Changelog
+
+            ## a 1.0.1
+
+            - First crate.
+
+            ## a 1.0.0
+
+            - Birth.
+        "},
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("crates/b/CHANGELOG.md"),
+        indoc! {"
+            # Changelog
+
+            ## b 2.1.0
+
+            - Second crate.
+        "},
+    )
+    .unwrap();
+    let config = verctl::config::Config::load(&root.path().join("verctl.toml")).unwrap();
+    let notes = release::notes_for(&config, root.path(), [("a", "1.0.1"), ("b", "2.1.0")]);
+    assert!(notes.contains("## a 1.0.1"), "{notes}");
+    assert!(notes.contains("First crate"), "{notes}");
+    assert!(notes.contains("## b 2.1.0"), "{notes}");
+    assert!(!notes.contains("## a 1.0.0"), "{notes}");
+}
+
+#[test]
+fn missing_changelog_section_fails_closed() {
+    let root = TempDir::new().unwrap();
+    fs::write(
+        root.path().join("verctl.toml"),
+        indoc! {r#"
+            [[packages]]
+            name = "demo"
+            path = "Cargo.toml"
+        "#},
+    )
+    .unwrap();
+    let config = verctl::config::Config::load(&root.path().join("verctl.toml")).unwrap();
+    let err =
+        release::require_changelog_versions(&config, root.path(), [("demo", "1.0.1")]).unwrap_err();
+    assert!(format!("{err:#}").contains("demo@1.0.1"), "{err:#}");
+}
+
+#[test]
+fn pr_body_is_the_changelog() {
+    assert_eq!(release::pr_body(""), "Prepared by verctl.");
+    let notes = indoc! {"
+        ## demo 1.0.1
+
+        - Patch.
+    "};
+    assert_eq!(release::pr_body(notes), notes.trim());
+}
+
+#[test]
+fn named_or_bare_heading_covers_the_version() {
+    assert!(
+        release::changelog_section_for(
+            indoc! {"
+                # Changelog
+
+                ## demo 1.0.1
+
+                - x
+            "},
+            "demo",
+            "1.0.1",
+        )
+        .is_some()
+    );
+    assert!(
+        release::changelog_section_for(
+            indoc! {"
+                # Changelog
+
+                ## 1.0.1
+
+                - x
+            "},
+            "demo",
+            "1.0.1",
+        )
+        .is_some()
+    );
+    assert!(
+        release::changelog_section_for(
+            indoc! {"
+                # Changelog
+
+                ## demo 1.0.0
+
+                - x
+            "},
+            "demo",
+            "1.0.1",
+        )
+        .is_none()
+    );
 }
 
 #[test]
