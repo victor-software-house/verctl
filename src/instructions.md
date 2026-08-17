@@ -55,6 +55,9 @@ declared manifest to the merge-base of HEAD and the default branch.
 It fails when they differ. Only `version-packages` is exempt. CI
 does not skip. A fragment-only commit does not change versions.
 
+The action runs `verctl` from PATH. `mise run ver` is only for
+developing this checkout.
+
 `prepare` writes versions, per-package CHANGELOG.md (next to each
 manifest), and consumes fragments (same as `changeset version`).
 `[prepare].after` is one argv run after bumps; `[prepare].stage`

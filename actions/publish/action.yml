@@ -1,7 +1,8 @@
 name: verctl publish
 description: >-
   After the Version PR merges, publish cargo and bun packages and open
-  the GitHub Release. Finds `verctl` on PATH, otherwise `mise run ver`.
+  the GitHub Release. Uses `verctl` on PATH, otherwise the published
+  tarball. Never compiles this checkout.
 author: victor-software-house
 branding:
   icon: package
@@ -20,6 +21,12 @@ inputs:
     description: Preview only. Set to `true` to skip cargo/bun/GitHub.
     required: false
     default: "false"
+  version:
+    description: >-
+      Released verctl to `mise x` when `verctl` is not on PATH.
+      Ignored when PATH already has the binary.
+    required: false
+    default: "0.0.1"
 
 runs:
   using: composite
@@ -42,13 +49,11 @@ runs:
         GITHUB_TOKEN: ${{ inputs.token }}
         VERCTL_CONFIG: ${{ inputs.config }}
         VERCTL_DRY_RUN: ${{ inputs.dry-run }}
+        VERCTL_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
         extra=()
         if [ "${VERCTL_DRY_RUN}" = true ]; then
           extra+=(--dry-run)
         fi
-        if command -v verctl >/dev/null 2>&1; then
-          exec verctl publish -c "${VERCTL_CONFIG}" "${extra[@]}"
-        fi
-        exec mise run ver -- publish -c "${VERCTL_CONFIG}" "${extra[@]}"
+        exec "${GITHUB_ACTION_PATH}/../run-verctl" publish -c "${VERCTL_CONFIG}" "${extra[@]}"

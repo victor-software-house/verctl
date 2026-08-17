@@ -1,7 +1,7 @@
 name: verctl version PR
 description: >-
-  Open or update the Version PR. Finds `verctl` on PATH, otherwise
-  `mise run ver`. Replacement for changesets/action version: input.
+  Open or update the Version PR. Uses `verctl` on PATH, otherwise the
+  published GitHub Release tarball. Never compiles this checkout.
 author: victor-software-house
 branding:
   icon: git-pull-request
@@ -28,6 +28,12 @@ inputs:
     description: Preview only. Set to `true` to write nothing.
     required: false
     default: "false"
+  version:
+    description: >-
+      Released verctl to `mise x` when `verctl` is not on PATH.
+      Ignored when PATH already has the binary.
+    required: false
+    default: "0.0.1"
 
 runs:
   using: composite
@@ -40,13 +46,11 @@ runs:
         VERCTL_DRY_RUN: ${{ inputs.dry-run }}
         VERCTL_PR_TITLE: ${{ inputs.title }}
         VERCTL_COMMIT_MESSAGE: ${{ inputs.commit-message }}
+        VERCTL_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
         extra=()
         if [ "${VERCTL_DRY_RUN}" = true ]; then
           extra+=(--dry-run)
         fi
-        if command -v verctl >/dev/null 2>&1; then
-          exec verctl prepare --pr -c "${VERCTL_CONFIG}" "${extra[@]}"
-        fi
-        exec mise run ver -- prepare --pr -c "${VERCTL_CONFIG}" "${extra[@]}"
+        exec "${GITHUB_ACTION_PATH}/../run-verctl" prepare --pr -c "${VERCTL_CONFIG}" "${extra[@]}"

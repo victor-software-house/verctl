@@ -31,5 +31,7 @@ jobs:
         with:
           version: 2026.8.2
           cache: true
-      - run: mise install --locked
+          # Do not install this repo's rust toolchain. The action
+          # runs the published verctl tarball via `mise x`.
+          install: false
       - uses: ./actions/version-pr
