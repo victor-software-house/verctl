@@ -3,19 +3,19 @@
   <img src="docs/banner.svg" alt="verctl — Version PRs from Changesets-format fragments. Any stack.">
 </picture>
 
+# verctl
+
 It reads `.changeset/*.md`, bumps declared version files, writes
 changelogs, and opens or updates one prepare-release PR.
 
 It is not `@changesets/cli`, not Knope, and not a forkctl verb.
 
 ```sh
-mise run ver -- add
 mise run ver -- status
+mise run ver -- check
 mise run ver -- prepare
+mise run ver -- prepare --pr
 ```
-
-Today `status`, `check`, and `instructions` are implemented.
-`add` and `prepare` are next.
 
 ## Setup
 

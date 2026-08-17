@@ -20,7 +20,11 @@ header does. Never recolour a single file at the call site.
 |:--|:--|:--|
 | Cream | `#f3efe6` | Field, or figure on ink |
 | Ink | `#161616` | Figure, or field |
-| Rust | `#c45c2a` | The new version. One accent, never two |
+| Rust | `#c45c2a` | The new version, and the same accent on the banner chip |
+
+The square mark has one rust shape. The banner repeats that rust on the
+chip so the header matches the mark. It is the same accent, not a second
+role.
 
 Banner-only tints: `#6f675c` (muted on cream), `#8d857a` (muted on ink),
 `#ddd6c8` / `#2f2f2f` (hairline).
