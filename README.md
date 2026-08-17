@@ -153,6 +153,10 @@ runner = "big"
 | `[ci.NAME]` | a PR / push validation job | the check name | `ubuntu-latest` |
 | `[assets.NAME]` | a release build job and its tarball | the check name, the `--build` argument, part of the filename | the built-in record for that name |
 
+Names sort alphabetically, not in file order, so `[ci.verify]` written above
+`[ci.audit]` still plans `audit` first. Checks are independent, so the order is
+display only.
+
 Only `labels` reaches GitHub. A runner **name** is a name in the file: it
 resolves against `[runners]` or fails there, listing what is declared, so a
 label can never pass itself off as a machine and verctl never invents a label.
