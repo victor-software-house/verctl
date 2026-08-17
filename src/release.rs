@@ -8,7 +8,7 @@ use ctl_core::{formatdoc, writedoc};
 use std::env;
 use std::fmt::Write as _;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub const VERSION_BRANCH: &str = "version-packages";
 
@@ -105,11 +105,27 @@ pub fn changelog_sections(plan: &[PlanEntry], fragments: &[Fragment]) -> Result<
 }
 
 pub fn write_changelogs(
-    changelog: &Path,
+    config: &crate::config::Config,
+    root: &Path,
     plan: &[PlanEntry],
     fragments: &[Fragment],
-) -> Result<()> {
-    prepend_changelog(changelog, &changelog_sections(plan, fragments)?)
+) -> Result<Vec<PathBuf>> {
+    let mut written = Vec::new();
+    for entry in plan {
+        let spec = config.find(&entry.name)?;
+        let path = spec.changelog_path(root);
+        let section = changelog_section(entry, fragments)?;
+        if section.is_empty() {
+            continue;
+        }
+        prepend_changelog(&path, &section)?;
+        written.push(path);
+    }
+    Ok(written)
+}
+
+fn changelog_section(entry: &PlanEntry, fragments: &[Fragment]) -> Result<String> {
+    changelog_sections(std::slice::from_ref(entry), fragments)
 }
 
 pub fn prepend_changelog(path: &Path, section: &str) -> Result<()> {

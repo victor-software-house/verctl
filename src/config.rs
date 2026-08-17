@@ -108,11 +108,24 @@ pub struct PackageSpec {
     #[serde(default, rename = "publish")]
     pub publish_argv: Option<Vec<String>>,
     pub registry: Option<String>,
+    /// Package CHANGELOG.md. Defaults to next to the manifest.
+    pub changelog: Option<PathBuf>,
     #[serde(flatten)]
     pub spec: DriverSpec,
 }
 
 impl PackageSpec {
+    #[must_use]
+    pub fn changelog_path(&self, root: &Path) -> PathBuf {
+        if let Some(path) = &self.changelog {
+            return root.join(path);
+        }
+        root.join(&self.path)
+            .parent()
+            .unwrap_or(root)
+            .join("CHANGELOG.md")
+    }
+
     pub fn resolve(&self, config: &Config, root: &Path) -> Result<Driver> {
         let inferred = self
             .path
@@ -210,6 +223,18 @@ pub struct Config {
     pub publishers: BTreeMap<String, PublisherSpec>,
     #[serde(default)]
     pub assets: Option<Assets>,
+    #[serde(default)]
+    pub prepare: Prepare,
+}
+
+/// Extra work after version bumps, committed on the Version PR.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct Prepare {
+    /// argv after all bumps (e.g. `["mise", "run", "version-sync"]`).
+    pub after: Option<Vec<String>>,
+    /// Extra paths `after` may write. Anything else dirty fails.
+    #[serde(default)]
+    pub stage: Vec<String>,
 }
 
 impl Config {

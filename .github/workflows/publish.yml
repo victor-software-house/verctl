@@ -47,6 +47,7 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
   assets:
+    name: ${{ matrix.id }}
     needs: crate
     if: needs.crate.outputs.has_assets == 'true'
     strategy:

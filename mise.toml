@@ -42,4 +42,4 @@ run = "cargo build --release"
 
 [tasks.ver]
 description = "Run verctl from this checkout"
-run = "cargo run --quiet --"
+run = "cargo run --"

@@ -34,6 +34,13 @@ keys = ["version"]
 #
 # Omit [assets] for a library. One target when a single binary covers
 # every consumer you care about.
+# Per-package CHANGELOG.md sits next to the manifest. Override with
+# changelog = "docs/FOO.md" when it does not.
+#
+# [prepare]
+# after = ["mise", "run", "version-sync"]
+# stage = ["packages/*/src/version.rs"]
+#
 # [assets]
 # targets = ["darwin-arm64", "linux-x64"]
 # Pin a runner only when latest is wrong:

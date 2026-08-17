@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use ctl_core::prelude::*;
 use serde::Serialize;
 use std::fmt;
@@ -8,8 +8,10 @@ use verctl::assets;
 use verctl::cli::{Cli, Command, PrepareArgs, StatusArgs};
 use verctl::config::Config;
 use verctl::fragment::{self, Bump};
+use verctl::git;
 use verctl::github;
 use verctl::prepare;
+use verctl::process;
 use verctl::publish;
 use verctl::release;
 
@@ -188,7 +190,10 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     let follow_up = prepare::apply_plan(&plan)?;
     let consumed = release::contributing_fragments(&plan, &fragments);
     let changelog = release::changelog_sections(&plan, &fragments)?;
-    release::write_changelogs(&root.join("CHANGELOG.md"), &plan, &fragments)?;
+    let changelogs = release::write_changelogs(&config, root, &plan, &fragments)?;
+    if let Some(after) = &config.prepare.after {
+        process::run_inherit(after, std::time::Duration::from_mins(5)).context("prepare.after")?;
+    }
     let consume: Vec<String> = consumed
         .iter()
         .map(|fragment| {
@@ -201,8 +206,9 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
         })
         .collect();
     let mut paths: Vec<std::path::PathBuf> = plan.iter().map(|entry| entry.path.clone()).collect();
-    paths.push(root.join("CHANGELOG.md"));
+    paths.extend(changelogs);
     paths.extend(consumed.iter().map(|fragment| fragment.path.clone()));
+    git::assert_only_allowed(root, &paths, &config.prepare.stage)?;
     release::consume_fragments(consumed)?;
     let mut pr = None;
     if let Some(token) = token {

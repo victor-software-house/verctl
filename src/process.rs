@@ -22,6 +22,37 @@ pub fn run_limited(argv: &[String], env: &[(&str, &str)], timeout: Duration) -> 
     filter_limited(argv, "", env, timeout, DEFAULT_OUTPUT_LIMIT)
 }
 
+/// Inherit stdout/stderr so Actions stream cargo/bun instead of buffering.
+pub fn run_inherit(argv: &[String], timeout: Duration) -> Result<()> {
+    ensure!(!argv.is_empty(), "driver argv is empty");
+    let handle = duct::cmd(&argv[0], &argv[1..])
+        .unchecked()
+        .start()
+        .context("spawn command")?;
+    let waited = match handle.wait_timeout(timeout) {
+        Ok(output) => output.is_some(),
+        Err(error) => {
+            let _ = handle.kill();
+            let _ = handle.wait();
+            return Err(error).context("command");
+        }
+    };
+    if !waited {
+        let _ = handle.kill();
+        let _ = handle.wait();
+        bail!("command timed out after {timeout:?}");
+    }
+    let status = handle
+        .try_wait()
+        .context("command")?
+        .context("command exited without a status")?
+        .status;
+    if !status.success() {
+        bail!("command failed: {}", argv.join(" "));
+    }
+    Ok(())
+}
+
 /// `["cargo", "publish"]` without a `.into()` on every word.
 #[must_use]
 pub fn argv(parts: &[&str]) -> Vec<String> {

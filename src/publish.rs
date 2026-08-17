@@ -105,8 +105,8 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
 
 fn publish_package(entry: &PublishEntry) -> Result<String> {
     let coord = format!("{}@{}", entry.name, entry.version);
-    match process::run_limited(&entry.argv, &[], PUBLISH_TIMEOUT) {
-        Ok(_) => Ok(coord),
+    match process::run_inherit(&entry.argv, PUBLISH_TIMEOUT) {
+        Ok(()) => Ok(coord),
         Err(error) if already_published(&format!("{error:#}")) => Ok(format!("{coord} (already)")),
         Err(error) => Err(error).context(coord),
     }

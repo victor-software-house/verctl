@@ -50,9 +50,11 @@ Happy path is GitHub Actions: `victor-software-house/verctl/actions/version-pr`,
 not `changesets/action`, not a GitHub App. The workflow already has
 `git`, `gh`, and `${{ github.token }}`. No PAT. No App install.
 
-`prepare` writes versions, CHANGELOG, and consumes fragments (same
-as `changeset version`). `--pr` also opens or force-updates
-`version-packages` through `git2` + `octocrab`.
+`prepare` writes versions, per-package CHANGELOG.md (next to each
+manifest), and consumes fragments (same as `changeset version`).
+`[prepare].after` is one argv run after bumps; `[prepare].stage`
+lists extra globs that command may write. Any other dirty path
+fails. `--pr` also opens or force-updates `version-packages`.
 Auth is `GITHUB_TOKEN` / `GH_TOKEN` only. Push uses that token over
 HTTPS, not the machine git/ssh account. We do not call `git` or `gh`
 as commands. Local `--pr` is recovery when that same token is already

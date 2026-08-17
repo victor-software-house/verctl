@@ -126,9 +126,31 @@ pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
     })
 }
 
+#[derive(Serialize)]
+struct CiRow {
+    id: String,
+    runner: String,
+}
+
+#[derive(Serialize)]
+struct CiMatrix {
+    include: Vec<CiRow>,
+}
+
 pub fn write_github_output(plan: &AssetsPlan, path: &Path) -> Result<()> {
-    let matrix = serde_json::to_string(&plan.matrix).context("encode matrix")?;
-    let body = formatdoc_output(plan, &matrix);
+    let matrix = CiMatrix {
+        include: plan
+            .matrix
+            .include
+            .iter()
+            .map(|row| CiRow {
+                id: row.id.clone(),
+                runner: row.runner.clone(),
+            })
+            .collect(),
+    };
+    let encoded = serde_json::to_string(&matrix).context("encode matrix")?;
+    let body = formatdoc_output(plan, &encoded);
     fs::write(path, body).with_context(|| path.display().to_string())
 }
 
@@ -155,10 +177,10 @@ pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
     let ctx = target_ctx(plan, target);
     if !plan.prepare.is_empty() {
         let prepare = expand(&plan.prepare, &ctx);
-        process::run_limited(&prepare, &[], BUILD_TIMEOUT).context("assets.prepare")?;
+        process::run_inherit(&prepare, BUILD_TIMEOUT).context("assets.prepare")?;
     }
     let build = expand(&plan.build, &ctx);
-    process::run_limited(&build, &[], BUILD_TIMEOUT).context("assets.build")?;
+    process::run_inherit(&build, BUILD_TIMEOUT).context("assets.build")?;
     let binary = root.join(expand_one(&plan.binary, &ctx));
     ensure!(
         binary.is_file(),
@@ -178,7 +200,7 @@ pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
             .context("dir")?,
         &plan.bin,
     ]);
-    process::run_limited(&tar, &[], Duration::from_mins(2)).context("tar")?;
+    process::run_inherit(&tar, Duration::from_mins(2)).context("tar")?;
     Ok(tarball)
 }
 
@@ -397,6 +419,7 @@ mod tests {
         let text = std::fs::read_to_string(&out).unwrap();
         assert!(text.contains("has_assets=false\n"), "{text}");
         assert!(text.contains("tag=v0.0.1\n"), "{text}");
-        assert!(text.contains("matrix={\"include\":[]}\n"), "{text}");
+        assert!(text.contains("matrix={\"include\":[]}"), "{text}");
+        assert!(!text.contains("triple"), "{text}");
     }
 }

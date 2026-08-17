@@ -1,5 +1,5 @@
 use crate::github::Repo;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use git2::{Cred, PushOptions, RemoteCallbacks, Repository, Signature};
 use std::env;
 use std::path::{Path, PathBuf};
@@ -20,6 +20,43 @@ pub fn upstream_default_branch(root: &Path) -> Option<String> {
     let target = reference.symbolic_target().ok()??;
     let name = target.trim_start_matches("refs/remotes/origin/");
     (!name.is_empty()).then(|| name.to_owned())
+}
+
+/// Fail if the worktree has dirty paths outside `allowed` and `globs`.
+pub fn assert_only_allowed(root: &Path, allowed: &[PathBuf], globs: &[String]) -> Result<()> {
+    let Ok(repo) = Repository::discover(root) else {
+        return Ok(());
+    };
+    let statuses = repo.statuses(None).context("git status")?;
+    let workdir = repo.workdir().unwrap_or(root);
+    let mut extra = Vec::new();
+    for entry in statuses.iter() {
+        let Ok(rel) = entry.path() else {
+            continue;
+        };
+        let abs = workdir.join(rel);
+        if allowed
+            .iter()
+            .any(|path| path == &abs || path.ends_with(rel))
+        {
+            continue;
+        }
+        if globs.iter().any(|pattern| {
+            glob::Pattern::new(pattern).is_ok_and(|compiled| {
+                compiled.matches(rel) || compiled.matches(&format!("./{rel}"))
+            })
+        }) {
+            continue;
+        }
+        extra.push(rel.to_owned());
+    }
+    if extra.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "prepare produced unexpected paths (declare them in [prepare].stage): {}",
+        extra.join(", ")
+    );
 }
 
 /// Commit `paths` onto `branch` without moving HEAD. `Empty` if the tree is unchanged.
