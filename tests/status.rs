@@ -150,6 +150,43 @@ fn prepare_no_pr_still_writes() {
 }
 
 #[test]
+fn prepare_pr_noops_without_fragments() {
+    let root = TempDir::new().expect("tmp");
+    fs::write(
+        root.path().join("verctl.toml"),
+        indoc! {r#"
+            [[packages]]
+            name = "demo"
+            path = "Cargo.toml"
+        "#},
+    )
+    .expect("cfg");
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.0.0"
+        "#},
+    )
+    .expect("cargo");
+    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+        .current_dir(root.path())
+        .env_remove("GITHUB_TOKEN")
+        .env_remove("GH_TOKEN")
+        .args(["prepare", "--pr"])
+        .output()
+        .expect("spawn");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("no-op"), "{stdout}");
+}
+
+#[test]
 fn prepare_pr_fails_closed_without_github_auth() {
     let root = demo_root();
     let output = Command::new(env!("CARGO_BIN_EXE_verctl"))

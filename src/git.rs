@@ -1,8 +1,8 @@
 use crate::github::Repo;
-use anyhow::{Context, Result, bail};
-use git2::{Cred, IndexAddOption, PushOptions, RemoteCallbacks, Repository, Signature};
+use anyhow::{Context, Result};
+use git2::{Cred, PushOptions, RemoteCallbacks, Repository, Signature};
 use std::env;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub fn origin_url(root: &Path) -> Result<String> {
     let repo = Repository::discover(root).context("open git repository")?;
@@ -22,38 +22,60 @@ pub fn upstream_default_branch(root: &Path) -> Option<String> {
     (!name.is_empty()).then(|| name.to_owned())
 }
 
+/// Commit `paths` onto `branch` without moving HEAD. `Empty` if the tree is unchanged.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum PushOutcome {
+    /// No version files changed.
+    Empty,
+    /// Branch was updated and pushed.
+    Pushed,
+}
+
 pub fn commit_branch_and_push(
     root: &Path,
     branch: &str,
     message: &str,
     token: &str,
     github: &Repo,
-) -> Result<()> {
+    paths: &[PathBuf],
+) -> Result<PushOutcome> {
     let repo = Repository::discover(root).context("open git repository")?;
-    let head = repo
+    let workdir = repo
+        .workdir()
+        .context("repository has no workdir")?
+        .to_path_buf();
+    let parent = repo
         .head()
         .context("git HEAD")?
         .peel_to_commit()
         .context("HEAD commit")?;
-    repo.branch(branch, &head, true)
-        .context("create or reset branch")?;
-    repo.set_head(&format!("refs/heads/{branch}"))
-        .context("set HEAD")?;
-    repo.checkout_head(None).context("checkout branch")?;
-
     let mut index = repo.index().context("git index")?;
-    index
-        .add_all(["*"].iter(), IndexAddOption::DEFAULT, None)
-        .context("git add")?;
+    for path in paths {
+        let rel = path.strip_prefix(&workdir).unwrap_or(path);
+        if path.exists() {
+            index
+                .add_path(rel)
+                .with_context(|| format!("git add {}", rel.display()))?;
+        } else {
+            let _ = index.remove_path(rel);
+        }
+    }
     index.write().context("write index")?;
     let tree_id = index.write_tree().context("write tree")?;
-    let tree = repo.find_tree(tree_id).context("find tree")?;
-    if head.tree_id() == tree_id {
-        bail!("prepare --pr has nothing to commit");
+    if parent.tree_id() == tree_id {
+        return Ok(PushOutcome::Empty);
     }
+    let tree = repo.find_tree(tree_id).context("find tree")?;
     let sig = signature(&repo)?;
-    repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&head])
-        .context("git commit")?;
+    repo.commit(
+        Some(&format!("refs/heads/{branch}")),
+        &sig,
+        &sig,
+        message,
+        &tree,
+        &[&parent],
+    )
+    .context("git commit")?;
 
     let https = format!("https://github.com/{}/{}.git", github.owner, github.name);
     let mut remote = repo
@@ -68,7 +90,7 @@ pub fn commit_branch_and_push(
     remote
         .push(&[&refspec], Some(&mut opts))
         .context("git push")?;
-    Ok(())
+    Ok(PushOutcome::Pushed)
 }
 
 fn signature(repo: &Repository) -> Result<Signature<'static>> {
@@ -113,5 +135,35 @@ mod tests {
             origin_url(dir.path()).unwrap(),
             "https://github.com/victor-software-house/verctl.git"
         );
+    }
+
+    #[test]
+    fn empty_paths_do_not_switch_head() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let sig = Signature::now("t", "t@example.com").unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            let tid = index.write_tree().unwrap();
+            let tree = repo.find_tree(tid).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+                .unwrap();
+        }
+        let before = repo.head().unwrap().name().unwrap().to_owned();
+        let repo_id = crate::github::Repo {
+            owner: "victor-software-house".into(),
+            name: "verctl".into(),
+        };
+        let out = super::commit_branch_and_push(
+            dir.path(),
+            "version-packages",
+            "chore",
+            "unused",
+            &repo_id,
+            &[],
+        )
+        .unwrap();
+        assert_eq!(out, super::PushOutcome::Empty);
+        assert_eq!(repo.head().unwrap().name().unwrap(), before);
     }
 }

@@ -171,17 +171,15 @@ impl Render for PrepareReport {
         if self.dry_run {
             blocks.push(formatdoc!("dry-run (no files written)"));
         }
+        if self.pr.as_deref() == Some("no-op") && self.bumps.is_empty() {
+            return formatdoc!("no-op   no version-changing fragments");
+        }
         blocks.join("\n")
     }
 }
 
 fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     let dry_run = args.dry_run();
-    let token = if args.open_pr() && !dry_run {
-        Some(release::resolve_token()?)
-    } else {
-        None
-    };
     let config = Config::load(&args.config)?;
     let fragments = fragment::load_dir(&args.dir)?;
     let root = args
@@ -190,6 +188,21 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
     let plan = prepare::plan(&config, &fragments, root)?;
+    if plan.is_empty() {
+        return Ok(PrepareReport {
+            bumps: Vec::new(),
+            changelog: String::new(),
+            consume: Vec::new(),
+            pr: args.open_pr().then(|| "no-op".into()),
+            next: Vec::new(),
+            dry_run,
+        });
+    }
+    let token = if args.open_pr() && !dry_run {
+        Some(release::resolve_token()?)
+    } else {
+        None
+    };
     let bumps: Vec<PrepareBump> = plan
         .iter()
         .map(|entry| PrepareBump {
@@ -210,7 +223,11 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
         let title = std::env::var("VERCTL_PR_TITLE")
             .unwrap_or_else(|_| "chore(release): version packages".into());
         let message = std::env::var("VERCTL_COMMIT_MESSAGE").unwrap_or_else(|_| title.clone());
-        pr = Some(release::open_or_update_pr(root, &token, &title, &message)?);
+        let mut paths: Vec<std::path::PathBuf> =
+            plan.iter().map(|entry| entry.path.clone()).collect();
+        paths.push(root.join("CHANGELOG.md"));
+        paths.extend(fragments.iter().map(|fragment| fragment.path.clone()));
+        pr = release::open_or_update_pr(root, &token, &title, &message, &paths)?;
     }
     Ok(PrepareReport {
         changelog: String::new(),

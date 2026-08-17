@@ -100,11 +100,20 @@ pub fn prepend_changelog(path: &Path, section: &str) -> Result<()> {
     }
 }
 
-pub fn open_or_update_pr(root: &Path, token: &str, title: &str, message: &str) -> Result<String> {
+pub fn open_or_update_pr(
+    root: &Path,
+    token: &str,
+    title: &str,
+    message: &str,
+    paths: &[std::path::PathBuf],
+) -> Result<Option<String>> {
     let repo = github::repo(root)?;
-    git::commit_branch_and_push(root, VERSION_BRANCH, message, token, &repo)?;
+    match git::commit_branch_and_push(root, VERSION_BRANCH, message, token, &repo, paths)? {
+        git::PushOutcome::Empty => return Ok(None),
+        git::PushOutcome::Pushed => {}
+    }
     if let Some(url) = github::existing_pr(token, &repo, VERSION_BRANCH)? {
-        return Ok(url);
+        return Ok(Some(url));
     }
     let base = github::base_branch(root);
     github::create_pr(
@@ -115,4 +124,5 @@ pub fn open_or_update_pr(root: &Path, token: &str, title: &str, message: &str) -
         &base,
         "Prepared by verctl.",
     )
+    .map(Some)
 }
