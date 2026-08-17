@@ -20,7 +20,7 @@ keys = ["version"]
 # (no shell). Stdin is the file; stdout is the version (read) or the whole new
 # file (write), and a write also gets VERCTL_VERSION.
 [drivers.plain]
-read = ["cat", "VERSION"]
+read = ["cat"]
 write = ["printenv", "VERCTL_VERSION"]
 
 # Any stack publishes through one table of argv. This adds uv alongside the

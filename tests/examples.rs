@@ -43,6 +43,37 @@ fn the_example_config_parses() {
     let names: Vec<&str> = config.packages.iter().map(|p| p.name.as_str()).collect();
     assert_eq!(names, ["verctl", "@org/pkg"]);
     assert_eq!(config.runners.len(), 2, "two machines are declared");
+    assert_eq!(config.publishers.len(), 1, "twine is declared");
+    assert_eq!(config.pins.len(), 1, "one collocated pin is declared");
+}
+
+/// Parsing a `[drivers]` table is not resolving it: `into_driver` runs only for
+/// drivers a package uses, so a declared-but-unused one can ship broken.
+#[test]
+fn every_example_driver_resolves() {
+    let config = Config::load(&example()).expect("parse");
+    assert_eq!(
+        config.drivers.len(),
+        3,
+        "cargo, npm, and plain are declared"
+    );
+    for (name, spec) in &config.drivers {
+        spec.clone()
+            .into_driver(name)
+            .unwrap_or_else(|err| panic!("driver {name:?} in the example is invalid: {err:#}"));
+    }
+}
+
+/// The comment above `[drivers.plain]` promises stdin in and the version out.
+/// Run it, because an argv that opens its own file would document a contract
+/// the driver protocol does not have.
+#[test]
+fn the_example_command_driver_reads_stdin() {
+    let config = Config::load(&example()).expect("parse");
+    let spec = config.drivers["plain"].clone();
+    let driver = spec.into_driver("plain").expect("resolve");
+    let version = driver.read("4.5.6\n").expect("read the manifest on stdin");
+    assert_eq!(version, "4.5.6");
 }
 
 #[test]
