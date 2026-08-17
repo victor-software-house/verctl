@@ -10,12 +10,36 @@ includes = [
 ]
 
 [tools]
+committed = "1.1.11"
+lefthook = "2.1.10"
 rust = "1.97.1"
+
+[tasks.format]
+description = "rustfmt check"
+run = "cargo fmt --all -- --check"
+
+[tasks.lint]
+description = "clippy -D warnings"
+run = "cargo clippy --all-targets --all-features -- -D warnings"
+
+[tasks.commit-msg]
+description = "Lint the git commit-msg file with committed"
+usage = 'arg "<file>" help="Path to the commit message file"'
+run = 'committed --commit-file "${usage_file}"'
+
+[tasks.commits]
+description = "Lint commit messages with committed"
+usage = 'arg "[commits]" default="HEAD" help="Commit or range"'
+run = 'committed "${usage_commits}"'
 
 [tasks.verify]
 description = "Format, lint, and test"
-run = "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test --all-features"
+run = "mise run format && mise run lint && cargo test --all-features"
 
 [tasks.build]
 description = "Build the release binary"
 run = "cargo build --release"
+
+[tasks.ver]
+description = "Run verctl from this checkout"
+run = "cargo run --quiet --"

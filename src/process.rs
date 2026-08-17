@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_mins(1);
 pub const DEFAULT_OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
 
 /// Run an argv with stdin piped and stdout captured.
@@ -15,6 +15,11 @@ pub const DEFAULT_OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
 /// stdout/stderr are read incrementally and killed at `output_limit`.
 pub fn filter(argv: &[String], stdin: &str, env: &[(&str, &str)]) -> Result<String> {
     filter_limited(argv, stdin, env, DEFAULT_TIMEOUT, DEFAULT_OUTPUT_LIMIT)
+}
+
+/// Run an argv with no stdin. Used by `publish`.
+pub fn run_limited(argv: &[String], env: &[(&str, &str)], timeout: Duration) -> Result<String> {
+    filter_limited(argv, "", env, timeout, DEFAULT_OUTPUT_LIMIT)
 }
 
 pub fn filter_limited(

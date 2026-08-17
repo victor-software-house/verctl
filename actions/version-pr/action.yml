@@ -11,7 +11,7 @@ inputs:
   command:
     description: Prepare command. Default uses the mise-mounted ver task.
     required: false
-    default: mise run ver -- prepare
+    default: mise run ver -- prepare --pr
   commit-message:
     description: Commit message on the Version PR.
     required: false

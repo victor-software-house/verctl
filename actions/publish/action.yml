@@ -1,8 +1,7 @@
 name: verctl publish
 description: >-
-  After the Version PR merges, publish from that exact SHA. OIDC / bun /
-  cargo backends land with VER-007. This action is the hook those backends
-  fill.
+  After the Version PR merges, publish from that SHA: cargo/npm plus a
+  GitHub Release. OIDC trusted publishing is VER-007.
 author: victor-software-house
 branding:
   icon: package

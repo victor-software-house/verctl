@@ -2,7 +2,7 @@ use crate::bump;
 use crate::config::Config;
 use crate::driver::Driver;
 use crate::fragment::{Bump, Fragment};
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -45,9 +45,6 @@ pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<
             path,
             driver,
         });
-    }
-    if plan.is_empty() {
-        bail!("no version-changing fragments");
     }
     Ok(plan)
 }

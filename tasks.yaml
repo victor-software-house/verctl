@@ -18,20 +18,39 @@ queue:
       - Consumed fragment files are deleted in the same commit.
       - examples/workflows/version-pr.yml and actions/version-pr stay the consumer API.
       - Local prepare still works without GitHub when --no-pr is set.
-    notes: Happy path is the shipped Action. Local is recovery.
+    notes: >-
+      Implemented on ver-004-version-pr (not on main). git2 + octocrab +
+      GITHUB_TOKEN. ctl-core for help/views/formatdoc. --preview writes
+      nothing. Leftover: open the PR, merge, then one live prepare --pr
+      so 0.0.0 -> 0.0.1 exists. Do not archive until that lands.
 
   - id: VER-005
     title: "Publish native verctl so mise github: can install it"
     scope: release
     outcome: >-
       crates.io plus GitHub Release assets for darwin-arm64 and linux-x64.
-    blocked_by: []
+    blocked_by: [VER-004]
     acceptance:
       - cargo publish --locked succeeds for this crate.
       - gh release vX.Y.Z includes both native tarballs.
       - mise x github:victor-software-house/verctl@vX.Y.Z -- verctl --version matches the tag.
       - tasks/ver/ver and examples/mise.toml pin that tag.
     notes: Same cut as qctl 0.0.1. linux-x64 may wait for a Linux runner.
+
+  - id: VER-009
+    title: Keep verctl on ctl-core after the chassis hardens
+    scope: verctl
+    outcome: >-
+      verctl stays on ctl-core prelude/View/formatdoc. No local help
+      or color copy comes back.
+    blocked_by: [VER-004]
+    acceptance:
+      - No forkctl-style help.rs or ColorMode lives in verctl.
+      - Pin is a ctl-core version or git rev, not an unpublished path.
+    notes: >-
+      Partial adoption is on feat/004-version-pr. Wait for ctl-core
+      CTC-004 (harden) before calling migration done. qctl cannot
+      name a foreign prefix in blocked_by.
 
 horizon:
   - id: VER-008
