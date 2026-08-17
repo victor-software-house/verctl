@@ -1,8 +1,7 @@
 name: verctl publish
 description: >-
   After the Version PR merges, publish cargo and bun packages and open
-  the GitHub Release. Uses `verctl` on PATH, otherwise the published
-  tarball. Never compiles this checkout.
+  the GitHub Release from a pinned released verctl tarball.
 author: victor-software-house
 branding:
   icon: package
@@ -22,9 +21,7 @@ inputs:
     required: false
     default: "false"
   version:
-    description: >-
-      Released verctl to `mise x` when `verctl` is not on PATH.
-      Ignored when PATH already has the binary.
+    description: Released verctl pin (`github:victor-software-house/verctl@…`).
     required: false
     default: "0.0.1"
 
@@ -56,4 +53,10 @@ runs:
         if [ "${VERCTL_DRY_RUN}" = true ]; then
           extra+=(--dry-run)
         fi
-        exec "${GITHUB_ACTION_PATH}/../run-verctl" publish -c "${VERCTL_CONFIG}" "${extra[@]}"
+        scratch=$(mktemp -d)
+        mkdir "${scratch}/tool"
+        export MISE_CEILING_PATHS="${scratch}"
+        export MISE_CONFIG_DIR="${scratch}"
+        exec mise x -C "${scratch}/tool" \
+          "github:victor-software-house/verctl@${VERCTL_VERSION}" \
+          -- verctl publish -c "${VERCTL_CONFIG}" "${extra[@]}"

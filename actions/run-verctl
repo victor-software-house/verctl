@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-# Run the published verctl binary. Never `mise run ver` (that is cargo run
-# from this checkout — developing the crate, not using the tool).
-set -euo pipefail
-version="${VERCTL_VERSION:-0.0.1}"
-if command -v verctl >/dev/null 2>&1; then
-  exec verctl "$@"
-fi
-exec mise x "github:victor-software-house/verctl@${version}" -- verctl "$@"

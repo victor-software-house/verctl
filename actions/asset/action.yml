@@ -23,9 +23,7 @@ inputs:
     description: Release tag (`v0.0.1`).
     required: true
   version:
-    description: >-
-      Released verctl to `mise x` when `verctl` is not on PATH.
-      Ignored when PATH already has the binary.
+    description: Released verctl pin (`github:victor-software-house/verctl@…`).
     required: false
     default: "0.0.1"
 
@@ -42,4 +40,10 @@ runs:
         VERCTL_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
-        exec "${GITHUB_ACTION_PATH}/../run-verctl" assets -c "${VERCTL_CONFIG}" --build "${VERCTL_TARGET}" --upload --tag "${VERCTL_TAG}"
+        scratch=$(mktemp -d)
+        mkdir "${scratch}/tool"
+        export MISE_CEILING_PATHS="${scratch}"
+        export MISE_CONFIG_DIR="${scratch}"
+        exec mise x -C "${scratch}/tool" \
+          "github:victor-software-house/verctl@${VERCTL_VERSION}" \
+          -- verctl assets -c "${VERCTL_CONFIG}" --build "${VERCTL_TARGET}" --upload --tag "${VERCTL_TAG}"
