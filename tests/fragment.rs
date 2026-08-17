@@ -181,10 +181,9 @@ fn body_may_contain_horizontal_rule() {
 #[test]
 fn load_dir_skips_readme_and_missing_dir() {
     let root = TempDir::new().expect("tempdir");
-    assert!(
-        load_dir(&root.path().join("missing"))
-            .expect("missing")
-            .is_empty()
+    assert_eq!(
+        load_dir(&root.path().join("missing")).expect("missing"),
+        Vec::<verctl::fragment::Fragment>::new()
     );
     let dir = root.path().join(".changeset");
     fs::create_dir_all(&dir).expect("dir");

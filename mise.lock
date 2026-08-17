@@ -31,5 +31,5 @@ url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/47
 provenance = "github-attestations"
 
 [[tools.rust]]
-version = "1.97.1"
+version = "nightly"
 backend = "core:rust"
