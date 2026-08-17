@@ -15,6 +15,7 @@ mise run ver -- status
 mise run ver -- check
 mise run ver -- prepare
 mise run ver -- prepare --pr
+mise run ver -- publish
 ```
 
 ## Setup
@@ -35,6 +36,7 @@ includes = [
 ```sh
 mise run ver -- status
 mise run ver -- check
+mise run ver -- publish --dry-run
 ```
 
 Until a GitHub Release exists, build from this repo:

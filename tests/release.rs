@@ -6,6 +6,42 @@ use verctl::prepare::PlanEntry;
 use verctl::release;
 
 #[test]
+fn contributing_fragments_skip_unused() {
+    let used = Fragment {
+        path: std::path::PathBuf::from("used.md"),
+        packages: vec![PackageBump {
+            name: "demo".into(),
+            bump: Bump::Patch,
+        }],
+        summary: "used".into(),
+    };
+    let unused = Fragment {
+        path: std::path::PathBuf::from("skip.md"),
+        packages: vec![PackageBump {
+            name: "other".into(),
+            bump: Bump::Patch,
+        }],
+        summary: "skip".into(),
+    };
+    let plan = [PlanEntry {
+        name: "demo".into(),
+        from: "1.0.0".into(),
+        to: "1.0.1".into(),
+        bump: Bump::Patch,
+        path: std::path::PathBuf::from("Cargo.toml"),
+        driver: verctl::driver::Driver::Path {
+            format: verctl::driver::Format::Toml,
+            keys: vec!["package.version".into()],
+            after: None,
+        },
+    }];
+    let fragments = [used, unused];
+    let hits = release::contributing_fragments(&plan, &fragments);
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].summary, "used");
+}
+
+#[test]
 fn consume_fragments_deletes_the_files() {
     let root = TempDir::new().unwrap();
     let path = root.path().join("gone.md");

@@ -33,7 +33,27 @@ fn env_token() -> Option<String> {
     None
 }
 
-pub fn consume_fragments(fragments: &[Fragment]) -> Result<()> {
+/// Fragments that named at least one package in `plan`.
+#[must_use]
+pub fn contributing_fragments<'a>(
+    plan: &[PlanEntry],
+    fragments: &'a [Fragment],
+) -> Vec<&'a Fragment> {
+    fragments
+        .iter()
+        .filter(|fragment| {
+            fragment
+                .packages
+                .iter()
+                .any(|package| plan.iter().any(|entry| entry.name == package.name))
+        })
+        .collect()
+}
+
+pub fn consume_fragments<'a, I>(fragments: I) -> Result<()>
+where
+    I: IntoIterator<Item = &'a Fragment>,
+{
     for fragment in fragments {
         fs::remove_file(&fragment.path)
             .with_context(|| format!("delete {}", fragment.path.display()))?;

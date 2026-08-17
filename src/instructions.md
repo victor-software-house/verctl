@@ -63,7 +63,15 @@ write nothing. `prepare --pr --dry-run` also lists consumed fragments
 and whether the Version PR would open or update. Preview does not
 require GitHub auth.
 
-Publish uses `actions/publish` after that PR merges (OIDC, not a PAT).
+`publish` ships the versions already on HEAD: `cargo publish --locked`
+for Cargo.toml packages, `npm publish` for package.json, then a GitHub
+Release `v{version}` via octocrab. Auth is `GITHUB_TOKEN` plus
+`CARGO_REGISTRY_TOKEN` / `NPM_TOKEN`. Already-published crates are
+skipped. `--dry-run` / `--preview` print the plan and write nothing.
+
+Happy path after the Version PR merges is
+`victor-software-house/verctl/actions/publish`. OIDC trusted
+publishing is later (VER-007).
 
 ## Stop conditions
 

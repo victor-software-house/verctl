@@ -27,6 +27,24 @@ pub enum Command {
     Check(StatusArgs),
     /// Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews.
     Prepare(PrepareArgs),
+    /// Publish the versions on HEAD (cargo / npm + GitHub Release).
+    Publish(PublishArgs),
+}
+
+#[derive(Args)]
+pub struct PublishArgs {
+    /// Package map. Defaults to verctl.toml in the current directory.
+    #[arg(short = 'c', long, default_value = "verctl.toml", value_hint = clap::ValueHint::FilePath)]
+    pub config: PathBuf,
+    #[command(flatten)]
+    pub dry: DryRunArgs,
+}
+
+impl PublishArgs {
+    #[must_use]
+    pub fn dry_run(&self) -> bool {
+        self.dry.dry_run
+    }
 }
 
 #[derive(Args)]

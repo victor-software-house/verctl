@@ -113,6 +113,34 @@ pub fn create_pr(
     })
 }
 
+/// Create `tag` if it is missing. Returns the release HTML URL.
+pub fn ensure_release(
+    token: &str,
+    repo: &Repo,
+    tag: &str,
+    name: &str,
+    body: &str,
+) -> Result<String> {
+    block(async {
+        let crab = client(token)?;
+        let repos = crab.repos(&repo.owner, &repo.name);
+        let releases = repos.releases();
+        match releases.get_by_tag(tag).await {
+            Ok(release) => return Ok(release.html_url.to_string()),
+            Err(octocrab::Error::GitHub { source, .. }) if source.status_code.as_u16() == 404 => {}
+            Err(error) => return Err(error).context("get release by tag"),
+        }
+        let release = releases
+            .create(tag)
+            .name(name)
+            .body(body)
+            .send()
+            .await
+            .context("create GitHub release")?;
+        Ok(release.html_url.to_string())
+    })
+}
+
 fn client(token: &str) -> Result<Octocrab> {
     Octocrab::builder()
         .personal_token(token.to_owned())

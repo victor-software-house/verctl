@@ -17,6 +17,11 @@ pub fn filter(argv: &[String], stdin: &str, env: &[(&str, &str)]) -> Result<Stri
     filter_limited(argv, stdin, env, DEFAULT_TIMEOUT, DEFAULT_OUTPUT_LIMIT)
 }
 
+/// Run an argv with no stdin. Used by `publish`.
+pub fn run_limited(argv: &[String], env: &[(&str, &str)], timeout: Duration) -> Result<String> {
+    filter_limited(argv, "", env, timeout, DEFAULT_OUTPUT_LIMIT)
+}
+
 pub fn filter_limited(
     argv: &[String],
     stdin: &str,

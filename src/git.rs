@@ -83,13 +83,13 @@ fn write_commit_on_branch(
         .read_tree(&parent_tree)
         .context("reset index to HEAD")?;
     for path in paths {
-        let rel = path.strip_prefix(workdir).unwrap_or(path.as_path());
-        if path.exists() {
+        let rel = workdir_rel(workdir, path)?;
+        if workdir.join(&rel).exists() {
             index
-                .add_path(rel)
+                .add_path(&rel)
                 .with_context(|| format!("git add {}", rel.display()))?;
         } else {
-            let _ = index.remove_path(rel);
+            let _ = index.remove_path(&rel);
         }
     }
     let tree_id = index.write_tree().context("write tree")?;
@@ -109,6 +109,22 @@ fn write_commit_on_branch(
         )
         .context("git commit")?;
     Ok(Some(oid))
+}
+
+fn workdir_rel(workdir: &Path, path: &Path) -> Result<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        workdir.join(path)
+    };
+    let normalized: PathBuf = absolute
+        .components()
+        .filter(|component| !matches!(component, std::path::Component::CurDir))
+        .collect();
+    normalized
+        .strip_prefix(workdir)
+        .with_context(|| format!("path outside workdir: {}", normalized.display()))
+        .map(Path::to_path_buf)
 }
 
 fn signature(repo: &Repository) -> Result<Signature<'static>> {
@@ -240,6 +256,56 @@ mod tests {
         assert_eq!(
             repo.head().unwrap().peel_to_commit().unwrap().id(),
             parent.id()
+        );
+    }
+
+    #[test]
+    fn dotted_relative_paths_stage() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let sig = Signature::now("t", "t@example.com").unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                version = "1.0.0"
+            "#},
+        )
+        .unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new("Cargo.toml")).unwrap();
+            let tid = index.write_tree().unwrap();
+            let tree = repo.find_tree(tid).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+                .unwrap();
+        }
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                version = "1.0.1"
+            "#},
+        )
+        .unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        let oid = super::write_commit_on_branch(
+            &repo,
+            dir.path(),
+            &parent,
+            "version-packages",
+            "chore",
+            &[Path::new("./Cargo.toml").to_path_buf()],
+        )
+        .unwrap()
+        .expect("commit");
+        assert!(
+            repo.find_commit(oid)
+                .unwrap()
+                .tree()
+                .unwrap()
+                .get_name("Cargo.toml")
+                .is_some()
         );
     }
 }

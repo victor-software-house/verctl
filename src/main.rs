@@ -8,6 +8,7 @@ use verctl::config::Config;
 use verctl::fragment::{self, Bump};
 use verctl::github;
 use verctl::prepare;
+use verctl::publish;
 use verctl::release;
 
 const INSTRUCTIONS: &str = include_str!("instructions.md");
@@ -23,6 +24,7 @@ fn main() -> ExitCode {
                 view.show(&CheckReport { ok })?;
             }
             Command::Prepare(args) => view.show(&prepare_report(&args)?)?,
+            Command::Publish(args) => view.show(&publish_report(&args)?)?,
         }
         Ok(())
     })
@@ -216,22 +218,39 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
         return preview_report(root, &plan, &fragments, bumps, args.open_pr());
     }
     let follow_up = prepare::apply_plan(&plan)?;
+    let consumed = release::contributing_fragments(&plan, &fragments);
+    let changelog = if args.open_pr() {
+        release::changelog_sections(&plan, &fragments)?
+    } else {
+        String::new()
+    };
+    let consume: Vec<String> = consumed
+        .iter()
+        .map(|fragment| {
+            fragment
+                .path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("?")
+                .to_owned()
+        })
+        .collect();
     let mut pr = None;
     if let Some(token) = token {
         release::write_changelogs(&root.join("CHANGELOG.md"), &plan, &fragments)?;
-        release::consume_fragments(&fragments)?;
-        let title = std::env::var("VERCTL_PR_TITLE")
-            .unwrap_or_else(|_| "chore(release): version packages".into());
-        let message = std::env::var("VERCTL_COMMIT_MESSAGE").unwrap_or_else(|_| title.clone());
         let mut paths: Vec<std::path::PathBuf> =
             plan.iter().map(|entry| entry.path.clone()).collect();
         paths.push(root.join("CHANGELOG.md"));
-        paths.extend(fragments.iter().map(|fragment| fragment.path.clone()));
+        paths.extend(consumed.iter().map(|fragment| fragment.path.clone()));
+        release::consume_fragments(consumed)?;
+        let title = std::env::var("VERCTL_PR_TITLE")
+            .unwrap_or_else(|_| "chore(release): version packages".into());
+        let message = std::env::var("VERCTL_COMMIT_MESSAGE").unwrap_or_else(|_| title.clone());
         pr = release::open_or_update_pr(root, &token, &title, &message, &paths)?;
     }
     Ok(PrepareReport {
-        changelog: String::new(),
-        consume: Vec::new(),
+        changelog,
+        consume,
         pr,
         next: follow_up,
         dry_run: false,
@@ -289,6 +308,49 @@ fn preview_report(
             .filter_map(|entry| entry.driver.after().map(str::to_owned))
             .collect(),
         dry_run: true,
+    })
+}
+
+#[derive(Serialize)]
+struct PublishReport {
+    crates: Vec<String>,
+    release: Option<String>,
+    dry_run: bool,
+}
+
+impl Render for PublishReport {
+    fn render_pretty(&self) -> String {
+        let mut lines: Vec<String> = self
+            .crates
+            .iter()
+            .map(|entry| formatdoc!("crate   {entry}", entry = entry))
+            .collect();
+        if let Some(release) = &self.release {
+            lines.push(formatdoc!("release {release}", release = release));
+        }
+        if self.dry_run {
+            lines.push(formatdoc!("dry-run (nothing published)"));
+        }
+        if lines.is_empty() {
+            formatdoc!("no-op   nothing to publish")
+        } else {
+            lines.join("\n")
+        }
+    }
+}
+
+fn publish_report(args: &verctl::cli::PublishArgs) -> Result<PublishReport> {
+    let config = Config::load(&args.config)?;
+    let root = args
+        .config
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let outcome = publish::run(&config, root, args.dry_run())?;
+    Ok(PublishReport {
+        crates: outcome.crates,
+        release: outcome.release,
+        dry_run: args.dry_run(),
     })
 }
 
