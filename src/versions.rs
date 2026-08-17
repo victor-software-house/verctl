@@ -17,13 +17,13 @@ pub enum Skip {
 
 impl Skip {
     #[must_use]
-    pub fn from_env(root: &Path) -> Self {
+    pub fn from_env(root: &Path, config: &Config) -> Self {
         if git::current_branch(root).as_deref() == Some(VERSION_BRANCH) {
             return Self::VersionBranch;
         }
-        // Actions checks out a detached merge; GITHUB_HEAD_REF is the PR branch.
-        // GITHUB_REF_NAME is the merge ref / push branch, not this.
-        if std::env::var("GITHUB_HEAD_REF").ok().as_deref() == Some(VERSION_BRANCH) {
+        // Detached Actions checkout: trust the label prepare --pr applied
+        // on the event payload. Not GITHUB_HEAD_REF / GITHUB_REF_NAME.
+        if crate::github::event_has_label(config.prepare.version_label()) {
             return Self::VersionBranch;
         }
         Self::None
@@ -34,7 +34,7 @@ impl Skip {
         match self {
             Self::None => None,
             Self::Ci => Some("ci"),
-            Self::VersionBranch => Some("version-packages"),
+            Self::VersionBranch => Some("version-pr"),
         }
     }
 }
@@ -92,7 +92,7 @@ pub fn report(root: &Path, config: &Config) -> Result<VersionReport> {
     report_with(
         root,
         config,
-        Skip::from_env(root),
+        Skip::from_env(root, config),
         &git::default_branch_candidates(),
     )
 }

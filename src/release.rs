@@ -234,6 +234,7 @@ pub fn open_or_update_pr(
     message: &str,
     paths: &[std::path::PathBuf],
     changelog: &str,
+    version_label: &str,
 ) -> Result<Option<String>> {
     let repo = github::repo(root)?;
     match git::commit_branch_and_push(root, VERSION_BRANCH, message, token, &repo, paths)? {
@@ -242,10 +243,14 @@ pub fn open_or_update_pr(
     }
     let body = pr_body(changelog);
     if let Some(existing) = github::existing_pr(token, &repo, VERSION_BRANCH)? {
-        return github::update_pr(token, &repo, existing.number, title, &body).map(Some);
+        let url = github::update_pr(token, &repo, existing.number, title, &body)?;
+        github::ensure_version_label(token, &repo, existing.number, version_label)?;
+        return Ok(Some(url));
     }
     let base = github::base_branch(root);
-    github::create_pr(token, &repo, title, VERSION_BRANCH, &base, &body).map(Some)
+    let created = github::create_pr(token, &repo, title, VERSION_BRANCH, &base, &body)?;
+    github::ensure_version_label(token, &repo, created.number, version_label)?;
+    Ok(Some(created.url))
 }
 
 #[must_use]

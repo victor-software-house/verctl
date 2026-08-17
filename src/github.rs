@@ -122,7 +122,7 @@ pub fn create_pr(
     head: &str,
     base: &str,
     body: &str,
-) -> Result<String> {
+) -> Result<ExistingPr> {
     block(async {
         let crab = client(token)?;
         let pr = crab
@@ -132,9 +132,75 @@ pub fn create_pr(
             .send()
             .await
             .context("create pull request")?;
-        pr.html_url
+        let url = pr
+            .html_url
             .map(|url| url.to_string())
-            .context("created PR has no html_url")
+            .context("created PR has no html_url")?;
+        Ok(ExistingPr {
+            url,
+            number: pr.number,
+        })
+    })
+}
+
+/// Label GitHub recorded on this `pull_request` event. Not `GITHUB_HEAD_REF`.
+#[must_use]
+pub fn event_labels() -> Vec<String> {
+    let Ok(path) = env::var("GITHUB_EVENT_PATH") else {
+        return Vec::new();
+    };
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    labels_from_event(&raw)
+}
+
+#[must_use]
+pub fn event_has_label(name: &str) -> bool {
+    event_labels().iter().any(|label| label == name)
+}
+
+#[must_use]
+pub fn labels_from_event(raw: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Vec::new();
+    };
+    value
+        .get("pull_request")
+        .or_else(|| value.get("issue"))
+        .and_then(|node| node.get("labels"))
+        .and_then(|labels| labels.as_array())
+        .map(|labels| {
+            labels
+                .iter()
+                .filter_map(|label| label.get("name")?.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Create the label if needed, then apply it to the Version PR.
+pub fn ensure_version_label(token: &str, repo: &Repo, number: u64, label: &str) -> Result<()> {
+    if label.is_empty() {
+        return Ok(());
+    }
+    let label = label.to_owned();
+    block(async {
+        let crab = client(token)?;
+        let issues = crab.issues(&repo.owner, &repo.name);
+        match issues
+            .create_label(&label, "6B6B92", "verctl Version PR")
+            .await
+        {
+            Ok(_) => {}
+            Err(octocrab::Error::GitHub { source, .. }) if source.status_code.as_u16() == 422 => {}
+            Err(error) => return Err(error).context("create version label"),
+        }
+        issues
+            .add_labels(number, &[label])
+            .await
+            .context("label Version PR")?;
+        Ok(())
     })
 }
 
@@ -245,6 +311,24 @@ mod tests {
             parse_remote("ssh://git@github.com/victor-software-house/verctl.git").unwrap(),
             expected
         );
+    }
+
+    #[test]
+    fn labels_from_event_reads_pull_request() {
+        let raw = r#"{
+            "pull_request": {
+                "labels": [
+                    {"name": "verctl:version"},
+                    {"name": "do-not-merge"}
+                ]
+            }
+        }"#;
+        assert_eq!(
+            super::labels_from_event(raw),
+            vec!["verctl:version", "do-not-merge"]
+        );
+        assert_eq!(super::labels_from_event("{}"), Vec::<String>::new());
+        assert_eq!(super::labels_from_event("not json"), Vec::<String>::new());
     }
 
     #[test]

@@ -57,7 +57,8 @@ PR that ships the behavior.** Do not save them up for a release dump.
 Never hand-edit versions or
 CHANGELOG. `prepare --pr` is the Version PR. `verctl check --versions`
 compares each manifest to the merge-base of HEAD and the default
-branch. Only `version-packages` is exempt. CI does not skip.
+branch. Exempt on `version-packages` locally, or when the GitHub
+event has the Version PR label (`verctl:version`). CI does not skip.
 mise: `mise.toml` is shared settings only. `mise.dev.toml` is rust
 and `cargo run`. `mise.release.toml` is the published tarball.
 `.miserc.toml` defaults local `MISE_ENV` to `dev`. `verctl pin`

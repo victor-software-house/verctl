@@ -2,4 +2,4 @@
 verctl: patch
 ---
 
-`check --versions` treats `GITHUB_HEAD_REF=version-packages` as the Version PR. Actions checkout is detached, so git HEAD is not that branch.
+`check --versions` treats the GitHub event label `verctl:version` as the Version PR. `prepare --pr` applies that label. Not `GITHUB_HEAD_REF`.

@@ -223,6 +223,7 @@ fn ci_env_does_not_skip() {
         .env("CI", "true")
         .env("GITHUB_ACTIONS", "true")
         .env_remove("GITHUB_HEAD_REF")
+        .env_remove("GITHUB_EVENT_PATH")
         .args(["check", "--versions", "--color", "never"])
         .output()
         .unwrap();
@@ -316,19 +317,45 @@ fn current_branch_reads_version_packages() {
 }
 
 #[test]
-fn pull_request_head_version_packages_is_exempt() {
+fn pull_request_head_ref_is_not_an_exemption() {
     let (dir, _) = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
         .current_dir(dir.path())
         .env_remove("CI")
+        .env_remove("GITHUB_EVENT_PATH")
         .env("GITHUB_ACTIONS", "true")
         .env("GITHUB_HEAD_REF", "version-packages")
+        .args(["check", "--versions", "--color", "never"])
+        .output()
+        .unwrap();
+    assert!(
+        !output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn pull_request_version_label_is_exempt() {
+    let (dir, _) = repo_with_origin_main("1.0.0");
+    write_crate(dir.path(), "1.0.1");
+    let event = dir.path().join("event.json");
+    fs::write(
+        &event,
+        r#"{"pull_request":{"labels":[{"name":"verctl:version"}]}}"#,
+    )
+    .unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+        .current_dir(dir.path())
+        .env_remove("CI")
+        .env("GITHUB_ACTIONS", "true")
+        .env("GITHUB_EVENT_PATH", &event)
         .args(["check", "--versions", "--color", "never"])
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stdout}{stderr}");
-    assert!(stdout.contains("version-packages"), "{stdout}");
+    assert!(stdout.contains("version-pr"), "{stdout}");
 }
