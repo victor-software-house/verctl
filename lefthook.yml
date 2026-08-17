@@ -10,12 +10,14 @@ commit-msg:
   skip:
     - run: test -n "$CI"
   commands:
-    conventional:
-      run: mise run commitlint -- {1}
+    committed:
+      run: mise exec -- committed --commit-file {1}
 
 pre-push:
   skip:
     - run: test -n "$CI"
   commands:
+    committed:
+      run: mise exec -- committed HEAD
     verify:
       run: mise run verify
