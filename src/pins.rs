@@ -89,33 +89,28 @@ fn rewrite_own_refs(body: &str, tool: &str, version: &str) -> String {
     let marker_git = format!("/{name}.git");
     let marker_path = format!("/{name}//");
     let mut out = String::new();
-    for line in body.lines() {
-        if line.contains(&marker_git) || line.contains(&marker_path) {
-            out.push_str(&rewrite_ref_version(line, version));
+    let mut rest = body;
+    while let Some(at) = rest.find("?ref=v") {
+        let after = &rest[at + 6..];
+        let end = after
+            .find(|ch: char| !ch.is_ascii_digit() && ch != '.')
+            .unwrap_or(after.len());
+        let prefix = &rest[..at];
+        let seg_start = prefix
+            .rfind(['"', '\'', ',', '[', ' ', '\t', '\n'])
+            .map_or(0, |i| i + 1);
+        let segment = &prefix[seg_start..];
+        out.push_str(prefix);
+        if end > 0 && (segment.contains(&marker_git) || segment.contains(&marker_path)) {
+            out.push_str("?ref=v");
+            out.push_str(version);
         } else {
-            out.push_str(line);
+            out.push_str(&rest[at..at + 6 + end]);
         }
-        out.push('\n');
+        rest = &after[end..];
     }
+    out.push_str(rest);
     out
-}
-
-fn rewrite_ref_version(line: &str, version: &str) -> String {
-    let Some(start) = line.find("?ref=v") else {
-        return line.to_owned();
-    };
-    let rest = &line[start + 6..];
-    let end = rest
-        .find(|ch: char| !ch.is_ascii_digit() && ch != '.')
-        .unwrap_or(rest.len());
-    if end == 0 {
-        return line.to_owned();
-    }
-    format!(
-        "{prefix}?ref=v{version}{suffix}",
-        prefix = &line[..start],
-        suffix = &rest[end..]
-    )
 }
 
 #[cfg(test)]
@@ -232,6 +227,32 @@ mod tests {
         write(root.path(), &pins, &versions("0.0.2")).unwrap();
         let body = fs::read_to_string(&path).unwrap();
         assert!(body.contains("qctl.git//tasks/q?ref=v0.0.1"), "{body}");
+    }
+
+    #[test]
+    fn rewrites_each_own_include_on_one_line() {
+        let root = TempDir::new().unwrap();
+        let path = root.path().join("mise.toml");
+        fs::write(
+            &path,
+            indoc! {r#"
+                [tools]
+                "github:victor-software-house/verctl" = "0.0.1"
+                [task_config]
+                includes = ["git::https://example.com/verctl.git//a?ref=v0.0.1", "git::https://example.com/qctl.git//b?ref=v0.0.1", "git::https://example.com/verctl.git//c?ref=v9.9.9"]
+            "#},
+        )
+        .unwrap();
+        let pins = [Pin {
+            file: PathBuf::from("mise.toml"),
+            tool: "github:victor-software-house/verctl".into(),
+            package: "verctl".into(),
+        }];
+        write(root.path(), &pins, &versions("0.0.2")).unwrap();
+        let body = fs::read_to_string(&path).unwrap();
+        assert!(body.contains("verctl.git//a?ref=v0.0.2"), "{body}");
+        assert!(body.contains("verctl.git//c?ref=v0.0.2"), "{body}");
+        assert!(body.contains("qctl.git//b?ref=v0.0.1"), "{body}");
     }
 
     #[test]
