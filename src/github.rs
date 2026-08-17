@@ -17,7 +17,10 @@ pub fn write_output(path: &Path, body: &str) -> Result<()> {
         .append(true)
         .open(path)
         .with_context(|| path.display().to_string())?;
-    let end = file.metadata().map(|meta| meta.len()).unwrap_or_default();
+    let end = file
+        .metadata()
+        .with_context(|| path.display().to_string())?
+        .len();
     if end > 0 {
         let mut last = [0u8];
         file.seek(SeekFrom::Start(end - 1))
