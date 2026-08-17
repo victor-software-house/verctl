@@ -4,6 +4,7 @@ use crate::git;
 use crate::github;
 use crate::prepare::PlanEntry;
 use anyhow::{Context, Result, ensure};
+use ctl_core::{formatdoc, writedoc};
 use std::env;
 use std::fmt::Write as _;
 use std::fs;
@@ -89,7 +90,16 @@ pub fn changelog_sections(plan: &[PlanEntry], fragments: &[Fragment]) -> Result<
             "no changelog body for package {}",
             entry.name
         );
-        let _ = write!(sections, "## {} {}\n\n{bullets}\n", entry.name, entry.to);
+        let name = entry.name.as_str();
+        let version = entry.to.as_str();
+        let _ = writedoc!(
+            sections,
+            "
+            ## {name} {version}
+
+            {bullets}
+            "
+        );
     }
     Ok(sections)
 }
@@ -106,16 +116,26 @@ pub fn prepend_changelog(path: &Path, section: &str) -> Result<()> {
     match fs::read_to_string(path) {
         Ok(existing) => {
             let next = if let Some(rest) = existing.strip_prefix("# Changelog\n") {
-                format!("# Changelog\n\n{section}{}", rest.trim_start())
+                let rest = rest.trim_start();
+                formatdoc! {"
+                    # Changelog
+
+                    {section}{rest}"
+                }
             } else {
-                format!("{section}{existing}")
+                formatdoc!("{section}{existing}")
             };
             fs::write(path, next).with_context(|| path.display().to_string())
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            fs::write(path, format!("# Changelog\n\n{section}"))
-                .with_context(|| path.display().to_string())
-        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => fs::write(
+            path,
+            formatdoc! {"
+                    # Changelog
+
+                    {section}"
+            },
+        )
+        .with_context(|| path.display().to_string()),
         Err(error) => Err(error).with_context(|| path.display().to_string()),
     }
 }

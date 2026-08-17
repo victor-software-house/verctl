@@ -8,6 +8,7 @@ use crate::config::Config;
 use crate::github;
 use crate::process;
 use anyhow::{Context, Result, bail};
+use ctl_core::formatdoc;
 use std::path::Path;
 use std::time::Duration;
 
@@ -65,9 +66,14 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
             crates: planned
                 .packages
                 .iter()
-                .map(|entry| format!("{}@{} ({})", entry.name, entry.version, entry.kind.as_str()))
+                .map(|entry| {
+                    let name = entry.name.as_str();
+                    let version = entry.version.as_str();
+                    let kind = entry.kind.as_str();
+                    formatdoc!("{name}@{version} ({kind})")
+                })
                 .collect(),
-            release: Some(format!("would create {}", planned.tag)),
+            release: Some(formatdoc!("would create {tag}", tag = planned.tag)),
         });
     }
     let token = crate::release::resolve_token()?;

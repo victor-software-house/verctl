@@ -1,6 +1,7 @@
 use anyhow::Result;
 use ctl_core::prelude::*;
 use serde::Serialize;
+use std::fmt::Write as _;
 use std::io::{self, Write};
 use std::path::Path;
 use verctl::cli::{Cli, Command, PrepareArgs, StatusArgs};
@@ -67,34 +68,22 @@ impl Render for StatusReport {
         if self.pending == 0 {
             return formatdoc!("pending  0");
         }
-        let rows = self
-            .fragments
-            .iter()
-            .flat_map(|fragment| {
-                let file = fragment.file.as_str();
-                let max = fragment.max.as_str();
-                let pkgs = fragment
-                    .packages
-                    .iter()
-                    .map(|package| {
-                        let name = package.name.as_str();
-                        let bump = package.bump.as_str();
-                        formatdoc!("  {name:<32} {bump:<6} {file}")
-                    })
-                    .collect::<Vec<_>>();
-                let mut lines = pkgs;
-                lines.push(formatdoc!("    max {max}"));
-                lines
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
+        let mut out = String::new();
         let pending = self.pending;
+        let _ = writedoc!(out, "pending  {pending}\n");
+        for fragment in &self.fragments {
+            let file = fragment.file.as_str();
+            for package in &fragment.packages {
+                let name = package.name.as_str();
+                let bump = package.bump.as_str();
+                let _ = writedoc!(out, "  {name:<32} {bump:<6} {file}\n");
+            }
+            let max = fragment.max.as_str();
+            let _ = writedoc!(out, "    max {max}\n");
+        }
         let max = self.max.as_str();
-        formatdoc! {"
-            pending  {pending}
-            {rows}
-            max     {max}
-        "}
+        let _ = writedoc!(out, "max     {max}");
+        out
     }
 }
 
@@ -118,59 +107,36 @@ struct PrepareBump {
 
 impl Render for PrepareReport {
     fn render_pretty(&self) -> String {
-        let mut blocks = Vec::new();
-        if !self.bumps.is_empty() {
-            blocks.push(
-                self.bumps
-                    .iter()
-                    .map(|bump| {
-                        let name = bump.name.as_str();
-                        let from = bump.from.as_str();
-                        let to = bump.to.as_str();
-                        let kind = bump.bump.as_str();
-                        formatdoc!("bump    {name}  {from} -> {to}  ({kind})")
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            );
-        }
-        if !self.changelog.is_empty() {
-            blocks.push(
-                self.changelog
-                    .lines()
-                    .map(|line| formatdoc!("log     {line}"))
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            );
-        }
-        if !self.consume.is_empty() {
-            blocks.push(
-                self.consume
-                    .iter()
-                    .map(|file| formatdoc!("consume {file}"))
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            );
-        }
-        if let Some(pr) = &self.pr {
-            blocks.push(formatdoc!("pr      {pr}"));
-        }
-        if !self.next.is_empty() {
-            blocks.push(
-                self.next
-                    .iter()
-                    .map(|cmd| formatdoc!("next    {cmd}"))
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            );
-        }
-        if self.dry_run {
-            blocks.push(formatdoc!("dry-run (no files written)"));
-        }
         if self.pr.as_deref() == Some("no-op") && self.bumps.is_empty() {
             return formatdoc!("no-op   no version-changing fragments");
         }
-        blocks.join("\n")
+        let mut out = String::new();
+        for bump in &self.bumps {
+            let name = bump.name.as_str();
+            let from = bump.from.as_str();
+            let to = bump.to.as_str();
+            let kind = bump.bump.as_str();
+            let _ = writedoc!(out, "bump    {name}  {from} -> {to}  ({kind})\n");
+        }
+        for line in self.changelog.lines() {
+            let _ = writedoc!(out, "log     {line}\n");
+        }
+        for file in &self.consume {
+            let _ = writedoc!(out, "consume {file}\n");
+        }
+        if let Some(pr) = &self.pr {
+            let _ = writedoc!(out, "pr      {pr}\n");
+        }
+        for cmd in &self.next {
+            let _ = writedoc!(out, "next    {cmd}\n");
+        }
+        if self.dry_run {
+            let _ = writedoc!(out, "dry-run (no files written)\n");
+        }
+        if out.ends_with('\n') {
+            out.pop();
+        }
+        out
     }
 }
 
@@ -280,13 +246,16 @@ fn preview_report(
             Ok(token) => match github::repo(root)
                 .and_then(|repo| github::existing_pr(&token, &repo, release::VERSION_BRANCH))
             {
-                Ok(Some(url)) => format!("update {url}"),
-                Ok(None) => format!("open {}", release::VERSION_BRANCH),
-                Err(_) => format!("open or update {} (lookup failed)", release::VERSION_BRANCH),
+                Ok(Some(url)) => formatdoc!("update {url}"),
+                Ok(None) => formatdoc!("open {branch}", branch = release::VERSION_BRANCH),
+                Err(_) => formatdoc!(
+                    "open or update {branch} (lookup failed)",
+                    branch = release::VERSION_BRANCH
+                ),
             },
-            Err(_) => format!(
-                "open or update {} (auth not checked)",
-                release::VERSION_BRANCH
+            Err(_) => formatdoc!(
+                "open or update {branch} (auth not checked)",
+                branch = release::VERSION_BRANCH
             ),
         })
     } else {
@@ -317,27 +286,20 @@ impl Render for PublishReport {
         if self.crates.is_empty() && self.release.is_none() {
             return formatdoc!("no-op   nothing to publish");
         }
-        let crates = self
-            .crates
-            .iter()
-            .map(|entry| format!("crate   {entry}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let release = self
-            .release
-            .as_deref()
-            .map(|url| format!("release {url}"))
-            .unwrap_or_default();
-        let dry = if self.dry_run {
-            "dry-run (nothing published)"
-        } else {
-            ""
-        };
-        [crates.as_str(), release.as_str(), dry]
-            .into_iter()
-            .filter(|block| !block.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n")
+        let mut out = String::new();
+        for entry in &self.crates {
+            let _ = writedoc!(out, "crate   {entry}\n");
+        }
+        if let Some(url) = &self.release {
+            let _ = writedoc!(out, "release {url}\n");
+        }
+        if self.dry_run {
+            let _ = writedoc!(out, "dry-run (nothing published)\n");
+        }
+        if out.ends_with('\n') {
+            out.pop();
+        }
+        out
     }
 }
 
