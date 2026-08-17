@@ -138,15 +138,21 @@ fn release_template_varies_by_data() {
         },
     ];
 
-    for case in cases {
-        let authors: Vec<String> = case.authors.iter().map(|name| (*name).to_owned()).collect();
+    for ReleaseCase {
+        name,
+        input,
+        authors,
+        expected,
+    } in cases
+    {
+        let authors: Vec<String> = authors.iter().map(|author| (*author).to_owned()).collect();
         let input = if authors.is_empty() {
-            case.input
+            input
         } else {
-            case.input.with_author_filter(&authors)
+            input.with_author_filter(&authors)
         };
-        let rendered = render_release(&input).expect(case.name);
-        assert_eq!(rendered, case.expected, "{}", case.name);
+        let rendered = render_release(&input).expect(name);
+        assert_eq!(rendered, expected, "{name}");
     }
 }
 
@@ -212,16 +218,20 @@ fn dependency_template_varies_by_data() {
             expected: "- Updated dependencies:\n",
         },
     ];
-    for case in cases {
-        let deps: Vec<Dependency> = case
-            .deps
+    for DepsCase {
+        name,
+        deps,
+        expected,
+    } in cases
+    {
+        let deps: Vec<Dependency> = deps
             .iter()
-            .map(|(name, version)| Dependency {
-                name: (*name).to_owned(),
+            .map(|(pkg, version)| Dependency {
+                name: (*pkg).to_owned(),
                 new_version: (*version).to_owned(),
             })
             .collect();
-        let rendered = render_dependencies(&deps).expect(case.name);
-        assert_eq!(rendered, case.expected, "{}", case.name);
+        let rendered = render_dependencies(&deps).expect(name);
+        assert_eq!(rendered, expected, "{name}");
     }
 }
