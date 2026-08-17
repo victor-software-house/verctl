@@ -12,6 +12,7 @@ env:
   GIT_CONFIG_COUNT: "1"
   GIT_CONFIG_KEY_0: init.defaultBranch
   GIT_CONFIG_VALUE_0: main
+  MISE_ENV: release
 
 concurrency:
   group: version-pr-${{ github.ref }}
@@ -31,11 +32,5 @@ jobs:
         with:
           version: 2026.8.2
           cache: true
-          install: false
-      - name: Install released verctl
-        run: |
-          set -euo pipefail
-          pin="github:victor-software-house/verctl@0.0.1"
-          mise install "$pin"
-          echo "$(mise where "$pin")" >> "$GITHUB_PATH"
+      - run: mise install --locked
       - uses: ./actions/version-pr

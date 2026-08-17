@@ -10,9 +10,9 @@ license: MIT
 
 # verctl
 
-`verctl instructions` is the installed contract. `mise run ver --` is
-for developing this repo (`cargo run`). The actions run `verctl` from
-PATH; workflows install the released GitHub tarball.
+`verctl instructions` is the installed contract. `MISE_ENV=dev` (local
+default) compiles this checkout. `MISE_ENV=release` is the published
+tarball. Actions run `verctl` from PATH.
 
 Fragments are `.changeset/*.md` with YAML fences (quoted or unquoted
 keys). Changelog Markdown is rendered with minijinja. Author

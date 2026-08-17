@@ -12,6 +12,7 @@ env:
   GIT_CONFIG_COUNT: "1"
   GIT_CONFIG_KEY_0: init.defaultBranch
   GIT_CONFIG_VALUE_0: main
+  MISE_ENV: dev,release
 
 concurrency:
   group: publish-${{ github.ref }}
@@ -40,12 +41,6 @@ jobs:
           version: 2026.8.2
           cache: true
       - run: mise install --locked
-      - name: Install released verctl
-        run: |
-          set -euo pipefail
-          pin="github:victor-software-house/verctl@0.0.1"
-          mise install "$pin"
-          echo "$(mise where "$pin")" >> "$GITHUB_PATH"
       - name: Plan native assets
         id: plan
         run: verctl assets --github-output "$GITHUB_OUTPUT"
@@ -73,12 +68,6 @@ jobs:
           version: 2026.8.2
           cache: true
       - run: mise install --locked
-      - name: Install released verctl
-        run: |
-          set -euo pipefail
-          pin="github:victor-software-house/verctl@0.0.1"
-          mise install "$pin"
-          echo "$(mise where "$pin")" >> "$GITHUB_PATH"
       - uses: ./actions/asset
         with:
           target: ${{ matrix.id }}

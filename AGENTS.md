@@ -56,8 +56,10 @@ Human writes `.changeset/*.md` only. Never hand-edit versions or
 CHANGELOG. `prepare --pr` is the Version PR. `verctl check --versions`
 compares each manifest to the merge-base of HEAD and the default
 branch. Only `version-packages` is exempt. CI does not skip.
-The actions run `verctl` from PATH. Workflows install the released
-tarball. `mise run ver` is only for developing this checkout.
+mise: `mise.toml` is shared settings only. `mise.dev.toml` is rust
+and `cargo run`. `mise.release.toml` is the published tarball.
+`.miserc.toml` defaults local `MISE_ENV` to `dev`. Actions run
+`verctl` from PATH.
 `publish` is exact-SHA plus a matching per-package CHANGELOG heading.
 Cargo and bun are stock recipes, not the architecture. Do not name
 private release skills in this repo.

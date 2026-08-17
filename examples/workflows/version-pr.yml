@@ -1,4 +1,4 @@
-# Consumer workflow. Mise owns tools. This action owns the Version PR.
+# Consumer workflow. Pin github:victor-software-house/verctl in your mise.toml.
 name: Version PR
 
 on:
@@ -25,11 +25,5 @@ jobs:
         with:
           version: 2026.8.2
           cache: true
-          install: false
-      - name: Install released verctl
-        run: |
-          set -euo pipefail
-          pin="github:victor-software-house/verctl@0.0.1"
-          mise install "$pin"
-          echo "$(mise where "$pin")" >> "$GITHUB_PATH"
+      - run: mise install --locked
       - uses: victor-software-house/verctl/actions/version-pr@main

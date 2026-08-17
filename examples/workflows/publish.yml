@@ -34,12 +34,6 @@ jobs:
           version: 2026.8.2
           cache: true
       - run: mise install --locked
-      - name: Install released verctl
-        run: |
-          set -euo pipefail
-          pin="github:victor-software-house/verctl@0.0.1"
-          mise install "$pin"
-          echo "$(mise where "$pin")" >> "$GITHUB_PATH"
       - id: plan
         run: verctl assets --github-output "$GITHUB_OUTPUT"
       - uses: victor-software-house/verctl/actions/publish@main
@@ -64,12 +58,6 @@ jobs:
           version: 2026.8.2
           cache: true
       - run: mise install --locked
-      - name: Install released verctl
-        run: |
-          set -euo pipefail
-          pin="github:victor-software-house/verctl@0.0.1"
-          mise install "$pin"
-          echo "$(mise where "$pin")" >> "$GITHUB_PATH"
       - uses: victor-software-house/verctl/actions/asset@main
         with:
           target: ${{ matrix.id }}

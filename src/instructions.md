@@ -55,8 +55,11 @@ declared manifest to the merge-base of HEAD and the default branch.
 It fails when they differ. Only `version-packages` is exempt. CI
 does not skip. A fragment-only commit does not change versions.
 
-The action runs `verctl` from PATH. `mise run ver` is only for
-developing this checkout.
+This repo splits mise envs: `dev` compiles this checkout, `release`
+is the published tarball. Local default is `dev` (`.miserc.toml`).
+Version PR sets `MISE_ENV=release`. Publish sets `dev,release`.
+The action runs `verctl` from PATH. Consumers pin
+`github:victor-software-house/verctl` in their own `mise.toml`.
 
 `prepare` writes versions, per-package CHANGELOG.md (next to each
 manifest), and consumes fragments (same as `changeset version`).
