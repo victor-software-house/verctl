@@ -260,7 +260,11 @@ pub fn assert_only_allowed(
     }
     if stage_ignored && !globs.is_empty() {
         let mut ignored = StatusOptions::new();
-        ignored.include_ignored(true).include_untracked(false);
+        ignored
+            .include_ignored(true)
+            .recurse_ignored_dirs(true)
+            .include_untracked(true)
+            .recurse_untracked_dirs(true);
         let ignored = repo
             .statuses(Some(&mut ignored))
             .context("git status (ignored)")?;
@@ -639,6 +643,39 @@ mod tests {
             .unwrap();
         assert_eq!(on.len(), 1);
         assert!(on[0].ends_with("generated.rs"), "{on:?}");
+    }
+
+    #[test]
+    fn stage_ignored_recurses_a_gitignored_directory() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let sig = Signature::now("t", "t@example.com").unwrap();
+        std::fs::write(dir.path().join(".gitignore"), "/dist\n").unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                version = "1.0.0"
+            "#},
+        )
+        .unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new(".gitignore")).unwrap();
+            index.add_path(Path::new("Cargo.toml")).unwrap();
+            index.write().unwrap();
+            let tid = index.write_tree().unwrap();
+            let tree = repo.find_tree(tid).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+                .unwrap();
+        }
+        std::fs::create_dir_all(dir.path().join("dist")).unwrap();
+        std::fs::write(dir.path().join("dist/out.js"), "ok\n").unwrap();
+        let allowed = [dir.path().join("Cargo.toml")];
+        let staged =
+            super::assert_only_allowed(dir.path(), &allowed, &["dist/**".into()], true).unwrap();
+        assert_eq!(staged.len(), 1);
+        assert!(staged[0].ends_with("dist/out.js"), "{staged:?}");
     }
 
     #[test]

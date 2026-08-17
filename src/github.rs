@@ -167,7 +167,6 @@ pub fn labels_from_event(raw: &str) -> Vec<String> {
     };
     value
         .get("pull_request")
-        .or_else(|| value.get("issue"))
         .and_then(|node| node.get("labels"))
         .and_then(|labels| labels.as_array())
         .map(|labels| {
@@ -329,6 +328,10 @@ mod tests {
         );
         assert_eq!(super::labels_from_event("{}"), Vec::<String>::new());
         assert_eq!(super::labels_from_event("not json"), Vec::<String>::new());
+        assert_eq!(
+            super::labels_from_event(r#"{"issue":{"labels":[{"name":"verctl:version"}]}}"#),
+            Vec::<String>::new()
+        );
     }
 
     #[test]
