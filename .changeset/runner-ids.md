@@ -13,6 +13,13 @@ Omitting `[ci]` runs one `verify` job on `ubuntu-latest`, so a repo that says
 nothing behaves as before. New `verctl ci` writes the matrix a `plan` job hands
 to `runs-on:`.
 
+`verctl instructions` now states which jobs take a runner and why: verctl
+decides how many jobs there are, the workflow file decides where a fixed job
+runs. `[ci]` and `[assets]` exist because only the repo knows how many verify
+checks or tarballs it wants. `plan`, `crate`, `pin`, and `prepare` are always
+one job each, so their `runs-on` stays a literal in the workflow you own. There
+is no `[release]` runner table and none is planned.
+
 `$GITHUB_OUTPUT` is appended to rather than truncated, so a plan step no
 longer drops assignments an earlier step in the same step file made.
 

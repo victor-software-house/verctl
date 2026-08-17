@@ -120,6 +120,16 @@ waste. A built-in target (`darwin-arm64`, `linux-x64`) fills in
 four. `verctl ci` writes the matrix for a `plan` job, since `runs-on`
 exists before the job does.
 
+verctl decides how many jobs there are; the workflow file decides
+where a fixed job runs. `[ci]` and `[assets]` exist because only the
+repo knows how many verify checks or tarballs it wants, and a static
+YAML file cannot declare N jobs without knowing N. `plan`, `crate`,
+`pin`, and `prepare` are always exactly one job each, so their
+`runs-on` is a literal in the workflow the consumer owns — not a
+config key. Do not add one. There is no `[release]` runner table and
+none is planned: publishing a crate twice is wrong the same way two
+machines per tarball is wrong.
+
 ## Stop conditions
 
 Stop and ask when a fragment is not valid YAML, when a package name is

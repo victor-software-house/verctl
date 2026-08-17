@@ -67,10 +67,35 @@ queue:
       M1 (generating ci.yml) and M3 (a repo variable) were considered
       and rejected for M2, the plan-job bootstrap the publish lane already
       uses; M3 would move the value out of verctl.toml entirely.
-      `[release]` jobs are the same idea and are deliberately not in this
-      slice: config with no workflow plumbing would ship unused.
+      Asked why `plan` is not configurable, the inventory settled the law:
+      verctl decides how many jobs there are, the workflow file decides
+      where a fixed job runs. Unary jobs (`plan`, `crate`, `pin`,
+      `prepare`) all have literal machines; only `verify` and `assets`,
+      whose count the repo decides, read config. A static YAML file cannot
+      declare N jobs without knowing N — that fan-out is what config buys,
+      and the machine rides along on it. So `[release]` is dropped, not
+      deferred: publish and pin are inherently unary, nothing decides their
+      count, and a self-hosted-only repo is already served by editing three
+      literals in workflows it owns. `verctl check --ci` was rejected with
+      it — verifying those literals needs a YAML dependency this crate does
+      not have, to check a value the law puts there on purpose.
 
 horizon:
+  - id: VER-016
+    title: The plan job should not install a compiler to parse TOML
+    scope: verctl
+    kind: evaluation
+    outcome: >-
+      The ci.yml bootstrap costs what reading verctl.toml costs, and
+      verify stops waiting on a toolchain it does not share.
+    open: >-
+      Measured on run 32078158505: plan took 33s, of which 21s was mise
+      plus rust-cache, and verify did not start until 37s in. It needs
+      verctl and verctl.toml, not cargo. Decide between dropping
+      rust-cache from that job and running verctl from the release
+      tarball (mise -E release) rather than a dev build. Efficiency
+      only — the runner contract itself is settled (VER-015).
+
   - id: VER-013
     title: Stock lockfile refresh after cargo bumps
     scope: verctl

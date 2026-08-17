@@ -153,6 +153,28 @@ runner = "big"
 | `[ci.NAME]` | a PR / push validation job | the check name | `ubuntu-latest` |
 | `[assets.NAME]` | a release build job and its tarball | the check name, the `--build` argument, part of the filename | the built-in record for that name |
 
+Two sections take runners and no others, because of what config is for here:
+
+> **verctl decides how many jobs there are. Your workflow file decides where a
+> fixed job runs.**
+
+A static YAML file cannot declare N jobs without knowing N, and only the repo
+knows N. That fan-out is what `[ci]` and `[assets]` buy; the machine rides along
+on it. Every other job verctl ships — `plan`, `crate`, `pin`, `prepare` — is
+always exactly one job, so nothing decides its count and nothing needs to
+configure it. Its `runs-on` is one literal in a workflow you own and already
+copied from `examples/`:
+
+```yaml
+  plan:
+    runs-on: [self-hosted, linux, x64]   # yours to edit; no verctl.toml needed
+```
+
+So a repo with no hosted runners at all is already served: edit those literals
+and declare `[ci]` / `[assets]`. `plan` could not read its machine from config
+anyway — `runs-on` resolves before the job exists, and `plan` is the job that
+reads `verctl.toml`.
+
 Names sort alphabetically, not in file order, so `[ci.verify]` written above
 `[ci.audit]` still plans `audit` first. Checks are independent, so the order is
 display only.
