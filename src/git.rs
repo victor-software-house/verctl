@@ -681,6 +681,101 @@ mod tests {
     }
 
     #[test]
+    fn stage_ignored_pathspec_does_not_collect_other_ignored_trees() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let sig = Signature::now("t", "t@example.com").unwrap();
+        std::fs::write(dir.path().join(".gitignore"), "/dist\n/target\n").unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                version = "1.0.0"
+            "#},
+        )
+        .unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new(".gitignore")).unwrap();
+            index.add_path(Path::new("Cargo.toml")).unwrap();
+            index.write().unwrap();
+            let tid = index.write_tree().unwrap();
+            let tree = repo.find_tree(tid).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+                .unwrap();
+        }
+        std::fs::create_dir_all(dir.path().join("dist")).unwrap();
+        std::fs::write(dir.path().join("dist/out.js"), "ok\n").unwrap();
+        std::fs::create_dir_all(dir.path().join("target/debug")).unwrap();
+        std::fs::write(dir.path().join("target/debug/verctl"), "bin\n").unwrap();
+        std::fs::write(dir.path().join("target/CACHEDIR.TAG"), "tag\n").unwrap();
+        let staged = super::assert_only_allowed(
+            dir.path(),
+            &[dir.path().join("Cargo.toml")],
+            &["dist/**".into()],
+            true,
+        )
+        .unwrap();
+        assert_eq!(staged.len(), 1, "{staged:?}");
+        assert!(staged[0].ends_with("dist/out.js"), "{staged:?}");
+        assert!(
+            !staged
+                .iter()
+                .any(|path| path.to_string_lossy().contains("target")),
+            "{staged:?}"
+        );
+    }
+
+    #[test]
+    fn write_commit_on_branch_removes_a_deleted_staged_path() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let sig = Signature::now("t", "t@example.com").unwrap();
+        std::fs::write(dir.path().join("Cargo.lock"), "old\n").unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                version = "1.0.0"
+            "#},
+        )
+        .unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new("Cargo.toml")).unwrap();
+            index.add_path(Path::new("Cargo.lock")).unwrap();
+            index.write().unwrap();
+            let tid = index.write_tree().unwrap();
+            let tree = repo.find_tree(tid).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+                .unwrap();
+        }
+        std::fs::remove_file(dir.path().join("Cargo.lock")).unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        let workdir = repo.workdir().unwrap().to_path_buf();
+        let staged = super::assert_only_allowed(
+            dir.path(),
+            &[dir.path().join("Cargo.toml")],
+            &["Cargo.lock".into()],
+            false,
+        )
+        .unwrap();
+        let oid = super::write_commit_on_branch(
+            &repo,
+            &workdir,
+            &parent,
+            "version-packages",
+            "chore",
+            &staged,
+        )
+        .unwrap()
+        .expect("deletion should commit");
+        let tree = repo.find_commit(oid).unwrap().tree().unwrap();
+        assert!(tree.get_name("Cargo.lock").is_none());
+        assert!(tree.get_name("Cargo.toml").is_some());
+    }
+
+    #[test]
     fn commit_only_lists_given_paths() {
         let dir = tempfile::TempDir::new().unwrap();
         let repo = Repository::init(dir.path()).unwrap();
