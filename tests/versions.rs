@@ -69,15 +69,17 @@ fn check(root: &Path, skip: Skip) -> anyhow::Result<versions::VersionReport> {
 
 /// Isolate from the host Actions event. Version PR CI sets
 /// `GITHUB_EVENT_PATH` to a labeled payload; leaking that into these
-/// processes would exempt a hand-edit.
+/// processes would exempt a hand-edit. Callers that need a var set it
+/// after this helper.
+fn is_host_actions_key(key: &str) -> bool {
+    key == "CI" || key.starts_with("GITHUB_")
+}
+
 fn check_cmd(root: &Path) -> std::process::Command {
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"));
-    cmd.current_dir(root)
-        .env_remove("CI")
-        .env_remove("GITHUB_ACTIONS")
-        .env_remove("GITHUB_EVENT_PATH")
-        .env_remove("GITHUB_HEAD_REF")
-        .env_remove("GITHUB_REF_NAME")
+    cmd.env_clear()
+        .envs(std::env::vars().filter(|(key, _)| !is_host_actions_key(key)))
+        .current_dir(root)
         .args(["check", "--versions", "--color", "never"]);
     cmd
 }
@@ -221,6 +223,18 @@ fn cli_hand_edit_fails_and_prints_table() {
     assert!(stdout.contains("1.0.0"), "{stdout}");
     assert!(stdout.contains("1.0.1"), "{stdout}");
     assert!(stderr.contains("fragment"), "{stderr}");
+}
+
+#[test]
+fn host_actions_keys_are_not_inherited() {
+    assert!(is_host_actions_key("CI"));
+    assert!(is_host_actions_key("GITHUB_EVENT_PATH"));
+    assert!(is_host_actions_key("GITHUB_BASE_REF"));
+    assert!(is_host_actions_key("GITHUB_REPOSITORY"));
+    assert!(is_host_actions_key("GITHUB_HEAD_REF"));
+    assert!(is_host_actions_key("GITHUB_REF_NAME"));
+    assert!(!is_host_actions_key("PATH"));
+    assert!(!is_host_actions_key("HOME"));
 }
 
 #[test]
