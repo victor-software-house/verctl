@@ -82,16 +82,11 @@ fn origin_head_ref(repo: &Repository) -> Option<String> {
 
 fn default_branch_names() -> Vec<String> {
     let mut names = Vec::new();
+    // PR events only. Do not use GITHUB_REF_NAME: on push it is the
+    // branch being pushed, so origin/<that branch> would always match HEAD.
     if let Ok(value) = env::var("GITHUB_BASE_REF") {
         let value = value.trim();
         if !value.is_empty() {
-            names.push(value.to_owned());
-        }
-    }
-    if let Ok(value) = env::var("GITHUB_REF_NAME") {
-        let value = value.trim();
-        // PR events set this to `{n}/merge`. A real branch name does not.
-        if !value.is_empty() && !value.contains('/') {
             names.push(value.to_owned());
         }
     }
@@ -571,5 +566,21 @@ mod tests {
         )
         .unwrap();
         super::require_on_default_history(dir.path()).unwrap();
+    }
+
+    #[test]
+    fn origin_hotfix_alone_is_not_the_default() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let oid = commit_tree(&repo, "init");
+        repo.remote(
+            "origin",
+            "https://github.com/victor-software-house/verctl.git",
+        )
+        .unwrap();
+        repo.reference("refs/remotes/origin/hotfix", oid, true, "test")
+            .unwrap();
+        let err = super::require_on_default_history(dir.path()).unwrap_err();
+        assert!(format!("{err:#}").contains("origin exists"), "{err:#}");
     }
 }
