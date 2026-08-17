@@ -163,7 +163,7 @@ pub fn write_github_output(plan: &AssetsPlan, path: &Path) -> Result<()> {
     };
     let encoded = serde_json::to_string(&matrix).context("encode matrix")?;
     let body = formatdoc_output(plan, &encoded);
-    fs::write(path, body).with_context(|| path.display().to_string())
+    github::write_output(path, &body)
 }
 
 fn formatdoc_output(plan: &AssetsPlan, matrix: &str) -> String {

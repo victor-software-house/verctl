@@ -169,6 +169,14 @@ required, and a partial record is an error rather than a build against an
 empty target triple. `os = "darwin"` renders as `macos` in the filename;
 that is the only rename.
 
+`[[ci.jobs]]` is exactly as trusted as `.github/workflows/ci.yml`: for a
+`pull_request` event both come from the pull request's own tree, so a fork PR
+that can add a `runs_on` label could equally have written that label into the
+workflow file. Neither is a reason to expose a self-hosted runner group to a
+public repository — keep `allows_public_repositories=false` there and keep
+fork-PR approval on, and read the declared labels as untrusted input in a
+repo where that is not true.
+
 `verctl ci` and `verctl assets` print what resolved, so a default is visible
 output rather than an assumption. Both also write a matrix for
 `$GITHUB_OUTPUT`: GitHub needs `runs-on` before a job exists, so a small

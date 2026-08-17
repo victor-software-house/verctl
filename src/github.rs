@@ -4,6 +4,20 @@ use octocrab::params::State;
 use std::env;
 use std::path::Path;
 
+/// Append to `$GITHUB_OUTPUT`. That file belongs to the whole step, so a
+/// writer that truncates would drop assignments another step already made.
+/// GitHub takes the last value for a repeated key.
+pub fn write_output(path: &Path, body: &str) -> Result<()> {
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .with_context(|| path.display().to_string())?;
+    file.write_all(body.as_bytes())
+        .with_context(|| path.display().to_string())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Repo {
     pub owner: String,

@@ -13,7 +13,6 @@ use crate::config::Config;
 use crate::runners;
 use anyhow::{Context, Result};
 use serde::Serialize;
-use std::fs;
 use std::path::Path;
 
 const DEFAULT_JOB: &str = "verify";
@@ -62,7 +61,7 @@ pub fn plan(config: &Config) -> Result<CiPlan> {
 
 pub fn write_github_output(plan: &CiPlan, path: &Path) -> Result<()> {
     let encoded = serde_json::to_string(&plan.matrix).context("encode matrix")?;
-    fs::write(path, format!("matrix={encoded}\n")).with_context(|| path.display().to_string())
+    crate::github::write_output(path, &format!("matrix={encoded}\n"))
 }
 
 #[cfg(test)]
@@ -197,5 +196,17 @@ mod tests {
             text,
             "matrix={\"include\":[{\"id\":\"verify\",\"runs_on\":[\"ubuntu-latest\"]}]}\n"
         );
+    }
+
+    #[test]
+    fn github_output_keeps_what_an_earlier_step_wrote() {
+        let planned = plan(&load(PACKAGE)).unwrap();
+        let root = tempfile::TempDir::new().unwrap();
+        let out = root.path().join("out");
+        std::fs::write(&out, "earlier=kept\n").unwrap();
+        super::write_github_output(&planned, &out).unwrap();
+        let text = std::fs::read_to_string(&out).unwrap();
+        assert!(text.starts_with("earlier=kept\n"), "{text}");
+        assert!(text.contains("matrix={"), "{text}");
     }
 }
