@@ -20,10 +20,6 @@ fn commit() -> Commit {
     }
 }
 
-fn trimmed(text: &str) -> String {
-    text.trim_end().to_owned()
-}
-
 struct ReleaseCase {
     name: &'static str,
     input: ReleaseInput,
@@ -150,7 +146,7 @@ fn release_template_varies_by_data() {
             case.input.with_author_filter(&authors)
         };
         let rendered = render_release(&input).expect(case.name);
-        assert_eq!(trimmed(&rendered), case.expected, "{}", case.name);
+        assert_eq!(rendered, case.expected, "{}", case.name);
     }
 }
 
@@ -226,6 +222,6 @@ fn dependency_template_varies_by_data() {
             })
             .collect();
         let rendered = render_dependencies(&deps).expect(case.name);
-        assert_eq!(trimmed(&rendered), trimmed(case.expected), "{}", case.name);
+        assert_eq!(rendered, case.expected, "{}", case.name);
     }
 }
