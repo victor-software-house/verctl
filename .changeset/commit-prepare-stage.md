@@ -2,4 +2,4 @@
 verctl: patch
 ---
 
-`prepare --pr` commits files matching `[prepare].stage`, so a lockfile refresh is not left dirty on the Version PR.
+`prepare --pr` commits dirty paths matching `[prepare].stage` from the same git-status walk as the unexpected-dirty check, including deletions.
