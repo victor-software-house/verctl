@@ -209,4 +209,17 @@ mod tests {
         assert!(text.starts_with("earlier=kept\n"), "{text}");
         assert!(text.contains("matrix={"), "{text}");
     }
+
+    #[test]
+    fn github_output_does_not_fuse_onto_an_unterminated_line() {
+        let planned = plan(&load(PACKAGE)).unwrap();
+        let root = tempfile::TempDir::new().unwrap();
+        let out = root.path().join("out");
+        std::fs::write(&out, "earlier=kept").unwrap();
+        super::write_github_output(&planned, &out).unwrap();
+        let text = std::fs::read_to_string(&out).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines[0], "earlier=kept");
+        assert!(lines[1].starts_with("matrix={"), "{text}");
+    }
 }
