@@ -33,6 +33,18 @@ pub enum Command {
     Pin(PublishArgs),
     /// Plan or build native GitHub Release tarballs declared in `[assets]`.
     Assets(AssetsArgs),
+    /// Plan the validation jobs declared in `[[ci.jobs]]`.
+    Ci(CiArgs),
+}
+
+#[derive(Args)]
+pub struct CiArgs {
+    /// Package map. Defaults to verctl.toml in the current directory.
+    #[arg(short = 'c', long, default_value = "verctl.toml", value_hint = clap::ValueHint::FilePath)]
+    pub config: PathBuf,
+    /// Write `matrix` for `$GITHUB_OUTPUT`.
+    #[arg(long, value_hint = clap::ValueHint::FilePath)]
+    pub github_output: Option<PathBuf>,
 }
 
 #[derive(Args)]

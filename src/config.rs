@@ -159,59 +159,36 @@ pub struct Assets {
     pub binary: Option<String>,
 }
 
-/// `"linux-x64"` or `{ id = "linux-x64", runner = "ubuntu-24.04" }`.
+/// One release build job: `{ id = "linux-x64", runs_on = ["ubuntu-24.04"] }`.
+///
+/// A table, never a bare string. `runs_on` is the literal GitHub label list —
+/// nothing resolves it, so whatever is written here is what `runs-on:` receives.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum AssetTarget {
-    Id(String),
-    Spec {
-        id: String,
-        runner: Option<String>,
-        os: Option<String>,
-        arch: Option<String>,
-        triple: Option<String>,
-    },
+#[serde(deny_unknown_fields)]
+pub struct AssetTarget {
+    pub id: String,
+    pub runs_on: Option<Vec<String>>,
+    pub os: Option<String>,
+    pub arch: Option<String>,
+    pub triple: Option<String>,
 }
 
-impl AssetTarget {
-    #[must_use]
-    pub fn id(&self) -> &str {
-        match self {
-            Self::Id(id) | Self::Spec { id, .. } => id,
-        }
-    }
+/// PR and push validation jobs. Omit for one `verify` on `ubuntu-latest`.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct Ci {
+    #[serde(default)]
+    pub jobs: Vec<CiJob>,
+}
 
-    #[must_use]
-    pub fn runner(&self) -> Option<&str> {
-        match self {
-            Self::Id(_) => None,
-            Self::Spec { runner, .. } => runner.as_deref(),
-        }
-    }
-
-    #[must_use]
-    pub fn os(&self) -> Option<&str> {
-        match self {
-            Self::Id(_) => None,
-            Self::Spec { os, .. } => os.as_deref(),
-        }
-    }
-
-    #[must_use]
-    pub fn arch(&self) -> Option<&str> {
-        match self {
-            Self::Id(_) => None,
-            Self::Spec { arch, .. } => arch.as_deref(),
-        }
-    }
-
-    #[must_use]
-    pub fn triple(&self) -> Option<&str> {
-        match self {
-            Self::Id(_) => None,
-            Self::Spec { triple, .. } => triple.as_deref(),
-        }
-    }
+/// One validation job. Same two fields as an asset target, same meanings.
+/// No `os`/`arch`/`triple`: CI runs one machine's checks, it does not
+/// cross-compile.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct CiJob {
+    pub id: String,
+    pub runs_on: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -223,6 +200,8 @@ pub struct Config {
     pub publishers: BTreeMap<String, PublisherSpec>,
     #[serde(default)]
     pub assets: Option<Assets>,
+    #[serde(default)]
+    pub ci: Ci,
     #[serde(default)]
     pub prepare: Prepare,
     /// Collocated tool pins rewritten when `package` is bumped.

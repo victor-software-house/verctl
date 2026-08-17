@@ -40,16 +40,23 @@ queue:
       hosted minutes and a private one can point at its own labels.
     blocked_by: []
     acceptance:
-      - "`[assets]` takes a runner per target; omitted uses a documented default."
-      - verctl assets prints the declared runner and the matrix carries it.
-      - A public repo needs no config to keep macos-latest / ubuntu-latest.
-      - A declared self-hosted or nscloud label reaches runs-on unchanged.
-      - Tests cover default, override, and a runner on an undeclared target.
+      - "`[[ci.jobs]]` and `[[assets.targets]]` are both lists of id + runs_on; omitted uses a documented default."
+      - verctl ci and verctl assets print what resolved and the matrix carries it.
+      - A public repo needs no config to keep macos-latest / ubuntu-latest, and no [ci] to keep one verify job.
+      - A declared self-hosted or nscloud label set reaches runs-on unchanged.
+      - Tests cover default, override, multi-label, empty list, duplicate id, and a partial undeclared target.
     notes: >-
-      2026-08-17: the target-to-runner map is hardcoded, so every
-      consumer inherits macos-latest / ubuntu-latest. That is free on a
-      public repo and wrong on a private one, and unconfigurable either
-      way. Found while adopting the lane in qctl (qctl#3).
+      2026-08-17: found while adopting the lane in qctl (qctl#3). Two
+      claims first written here were wrong and are corrected: a per-target
+      `runner` override already existed, and a job can be told its runner
+      by an earlier job. The real defects are that `runner` is one string
+      where GitHub takes a label set, that CI has no configuration surface
+      at all, and that an unknown id with a partial record is accepted and
+      reaches `cargo build --target ""`. Aliases were considered and
+      rejected: an alias makes "vps" look resolved when nothing resolved
+      it. M1 (generating ci.yml) and M3 (a repo variable) were considered
+      and rejected for M2, the plan-job bootstrap the publish lane already
+      uses; M3 would move the value out of verctl.toml entirely.
 
 horizon:
   - id: VER-013

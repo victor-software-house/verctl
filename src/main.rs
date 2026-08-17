@@ -4,6 +4,7 @@ use serde::Serialize;
 use std::io::{self, Write};
 use std::path::Path;
 use verctl::assets;
+use verctl::ci;
 use verctl::cli::{CheckArgs, Cli, Command, PrepareArgs, PublishArgs, StatusArgs};
 use verctl::config::Config;
 use verctl::fragment::{self, Bump};
@@ -38,6 +39,7 @@ fn main() -> ExitCode {
             Command::Publish(args) => view.show(&publish_report(&args)?)?,
             Command::Pin(args) => view.show(&pin_report(&args)?)?,
             Command::Assets(args) => view.show(&assets_report(&args)?)?,
+            Command::Ci(args) => view.show(&ci_report(&args)?)?,
         }
         Ok(())
     })
@@ -551,9 +553,9 @@ impl AssetsReport {
             .matrix
             .include
             .iter()
-            .map(|row| vec![row.id.clone(), row.runner.clone(), row.asset.clone()])
+            .map(|row| vec![row.id.clone(), row.runs_on.join(", "), row.asset.clone()])
             .collect();
-        let mut out = grid(color, &["target", "runner", "asset"], rows);
+        let mut out = grid(color, &["target", "runs-on", "asset"], rows);
         let mut extra = vec![("tag", self.plan.tag.as_str())];
         if let Some(path) = &self.tarball {
             extra.push(("tarball", path.as_str()));
@@ -608,6 +610,44 @@ fn assets_report(args: &verctl::cli::AssetsArgs) -> Result<AssetsReport> {
         tarball: None,
         uploaded: None,
     })
+}
+
+#[derive(Serialize)]
+struct CiReport {
+    #[serde(flatten)]
+    plan: ci::CiPlan,
+}
+
+impl CiReport {
+    fn pretty(&self, color: ColorMode) -> String {
+        let rows: Vec<Vec<String>> = self
+            .plan
+            .matrix
+            .include
+            .iter()
+            .map(|job| vec![job.id.clone(), job.runs_on.join(", ")])
+            .collect();
+        grid(color, &["job", "runs-on"], rows)
+    }
+}
+
+impl Render for CiReport {
+    fn render_pretty(&self) -> String {
+        self.pretty(ColorMode::Always)
+    }
+
+    fn render_pretty_colored(&self, color: ColorMode) -> String {
+        self.pretty(color)
+    }
+}
+
+fn ci_report(args: &verctl::cli::CiArgs) -> Result<CiReport> {
+    let config = Config::load(&args.config)?;
+    let planned = ci::plan(&config)?;
+    if let Some(path) = &args.github_output {
+        ci::write_github_output(&planned, path)?;
+    }
+    Ok(CiReport { plan: planned })
 }
 
 fn status_report(args: &StatusArgs) -> Result<StatusReport> {

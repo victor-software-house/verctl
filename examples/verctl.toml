@@ -41,7 +41,39 @@ keys = ["version"]
 # after = ["mise", "run", "version-sync"]
 # stage = ["packages/*/src/version.rs"]
 #
+# A target is a table, never a bare string. `id` names the job and the
+# tarball; `runs_on` is the literal GitHub label list. Both spellings below
+# are the same TOML document.
+#
+# [[assets.targets]]
+# id = "darwin-arm64"
+#
+# [[assets.targets]]
+# id = "linux-x64"
+#
 # [assets]
-# targets = ["darwin-arm64", "linux-x64"]
-# Pin a runner only when latest is wrong:
-# targets = [{ id = "darwin-arm64", runner = "macos-15" }]
+# targets = [{ id = "darwin-arm64" }, { id = "linux-x64" }]
+#
+# Name runs_on only when the built-in default is wrong. A label set means
+# AND, the way GitHub reads it:
+#
+# [[assets.targets]]
+# id = "linux-x64"
+# runs_on = ["self-hosted", "linux", "x64"]
+#
+# An id outside darwin-arm64 / linux-x64 describes a platform verctl knows
+# nothing about, so it must describe all of it:
+#
+# [[assets.targets]]
+# id = "linux-arm64"
+# runs_on = ["ubuntu-24.04-arm"]
+# os = "linux"
+# arch = "arm64"
+# triple = "aarch64-unknown-linux-gnu"
+#
+# PR and push validation is the same shape. Omit [ci] for one `verify` job
+# on ubuntu-latest. No os/arch/triple: CI does not cross-compile.
+#
+# [[ci.jobs]]
+# id = "verify"
+# runs_on = ["nscloud-ubuntu-24.04-amd64-4x8"]

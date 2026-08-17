@@ -123,6 +123,58 @@ Stdout is the version (read) or the new file (write).
 
 `0.x` rejects a `major` fragment.
 
+## Runners
+
+Which machines run the work is configuration. It is declared on the thing
+that runs, in two places, with the same two fields in both.
+
+| section | one row is | `id` is | `runs_on` defaults to |
+|:--|:--|:--|:--|
+| `[[ci.jobs]]` | a PR / push validation job | the job name | `["ubuntu-latest"]` |
+| `[[assets.targets]]` | a release build job and its tarball | the job name, the `--build` argument, part of the filename | the built-in record for `id` |
+
+```toml
+# Omit for one `verify` job on ubuntu-latest, which is the default.
+[[ci.jobs]]
+id = "verify"
+runs_on = ["nscloud-ubuntu-24.04-amd64-4x8"]
+
+# Omit for a library. Both spellings below are the same TOML.
+[[assets.targets]]
+id = "darwin-arm64"
+
+[[assets.targets]]
+id = "linux-x64"
+runs_on = ["self-hosted", "linux", "x64"]
+```
+
+`runs_on` is the literal GitHub label list — verctl resolves nothing and
+knows no aliases, so what is written here is what `runs-on:` receives, and a
+label no machine carries queues the way any wrong label queues. A list of
+several labels means AND, as GitHub reads it. A row is always a table:
+`targets = ["linux-x64"]` is rejected, `targets = [{ id = "linux-x64" }]` is
+the same document as the block form above.
+
+Built-in target records, so a public repo needs no config to stay on free
+hosted minutes:
+
+| `id` | `runs_on` | `os` | `arch` | `triple` |
+|:--|:--|:--|:--|:--|
+| `darwin-arm64` | `["macos-latest"]` | `darwin` | `arm64` | `aarch64-apple-darwin` |
+| `linux-x64` | `["ubuntu-latest"]` | `linux` | `x64` | `x86_64-unknown-linux-gnu` |
+
+An `id` outside that set describes a platform verctl knows nothing about, so
+it must describe all of it — `runs_on`, `os`, `arch`, and `triple` are all
+required, and a partial record is an error rather than a build against an
+empty target triple. `os = "darwin"` renders as `macos` in the filename;
+that is the only rename.
+
+`verctl ci` and `verctl assets` print what resolved, so a default is visible
+output rather than an assumption. Both also write a matrix for
+`$GITHUB_OUTPUT`: GitHub needs `runs-on` before a job exists, so a small
+`plan` job emits the labels and the real jobs consume them
+([`examples/workflows/ci.yml`](examples/workflows/ci.yml)).
+
 ## Actions
 
 These replace `changesets/action`. They are **GitHub Actions, not a

@@ -7,7 +7,8 @@
 use crate::config::Config;
 use crate::github;
 use crate::process;
-use anyhow::{Context, Result, ensure};
+use crate::runners;
+use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
@@ -20,7 +21,7 @@ pub const BUILD_TIMEOUT: Duration = Duration::from_mins(15);
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MatrixTarget {
     pub id: String,
-    pub runner: String,
+    pub runs_on: Vec<String>,
     pub os: String,
     pub arch: String,
     pub triple: String,
@@ -50,7 +51,7 @@ pub struct AssetsPlan {
 #[derive(Clone, Copy, Debug)]
 struct Known {
     id: &'static str,
-    runner: &'static str,
+    runs_on: &'static [&'static str],
     os: &'static str,
     arch: &'static str,
     triple: &'static str,
@@ -59,19 +60,27 @@ struct Known {
 const KNOWN: &[Known] = &[
     Known {
         id: "darwin-arm64",
-        runner: "macos-latest",
+        runs_on: &["macos-latest"],
         os: "darwin",
         arch: "arm64",
         triple: "aarch64-apple-darwin",
     },
     Known {
         id: "linux-x64",
-        runner: "ubuntu-latest",
+        runs_on: &["ubuntu-latest"],
         os: "linux",
         arch: "x64",
         triple: "x86_64-unknown-linux-gnu",
     },
 ];
+
+fn known_ids() -> String {
+    KNOWN
+        .iter()
+        .map(|known| known.id)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
 
 const STOCK_PREPARE: &[&str] = &["rustup", "target", "add", "{triple}"];
 const STOCK_BUILD: &[&str] = &[
@@ -98,14 +107,15 @@ pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
         .as_ref()
         .and_then(|assets| assets.bin.clone())
         .unwrap_or_else(|| package.name.clone());
-    let ids = config
+    let specs = config
         .assets
         .as_ref()
         .map_or(&[][..], |assets| assets.targets.as_slice());
+    runners::unique("asset target", specs.iter().map(|spec| spec.id.as_str()))?;
     let assets = config.assets.clone().unwrap_or_default();
     let custom_build = assets.build.is_some();
     let mut include = Vec::new();
-    for spec in ids {
+    for spec in specs {
         include.push(resolve_target(spec, &bin, &version)?);
     }
     Ok(AssetsPlan {
@@ -126,26 +136,28 @@ pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
     })
 }
 
+/// The matrix GitHub sees: the job name and the machine, nothing else.
+/// `os`, `arch`, and `triple` stay on this side of the boundary.
 #[derive(Serialize)]
-struct CiRow {
+struct GithubRow {
     id: String,
-    runner: String,
+    runs_on: Vec<String>,
 }
 
 #[derive(Serialize)]
-struct CiMatrix {
-    include: Vec<CiRow>,
+struct GithubMatrix {
+    include: Vec<GithubRow>,
 }
 
 pub fn write_github_output(plan: &AssetsPlan, path: &Path) -> Result<()> {
-    let matrix = CiMatrix {
+    let matrix = GithubMatrix {
         include: plan
             .matrix
             .include
             .iter()
-            .map(|row| CiRow {
+            .map(|row| GithubRow {
                 id: row.id.clone(),
-                runner: row.runner.clone(),
+                runs_on: row.runs_on.clone(),
             })
             .collect(),
     };
@@ -215,42 +227,58 @@ fn resolve_target(
     bin: &str,
     version: &str,
 ) -> Result<MatrixTarget> {
-    let known = KNOWN.iter().find(|known| known.id == spec.id());
-    let runner = spec
-        .runner()
-        .or_else(|| known.map(|known| known.runner))
-        .with_context(|| {
-            format!(
-                "unknown asset target {:?} needs runner= (or use {})",
-                spec.id(),
-                KNOWN
-                    .iter()
-                    .map(|known| known.id)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
-        })?;
-    let os = spec
-        .os()
-        .or_else(|| known.map(|known| known.os))
-        .unwrap_or("unknown");
-    let arch = spec
-        .arch()
-        .or_else(|| known.map(|known| known.arch))
-        .unwrap_or("unknown");
-    let triple = spec
-        .triple()
-        .or_else(|| known.map(|known| known.triple))
-        .unwrap_or("");
-    let asset_os = if os == "darwin" { "macos" } else { os };
+    let id = spec.id.as_str();
+    let known = KNOWN.iter().find(|known| known.id == id);
+    // An id outside the built-in set describes a platform verctl knows
+    // nothing about, so it must describe all of it. Partial records used to
+    // pass and reach `cargo build --target ""`.
+    let Some(known) = known else {
+        let (Some(os), Some(arch), Some(triple)) = (
+            spec.os.as_deref(),
+            spec.arch.as_deref(),
+            spec.triple.as_deref(),
+        ) else {
+            bail!(
+                "unknown asset target {id:?} needs runs_on, os, arch, triple (or use {})",
+                known_ids()
+            );
+        };
+        let runs_on =
+            runners::labels("asset target", id, spec.runs_on.as_ref(), &[]).and_then(|labels| {
+                ensure!(
+                    !labels.is_empty(),
+                    "unknown asset target {id:?} needs runs_on (or use {})",
+                    known_ids()
+                );
+                Ok(labels)
+            })?;
+        return Ok(MatrixTarget {
+            id: id.to_owned(),
+            runs_on,
+            os: os.to_owned(),
+            arch: arch.to_owned(),
+            triple: triple.to_owned(),
+            asset: asset_name(bin, version, os, arch),
+        });
+    };
+    let runs_on = runners::labels("asset target", id, spec.runs_on.as_ref(), known.runs_on)?;
+    let os = spec.os.as_deref().unwrap_or(known.os);
+    let arch = spec.arch.as_deref().unwrap_or(known.arch);
+    let triple = spec.triple.as_deref().unwrap_or(known.triple);
     Ok(MatrixTarget {
-        id: spec.id().to_owned(),
-        runner: runner.to_owned(),
+        id: id.to_owned(),
+        runs_on,
         os: os.to_owned(),
         arch: arch.to_owned(),
         triple: triple.to_owned(),
-        asset: format!("{bin}_{version}_{asset_os}_{arch}.tar.gz"),
+        asset: asset_name(bin, version, os, arch),
     })
+}
+
+/// `os = "darwin"` renders as `macos` in the filename. The one rename.
+fn asset_name(bin: &str, version: &str, os: &str, arch: &str) -> String {
+    let os = if os == "darwin" { "macos" } else { os };
+    format!("{bin}_{version}_{os}_{arch}.tar.gz")
 }
 
 fn strings(parts: &[&str]) -> Vec<String> {
@@ -262,7 +290,6 @@ fn target_ctx(plan: &AssetsPlan, target: &MatrixTarget) -> BTreeMap<&'static str
         ("bin", plan.bin.clone()),
         ("version", plan.version.clone()),
         ("id", target.id.clone()),
-        ("runner", target.runner.clone()),
         ("os", target.os.clone()),
         ("arch", target.arch.clone()),
         ("triple", target.triple.clone()),
@@ -324,8 +351,8 @@ mod tests {
             [[packages]]
             name = "verctl"
             path = "Cargo.toml"
-            [assets]
-            targets = ["linux-x64"]
+            [[assets.targets]]
+            id = "linux-x64"
         "#})
         .unwrap();
         let root = tempfile::TempDir::new().unwrap();
@@ -334,7 +361,7 @@ mod tests {
         assert!(planned.has_assets);
         assert_eq!(planned.matrix.include.len(), 1);
         assert_eq!(planned.matrix.include[0].id, "linux-x64");
-        assert_eq!(planned.matrix.include[0].runner, "ubuntu-latest");
+        assert_eq!(planned.matrix.include[0].runs_on, ["ubuntu-latest"]);
         assert_eq!(
             planned.matrix.include[0].asset,
             "verctl_1.2.3_linux_x64.tar.gz"
@@ -342,19 +369,121 @@ mod tests {
     }
 
     #[test]
-    fn runner_override_beats_latest() {
+    fn runs_on_override_beats_latest() {
         let config = load(indoc::indoc! {r#"
             [[packages]]
             name = "verctl"
             path = "Cargo.toml"
-            [assets]
-            targets = [{ id = "darwin-arm64", runner = "macos-15" }]
+            [[assets.targets]]
+            id = "darwin-arm64"
+            runs_on = ["macos-15"]
         "#})
         .unwrap();
         let root = tempfile::TempDir::new().unwrap();
         write_cargo(root.path(), "0.0.1");
         let planned = plan(&config, root.path()).unwrap();
-        assert_eq!(planned.matrix.include[0].runner, "macos-15");
+        assert_eq!(planned.matrix.include[0].runs_on, ["macos-15"]);
+        // Only the machine moved. The target is still what it was.
+        assert_eq!(planned.matrix.include[0].triple, "aarch64-apple-darwin");
+    }
+
+    #[test]
+    fn a_target_takes_a_multi_label_set() {
+        let config = load(indoc::indoc! {r#"
+            [[packages]]
+            name = "verctl"
+            path = "Cargo.toml"
+            [[assets.targets]]
+            id = "linux-x64"
+            runs_on = ["self-hosted", "linux", "x64"]
+        "#})
+        .unwrap();
+        let root = tempfile::TempDir::new().unwrap();
+        write_cargo(root.path(), "0.0.1");
+        let planned = plan(&config, root.path()).unwrap();
+        assert_eq!(
+            planned.matrix.include[0].runs_on,
+            ["self-hosted", "linux", "x64"]
+        );
+    }
+
+    #[test]
+    fn a_bare_string_is_not_a_target() {
+        let err = toml::from_str::<Config>(indoc::indoc! {r#"
+            [[packages]]
+            name = "verctl"
+            path = "Cargo.toml"
+            [assets]
+            targets = ["linux-x64"]
+        "#})
+        .unwrap_err();
+        assert!(format!("{err}").contains("invalid type"), "{err}");
+    }
+
+    #[test]
+    fn a_user_defined_target_needs_the_whole_record() {
+        let config = load(indoc::indoc! {r#"
+            [[packages]]
+            name = "verctl"
+            path = "Cargo.toml"
+            [[assets.targets]]
+            id = "linux-arm64"
+            runs_on = ["ubuntu-24.04-arm"]
+            os = "linux"
+            arch = "arm64"
+            triple = "aarch64-unknown-linux-gnu"
+        "#})
+        .unwrap();
+        let root = tempfile::TempDir::new().unwrap();
+        write_cargo(root.path(), "0.0.2");
+        let planned = plan(&config, root.path()).unwrap();
+        assert_eq!(
+            planned.matrix.include[0].triple,
+            "aarch64-unknown-linux-gnu"
+        );
+        assert_eq!(
+            planned.matrix.include[0].asset,
+            "verctl_0.0.2_linux_arm64.tar.gz"
+        );
+    }
+
+    #[test]
+    fn a_partial_unknown_target_no_longer_builds_an_empty_triple() {
+        let config = load(indoc::indoc! {r#"
+            [[packages]]
+            name = "verctl"
+            path = "Cargo.toml"
+            [[assets.targets]]
+            id = "linux-arm64"
+            runs_on = ["ubuntu-24.04-arm"]
+        "#})
+        .unwrap();
+        let root = tempfile::TempDir::new().unwrap();
+        write_cargo(root.path(), "0.0.1");
+        let err = plan(&config, root.path()).unwrap_err();
+        assert!(format!("{err:#}").contains("os, arch, triple"), "{err:#}");
+    }
+
+    #[test]
+    fn duplicate_target_ids_are_rejected() {
+        let config = load(indoc::indoc! {r#"
+            [[packages]]
+            name = "verctl"
+            path = "Cargo.toml"
+            [[assets.targets]]
+            id = "linux-x64"
+            [[assets.targets]]
+            id = "linux-x64"
+            runs_on = ["self-hosted"]
+        "#})
+        .unwrap();
+        let root = tempfile::TempDir::new().unwrap();
+        write_cargo(root.path(), "0.0.1");
+        let err = plan(&config, root.path()).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("duplicate asset target"),
+            "{err:#}"
+        );
     }
 
     #[test]
@@ -365,7 +494,7 @@ mod tests {
             path = "Cargo.toml"
             [assets]
             bin = "verctl"
-            targets = ["darwin-arm64", "linux-x64"]
+            targets = [{ id = "darwin-arm64" }, { id = "linux-x64" }]
         "#})
         .unwrap();
         let root = tempfile::TempDir::new().unwrap();
@@ -384,33 +513,35 @@ mod tests {
             planned.matrix.include[0].asset,
             "verctl_0.0.1_macos_arm64.tar.gz"
         );
-        assert_eq!(planned.matrix.include[0].runner, "macos-latest");
+        assert_eq!(planned.matrix.include[0].runs_on, ["macos-latest"]);
     }
 
     #[test]
-    fn unknown_target_needs_a_runner() {
+    fn an_unknown_id_alone_names_the_built_ins() {
         let config = load(indoc::indoc! {r#"
             [[packages]]
             name = "verctl"
             path = "Cargo.toml"
-            [assets]
-            targets = ["windows-x64"]
+            [[assets.targets]]
+            id = "windows-x64"
         "#})
         .unwrap();
         let root = tempfile::TempDir::new().unwrap();
         write_cargo(root.path(), "0.0.1");
         let err = plan(&config, root.path()).unwrap_err();
-        assert!(format!("{err:#}").contains("runner"), "{err:#}");
+        let text = format!("{err:#}");
+        assert!(text.contains("runs_on, os, arch, triple"), "{text}");
+        assert!(text.contains("darwin-arm64, linux-x64"), "{text}");
     }
 
     #[test]
-    fn github_matrix_is_only_id_and_runner() {
+    fn github_matrix_is_only_id_and_runs_on() {
         let config = load(indoc::indoc! {r#"
             [[packages]]
             name = "verctl"
             path = "Cargo.toml"
             [assets]
-            targets = ["linux-x64", "darwin-arm64"]
+            targets = [{ id = "linux-x64" }, { id = "darwin-arm64" }]
         "#})
         .unwrap();
         let root = tempfile::TempDir::new().unwrap();
@@ -427,7 +558,7 @@ mod tests {
             serde_json::from_str(matrix_line.trim_start_matches("matrix=")).unwrap();
         let first = &json["include"][0];
         assert_eq!(first["id"], "linux-x64");
-        assert_eq!(first["runner"], "ubuntu-latest");
+        assert_eq!(first["runs_on"][0], "ubuntu-latest");
         assert!(first.get("triple").is_none(), "{first}");
         assert!(first.get("asset").is_none(), "{first}");
         assert!(text.contains("has_assets=true\n"), "{text}");
