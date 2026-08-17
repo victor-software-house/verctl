@@ -1,5 +1,5 @@
-# Built-in drivers `cargo` and `npm` are the same Path driver with
-# stock keys. Redefine or add drivers here.
+# Built-in drivers `cargo` and `npm` (version keys) and publishers
+# `cargo` and `bun` are stock recipes. Redefine or add your own.
 
 [drivers.cargo]
 format = "toml"
@@ -13,7 +13,12 @@ keys = ["version"]
 # [[packages]]
 # name = "@org/pkg"
 # path = "package.json"
-# registry = "github"   # bun publish --tolerate-republish --registry npm.pkg.github.com
+# publisher = "bun"
+# registry = "github"
+#
+# [publishers.twine]
+# noun = "package"
+# argv = ["uv", "publish"]
 
 # String form is a mise task (no shell):
 # read = "ver-read-version"

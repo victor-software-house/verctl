@@ -15,4 +15,5 @@ pub mod github;
 pub mod prepare;
 pub mod process;
 pub mod publish;
+pub mod publisher;
 pub mod release;

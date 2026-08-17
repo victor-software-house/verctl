@@ -1,7 +1,7 @@
 //! Native release assets. Only the targets listed in `[assets]`.
 //!
-//! Omit `[assets]` (or leave `targets` empty) when a crate has no
-//! native binary, or when one host build is enough for every consumer.
+//! Omit `[assets]` when there is no host binary. Override `prepare`,
+//! `build`, and `binary` when the stock rust recipe is the wrong stack.
 //! PR CI never reads this list.
 
 use crate::config::Config;
@@ -9,6 +9,7 @@ use crate::github;
 use crate::process;
 use anyhow::{Context, Result, ensure};
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -20,6 +21,8 @@ pub const BUILD_TIMEOUT: Duration = Duration::from_mins(15);
 pub struct MatrixTarget {
     pub id: String,
     pub runner: String,
+    pub os: String,
+    pub arch: String,
     pub triple: String,
     pub asset: String,
 }
@@ -36,30 +39,50 @@ pub struct AssetsPlan {
     pub tag: String,
     pub has_assets: bool,
     pub matrix: Matrix,
+    #[serde(skip)]
+    prepare: Vec<String>,
+    #[serde(skip)]
+    build: Vec<String>,
+    #[serde(skip)]
+    binary: String,
 }
 
 #[derive(Clone, Copy, Debug)]
 struct Known {
     id: &'static str,
     runner: &'static str,
+    os: &'static str,
+    arch: &'static str,
     triple: &'static str,
-    asset_os_arch: &'static str,
 }
 
 const KNOWN: &[Known] = &[
     Known {
         id: "darwin-arm64",
         runner: "macos-latest",
+        os: "darwin",
+        arch: "arm64",
         triple: "aarch64-apple-darwin",
-        asset_os_arch: "macos_arm64",
     },
     Known {
         id: "linux-x64",
         runner: "ubuntu-latest",
+        os: "linux",
+        arch: "x64",
         triple: "x86_64-unknown-linux-gnu",
-        asset_os_arch: "linux_x64",
     },
 ];
+
+const STOCK_PREPARE: &[&str] = &["rustup", "target", "add", "{triple}"];
+const STOCK_BUILD: &[&str] = &[
+    "cargo",
+    "build",
+    "--release",
+    "--locked",
+    "--target",
+    "{triple}",
+];
+const STOCK_BINARY: &str = "target/{triple}/release/{bin}";
 
 pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
     let package = config
@@ -79,15 +102,11 @@ pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
         .assets
         .as_ref()
         .map_or(&[][..], |assets| assets.targets.as_slice());
+    let assets = config.assets.clone().unwrap_or_default();
+    let custom_build = assets.build.is_some();
     let mut include = Vec::new();
     for spec in ids {
-        let known = known(spec.id())?;
-        include.push(MatrixTarget {
-            id: known.id.to_owned(),
-            runner: spec.runner().unwrap_or(known.runner).to_owned(),
-            triple: known.triple.to_owned(),
-            asset: format!("{bin}_{version}_{}.tar.gz", known.asset_os_arch),
-        });
+        include.push(resolve_target(spec, &bin, &version)?);
     }
     Ok(AssetsPlan {
         bin,
@@ -95,6 +114,15 @@ pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
         tag: format!("v{version}"),
         has_assets: !include.is_empty(),
         matrix: Matrix { include },
+        prepare: assets.prepare.unwrap_or_else(|| {
+            if custom_build {
+                Vec::new()
+            } else {
+                strings(STOCK_PREPARE)
+            }
+        }),
+        build: assets.build.unwrap_or_else(|| strings(STOCK_BUILD)),
+        binary: assets.binary.unwrap_or_else(|| STOCK_BINARY.to_owned()),
     })
 }
 
@@ -124,22 +152,14 @@ pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
         .iter()
         .find(|row| row.id == id)
         .with_context(|| format!("target {id:?} is not in [assets].targets"))?;
-    let rustup = process::argv(&["rustup", "target", "add", &target.triple]);
-    process::run_limited(&rustup, &[], BUILD_TIMEOUT).context("rustup target add")?;
-    let cargo = process::argv(&[
-        "cargo",
-        "build",
-        "--release",
-        "--locked",
-        "--target",
-        &target.triple,
-    ]);
-    process::run_limited(&cargo, &[], BUILD_TIMEOUT).context("cargo build --release")?;
-    let binary = root
-        .join("target")
-        .join(&target.triple)
-        .join("release")
-        .join(&plan.bin);
+    let ctx = target_ctx(plan, target);
+    if !plan.prepare.is_empty() {
+        let prepare = expand(&plan.prepare, &ctx);
+        process::run_limited(&prepare, &[], BUILD_TIMEOUT).context("assets.prepare")?;
+    }
+    let build = expand(&plan.build, &ctx);
+    process::run_limited(&build, &[], BUILD_TIMEOUT).context("assets.build")?;
+    let binary = root.join(expand_one(&plan.binary, &ctx));
     ensure!(
         binary.is_file(),
         "missing release binary {}",
@@ -168,16 +188,80 @@ pub fn upload(root: &Path, tag: &str, tarball: &Path) -> Result<String> {
     github::upload_release_asset(&token, &repo, tag, tarball)
 }
 
-fn known(id: &str) -> Result<&'static Known> {
-    KNOWN.iter().find(|known| known.id == id).with_context(|| {
-        let ids: Vec<&str> = KNOWN.iter().map(|known| known.id).collect();
-        format!("unknown asset target {id:?} (known: {})", ids.join(", "))
+fn resolve_target(
+    spec: &crate::config::AssetTarget,
+    bin: &str,
+    version: &str,
+) -> Result<MatrixTarget> {
+    let known = KNOWN.iter().find(|known| known.id == spec.id());
+    let runner = spec
+        .runner()
+        .or_else(|| known.map(|known| known.runner))
+        .with_context(|| {
+            format!(
+                "unknown asset target {:?} needs runner= (or use {})",
+                spec.id(),
+                KNOWN
+                    .iter()
+                    .map(|known| known.id)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })?;
+    let os = spec
+        .os()
+        .or_else(|| known.map(|known| known.os))
+        .unwrap_or("unknown");
+    let arch = spec
+        .arch()
+        .or_else(|| known.map(|known| known.arch))
+        .unwrap_or("unknown");
+    let triple = spec
+        .triple()
+        .or_else(|| known.map(|known| known.triple))
+        .unwrap_or("");
+    let asset_os = if os == "darwin" { "macos" } else { os };
+    Ok(MatrixTarget {
+        id: spec.id().to_owned(),
+        runner: runner.to_owned(),
+        os: os.to_owned(),
+        arch: arch.to_owned(),
+        triple: triple.to_owned(),
+        asset: format!("{bin}_{version}_{asset_os}_{arch}.tar.gz"),
     })
+}
+
+fn strings(parts: &[&str]) -> Vec<String> {
+    parts.iter().map(|part| (*part).to_owned()).collect()
+}
+
+fn target_ctx(plan: &AssetsPlan, target: &MatrixTarget) -> BTreeMap<&'static str, String> {
+    BTreeMap::from([
+        ("bin", plan.bin.clone()),
+        ("version", plan.version.clone()),
+        ("id", target.id.clone()),
+        ("runner", target.runner.clone()),
+        ("os", target.os.clone()),
+        ("arch", target.arch.clone()),
+        ("triple", target.triple.clone()),
+    ])
+}
+
+fn expand(parts: &[String], ctx: &BTreeMap<&str, String>) -> Vec<String> {
+    parts.iter().map(|part| expand_one(part, ctx)).collect()
+}
+
+fn expand_one(part: &str, ctx: &BTreeMap<&str, String>) -> String {
+    let mut out = part.to_owned();
+    for (key, value) in ctx {
+        out = out.replace(&format!("{{{key}}}"), value);
+    }
+    out
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{known, plan};
+    use super::plan;
     use crate::config::Config;
     use anyhow::Result;
 
@@ -282,9 +366,19 @@ mod tests {
     }
 
     #[test]
-    fn unknown_target_fails() {
-        let err = known("windows-x64").unwrap_err();
-        assert!(format!("{err:#}").contains("darwin-arm64"), "{err:#}");
+    fn unknown_target_needs_a_runner() {
+        let config = load(indoc::indoc! {r#"
+            [[packages]]
+            name = "verctl"
+            path = "Cargo.toml"
+            [assets]
+            targets = ["windows-x64"]
+        "#})
+        .unwrap();
+        let root = tempfile::TempDir::new().unwrap();
+        write_cargo(root.path(), "0.0.1");
+        let err = plan(&config, root.path()).unwrap_err();
+        assert!(format!("{err:#}").contains("runner"), "{err:#}");
     }
 
     #[test]

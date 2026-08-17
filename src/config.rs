@@ -1,4 +1,5 @@
 use crate::driver::{CommandSpec, Driver, Format};
+use crate::publisher::PublisherSpec;
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -99,13 +100,13 @@ pub struct PackageSpec {
     pub name: String,
     pub path: PathBuf,
     pub driver: Option<String>,
-    /// Where `publish` ships this package.
-    ///
-    /// Cargo: omit or `crates-io`. Any other name is `cargo publish --registry`.
-    /// Bun: omit or `npm` is registry.npmjs.org (`--access public`).
-    /// `github` is `bun publish --registry https://npm.pkg.github.com`.
-    /// A URL is passed through as `--registry`. Always
-    /// `--tolerate-republish`.
+    /// Stock `cargo` / `bun`, a `[publishers.NAME]` key, or omit to infer.
+    pub publisher: Option<String>,
+    /// Pretty noun (`crate`, `package`, `wheel`). Defaults from the publisher.
+    pub noun: Option<String>,
+    /// Override the publisher argv for this package.
+    #[serde(default, rename = "publish")]
+    pub publish_argv: Option<Vec<String>>,
     pub registry: Option<String>,
     #[serde(flatten)]
     pub spec: DriverSpec,
@@ -137,6 +138,12 @@ pub struct Assets {
     pub bin: Option<String>,
     #[serde(default)]
     pub targets: Vec<AssetTarget>,
+    /// Ran once per target before `build`. Stock rust recipe uses rustup.
+    pub prepare: Option<Vec<String>>,
+    /// How to produce the binary. Stock rust recipe is `cargo build --release`.
+    pub build: Option<Vec<String>>,
+    /// Path to the built binary, with `{bin}` `{triple}` `{os}` `{arch}`.
+    pub binary: Option<String>,
 }
 
 /// `"linux-x64"` or `{ id = "linux-x64", runner = "ubuntu-24.04" }`.
@@ -144,7 +151,13 @@ pub struct Assets {
 #[serde(untagged)]
 pub enum AssetTarget {
     Id(String),
-    Spec { id: String, runner: Option<String> },
+    Spec {
+        id: String,
+        runner: Option<String>,
+        os: Option<String>,
+        arch: Option<String>,
+        triple: Option<String>,
+    },
 }
 
 impl AssetTarget {
@@ -162,6 +175,30 @@ impl AssetTarget {
             Self::Spec { runner, .. } => runner.as_deref(),
         }
     }
+
+    #[must_use]
+    pub fn os(&self) -> Option<&str> {
+        match self {
+            Self::Id(_) => None,
+            Self::Spec { os, .. } => os.as_deref(),
+        }
+    }
+
+    #[must_use]
+    pub fn arch(&self) -> Option<&str> {
+        match self {
+            Self::Id(_) => None,
+            Self::Spec { arch, .. } => arch.as_deref(),
+        }
+    }
+
+    #[must_use]
+    pub fn triple(&self) -> Option<&str> {
+        match self {
+            Self::Id(_) => None,
+            Self::Spec { triple, .. } => triple.as_deref(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -169,6 +206,8 @@ pub struct Config {
     #[serde(default)]
     pub drivers: BTreeMap<String, DriverSpec>,
     pub packages: Vec<PackageSpec>,
+    #[serde(default)]
+    pub publishers: BTreeMap<String, PublisherSpec>,
     #[serde(default)]
     pub assets: Option<Assets>,
 }

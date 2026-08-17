@@ -63,13 +63,11 @@ write nothing. `prepare --pr --dry-run` also lists consumed fragments
 and whether the Version PR would open or update. Preview does not
 require GitHub auth.
 
-`publish` ships the versions already on HEAD: `cargo publish --locked`
-for Cargo.toml, `bun publish --tolerate-republish` for package.json
-(never `npm publish`), then a GitHub Release `v{version}`. GitHub
-Packages is `registry = "github"`. A nearby `bunfig.toml` is
-`--config` and owns scopes (`$GITHUB_TOKEN`); `--registry` is only
-the fallback when there is no bunfig. Cargo already on crates.io is
-treated as success. `--dry-run` prints the plan.
+`publish` ships the versions already on HEAD, then a GitHub Release.
+How is `[publishers.NAME]`: argv + placeholders. Cargo and bun are
+stock recipes (first-class examples). Override or add another stack
+without a new verb. GitHub Packages for bun uses a nearby
+`bunfig.toml` as `--config`.
 
 Happy path after the Version PR merges is
 `victor-software-house/verctl/actions/publish`. It runs when the
