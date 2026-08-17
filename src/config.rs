@@ -130,11 +130,22 @@ impl PackageSpec {
     }
 }
 
+/// Native GitHub Release tarballs. Omit for libraries, or list one
+/// target when a single binary is enough.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct Assets {
+    pub bin: Option<String>,
+    #[serde(default)]
+    pub targets: Vec<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
     pub drivers: BTreeMap<String, DriverSpec>,
     pub packages: Vec<PackageSpec>,
+    #[serde(default)]
+    pub assets: Option<Assets>,
 }
 
 impl Config {

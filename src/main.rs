@@ -4,6 +4,7 @@ use serde::Serialize;
 use std::fmt;
 use std::io::{self, Write};
 use std::path::Path;
+use verctl::assets;
 use verctl::cli::{Cli, Command, PrepareArgs, StatusArgs};
 use verctl::config::Config;
 use verctl::fragment::{self, Bump};
@@ -26,6 +27,7 @@ fn main() -> ExitCode {
             }
             Command::Prepare(args) => view.show(&prepare_report(&args)?)?,
             Command::Publish(args) => view.show(&publish_report(&args)?)?,
+            Command::Assets(args) => view.show(&assets_report(&args)?)?,
         }
         Ok(())
     })
@@ -323,6 +325,72 @@ fn publish_report(args: &verctl::cli::PublishArgs) -> Result<PublishReport> {
         crates: outcome.crates,
         release: outcome.release,
         dry_run: args.dry_run(),
+    })
+}
+
+#[derive(Serialize)]
+struct AssetsReport {
+    #[serde(flatten)]
+    plan: assets::AssetsPlan,
+    tarball: Option<String>,
+    uploaded: Option<String>,
+}
+
+impl fmt::Display for AssetsReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.plan.has_assets {
+            return writedoc!(f, "assets  none (library or a single host build is enough)");
+        }
+        for row in &self.plan.matrix.include {
+            writedoc!(f, "target  {}  {}  {}\n", row.id, row.runner, row.asset)?;
+        }
+        writedoc!(f, "tag     {}\n", self.plan.tag)?;
+        if let Some(path) = &self.tarball {
+            writedoc!(f, "tarball {path}\n")?;
+        }
+        if let Some(url) = &self.uploaded {
+            writedoc!(f, "upload  {url}\n")?;
+        }
+        Ok(())
+    }
+}
+
+impl Render for AssetsReport {
+    fn render_pretty(&self) -> String {
+        self.to_string()
+    }
+}
+
+fn assets_report(args: &verctl::cli::AssetsArgs) -> Result<AssetsReport> {
+    let config = Config::load(&args.config)?;
+    let root = args
+        .config
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let planned = assets::plan(&config, root)?;
+    if let Some(path) = &args.github_output {
+        assets::write_github_output(&planned, path)?;
+    }
+    if let Some(id) = &args.build {
+        let tarball = assets::build(&planned, id, root)?;
+        let uploaded = if args.upload {
+            let tag = args.tag.as_deref().unwrap_or(planned.tag.as_str());
+            Some(assets::upload(root, tag, &tarball)?)
+        } else {
+            None
+        };
+        return Ok(AssetsReport {
+            plan: planned,
+            tarball: Some(tarball.display().to_string()),
+            uploaded,
+        });
+    }
+    anyhow::ensure!(!args.upload, "--upload requires --build");
+    Ok(AssetsReport {
+        plan: planned,
+        tarball: None,
+        uploaded: None,
     })
 }
 

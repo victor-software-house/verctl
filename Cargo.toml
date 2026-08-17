@@ -26,6 +26,7 @@ disallowed_macros = "deny"
 
 [dependencies]
 anyhow = "1.0.100"
+bytes = "1.11.1"
 clap = { version = "4.6.5", features = ["derive"] }
 ctl-core = "0.0.1"
 duct = "1.1.1"

@@ -4,3 +4,8 @@
 [[packages]]
 name = "verctl"
 path = "Cargo.toml"
+
+# Omit this table for a library. List one id when a single host
+# binary is enough. PR CI never builds these.
+[assets]
+targets = ["darwin-arm64", "linux-x64"]

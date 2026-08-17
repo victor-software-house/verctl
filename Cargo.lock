@@ -2470,6 +2470,7 @@ name = "verctl"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "bytes",
  "clap",
  "ctl-core",
  "duct",

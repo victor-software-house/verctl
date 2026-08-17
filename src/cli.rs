@@ -27,8 +27,10 @@ pub enum Command {
     Check(StatusArgs),
     /// Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews.
     Prepare(PrepareArgs),
-    /// Publish the versions on HEAD (cargo / npm + GitHub Release).
+    /// Publish the versions on HEAD (cargo / bun + GitHub Release).
     Publish(PublishArgs),
+    /// Plan or build native GitHub Release tarballs declared in `[assets]`.
+    Assets(AssetsArgs),
 }
 
 #[derive(Args)]
@@ -38,6 +40,25 @@ pub struct PublishArgs {
     pub config: PathBuf,
     #[command(flatten)]
     pub dry: DryRunArgs,
+}
+
+#[derive(Args)]
+pub struct AssetsArgs {
+    /// Package map. Defaults to verctl.toml in the current directory.
+    #[arg(short = 'c', long, default_value = "verctl.toml", value_hint = clap::ValueHint::FilePath)]
+    pub config: PathBuf,
+    /// Build this target id (`darwin-arm64`, `linux-x64`). Plan only when omitted.
+    #[arg(long)]
+    pub build: Option<String>,
+    /// Upload the built tarball to the GitHub Release for `--tag`.
+    #[arg(long)]
+    pub upload: bool,
+    /// Release tag (`v0.0.1`). Required with `--upload`.
+    #[arg(long)]
+    pub tag: Option<String>,
+    /// Write `has_assets`, `tag`, and `matrix` for `$GITHUB_OUTPUT`.
+    #[arg(long, value_hint = clap::ValueHint::FilePath)]
+    pub github_output: Option<PathBuf>,
 }
 
 impl PublishArgs {

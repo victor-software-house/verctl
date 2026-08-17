@@ -18,12 +18,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish:
+  crate:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.pull_request.merged &&
        github.event.pull_request.head.ref == 'version-packages')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    outputs:
+      has_assets: ${{ steps.plan.outputs.has_assets }}
+      tag: ${{ steps.plan.outputs.tag }}
+      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -35,6 +39,32 @@ jobs:
           version: 2026.8.2
           cache: true
       - run: mise install --locked
+      - name: Plan native assets
+        id: plan
+        run: verctl assets --github-output "$GITHUB_OUTPUT" || mise run ver -- assets --github-output "$GITHUB_OUTPUT"
       - uses: ./actions/publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  assets:
+    needs: crate
+    if: needs.crate.outputs.has_assets == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.crate.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+      - name: Set up mise
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          version: 2026.8.2
+          cache: true
+      - run: mise install --locked
+      - uses: ./actions/asset
+        with:
+          target: ${{ matrix.id }}
+          tag: ${{ needs.crate.outputs.tag }}

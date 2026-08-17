@@ -2,6 +2,7 @@
 
 #![allow(clippy::missing_errors_doc)]
 
+pub mod assets;
 pub mod bump;
 pub mod changelog;
 pub mod cli;

@@ -141,6 +141,41 @@ pub fn ensure_release(
     })
 }
 
+/// Attach `tarball` to the release for `tag`.
+pub fn upload_release_asset(token: &str, repo: &Repo, tag: &str, tarball: &Path) -> Result<String> {
+    let name = tarball
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("asset name")?
+        .to_owned();
+    let body =
+        bytes::Bytes::from(std::fs::read(tarball).with_context(|| tarball.display().to_string())?);
+    block(async {
+        let crab = client(token)?;
+        let repos = crab.repos(&repo.owner, &repo.name);
+        let releases = repos.releases();
+        let release = releases
+            .get_by_tag(tag)
+            .await
+            .context("get release by tag")?;
+        match releases
+            .upload_asset(release.id.into_inner(), &name, body)
+            .send()
+            .await
+        {
+            Ok(asset) => Ok(asset.browser_download_url.to_string()),
+            Err(error)
+                if format!("{error:#}")
+                    .to_ascii_lowercase()
+                    .contains("already") =>
+            {
+                Ok(format!("already {name}"))
+            }
+            Err(error) => Err(error).context("upload release asset"),
+        }
+    })
+}
+
 fn client(token: &str) -> Result<Octocrab> {
     Octocrab::builder()
         .personal_token(token.to_owned())

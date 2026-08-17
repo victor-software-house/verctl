@@ -33,3 +33,10 @@ provenance = "github-attestations"
 [[tools.rust]]
 version = "nightly"
 backend = "core:rust"
+
+[[tools.rust]]
+version = "nightly"
+backend = "core:rust"
+
+[tools.rust.options]
+components = "clippy,rustfmt"

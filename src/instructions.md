@@ -72,9 +72,10 @@ on crates.io is treated as success. `--dry-run` prints the plan.
 
 Happy path after the Version PR merges is
 `victor-software-house/verctl/actions/publish`. It runs when the
-`version-packages` PR is merged (not on a commit-title prefix).
-The action calls `verctl` on PATH, otherwise `mise run ver`.
-OIDC trusted publishing is later (VER-007).
+`version-packages` PR is merged. Native tarballs are a second job,
+only when `[assets].targets` is non-empty. PR CI stays on one
+runner. `verctl assets` prints the matrix; `--build` + `--upload`
+is `actions/asset`. OIDC trusted publishing is later (VER-007).
 
 ## Stop conditions
 

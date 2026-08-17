@@ -1,0 +1,41 @@
+name: verctl asset
+description: >-
+  Build one declared native target and attach the tarball to the
+  GitHub Release. Skip the job when `[assets].targets` is empty.
+author: victor-software-house
+branding:
+  icon: package
+  color: gray-dark
+
+inputs:
+  token:
+    description: Token that can upload release assets. Default GITHUB_TOKEN.
+    required: false
+    default: ${{ github.token }}
+  config:
+    description: Path to verctl.toml.
+    required: false
+    default: verctl.toml
+  target:
+    description: Target id from `[assets].targets` (`darwin-arm64`, `linux-x64`).
+    required: true
+  tag:
+    description: Release tag (`v0.0.1`).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Build and upload
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        VERCTL_CONFIG: ${{ inputs.config }}
+        VERCTL_TARGET: ${{ inputs.target }}
+        VERCTL_TAG: ${{ inputs.tag }}
+      run: |
+        set -euo pipefail
+        if command -v verctl >/dev/null 2>&1; then
+          exec verctl assets -c "${VERCTL_CONFIG}" --build "${VERCTL_TARGET}" --upload --tag "${VERCTL_TAG}"
+        fi
+        exec mise run ver -- assets -c "${VERCTL_CONFIG}" --build "${VERCTL_TARGET}" --upload --tag "${VERCTL_TAG}"

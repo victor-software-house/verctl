@@ -26,3 +26,8 @@ keys = ["version"]
 # name = "verctl"
 # path = "Cargo.toml"
 # driver = "cargo"
+#
+# Omit [assets] for a library. One target when a single binary covers
+# every consumer you care about.
+# [assets]
+# targets = ["darwin-arm64", "linux-x64"]
