@@ -19,17 +19,17 @@ queue:
       - examples/workflows/version-pr.yml and actions/version-pr stay the consumer API.
       - Local prepare still works without GitHub when --no-pr is set.
     notes: >-
-      Happy path is actions/version-pr on GitHub Actions (github.token).
-      Local --pr uses GITHUB_TOKEN already in the env. No PAT, no App,
-      no gh, no git CLI. git2 commits/pushes with that token. octocrab
-      opens the PR.
+      Implemented on ver-004-version-pr (not on main). git2 + octocrab +
+      GITHUB_TOKEN. ctl-core for help/views/formatdoc. --preview writes
+      nothing. Leftover: open the PR, merge, then one live prepare --pr
+      so 0.0.0 -> 0.0.1 exists. Do not archive until that lands.
 
   - id: VER-005
     title: "Publish native verctl so mise github: can install it"
     scope: release
     outcome: >-
       crates.io plus GitHub Release assets for darwin-arm64 and linux-x64.
-    blocked_by: []
+    blocked_by: [VER-004]
     acceptance:
       - cargo publish --locked succeeds for this crate.
       - gh release vX.Y.Z includes both native tarballs.
