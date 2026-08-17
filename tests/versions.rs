@@ -231,20 +231,20 @@ fn ci_env_does_not_skip() {
 #[test]
 fn behind_released_main_without_local_edit_is_ok() {
     let (dir, repo) = repo_with_origin_main("1.0.0");
-    repo.branch(
-        "feature",
-        &repo.head().unwrap().peel_to_commit().unwrap(),
-        false,
-    )
-    .unwrap();
-    repo.set_head("refs/heads/main").unwrap();
+    let first = repo.head().unwrap().peel_to_commit().unwrap();
+    repo.branch("feature", &first, false).unwrap();
     write_crate(dir.path(), "1.1.0");
     let released = commit_tree(&repo, "release");
+    assert_ne!(released, first.id());
     repo.reference("refs/remotes/origin/main", released, true, "test")
         .unwrap();
     repo.set_head("refs/heads/feature").unwrap();
     repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
         .unwrap();
+    assert_eq!(
+        repo.head().unwrap().peel_to_commit().unwrap().id(),
+        first.id()
+    );
     check(dir.path(), Skip::None).unwrap();
 }
 

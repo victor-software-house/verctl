@@ -28,35 +28,31 @@ pub fn files_on_merge_base(
     let Some(upstream) = default_upstream_commit(&repo, candidates)? else {
         return Ok(vec![None; rels.len()]);
     };
-    let tree = match repo.head().ok().and_then(|head| head.peel_to_commit().ok()) {
-        Some(head) => match repo.merge_base(head.id(), upstream.id()) {
-            Ok(oid) => repo.find_commit(oid)?.tree()?,
-            Err(_) => upstream.tree()?,
-        },
-        None => upstream.tree()?,
+    let Some(head) = repo.head().ok().and_then(|head| head.peel_to_commit().ok()) else {
+        return Ok(vec![None; rels.len()]);
     };
+    let Ok(base) = repo.merge_base(head.id(), upstream.id()) else {
+        return Ok(vec![None; rels.len()]);
+    };
+    let tree = repo.find_commit(base)?.tree()?;
     let workdir = repo.workdir().map(Path::to_path_buf);
     Ok(rels
         .iter()
-        .map(|rel| blob_at(&repo, &tree, &git_path(root, rel, workdir.as_deref())))
+        .map(|rel| {
+            git_path(root, rel, workdir.as_deref()).and_then(|path| blob_at(&repo, &tree, &path))
+        })
         .collect())
 }
 
-fn git_path(root: &Path, rel: &Path, workdir: Option<&Path>) -> PathBuf {
+fn git_path(root: &Path, rel: &Path, workdir: Option<&Path>) -> Option<PathBuf> {
     let abs = if rel.is_absolute() {
         rel.to_path_buf()
     } else {
         root.join(rel)
     };
-    let abs = abs.canonicalize().unwrap_or(abs);
-    workdir
-        .and_then(|workdir| {
-            let workdir = workdir
-                .canonicalize()
-                .unwrap_or_else(|_| workdir.to_path_buf());
-            abs.strip_prefix(workdir).ok().map(Path::to_path_buf)
-        })
-        .unwrap_or_else(|| rel.to_path_buf())
+    let abs = abs.canonicalize().ok()?;
+    let workdir = workdir?.canonicalize().ok()?;
+    abs.strip_prefix(workdir).ok().map(Path::to_path_buf)
 }
 
 fn blob_at(repo: &Repository, tree: &git2::Tree<'_>, rel: &Path) -> Option<String> {
