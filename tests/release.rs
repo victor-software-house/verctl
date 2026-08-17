@@ -62,13 +62,35 @@ fn consume_fragments_deletes_the_files() {
 fn prepend_changelog_creates_and_inserts() {
     let root = TempDir::new().unwrap();
     let path = root.path().join("CHANGELOG.md");
-    release::prepend_changelog(&path, "## demo 1.0.1\n\n- first\n\n").unwrap();
+    release::prepend_changelog(
+        &path,
+        indoc! {"
+            ## demo 1.0.1
+
+            - first
+
+        "},
+    )
+    .unwrap();
     let first = fs::read_to_string(&path).unwrap();
     assert!(
-        first.starts_with("# Changelog\n\n## demo 1.0.1\n"),
+        first.starts_with(indoc! {"
+            # Changelog
+
+            ## demo 1.0.1
+        "}),
         "{first}"
     );
-    release::prepend_changelog(&path, "## demo 1.0.2\n\n- second\n\n").unwrap();
+    release::prepend_changelog(
+        &path,
+        indoc! {"
+            ## demo 1.0.2
+
+            - second
+
+        "},
+    )
+    .unwrap();
     let next = fs::read_to_string(&path).unwrap();
     assert!(next.contains("## demo 1.0.2"), "{next}");
     assert!(
@@ -260,25 +282,57 @@ fn missing_changelog_section_fails_closed() {
 #[test]
 fn pr_body_is_the_changelog() {
     assert_eq!(release::pr_body(""), "Prepared by verctl.");
-    assert_eq!(
-        release::pr_body("## demo 1.0.1\n\n- Patch.\n"),
-        "## demo 1.0.1\n\n- Patch."
-    );
+    let notes = indoc! {"
+        ## demo 1.0.1
+
+        - Patch.
+    "};
+    assert_eq!(release::pr_body(notes), notes.trim());
 }
 
 #[test]
 fn named_or_bare_heading_covers_the_version() {
     assert!(
-        release::changelog_section_for("# Changelog\n\n## demo 1.0.1\n\n- x\n", "demo", "1.0.1")
-            .is_some()
+        release::changelog_section_for(
+            indoc! {"
+                # Changelog
+
+                ## demo 1.0.1
+
+                - x
+            "},
+            "demo",
+            "1.0.1",
+        )
+        .is_some()
     );
     assert!(
-        release::changelog_section_for("# Changelog\n\n## 1.0.1\n\n- x\n", "demo", "1.0.1")
-            .is_some()
+        release::changelog_section_for(
+            indoc! {"
+                # Changelog
+
+                ## 1.0.1
+
+                - x
+            "},
+            "demo",
+            "1.0.1",
+        )
+        .is_some()
     );
     assert!(
-        release::changelog_section_for("# Changelog\n\n## demo 1.0.0\n\n- x\n", "demo", "1.0.1")
-            .is_none()
+        release::changelog_section_for(
+            indoc! {"
+                # Changelog
+
+                ## demo 1.0.0
+
+                - x
+            "},
+            "demo",
+            "1.0.1",
+        )
+        .is_none()
     );
 }
 
