@@ -6,6 +6,6 @@ lockfile = true
 
 [task_config]
 includes = [
-  "git::https://github.com/victor-software-house/verctl.git//tasks/ver?ref=v0.0.0",
+  "git::https://github.com/victor-software-house/verctl.git//tasks/ver?ref=v0.0.1",
   "mise-tasks",
 ]

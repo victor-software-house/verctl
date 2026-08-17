@@ -2,7 +2,7 @@
 #MISE description="Run the verctl version-PR CLI"
 #MISE dir="{{cwd}}"
 #MISE raw_args=true
-#MISE tools = { "github:victor-software-house/verctl" = "0.0.0" }
+#MISE tools = { "github:victor-software-house/verctl" = "0.0.1" }
 
 set -euo pipefail
 exec "$(mise where github:victor-software-house/verctl)/verctl" "$@"
