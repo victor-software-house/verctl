@@ -28,25 +28,8 @@ queue:
       + indoc copies. 2026-08-17: status/check/prepare are ColorMode
       tables; publish proves changelog headings + default-branch
       history (no commit-subject sniff); GitHub notes come from each
-      package CHANGELOG. Still open for archive: lockfile-after-bump
-      (VER-013). Hand-edit guard is VER-012 on feat/12-block-hand-versions.
-
-  - id: VER-012
-    title: Block hand-edited versions on the default branch
-    scope: verctl
-    outcome: >-
-      A pre-push or check fails when a declared manifest version
-      differs from origin/main outside version-packages.
-    blocked_by: [VER-011]
-    acceptance:
-      - version-packages and CI release jobs are exempt.
-      - Local fragment-only commits still push.
-      - Documented as verctl check --versions or a mise hook.
-    notes: >-
-      Stacked on main after PR #8. `verctl check --versions` plus
-      `mise run versions` on pre-push. Compares declared manifests
-      to origin/HEAD, GITHUB_BASE_REF, main, master. Do not use
-      GITHUB_REF_NAME. Tests inject Skip so CI env cannot hide drift.
+      package CHANGELOG. Hand-edit guard shipped as VER-012 / PR #9.
+      Still open for archive: lockfile-after-bump (VER-013).
 
 horizon:
   - id: VER-013
@@ -103,6 +86,21 @@ horizon:
     open: bun publish --tolerate-republish already ships. OIDC is the remaining auth path.
 
 archive:
+  - id: VER-012
+    title: Block hand-edited versions on the default branch
+    scope: verctl
+    completed: "2026-08-17"
+    disposition: completed
+    outcome: >-
+      A pre-push or check fails when a declared manifest version
+      differs from origin/main outside version-packages.
+    evidence:
+      - "github.com/victor-software-house/verctl/pull/9"
+      - "474cace on main"
+      - "verctl check --versions plus mise run versions on pre-push"
+      - "merge-base of HEAD vs origin/HEAD, GITHUB_BASE_REF, main, master"
+      - "only version-packages exempt; CI does not skip; tests inject Skip"
+
   - id: VER-005
     title: "Publish native verctl so mise github: can install it"
     scope: release
