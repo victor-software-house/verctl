@@ -29,7 +29,7 @@ queue:
       tables; publish proves changelog headings + default-branch
       history (no commit-subject sniff); GitHub notes come from each
       package CHANGELOG. Still open for archive: lockfile-after-bump
-      (VER-013), hand-edit guard (VER-012).
+      (VER-013). Hand-edit guard is VER-012 on feat/12-block-hand-versions.
 
   - id: VER-012
     title: Block hand-edited versions on the default branch
@@ -42,6 +42,11 @@ queue:
       - version-packages and CI release jobs are exempt.
       - Local fragment-only commits still push.
       - Documented as verctl check --versions or a mise hook.
+    notes: >-
+      Stacked on main after PR #8. `verctl check --versions` plus
+      `mise run versions` on pre-push. Compares declared manifests
+      to origin/HEAD, GITHUB_BASE_REF, main, master. Do not use
+      GITHUB_REF_NAME. Tests inject Skip so CI env cannot hide drift.
 
 horizon:
   - id: VER-013

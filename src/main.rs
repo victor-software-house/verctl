@@ -4,7 +4,7 @@ use serde::Serialize;
 use std::io::{self, Write};
 use std::path::Path;
 use verctl::assets;
-use verctl::cli::{Cli, Command, PrepareArgs, StatusArgs};
+use verctl::cli::{CheckArgs, Cli, Command, PrepareArgs, StatusArgs};
 use verctl::config::Config;
 use verctl::fragment::{self, Bump};
 use verctl::git;
@@ -13,6 +13,7 @@ use verctl::prepare;
 use verctl::process;
 use verctl::publish;
 use verctl::release;
+use verctl::versions;
 
 const INSTRUCTIONS: &str = include_str!("instructions.md");
 
@@ -23,8 +24,14 @@ fn main() -> ExitCode {
             Command::Instructions => io::stdout().write_all(INSTRUCTIONS.as_bytes())?,
             Command::Status(args) => view.show(&status_report(&args)?)?,
             Command::Check(args) => {
-                let ok = fragment::load_dir(&args.dir)?.len();
-                view.show(&CheckReport { ok })?;
+                if args.versions {
+                    let report = versions_report(&args)?;
+                    view.show(&report)?;
+                    report.require()?;
+                } else {
+                    let ok = fragment::load_dir(&args.dir)?.len();
+                    view.show(&CheckReport { ok })?;
+                }
             }
             Command::Prepare(args) => view.show(&prepare_report(&args)?)?,
             Command::Publish(args) => view.show(&publish_report(&args)?)?,
@@ -53,6 +60,70 @@ impl Render for CheckReport {
     fn render_pretty_colored(&self, color: ColorMode) -> String {
         self.pretty(color)
     }
+}
+
+#[derive(Serialize)]
+struct VersionCheckReport {
+    skip: Option<String>,
+    rows: Vec<versions::VersionRow>,
+}
+
+impl VersionCheckReport {
+    fn pretty(&self, color: ColorMode) -> String {
+        if let Some(skip) = &self.skip {
+            return kv(color, [("exempt", skip.clone())]);
+        }
+        let drifted: Vec<&versions::VersionRow> =
+            self.rows.iter().filter(|row| row.drifted()).collect();
+        if drifted.is_empty() {
+            return kv(color, [("versions", "match")]);
+        }
+        let rows: Vec<Vec<String>> = drifted
+            .iter()
+            .map(|row| {
+                vec![
+                    row.name.clone(),
+                    row.remote.clone().unwrap_or_else(|| "-".into()),
+                    row.local.clone(),
+                ]
+            })
+            .collect();
+        grid(color, &["name", "default", "local"], rows)
+    }
+}
+
+impl Render for VersionCheckReport {
+    fn render_pretty(&self) -> String {
+        self.pretty(ColorMode::Always)
+    }
+
+    fn render_pretty_colored(&self, color: ColorMode) -> String {
+        self.pretty(color)
+    }
+}
+
+impl VersionCheckReport {
+    fn require(&self) -> Result<()> {
+        let report = versions::VersionReport {
+            skip: self.skip.clone(),
+            rows: self.rows.clone(),
+        };
+        report.require_clean()
+    }
+}
+
+fn versions_report(args: &CheckArgs) -> Result<VersionCheckReport> {
+    let root = args
+        .config
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let config = Config::load(&args.config)?;
+    let report = versions::report(root, &config)?;
+    Ok(VersionCheckReport {
+        skip: report.skip,
+        rows: report.rows,
+    })
 }
 
 #[derive(Serialize)]

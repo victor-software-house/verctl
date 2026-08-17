@@ -32,6 +32,10 @@ description = "Lint commit messages with committed"
 usage = 'arg "[commits]" default="HEAD" help="Commit or range"'
 run = 'committed "${usage_commits}"'
 
+[tasks.versions]
+description = "Fail if manifest versions differ from the default branch"
+run = "cargo run -- check --versions"
+
 [tasks.verify]
 description = "Format, lint, and test"
 run = "mise run format && mise run lint && cargo test --all-features"

@@ -4,6 +4,42 @@ use git2::{Cred, PushOptions, RemoteCallbacks, Repository, Signature};
 use std::env;
 use std::path::{Path, PathBuf};
 
+#[must_use]
+pub fn current_branch(root: &Path) -> Option<String> {
+    let repo = repo_covering(root)?;
+    let head = repo.head().ok()?;
+    let name = head.shorthand().ok()?;
+    (name != "HEAD").then(|| name.to_owned())
+}
+
+/// File contents on the default-branch tip, if that path exists there.
+pub fn file_on_default(root: &Path, rel: &Path) -> Result<Option<String>> {
+    file_on_default_with(root, rel, &candidate_names(env_base_ref().as_deref()))
+}
+
+pub fn file_on_default_with(
+    root: &Path,
+    rel: &Path,
+    candidates: &[String],
+) -> Result<Option<String>> {
+    let Some(repo) = repo_covering(root) else {
+        return Ok(None);
+    };
+    let Some(commit) = default_upstream_commit(&repo, candidates)? else {
+        return Ok(None);
+    };
+    let tree = commit.tree().context("default-branch tree")?;
+    let Ok(entry) = tree.get_path(rel) else {
+        return Ok(None);
+    };
+    let blob = entry
+        .to_object(&repo)
+        .context("default-branch object")?
+        .peel_to_blob()
+        .with_context(|| format!("default-branch path is not a file: {}", rel.display()))?;
+    Ok(Some(String::from_utf8_lossy(blob.content()).into_owned()))
+}
+
 pub fn origin_url(root: &Path) -> Result<String> {
     let repo = Repository::discover(root).context("open git repository")?;
     let remote = repo.find_remote("origin").context("git remote origin")?;
@@ -97,6 +133,16 @@ fn env_base_ref() -> Option<String> {
 /// being pushed, so `origin/<that branch>` would always match HEAD.
 /// A non-main default on Actions is `origin/HEAD`, which
 /// `actions/publish` writes from `github.event.repository.default_branch`.
+#[must_use]
+pub fn default_branch_candidates() -> Vec<String> {
+    candidate_names(env_base_ref().as_deref())
+}
+
+#[must_use]
+pub fn default_branch_candidates_from(base_ref: Option<&str>) -> Vec<String> {
+    candidate_names(base_ref)
+}
+
 fn candidate_names(base_ref: Option<&str>) -> Vec<String> {
     let mut names = Vec::new();
     if let Some(value) = base_ref.map(str::trim).filter(|value| !value.is_empty()) {
@@ -118,7 +164,7 @@ fn default_upstream_commit<'a>(
         return match peel_remote(repo, &name) {
             Some(commit) => Ok(Some(commit)),
             None => bail!(
-                "publish cannot prove HEAD is on the default branch ({name} is missing; fetch the default branch)"
+                "cannot resolve the default branch ({name} is missing; fetch the default branch)"
             ),
         };
     }
@@ -130,7 +176,7 @@ fn default_upstream_commit<'a>(
     }
     if repo.find_remote("origin").is_ok() {
         bail!(
-            "publish cannot prove HEAD is on the default branch (origin exists but origin/HEAD, origin/main, and origin/master are missing; fetch the default branch)"
+            "cannot resolve the default branch (origin exists but origin/HEAD, origin/main, and origin/master are missing; fetch the default branch)"
         );
     }
     Ok(None)
