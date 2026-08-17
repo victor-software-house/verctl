@@ -263,8 +263,10 @@ pub fn assert_only_allowed(
         ignored
             .include_ignored(true)
             .recurse_ignored_dirs(true)
-            .include_untracked(true)
-            .recurse_untracked_dirs(true);
+            .include_untracked(false);
+        for pattern in globs {
+            ignored.pathspec(pattern.as_str());
+        }
         let ignored = repo
             .statuses(Some(&mut ignored))
             .context("git status (ignored)")?;
