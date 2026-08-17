@@ -1,7 +1,7 @@
 use anyhow::Result;
 use ctl_core::prelude::*;
 use serde::Serialize;
-use std::fmt::Write as _;
+use std::fmt;
 use std::io::{self, Write};
 use std::path::Path;
 use verctl::cli::{Cli, Command, PrepareArgs, StatusArgs};
@@ -63,27 +63,31 @@ struct StatusPackage {
     bump: String,
 }
 
-impl Render for StatusReport {
-    fn render_pretty(&self) -> String {
+impl fmt::Display for StatusReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.pending == 0 {
-            return formatdoc!("pending  0");
+            return writedoc!(f, "pending  0");
         }
-        let mut out = String::new();
         let pending = self.pending;
-        let _ = writedoc!(out, "pending  {pending}\n");
+        writedoc!(f, "pending  {pending}\n")?;
         for fragment in &self.fragments {
             let file = fragment.file.as_str();
             for package in &fragment.packages {
                 let name = package.name.as_str();
                 let bump = package.bump.as_str();
-                let _ = writedoc!(out, "  {name:<32} {bump:<6} {file}\n");
+                writedoc!(f, "  {name:<32} {bump:<6} {file}\n")?;
             }
             let max = fragment.max.as_str();
-            let _ = writedoc!(out, "    max {max}\n");
+            writedoc!(f, "    max {max}\n")?;
         }
         let max = self.max.as_str();
-        let _ = writedoc!(out, "max     {max}");
-        out
+        writedoc!(f, "max     {max}")
+    }
+}
+
+impl Render for StatusReport {
+    fn render_pretty(&self) -> String {
+        self.to_string()
     }
 }
 
@@ -105,38 +109,40 @@ struct PrepareBump {
     bump: String,
 }
 
-impl Render for PrepareReport {
-    fn render_pretty(&self) -> String {
+impl fmt::Display for PrepareReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.pr.as_deref() == Some("no-op") && self.bumps.is_empty() {
-            return formatdoc!("no-op   no version-changing fragments");
+            return writedoc!(f, "no-op   no version-changing fragments");
         }
-        let mut out = String::new();
         for bump in &self.bumps {
             let name = bump.name.as_str();
             let from = bump.from.as_str();
             let to = bump.to.as_str();
             let kind = bump.bump.as_str();
-            let _ = writedoc!(out, "bump    {name}  {from} -> {to}  ({kind})\n");
+            writedoc!(f, "bump    {name}  {from} -> {to}  ({kind})\n")?;
         }
         for line in self.changelog.lines() {
-            let _ = writedoc!(out, "log     {line}\n");
+            writedoc!(f, "log     {line}\n")?;
         }
         for file in &self.consume {
-            let _ = writedoc!(out, "consume {file}\n");
+            writedoc!(f, "consume {file}\n")?;
         }
         if let Some(pr) = &self.pr {
-            let _ = writedoc!(out, "pr      {pr}\n");
+            writedoc!(f, "pr      {pr}\n")?;
         }
         for cmd in &self.next {
-            let _ = writedoc!(out, "next    {cmd}\n");
+            writedoc!(f, "next    {cmd}\n")?;
         }
         if self.dry_run {
-            let _ = writedoc!(out, "dry-run (no files written)\n");
+            writedoc!(f, "dry-run (no files written)\n")?;
         }
-        if out.ends_with('\n') {
-            out.pop();
-        }
-        out
+        Ok(())
+    }
+}
+
+impl Render for PrepareReport {
+    fn render_pretty(&self) -> String {
+        self.to_string()
     }
 }
 
@@ -281,25 +287,27 @@ struct PublishReport {
     dry_run: bool,
 }
 
-impl Render for PublishReport {
-    fn render_pretty(&self) -> String {
+impl fmt::Display for PublishReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.crates.is_empty() && self.release.is_none() {
-            return formatdoc!("no-op   nothing to publish");
+            return writedoc!(f, "no-op   nothing to publish");
         }
-        let mut out = String::new();
         for entry in &self.crates {
-            let _ = writedoc!(out, "crate   {entry}\n");
+            writedoc!(f, "crate   {entry}\n")?;
         }
         if let Some(url) = &self.release {
-            let _ = writedoc!(out, "release {url}\n");
+            writedoc!(f, "release {url}\n")?;
         }
         if self.dry_run {
-            let _ = writedoc!(out, "dry-run (nothing published)\n");
+            writedoc!(f, "dry-run (nothing published)\n")?;
         }
-        if out.ends_with('\n') {
-            out.pop();
-        }
-        out
+        Ok(())
+    }
+}
+
+impl Render for PublishReport {
+    fn render_pretty(&self) -> String {
+        self.to_string()
     }
 }
 

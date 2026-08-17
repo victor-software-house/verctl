@@ -92,14 +92,14 @@ pub fn changelog_sections(plan: &[PlanEntry], fragments: &[Fragment]) -> Result<
         );
         let name = entry.name.as_str();
         let version = entry.to.as_str();
-        let _ = writedoc!(
+        writedoc!(
             sections,
             "
             ## {name} {version}
 
             {bullets}
             "
-        );
+        )?;
     }
     Ok(sections)
 }
