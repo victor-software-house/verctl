@@ -187,11 +187,8 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     }
     let follow_up = prepare::apply_plan(&plan)?;
     let consumed = release::contributing_fragments(&plan, &fragments);
-    let changelog = if args.open_pr() {
-        release::changelog_sections(&plan, &fragments)?
-    } else {
-        String::new()
-    };
+    let changelog = release::changelog_sections(&plan, &fragments)?;
+    release::write_changelogs(&root.join("CHANGELOG.md"), &plan, &fragments)?;
     let consume: Vec<String> = consumed
         .iter()
         .map(|fragment| {
@@ -203,14 +200,12 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
                 .to_owned()
         })
         .collect();
+    let mut paths: Vec<std::path::PathBuf> = plan.iter().map(|entry| entry.path.clone()).collect();
+    paths.push(root.join("CHANGELOG.md"));
+    paths.extend(consumed.iter().map(|fragment| fragment.path.clone()));
+    release::consume_fragments(consumed)?;
     let mut pr = None;
     if let Some(token) = token {
-        release::write_changelogs(&root.join("CHANGELOG.md"), &plan, &fragments)?;
-        let mut paths: Vec<std::path::PathBuf> =
-            plan.iter().map(|entry| entry.path.clone()).collect();
-        paths.push(root.join("CHANGELOG.md"));
-        paths.extend(consumed.iter().map(|fragment| fragment.path.clone()));
-        release::consume_fragments(consumed)?;
         let title = std::env::var("VERCTL_PR_TITLE")
             .unwrap_or_else(|_| "chore(release): version packages".into());
         let message = std::env::var("VERCTL_COMMIT_MESSAGE").unwrap_or_else(|_| title.clone());
@@ -294,18 +289,36 @@ impl fmt::Display for PublishReport {
         if self.packages.is_empty() && self.release.is_none() {
             return writedoc!(f, "{}", kv([("no-op", "nothing to publish")]));
         }
-        let mut rows: Vec<(String, String)> = self
+        let with_notes = self.packages.iter().any(|entry| entry.note.is_some());
+        let headers: &[&str] = if with_notes {
+            &["name", "version", "via", "note"]
+        } else {
+            &["name", "version", "via"]
+        };
+        let rows: Vec<Vec<String>> = self
             .packages
             .iter()
-            .map(|entry| (entry.noun.clone(), entry.text.clone()))
+            .map(|entry| {
+                let mut row = vec![entry.name.clone(), entry.version.clone(), entry.via.clone()];
+                if with_notes {
+                    row.push(entry.note.clone().unwrap_or_default());
+                }
+                row
+            })
             .collect();
+        let mut out = grid(headers, rows);
+        let mut extra = Vec::new();
         if let Some(url) = &self.release {
-            rows.push(("release".into(), url.clone()));
+            extra.push(("release", url.as_str()));
         }
         if self.dry_run {
-            rows.push(("dry-run".into(), "nothing published".into()));
+            extra.push(("dry-run", "nothing published"));
         }
-        writedoc!(f, "{}", kv(rows))
+        if !extra.is_empty() {
+            out.push('\n');
+            out.push_str(&kv(extra));
+        }
+        writedoc!(f, "{out}")
     }
 }
 

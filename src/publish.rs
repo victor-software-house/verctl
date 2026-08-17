@@ -38,8 +38,10 @@ pub struct PublishOutcome {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PublishLine {
-    pub noun: String,
-    pub text: String,
+    pub name: String,
+    pub version: String,
+    pub via: String,
+    pub note: Option<String>,
 }
 
 pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
@@ -77,9 +79,15 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
     let token = crate::release::resolve_token()?;
     let mut packages = Vec::new();
     for entry in &planned.packages {
+        let note = match publish_package(entry)? {
+            status if status.ends_with(" (already)") => Some("already".into()),
+            _ => None,
+        };
         packages.push(PublishLine {
-            noun: entry.noun.clone(),
-            text: publish_package(entry)?,
+            name: entry.name.clone(),
+            version: entry.version.clone(),
+            via: entry.label.clone(),
+            note,
         });
     }
     let repo = github::repo(root)?;
@@ -106,12 +114,11 @@ fn publish_package(entry: &PublishEntry) -> Result<String> {
 
 impl From<&PublishEntry> for PublishLine {
     fn from(entry: &PublishEntry) -> Self {
-        let name = entry.name.as_str();
-        let version = entry.version.as_str();
-        let kind = entry.label.as_str();
         Self {
-            noun: entry.noun.clone(),
-            text: formatdoc!("{name}@{version} ({kind})"),
+            name: entry.name.clone(),
+            version: entry.version.clone(),
+            via: entry.label.clone(),
+            note: None,
         }
     }
 }

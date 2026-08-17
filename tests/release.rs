@@ -112,7 +112,7 @@ fn write_changelogs_renders_fragment_summaries() {
 }
 
 #[test]
-fn local_prepare_does_not_delete_fragments() {
+fn local_prepare_writes_changelog_and_consumes() {
     let root = TempDir::new().unwrap();
     fs::write(
         root.path().join("verctl.toml"),
@@ -156,6 +156,12 @@ fn local_prepare_does_not_delete_fragments() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(frag.exists());
-    assert!(!root.path().join("CHANGELOG.md").exists());
+    assert!(
+        !frag.exists(),
+        "prepare consumes fragments after writing CHANGELOG"
+    );
+    let log = fs::read_to_string(root.path().join("CHANGELOG.md")).unwrap();
+    assert!(log.contains("# Changelog"), "{log}");
+    assert!(log.contains("## demo 1.0.1"), "{log}");
+    assert!(log.contains("Patch."), "{log}");
 }

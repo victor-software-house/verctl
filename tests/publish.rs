@@ -1,12 +1,42 @@
 //! `publish --dry-run` prints the stock command plan and writes nothing.
 #![allow(missing_docs)]
 
+use ctl_core::{grid, kv};
 use indoc::indoc;
 use std::fs;
 use tempfile::TempDir;
 
+fn strip_ansi(text: &str) -> String {
+    let mut out = String::new();
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' {
+            for next in chars.by_ref() {
+                if next == 'm' {
+                    break;
+                }
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+#[allow(clippy::unwrap_used)]
+fn publish_stdout(root: &std::path::Path) -> String {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+        .current_dir(root)
+        .args(["publish", "--dry-run", "--color", "never"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    strip_ansi(&String::from_utf8_lossy(&output.stdout))
+}
+
 #[test]
-fn dry_run_lists_cargo_crate() {
+fn dry_run_lists_one_cargo_crate() {
     let root = TempDir::new().unwrap();
     fs::write(
         root.path().join("verctl.toml"),
@@ -26,28 +56,27 @@ fn dry_run_lists_cargo_crate() {
         "#},
     )
     .unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
-        .current_dir(root.path())
-        .args(["publish", "--dry-run"])
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(output.status.success(), "{stderr}");
-    assert!(stdout.contains("crate"), "{stdout}");
-    assert!(stdout.contains("demo@0.0.1 (cargo)"), "{stdout}");
-    assert!(stdout.contains("release"), "{stdout}");
-    assert!(stdout.contains("would create v0.0.1"), "{stdout}");
-    assert!(stdout.contains("dry-run"), "{stdout}");
-    assert!(stdout.contains('│') || stdout.contains('|'), "{stdout}");
+    let mut expected = grid(
+        &["name", "version", "via"],
+        [vec!["demo".into(), "0.0.1".into(), "cargo".into()]],
+    );
+    expected.push('\n');
+    expected.push_str(&kv([
+        ("release", "would create v0.0.1"),
+        ("dry-run", "nothing published"),
+    ]));
+    assert_eq!(publish_stdout(root.path()), strip_ansi(&expected));
 }
 
 #[test]
-fn dry_run_lists_bun_package() {
+fn dry_run_lists_many_packages() {
     let root = TempDir::new().unwrap();
     fs::write(
         root.path().join("verctl.toml"),
         indoc! {r#"
+            [[packages]]
+            name = "demo"
+            path = "Cargo.toml"
             [[packages]]
             name = "@org/pkg"
             path = "package.json"
@@ -56,22 +85,32 @@ fn dry_run_lists_bun_package() {
     )
     .unwrap();
     fs::write(
-        root.path().join("package.json"),
+        root.path().join("Cargo.toml"),
         indoc! {r#"
-            { "name": "@org/pkg", "version": "0.0.1" }
+            [package]
+            name = "demo"
+            version = "0.0.1"
         "#},
     )
     .unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
-        .current_dir(root.path())
-        .args(["publish", "--dry-run"])
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(output.status.success(), "{stderr}");
-    assert!(stdout.contains("package"), "{stdout}");
-    assert!(stdout.contains("@org/pkg@0.0.1 (bun github)"), "{stdout}");
-    assert!(!stdout.contains("crate   @org"), "{stdout}");
-    assert!(stdout.contains('│') || stdout.contains('|'), "{stdout}");
+    fs::write(
+        root.path().join("package.json"),
+        indoc! {r#"
+            { "name": "@org/pkg", "version": "0.0.2" }
+        "#},
+    )
+    .unwrap();
+    let mut expected = grid(
+        &["name", "version", "via"],
+        [
+            vec!["demo".into(), "0.0.1".into(), "cargo".into()],
+            vec!["@org/pkg".into(), "0.0.2".into(), "bun github".into()],
+        ],
+    );
+    expected.push('\n');
+    expected.push_str(&kv([
+        ("release", "would create v0.0.1"),
+        ("dry-run", "nothing published"),
+    ]));
+    assert_eq!(publish_stdout(root.path()), strip_ansi(&expected));
 }
