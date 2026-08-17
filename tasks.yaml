@@ -91,10 +91,17 @@ horizon:
     open: >-
       Measured on run 32078158505: plan took 33s, of which 21s was mise
       plus rust-cache, and verify did not start until 37s in. It needs
-      verctl and verctl.toml, not cargo. Decide between dropping
-      rust-cache from that job and running verctl from the release
-      tarball (mise -E release) rather than a dev build. Efficiency
-      only — the runner contract itself is settled (VER-015).
+      verctl and verctl.toml, not cargo. The tarball is the fix and it
+      is gated, not undecided: `git show v0.0.2:src/ci.rs` does not
+      resolve, so the published binary has no `ci` verb and
+      MISE_ENV=release cannot plan until a release carries VER-015.
+      Flip the plan job then and delete its toolchain steps. Rejected
+      meanwhile: a stable-rust plan job, which trades a second
+      toolchain and a cold cache for ~13s; and one rust-cache key
+      across plan and verify, since rust-cache saves only when the key
+      is absent, so plan's dev-binary target dir would land first and
+      leave verify a thinner cache than its own. Efficiency only — the
+      runner contract itself is settled (VER-015).
 
   - id: VER-013
     title: Stock lockfile refresh after cargo bumps

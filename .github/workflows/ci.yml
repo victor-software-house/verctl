@@ -24,6 +24,12 @@ jobs:
   # runs-on must be known before a job exists, so the machine cannot come
   # from a tool running inside that job. This reads [ci] and hands
   # the labels down, the same bootstrap the publish lane uses for assets.
+  #
+  # examples/workflows/ci.yml plans with the released tarball and needs no
+  # compiler. This one cannot yet: the published binary has no `ci` verb, so
+  # `mise run ver` builds it. It moves to MISE_ENV=release once a release
+  # carries the verb; mise still installs the tarball then, but the nightly
+  # toolchain and rust-cache below go away.
   plan:
     name: Plan
     runs-on: ubuntu-latest

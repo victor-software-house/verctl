@@ -4,6 +4,10 @@ min_version = "2026.7.7"
 experimental = true
 lockfile = true
 
+# `verctl pin` rewrites this pin and the ?ref= below after each publish, so it
+# names the last release while the workflows beside it are written against HEAD.
+# A verb added since that release is not in this tarball yet — pin the release
+# that carries the verb you copied.
 [tools]
 "github:victor-software-house/verctl" = "0.0.2"
 
