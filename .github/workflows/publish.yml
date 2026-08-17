@@ -95,18 +95,31 @@ jobs:
           cache: true
           install: false
       - name: Pin with the tarball just published
+        id: pin
         env:
           TAG: ${{ needs.crate.outputs.tag }}
         run: |
           set -euo pipefail
+          case "$TAG" in
+            v[0-9]*) ;;
+            *)
+              echo "unexpected tag: '$TAG'" >&2
+              exit 1
+              ;;
+          esac
           version="${TAG#v}"
-          mise x "github:victor-software-house/verctl@${version}" -- verctl pin
+          if [ -z "$version" ]; then
+            echo "empty version from tag '$TAG'" >&2
+            exit 1
+          fi
+          mise x "github:victor-software-house/verctl@${version}" -- \
+            verctl pin --format json >"$RUNNER_TEMP/pin.json"
       - run: mise -E release lock
       - name: Commit released pins
         run: |
           set -euo pipefail
-          # [[pins]] plus mise.<env>.lock. Only tracked files.
-          git add -u
+          mapfile -t files < <(jq -r '.files[]' "$RUNNER_TEMP/pin.json")
+          git add -- "${files[@]}" mise.release.lock
           if git diff --cached --quiet; then
             exit 0
           fi

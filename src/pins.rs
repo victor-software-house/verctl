@@ -19,6 +19,20 @@ pub fn current_versions(root: &Path, config: &Config) -> Result<Vec<(String, Str
 }
 
 pub fn write(root: &Path, pins: &[Pin], versions: &[(String, String)]) -> Result<Vec<PathBuf>> {
+    apply(root, pins, versions, true)
+}
+
+/// Same checks as `write`, without touching disk.
+pub fn plan(root: &Path, pins: &[Pin], versions: &[(String, String)]) -> Result<Vec<PathBuf>> {
+    apply(root, pins, versions, false)
+}
+
+fn apply(
+    root: &Path,
+    pins: &[Pin],
+    versions: &[(String, String)],
+    persist: bool,
+) -> Result<Vec<PathBuf>> {
     let mut written = Vec::new();
     for pin in pins {
         let Some((_, version)) = versions.iter().find(|(name, _)| name == &pin.package) else {
@@ -35,19 +49,14 @@ pub fn write(root: &Path, pins: &[Pin], versions: &[(String, String)]) -> Result
             .get_mut("tools")
             .and_then(Item::as_table_like_mut)
             .with_context(|| format!("{} has no [tools]", path.display()))?;
-        let previous = tools
-            .get(&pin.tool)
-            .and_then(Item::as_str)
-            .map(ToOwned::to_owned);
-        if previous.is_none() {
+        if tools.get(&pin.tool).is_none() {
             bail!("{} has no tools.{tool}", path.display(), tool = pin.tool);
         }
         tools.insert(&pin.tool, value(version.as_str()));
-        let mut body = doc.to_string();
-        if let Some(previous) = previous {
-            body = rewrite_own_refs(&body, &pin.tool, &previous, version);
+        let body = rewrite_own_refs(&doc.to_string(), &pin.tool, version);
+        if persist {
+            fs::write(&path, body).with_context(|| format!("write pin {}", path.display()))?;
         }
-        fs::write(&path, body).with_context(|| format!("write pin {}", path.display()))?;
         written.push(path);
     }
     Ok(written)
@@ -75,14 +84,14 @@ fn ensure_inside(root: &Path, file: &Path) -> Result<()> {
     Ok(())
 }
 
-fn rewrite_own_refs(body: &str, tool: &str, previous: &str, version: &str) -> String {
-    let repo = tool.rsplit(':').next().unwrap_or(tool);
-    let from = format!("?ref=v{previous}");
-    let to = format!("?ref=v{version}");
+fn rewrite_own_refs(body: &str, tool: &str, version: &str) -> String {
+    let name = tool.rsplit(['/', ':']).next().unwrap_or(tool);
+    let marker_git = format!("/{name}.git");
+    let marker_path = format!("/{name}//");
     let mut out = String::new();
     for line in body.lines() {
-        if line.contains(repo) {
-            out.push_str(&line.replace(&from, &to));
+        if line.contains(&marker_git) || line.contains(&marker_path) {
+            out.push_str(&rewrite_ref_version(line, version));
         } else {
             out.push_str(line);
         }
@@ -91,12 +100,22 @@ fn rewrite_own_refs(body: &str, tool: &str, previous: &str, version: &str) -> St
     out
 }
 
-#[must_use]
-pub fn planned_files(root: &Path, pins: &[Pin], versions: &[(String, String)]) -> Vec<String> {
-    pins.iter()
-        .filter(|pin| versions.iter().any(|(name, _)| name == &pin.package))
-        .map(|pin| root.join(&pin.file).display().to_string())
-        .collect()
+fn rewrite_ref_version(line: &str, version: &str) -> String {
+    let Some(start) = line.find("?ref=v") else {
+        return line.to_owned();
+    };
+    let rest = &line[start + 6..];
+    let end = rest
+        .find(|ch: char| !ch.is_ascii_digit() && ch != '.')
+        .unwrap_or(rest.len());
+    if end == 0 {
+        return line.to_owned();
+    }
+    format!(
+        "{prefix}?ref=v{version}{suffix}",
+        prefix = &line[..start],
+        suffix = &rest[end..]
+    )
 }
 
 #[cfg(test)]
@@ -213,6 +232,31 @@ mod tests {
         write(root.path(), &pins, &versions("0.0.2")).unwrap();
         let body = fs::read_to_string(&path).unwrap();
         assert!(body.contains("qctl.git//tasks/q?ref=v0.0.1"), "{body}");
+    }
+
+    #[test]
+    fn rewrites_any_semver_ref_on_this_package_include() {
+        let root = TempDir::new().unwrap();
+        let path = root.path().join("mise.toml");
+        fs::write(
+            &path,
+            indoc! {r#"
+                [tools]
+                "github:victor-software-house/verctl" = "0.0.1"
+                [task_config]
+                includes = ["git::https://example.com/verctl.git//tasks/ver?ref=v1.2.3"]
+            "#},
+        )
+        .unwrap();
+        let pins = [Pin {
+            file: PathBuf::from("mise.toml"),
+            tool: "github:victor-software-house/verctl".into(),
+            package: "verctl".into(),
+        }];
+        write(root.path(), &pins, &versions("0.0.2")).unwrap();
+        let body = fs::read_to_string(&path).unwrap();
+        assert!(body.contains("verctl.git//tasks/ver?ref=v0.0.2"), "{body}");
+        assert!(!body.contains("?ref=v1.2.3"), "{body}");
     }
 
     #[test]
