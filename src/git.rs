@@ -49,33 +49,9 @@ pub fn commit_branch_and_push(
         .context("git HEAD")?
         .peel_to_commit()
         .context("HEAD commit")?;
-    let mut index = repo.index().context("git index")?;
-    for path in paths {
-        let rel = path.strip_prefix(&workdir).unwrap_or(path);
-        if path.exists() {
-            index
-                .add_path(rel)
-                .with_context(|| format!("git add {}", rel.display()))?;
-        } else {
-            let _ = index.remove_path(rel);
-        }
-    }
-    index.write().context("write index")?;
-    let tree_id = index.write_tree().context("write tree")?;
-    if parent.tree_id() == tree_id {
+    let Some(_) = write_commit_on_branch(&repo, &workdir, &parent, branch, message, paths)? else {
         return Ok(PushOutcome::Empty);
-    }
-    let tree = repo.find_tree(tree_id).context("find tree")?;
-    let sig = signature(&repo)?;
-    repo.commit(
-        Some(&format!("refs/heads/{branch}")),
-        &sig,
-        &sig,
-        message,
-        &tree,
-        &[&parent],
-    )
-    .context("git commit")?;
+    };
 
     let https = format!("https://github.com/{}/{}.git", github.owner, github.name);
     let mut remote = repo
@@ -91,6 +67,48 @@ pub fn commit_branch_and_push(
         .push(&[&refspec], Some(&mut opts))
         .context("git push")?;
     Ok(PushOutcome::Pushed)
+}
+
+fn write_commit_on_branch(
+    repo: &Repository,
+    workdir: &Path,
+    parent: &git2::Commit<'_>,
+    branch: &str,
+    message: &str,
+    paths: &[PathBuf],
+) -> Result<Option<git2::Oid>> {
+    let parent_tree = parent.tree().context("HEAD tree")?;
+    let mut index = repo.index().context("git index")?;
+    index
+        .read_tree(&parent_tree)
+        .context("reset index to HEAD")?;
+    for path in paths {
+        let rel = path.strip_prefix(workdir).unwrap_or(path.as_path());
+        if path.exists() {
+            index
+                .add_path(rel)
+                .with_context(|| format!("git add {}", rel.display()))?;
+        } else {
+            let _ = index.remove_path(rel);
+        }
+    }
+    let tree_id = index.write_tree().context("write tree")?;
+    if tree_id == parent_tree.id() {
+        return Ok(None);
+    }
+    let tree = repo.find_tree(tree_id).context("find tree")?;
+    let sig = signature(repo)?;
+    let oid = repo
+        .commit(
+            Some(&format!("refs/heads/{branch}")),
+            &sig,
+            &sig,
+            message,
+            &tree,
+            &[parent],
+        )
+        .context("git commit")?;
+    Ok(Some(oid))
 }
 
 fn signature(repo: &Repository) -> Result<Signature<'static>> {
@@ -113,6 +131,8 @@ fn signature(repo: &Repository) -> Result<Signature<'static>> {
 mod tests {
     use super::origin_url;
     use git2::{Repository, Signature};
+    use indoc::indoc;
+    use std::path::Path;
 
     #[test]
     fn origin_url_from_discovered_repo() {
@@ -165,5 +185,61 @@ mod tests {
         .unwrap();
         assert_eq!(out, super::PushOutcome::Empty);
         assert_eq!(repo.head().unwrap().name().unwrap(), before);
+    }
+
+    #[test]
+    fn commit_only_lists_given_paths() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let sig = Signature::now("t", "t@example.com").unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                version = "1.0.0"
+            "#},
+        )
+        .unwrap();
+        {
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new("Cargo.toml")).unwrap();
+            let tid = index.write_tree().unwrap();
+            let tree = repo.find_tree(tid).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+                .unwrap();
+        }
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                version = "1.0.1"
+            "#},
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("secret.env"),
+            indoc! {"
+                TOKEN=leak
+            "},
+        )
+        .unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        let oid = super::write_commit_on_branch(
+            &repo,
+            dir.path(),
+            &parent,
+            "version-packages",
+            "chore",
+            &[dir.path().join("Cargo.toml")],
+        )
+        .unwrap()
+        .expect("commit");
+        let tree = repo.find_commit(oid).unwrap().tree().unwrap();
+        assert!(tree.get_name("Cargo.toml").is_some());
+        assert!(tree.get_name("secret.env").is_none());
+        assert_eq!(
+            repo.head().unwrap().peel_to_commit().unwrap().id(),
+            parent.id()
+        );
     }
 }
