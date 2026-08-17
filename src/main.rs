@@ -292,18 +292,20 @@ struct PublishReport {
 impl fmt::Display for PublishReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.packages.is_empty() && self.release.is_none() {
-            return writedoc!(f, "no-op   nothing to publish");
+            return writedoc!(f, "{}", kv([("no-op", "nothing to publish")]));
         }
-        for entry in &self.packages {
-            writedoc!(f, "{:<7} {}\n", entry.noun, entry.text)?;
-        }
+        let mut rows: Vec<(String, String)> = self
+            .packages
+            .iter()
+            .map(|entry| (entry.noun.clone(), entry.text.clone()))
+            .collect();
         if let Some(url) = &self.release {
-            writedoc!(f, "release {url}\n")?;
+            rows.push(("release".into(), url.clone()));
         }
         if self.dry_run {
-            writedoc!(f, "dry-run (nothing published)\n")?;
+            rows.push(("dry-run".into(), "nothing published".into()));
         }
-        Ok(())
+        writedoc!(f, "{}", kv(rows))
     }
 }
 
@@ -339,19 +341,30 @@ struct AssetsReport {
 impl fmt::Display for AssetsReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if !self.plan.has_assets {
-            return writedoc!(f, "assets  none (library or a single host build is enough)");
+            return writedoc!(
+                f,
+                "{}",
+                kv([("assets", "none (library or one host build is enough)")])
+            );
         }
-        for row in &self.plan.matrix.include {
-            writedoc!(f, "target  {}  {}  {}\n", row.id, row.runner, row.asset)?;
-        }
-        writedoc!(f, "tag     {}\n", self.plan.tag)?;
+        let rows: Vec<Vec<String>> = self
+            .plan
+            .matrix
+            .include
+            .iter()
+            .map(|row| vec![row.id.clone(), row.runner.clone(), row.asset.clone()])
+            .collect();
+        let mut out = grid(&["target", "runner", "asset"], rows);
+        let mut extra = vec![("tag", self.plan.tag.as_str())];
         if let Some(path) = &self.tarball {
-            writedoc!(f, "tarball {path}\n")?;
+            extra.push(("tarball", path.as_str()));
         }
         if let Some(url) = &self.uploaded {
-            writedoc!(f, "upload  {url}\n")?;
+            extra.push(("upload", url.as_str()));
         }
-        Ok(())
+        out.push('\n');
+        out.push_str(&kv(extra));
+        writedoc!(f, "{out}")
     }
 }
 

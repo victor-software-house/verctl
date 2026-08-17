@@ -243,16 +243,13 @@ mod tests {
         let (_, argv) = bun
             .render("bun", Path::new("packages/pkg/package.json"), None)
             .unwrap();
+        #[rustfmt::skip]
         assert_eq!(
             argv,
             [
-                "bun",
-                "publish",
-                "--tolerate-republish",
-                "--cwd",
-                "packages/pkg",
-                "--access",
-                "public",
+                "bun", "publish", "--tolerate-republish",
+                "--cwd", "packages/pkg",
+                "--access", "public",
             ]
         );
     }

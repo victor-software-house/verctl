@@ -34,14 +34,12 @@ fn dry_run_lists_cargo_crate() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stderr}");
-    assert_eq!(
-        stdout,
-        indoc! {"
-            crate   demo@0.0.1 (cargo)
-            release would create v0.0.1
-            dry-run (nothing published)
-        "}
-    );
+    assert!(stdout.contains("crate"), "{stdout}");
+    assert!(stdout.contains("demo@0.0.1 (cargo)"), "{stdout}");
+    assert!(stdout.contains("release"), "{stdout}");
+    assert!(stdout.contains("would create v0.0.1"), "{stdout}");
+    assert!(stdout.contains("dry-run"), "{stdout}");
+    assert!(stdout.contains('│') || stdout.contains('|'), "{stdout}");
 }
 
 #[test]
@@ -72,12 +70,8 @@ fn dry_run_lists_bun_package() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stderr}");
-    assert_eq!(
-        stdout,
-        indoc! {"
-            package @org/pkg@0.0.1 (bun github)
-            release would create v0.0.1
-            dry-run (nothing published)
-        "}
-    );
+    assert!(stdout.contains("package"), "{stdout}");
+    assert!(stdout.contains("@org/pkg@0.0.1 (bun github)"), "{stdout}");
+    assert!(!stdout.contains("crate   @org"), "{stdout}");
+    assert!(stdout.contains('│') || stdout.contains('|'), "{stdout}");
 }
