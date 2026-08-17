@@ -57,7 +57,6 @@ keys = ["version"]
 # are built in, so naming one is enough — it keeps free hosted minutes.
 #
 # [assets.darwin-arm64]
-# [assets.linux-x64]
 #
 # Name a `runner` only when the built-in machine is wrong. One tarball is one
 # machine, so this is one name and not a list:
