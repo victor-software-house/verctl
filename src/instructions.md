@@ -66,9 +66,10 @@ require GitHub auth.
 `publish` ships the versions already on HEAD: `cargo publish --locked`
 for Cargo.toml, `bun publish --tolerate-republish` for package.json
 (never `npm publish`), then a GitHub Release `v{version}`. GitHub
-Packages is `registry = "github"` (`--registry npm.pkg.github.com`);
-auth is `bunfig.toml` + `GITHUB_TOKEN`, not `.npmrc`. Cargo already
-on crates.io is treated as success. `--dry-run` prints the plan.
+Packages is `registry = "github"`. A nearby `bunfig.toml` is
+`--config` and owns scopes (`$GITHUB_TOKEN`); `--registry` is only
+the fallback when there is no bunfig. Cargo already on crates.io is
+treated as success. `--dry-run` prints the plan.
 
 Happy path after the Version PR merges is
 `victor-software-house/verctl/actions/publish`. It runs when the

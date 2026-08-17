@@ -19,7 +19,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event.pull_request.merged &&
        github.event.pull_request.head.ref == 'version-packages')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     outputs:
       has_assets: ${{ steps.plan.outputs.has_assets }}
       tag: ${{ steps.plan.outputs.tag }}

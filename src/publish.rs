@@ -12,6 +12,7 @@ use crate::github;
 use crate::process;
 use anyhow::{Context, Result, bail};
 use ctl_core::formatdoc;
+use serde::Serialize;
 use std::path::Path;
 use std::time::Duration;
 
@@ -30,6 +31,7 @@ pub struct PublishEntry {
     pub kind: PublishKind,
     pub path: std::path::PathBuf,
     pub registry: Option<String>,
+    pub bunfig: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,8 +42,14 @@ pub enum PublishKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishOutcome {
-    pub crates: Vec<String>,
+    pub packages: Vec<PublishLine>,
     pub release: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PublishLine {
+    pub noun: &'static str,
+    pub text: String,
 }
 
 pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
@@ -56,8 +64,9 @@ pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
             name: spec.name.clone(),
             version,
             kind,
-            path,
+            path: path.clone(),
             registry: spec.registry.clone(),
+            bunfig: find_bunfig(&path),
         });
     }
     let tag = tag_for(&packages);
@@ -68,23 +77,17 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
     let planned = plan(config, root)?;
     if dry_run {
         return Ok(PublishOutcome {
-            crates: planned
-                .packages
-                .iter()
-                .map(|entry| {
-                    let name = entry.name.as_str();
-                    let version = entry.version.as_str();
-                    let kind = entry.label();
-                    formatdoc!("{name}@{version} ({kind})")
-                })
-                .collect(),
+            packages: planned.packages.iter().map(PublishLine::from).collect(),
             release: Some(formatdoc!("would create {tag}", tag = planned.tag)),
         });
     }
     let token = crate::release::resolve_token()?;
-    let mut crates = Vec::new();
+    let mut packages = Vec::new();
     for entry in &planned.packages {
-        crates.push(publish_package(entry)?);
+        packages.push(PublishLine {
+            noun: entry.noun(),
+            text: publish_package(entry)?,
+        });
     }
     let repo = github::repo(root)?;
     let notes = release_notes(root);
@@ -94,7 +97,7 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
     );
     let release = github::ensure_release(&token, &repo, &planned.tag, &name, &notes)?;
     Ok(PublishOutcome {
-        crates,
+        packages,
         release: Some(release),
     })
 }
@@ -115,7 +118,17 @@ impl PublishEntry {
     pub fn command(&self) -> Vec<String> {
         match self.kind {
             PublishKind::Cargo => cargo_command(&self.path, self.registry.as_deref()),
-            PublishKind::Bun => bun_command(&self.path, self.registry.as_deref()),
+            PublishKind::Bun => {
+                bun_command(&self.path, self.registry.as_deref(), self.bunfig.as_deref())
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn noun(&self) -> &'static str {
+        match self.kind {
+            PublishKind::Cargo => "crate",
+            PublishKind::Bun => "package",
         }
     }
 
@@ -150,7 +163,7 @@ fn cargo_command(manifest: &Path, registry: Option<&str>) -> Vec<String> {
     cmd
 }
 
-fn bun_command(manifest: &Path, registry: Option<&str>) -> Vec<String> {
+fn bun_command(manifest: &Path, registry: Option<&str>, bunfig: Option<&Path>) -> Vec<String> {
     let dir = manifest
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -163,21 +176,53 @@ fn bun_command(manifest: &Path, registry: Option<&str>) -> Vec<String> {
         "--cwd".into(),
         cwd,
     ];
+    if let Some(config) = bunfig {
+        cmd.push("--config".into());
+        cmd.push(config.display().to_string());
+    }
     match registry {
         None | Some("npm") => {
             cmd.push("--access".into());
             cmd.push("public".into());
         }
+        Some("github") if bunfig.is_some() => {}
         Some("github") => {
             cmd.push("--registry".into());
             cmd.push("https://npm.pkg.github.com".into());
         }
-        Some(url) => {
+        Some(url) if bunfig.is_none() => {
             cmd.push("--registry".into());
             cmd.push(url.to_owned());
         }
+        Some(_) => {}
     }
     cmd
+}
+
+fn find_bunfig(manifest: &Path) -> Option<std::path::PathBuf> {
+    let start = manifest.parent().unwrap_or(manifest);
+    for dir in start.ancestors() {
+        let candidate = dir.join("bunfig.toml");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        if dir.join(".git").exists() {
+            break;
+        }
+    }
+    None
+}
+
+impl From<&PublishEntry> for PublishLine {
+    fn from(entry: &PublishEntry) -> Self {
+        let name = entry.name.as_str();
+        let version = entry.version.as_str();
+        let kind = entry.label();
+        Self {
+            noun: entry.noun(),
+            text: formatdoc!("{name}@{version} ({kind})"),
+        }
+    }
 }
 
 fn already_published(message: &str) -> bool {
@@ -260,6 +305,7 @@ mod tests {
             kind: PublishKind::Cargo,
             path: PathBuf::from("Cargo.toml"),
             registry: None,
+            bunfig: None,
         }
     }
 
@@ -270,6 +316,7 @@ mod tests {
             kind: PublishKind::Bun,
             path: PathBuf::from("packages/pkg/package.json"),
             registry: registry.map(str::to_owned),
+            bunfig: None,
         }
     }
 
@@ -335,6 +382,24 @@ mod tests {
         assert_eq!(
             bun(Some("https://registry.example/npm/")).command()[6],
             "https://registry.example/npm/"
+        );
+    }
+
+    #[test]
+    fn bunfig_owns_github_registry() {
+        let mut entry = bun(Some("github"));
+        entry.bunfig = Some(PathBuf::from("bunfig.toml"));
+        assert_eq!(
+            entry.command(),
+            [
+                "bun",
+                "publish",
+                "--tolerate-republish",
+                "--cwd",
+                "packages/pkg",
+                "--config",
+                "bunfig.toml",
+            ]
         );
     }
 

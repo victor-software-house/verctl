@@ -75,7 +75,7 @@ fn dry_run_lists_bun_package() {
     assert_eq!(
         stdout,
         indoc! {"
-            crate   @org/pkg@0.0.1 (bun github)
+            package @org/pkg@0.0.1 (bun github)
             release would create v0.0.1
             dry-run (nothing published)
         "}

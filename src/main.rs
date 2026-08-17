@@ -284,18 +284,18 @@ fn preview_report(
 
 #[derive(Serialize)]
 struct PublishReport {
-    crates: Vec<String>,
+    packages: Vec<publish::PublishLine>,
     release: Option<String>,
     dry_run: bool,
 }
 
 impl fmt::Display for PublishReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.crates.is_empty() && self.release.is_none() {
+        if self.packages.is_empty() && self.release.is_none() {
             return writedoc!(f, "no-op   nothing to publish");
         }
-        for entry in &self.crates {
-            writedoc!(f, "crate   {entry}\n")?;
+        for entry in &self.packages {
+            writedoc!(f, "{:<7} {}\n", entry.noun, entry.text)?;
         }
         if let Some(url) = &self.release {
             writedoc!(f, "release {url}\n")?;
@@ -322,7 +322,7 @@ fn publish_report(args: &verctl::cli::PublishArgs) -> Result<PublishReport> {
         .unwrap_or_else(|| Path::new("."));
     let outcome = publish::run(&config, root, args.dry_run())?;
     Ok(PublishReport {
-        crates: outcome.crates,
+        packages: outcome.packages,
         release: outcome.release,
         dry_run: args.dry_run(),
     })

@@ -136,7 +136,32 @@ impl PackageSpec {
 pub struct Assets {
     pub bin: Option<String>,
     #[serde(default)]
-    pub targets: Vec<String>,
+    pub targets: Vec<AssetTarget>,
+}
+
+/// `"linux-x64"` or `{ id = "linux-x64", runner = "ubuntu-24.04" }`.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum AssetTarget {
+    Id(String),
+    Spec { id: String, runner: Option<String> },
+}
+
+impl AssetTarget {
+    #[must_use]
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Id(id) | Self::Spec { id, .. } => id,
+        }
+    }
+
+    #[must_use]
+    pub fn runner(&self) -> Option<&str> {
+        match self {
+            Self::Id(_) => None,
+            Self::Spec { runner, .. } => runner.as_deref(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

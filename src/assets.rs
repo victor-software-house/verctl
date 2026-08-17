@@ -49,13 +49,13 @@ struct Known {
 const KNOWN: &[Known] = &[
     Known {
         id: "darwin-arm64",
-        runner: "macos-14",
+        runner: "macos-latest",
         triple: "aarch64-apple-darwin",
         asset_os_arch: "macos_arm64",
     },
     Known {
         id: "linux-x64",
-        runner: "ubuntu-24.04",
+        runner: "ubuntu-latest",
         triple: "x86_64-unknown-linux-gnu",
         asset_os_arch: "linux_x64",
     },
@@ -80,11 +80,11 @@ pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
         .as_ref()
         .map_or(&[][..], |assets| assets.targets.as_slice());
     let mut include = Vec::new();
-    for id in ids {
-        let known = known(id)?;
+    for spec in ids {
+        let known = known(spec.id())?;
         include.push(MatrixTarget {
             id: known.id.to_owned(),
-            runner: known.runner.to_owned(),
+            runner: spec.runner().unwrap_or(known.runner).to_owned(),
             triple: known.triple.to_owned(),
             asset: format!("{bin}_{version}_{}.tar.gz", known.asset_os_arch),
         });
@@ -185,6 +185,17 @@ mod tests {
         toml::from_str(toml).map_err(Into::into)
     }
 
+    fn write_cargo(root: &std::path::Path, version: &str) {
+        std::fs::write(
+            root.join("Cargo.toml"),
+            indoc::formatdoc! {r#"
+                [package]
+                version = "{version}"
+            "#},
+        )
+        .unwrap();
+    }
+
     #[test]
     fn omitted_assets_means_no_native_jobs() {
         let config = load(indoc::indoc! {r#"
@@ -194,11 +205,7 @@ mod tests {
         "#})
         .unwrap();
         let root = tempfile::TempDir::new().unwrap();
-        std::fs::write(
-            root.path().join("Cargo.toml"),
-            "[package]\nversion = \"0.0.1\"\n",
-        )
-        .unwrap();
+        write_cargo(root.path(), "0.0.1");
         let planned = plan(&config, root.path()).unwrap();
         assert!(!planned.has_assets);
         assert_eq!(planned.matrix.include.len(), 0);
@@ -216,20 +223,32 @@ mod tests {
         "#})
         .unwrap();
         let root = tempfile::TempDir::new().unwrap();
-        std::fs::write(
-            root.path().join("Cargo.toml"),
-            "[package]\nversion = \"1.2.3\"\n",
-        )
-        .unwrap();
+        write_cargo(root.path(), "1.2.3");
         let planned = plan(&config, root.path()).unwrap();
         assert!(planned.has_assets);
         assert_eq!(planned.matrix.include.len(), 1);
         assert_eq!(planned.matrix.include[0].id, "linux-x64");
-        assert_eq!(planned.matrix.include[0].runner, "ubuntu-24.04");
+        assert_eq!(planned.matrix.include[0].runner, "ubuntu-latest");
         assert_eq!(
             planned.matrix.include[0].asset,
             "verctl_1.2.3_linux_x64.tar.gz"
         );
+    }
+
+    #[test]
+    fn runner_override_beats_latest() {
+        let config = load(indoc::indoc! {r#"
+            [[packages]]
+            name = "verctl"
+            path = "Cargo.toml"
+            [assets]
+            targets = [{ id = "darwin-arm64", runner = "macos-15" }]
+        "#})
+        .unwrap();
+        let root = tempfile::TempDir::new().unwrap();
+        write_cargo(root.path(), "0.0.1");
+        let planned = plan(&config, root.path()).unwrap();
+        assert_eq!(planned.matrix.include[0].runner, "macos-15");
     }
 
     #[test]
@@ -244,11 +263,7 @@ mod tests {
         "#})
         .unwrap();
         let root = tempfile::TempDir::new().unwrap();
-        std::fs::write(
-            root.path().join("Cargo.toml"),
-            "[package]\nversion = \"0.0.1\"\n",
-        )
-        .unwrap();
+        write_cargo(root.path(), "0.0.1");
         let planned = plan(&config, root.path()).unwrap();
         assert_eq!(
             planned
@@ -263,6 +278,7 @@ mod tests {
             planned.matrix.include[0].asset,
             "verctl_0.0.1_macos_arm64.tar.gz"
         );
+        assert_eq!(planned.matrix.include[0].runner, "macos-latest");
     }
 
     #[test]
@@ -280,11 +296,7 @@ mod tests {
         "#})
         .unwrap();
         let root = tempfile::TempDir::new().unwrap();
-        std::fs::write(
-            root.path().join("Cargo.toml"),
-            "[package]\nversion = \"0.0.1\"\n",
-        )
-        .unwrap();
+        write_cargo(root.path(), "0.0.1");
         let planned = plan(&config, root.path()).unwrap();
         let out = root.path().join("out");
         super::write_github_output(&planned, &out).unwrap();

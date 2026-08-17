@@ -31,3 +31,5 @@ keys = ["version"]
 # every consumer you care about.
 # [assets]
 # targets = ["darwin-arm64", "linux-x64"]
+# Pin a runner only when latest is wrong:
+# targets = [{ id = "darwin-arm64", runner = "macos-15" }]
