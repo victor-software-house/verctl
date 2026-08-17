@@ -23,5 +23,7 @@ pub fn apply(current: &str, bump: Bump) -> Result<String> {
             version.patch = 0;
         }
     }
+    version.pre = semver::Prerelease::EMPTY;
+    version.build = semver::BuildMetadata::EMPTY;
     Ok(version.to_string())
 }

@@ -1,7 +1,7 @@
-use anyhow::{Context, Result, bail, ensure};
-use serde_json::Value as Json;
-use std::io::Write;
-use std::process::{Command, Stdio};
+use crate::process;
+use anyhow::{Context, Result, bail};
+use jsonc_parser::ParseOptions;
+use jsonc_parser::cst::{CstInputValue, CstObject, CstRootNode};
 use toml_edit::{DocumentMut, Item, value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,7 +85,12 @@ fn write_toml(raw: &str, keys: &[String], new_version: &str) -> Result<String> {
     let mut doc: DocumentMut = raw.parse().context("parse TOML")?;
     for key in keys {
         if toml_get(&doc, key).and_then(Item::as_str).is_some() {
-            *toml_get_mut(&mut doc, key).context(key.clone())? = value(new_version);
+            let item = toml_get_mut(&mut doc, key).context(key.clone())?;
+            let decor = item.as_value().map(|old| old.decor().clone());
+            *item = value(new_version);
+            if let (Some(decor), Some(new)) = (decor, item.as_value_mut()) {
+                *new.decor_mut() = decor;
+            }
             return Ok(doc.to_string());
         }
     }
@@ -115,110 +120,92 @@ fn toml_get_mut<'a>(doc: &'a mut DocumentMut, path: &str) -> Option<&'a mut Item
 }
 
 fn read_json(raw: &str, keys: &[String]) -> Result<String> {
-    let value: Json = serde_json::from_str(raw).context("parse JSON")?;
+    let root = parse_json(raw)?;
     for key in keys {
-        if let Some(version) = json_get(&value, key).and_then(Json::as_str) {
-            return Ok(version.to_owned());
+        if let Some(version) = json_string_at(&root, key) {
+            return Ok(version);
         }
     }
     bail!("none of these JSON keys exist: {}", keys.join(", "))
 }
 
 fn write_json(raw: &str, keys: &[String], new_version: &str) -> Result<String> {
-    let value: Json = serde_json::from_str(raw).context("parse JSON")?;
-    let current = keys
-        .iter()
-        .find_map(|key| json_get(&value, key).and_then(Json::as_str))
-        .context("JSON version key missing")?
-        .to_owned();
-    if current == new_version {
-        return Ok(raw.to_owned());
+    let root = parse_json(raw)?;
+    for key in keys {
+        if json_set_string(&root, key, new_version) {
+            return Ok(root.to_string());
+        }
     }
-    let field = keys
-        .iter()
-        .find(|key| json_get(&value, key).is_some())
-        .context("JSON key vanished")?;
-    let last = field.rsplit('.').next().context("empty JSON key")?;
-    replace_json_string_field(raw, last, &current, new_version)
+    bail!("none of these JSON keys exist: {}", keys.join(", "))
 }
 
-fn json_get<'a>(value: &'a Json, path: &str) -> Option<&'a Json> {
-    let mut cur = value;
+fn parse_json(raw: &str) -> Result<CstRootNode> {
+    CstRootNode::parse(raw, &ParseOptions::default()).context("parse JSON")
+}
+
+fn json_object_at(object: &CstObject, path: &str) -> Option<CstObject> {
+    let mut current = object.clone();
     for part in path.split('.') {
-        cur = cur.get(part)?;
+        current = current.object_value(part)?;
     }
-    Some(cur)
+    Some(current)
 }
 
-fn replace_json_string_field(
-    raw: &str,
-    field: &str,
-    current: &str,
-    new_version: &str,
-) -> Result<String> {
-    let pattern = format!("\"{field}\"");
-    let Some(key_at) = raw.find(&pattern) else {
-        bail!("JSON has no {field:?} key");
+fn json_string_at(root: &CstRootNode, path: &str) -> Option<String> {
+    let object = root.object_value()?;
+    let (parent_path, field) = split_json_path(path);
+    let parent = match parent_path {
+        Some(parent) => json_object_at(&object, parent)?,
+        None => object,
     };
-    let after_key = &raw[key_at + pattern.len()..];
-    let colon = after_key.find(':').context("JSON key has no ':'")?;
-    let after_colon = &after_key[colon + 1..];
-    let quote_rel = after_colon
-        .find('"')
-        .context("JSON value is not a string")?;
-    let value_start = key_at + pattern.len() + colon + 1 + quote_rel + 1;
-    let rest = &raw[value_start..];
-    let value_end_rel = rest.find('"').context("JSON string is unterminated")?;
-    let value_end = value_start + value_end_rel;
-    ensure!(
-        &raw[value_start..value_end] == current,
-        "JSON text {:?} != parsed {current:?}",
-        &raw[value_start..value_end]
-    );
-    Ok(format!(
-        "{}{}{}",
-        &raw[..value_start],
-        new_version,
-        &raw[value_end..]
-    ))
+    parent
+        .get(field)?
+        .value()?
+        .as_string_lit()?
+        .decoded_value()
+        .ok()
+}
+
+fn json_set_string(root: &CstRootNode, path: &str, new_version: &str) -> bool {
+    let Some(object) = root.object_value() else {
+        return false;
+    };
+    let (parent_path, field) = split_json_path(path);
+    let parent = match parent_path {
+        Some(parent) => match json_object_at(&object, parent) {
+            Some(parent) => parent,
+            None => return false,
+        },
+        None => object,
+    };
+    let Some(prop) = parent.get(field) else {
+        return false;
+    };
+    if prop
+        .value()
+        .and_then(|value| value.as_string_lit())
+        .is_none()
+    {
+        return false;
+    }
+    prop.set_value(CstInputValue::String(new_version.to_owned()));
+    true
+}
+
+fn split_json_path(path: &str) -> (Option<&str>, &str) {
+    match path.rsplit_once('.') {
+        Some((parent, field)) => (Some(parent), field),
+        None => (None, path),
+    }
 }
 
 fn run_filter(spec: &CommandSpec, stdin: &str, new_version: Option<&str>) -> Result<String> {
-    let mut command = match spec {
-        CommandSpec::Mise(task) => {
-            let mut command = Command::new("mise");
-            command.args(["run", task.as_str()]);
-            command
-        }
-        CommandSpec::Argv(argv) => {
-            ensure!(!argv.is_empty(), "driver argv is empty");
-            let mut command = Command::new(&argv[0]);
-            command.args(&argv[1..]);
-            command
-        }
+    let argv = match spec {
+        CommandSpec::Mise(task) => vec!["mise".into(), "run".into(), task.clone()],
+        CommandSpec::Argv(argv) => argv.clone(),
     };
-    command
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if let Some(version) = new_version {
-        command.env("VERCTL_VERSION", version);
-    }
-    let mut child = command.spawn().context("spawn driver command")?;
-    child
-        .stdin
-        .as_mut()
-        .context("driver stdin")?
-        .write_all(stdin.as_bytes())
-        .context("write driver stdin")?;
-    let output = child.wait_with_output().context("driver command")?;
-    if !output.status.success() {
-        bail!(
-            "driver command failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-    let stdout = String::from_utf8(output.stdout).context("driver stdout is not UTF-8")?;
+    let env = new_version.map_or_else(Vec::new, |version| vec![("VERCTL_VERSION", version)]);
+    let stdout = process::filter(&argv, stdin, &env)?;
     if new_version.is_some() {
         Ok(stdout)
     } else {

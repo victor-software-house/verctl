@@ -1,59 +1,14 @@
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
+use verctl::cli::{Cli, Command, PrepareArgs, StatusArgs};
 use verctl::config::Config;
 use verctl::fragment::{self, Bump};
 use verctl::prepare;
 
 const INSTRUCTIONS: &str = include_str!("instructions.md");
-
-#[derive(Parser)]
-#[command(
-    version,
-    about = "Stack-agnostic version PRs from Changesets-format fragments",
-    arg_required_else_help = true
-)]
-struct Cli {
-    #[command(subcommand)]
-    command: Command,
-}
-
-#[derive(Subcommand)]
-enum Command {
-    /// Print the installed-version operator contract.
-    Instructions,
-    /// List pending .changeset fragments.
-    Status(StatusArgs),
-    /// Validate every fragment in a directory (fail closed).
-    Check(StatusArgs),
-    /// Apply fragment bumps to declared version files. Does not open a PR.
-    Prepare(PrepareArgs),
-}
-
-#[derive(clap::Args)]
-struct StatusArgs {
-    /// Directory of fragments. Defaults to .changeset.
-    #[arg(short = 'd', long, default_value = ".changeset")]
-    dir: PathBuf,
-}
-
-#[derive(clap::Args)]
-struct PrepareArgs {
-    /// Directory of fragments. Defaults to .changeset.
-    #[arg(short = 'd', long, default_value = ".changeset")]
-    dir: PathBuf,
-    /// Package map. Defaults to verctl.toml in the current directory.
-    #[arg(short = 'c', long, default_value = "verctl.toml")]
-    config: PathBuf,
-    /// Print the plan and leave files alone.
-    #[arg(long)]
-    dry_run: bool,
-    /// Local only. The Version PR lands in a later slice.
-    #[arg(long, default_value_t = true)]
-    no_pr: bool,
-}
 
 fn main() -> ExitCode {
     match run() {

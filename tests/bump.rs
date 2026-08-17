@@ -27,6 +27,21 @@ fn major_on_1x() {
 }
 
 #[test]
+fn release_bump_clears_prerelease_and_build() {
+    assert_eq!(apply("1.2.3-rc.1+build5", Bump::Patch).expect("p"), "1.2.4");
+    assert_eq!(apply("1.2.3-rc.1+build5", Bump::Minor).expect("m"), "1.3.0");
+    assert_eq!(apply("1.4.2-beta.2+exp", Bump::Major).expect("M"), "2.0.0");
+}
+
+#[test]
+fn none_keeps_prerelease_and_build() {
+    assert_eq!(
+        apply("1.2.3-rc.1+build5", Bump::None).expect("none"),
+        "1.2.3-rc.1+build5"
+    );
+}
+
+#[test]
 fn cargo_workspace_keeps_comments() {
     let raw = indoc! {r#"
         # keep me
@@ -40,6 +55,7 @@ fn cargo_workspace_keeps_comments() {
     let driver = Driver::cargo().expect("cargo");
     let next = driver.write(raw, "0.0.22").expect("write");
     assert!(next.contains("# keep me"), "{next}");
+    assert!(next.contains("# pin"), "{next}");
     assert!(next.contains("edition = \"2024\""), "{next}");
     assert!(!next.contains("members = [\"other\"]"), "{next}");
     assert_eq!(driver.read(&next).expect("read"), "0.0.22");
@@ -329,6 +345,30 @@ fn package_after_overrides_detection() {
 }
 
 #[test]
+fn json_write_follows_the_full_key_path() {
+    let raw = indoc! {r#"
+        {
+          "version": "2.0.0",
+          "workspaces": {
+            "app": {
+              "version": "2.0.0"
+            }
+          }
+        }
+    "#};
+    let driver = Driver::Path {
+        format: verctl::driver::Format::Json,
+        keys: vec!["workspaces.app.version".into()],
+        after: None,
+    };
+    let next = driver.write(raw, "2.1.0").expect("write");
+    assert!(next.contains("\"version\": \"2.1.0\""), "{next}");
+    assert_eq!(next.matches("\"2.0.0\"").count(), 1, "{next}");
+    assert_eq!(next.matches("\"2.1.0\"").count(), 1, "{next}");
+    assert_eq!(driver.read(&next).expect("read"), "2.1.0");
+}
+
+#[test]
 fn argv_driver_reads_and_writes_without_a_shell() {
     let driver = Driver::Command {
         read: verctl::driver::CommandSpec::Argv(vec!["tr".into(), "-d".into(), "\n".into()]),
@@ -340,4 +380,29 @@ fn argv_driver_reads_and_writes_without_a_shell() {
         driver.write("1.2.3\n", "1.2.4").expect("write").trim(),
         "1.2.4"
     );
+}
+
+#[test]
+fn argv_write_driver_does_not_deadlock_on_large_stdin() {
+    let stream = concat!(
+        "import sys\n",
+        "while True:\n",
+        "    chunk = sys.stdin.buffer.read(1024)\n",
+        "    if not chunk:\n",
+        "        break\n",
+        "    sys.stdout.buffer.write(chunk)\n",
+        "    sys.stdout.buffer.flush()\n",
+    );
+    let driver = Driver::Command {
+        read: verctl::driver::CommandSpec::Argv(vec!["tr".into(), "-d".into(), "\n".into()]),
+        write: verctl::driver::CommandSpec::Argv(vec![
+            "python3".into(),
+            "-c".into(),
+            stream.into(),
+        ]),
+        after: None,
+    };
+    let payload = format!("{}\n", "x".repeat(200_000));
+    let out = driver.write(&payload, "9.9.9").expect("write");
+    assert_eq!(out, payload);
 }
