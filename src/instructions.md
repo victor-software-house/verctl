@@ -58,8 +58,10 @@ does not skip. A fragment-only commit does not change versions.
 This repo splits mise envs: `dev` compiles this checkout, `release`
 is the published tarball. Local default is `dev` (`.miserc.toml`).
 Version PR sets `MISE_ENV=release`. Publish sets `dev,release`.
-The action runs `verctl` from PATH. Consumers pin
-`github:victor-software-house/verctl` in their own `mise.toml`.
+`[[pins]]` rewrites the collocated `github:…/verctl` entries when
+`verctl` is bumped, then `mise -E release lock` refreshes
+`mise.release.lock`. The action runs `verctl` from PATH. Consumers
+pin the same tool in their own `mise.toml`.
 
 `prepare` writes versions, per-package CHANGELOG.md (next to each
 manifest), and consumes fragments (same as `changeset version`).

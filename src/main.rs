@@ -9,6 +9,7 @@ use verctl::config::Config;
 use verctl::fragment::{self, Bump};
 use verctl::git;
 use verctl::github;
+use verctl::pins;
 use verctl::prepare;
 use verctl::process;
 use verctl::publish;
@@ -307,6 +308,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     let consumed = release::contributing_fragments(&plan, &fragments);
     let changelog = release::changelog_sections(&plan, &fragments)?;
     let changelogs = release::write_changelogs(&config, root, &plan, &fragments)?;
+    let pin_files = pins::write(root, &config.pins, &plan)?;
     if let Some(after) = &config.prepare.after {
         process::run_inherit(after, std::time::Duration::from_mins(5)).context("prepare.after")?;
     }
@@ -323,6 +325,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
         .collect();
     let mut paths: Vec<std::path::PathBuf> = plan.iter().map(|entry| entry.path.clone()).collect();
     paths.extend(changelogs);
+    paths.extend(pin_files);
     paths.extend(consumed.iter().map(|fragment| fragment.path.clone()));
     git::assert_only_allowed(root, &paths, &config.prepare.stage)?;
     release::consume_fragments(consumed)?;
