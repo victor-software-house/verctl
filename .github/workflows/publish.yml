@@ -41,6 +41,7 @@ jobs:
           version: 2026.8.2
           cache: true
       - run: mise install --locked
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Plan native assets
         id: plan
         run: verctl assets --github-output "$GITHUB_OUTPUT"
@@ -68,6 +69,7 @@ jobs:
           version: 2026.8.2
           cache: true
       - run: mise install --locked
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - uses: ./actions/asset
         with:
           target: ${{ matrix.id }}
@@ -92,12 +94,14 @@ jobs:
           version: 2026.8.2
           cache: true
       - run: mise install --locked
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: mise run ver -- pin
       - run: mise -E release lock
       - name: Commit released pins
         run: |
           set -euo pipefail
-          git add mise.release.toml examples/mise.toml mise.release.lock
+          # [[pins]] plus mise.<env>.lock. Only tracked files.
+          git add -u
           if git diff --cached --quiet; then
             exit 0
           fi
