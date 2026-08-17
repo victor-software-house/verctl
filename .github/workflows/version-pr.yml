@@ -32,6 +32,5 @@ jobs:
         with:
           version: 2026.8.2
           cache: true
-          experimental: true
       - run: mise install --locked
       - uses: ./actions/version-pr
