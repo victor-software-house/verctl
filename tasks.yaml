@@ -178,6 +178,38 @@ queue:
       the condition rather than assume it: grep both consumers for the key
       and read their pins.
 
+  - id: VER-025
+    title: Declarations live in .verctl/, one YAML file per concern
+    scope: verctl
+    outcome: >-
+      A repo has one verctl directory, and inside it one file per thing a
+      reader might be looking for. `verctl.toml` is gone, not tolerated.
+    blocked_by: []
+    acceptance:
+      - "`.verctl/` holds one YAML file per concern — packages, pins, ci, assets, prepare — beside the templates directory already there."
+      - YAML, not TOML, so every file a repo writes for a ctl CLI is the same language as tasks.yaml.
+      - "`verctl.toml` is not read at all: no fallback, no deprecation window, no both-are-accepted state."
+      - Every known consumer moves in the same slice — this repo, qctl, and ctl-core — and the old file is deleted from each.
+      - Loading is still one boundary, so a complaint names its file and field the way it does today.
+      - "The schema work (VER-021) targets the new files, not the retired one."
+    notes: >-
+      2026-08-18, decided by Victor and recorded late — this row exists
+      because the decision lived in a conversation instead of the repo, which
+      is the failure the cold-start rule is about. His words, twice: first
+      "keep the damn config in there, .verctl/config.toml etc etc … anything
+      more than that, then we should use a damn directory already", then, on
+      seeing this written up as an open question, "we should just fucking drop
+      fucking verctl.toml and keep shit under .verctl/{config, etc etc}.yaml".
+      The second supersedes the first on two points: the format is YAML, and
+      `verctl.toml` is dropped rather than still recognized. A per-concern
+      split, YAML only, with both consumers migrated, is what was agreed at
+      the time.
+      Sequencing: this is a break to a contract we own, so the rule applies —
+      inventory every producer and consumer, migrate them in the same slice,
+      remove the old path. Do it before VER-021 writes schemas, or the schemas
+      get written twice; VER-024 is the smaller version of the same problem
+      and can ride along.
+
 horizon:
   - id: VER-019
     title: Triage the review backlog from the closed PRs
@@ -303,28 +335,6 @@ horizon:
     kind: deferred
     outcome: Public npm uses trusted publishing, not NPM_TOKEN.
     open: bun publish --tolerate-republish already ships. OIDC is the remaining auth path.
-
-  - id: VER-025
-    title: Does the config belong in .verctl/, split by concern?
-    scope: verctl
-    kind: evaluation
-    outcome: >-
-      A repo's declarations live wherever a reader would look for them, and
-      that place is decided once instead of drifting one key at a time.
-    open: >-
-      2026-08-18, written down because it only ever existed in conversation:
-      `.verctl/` is already the directory "everything verctl owns in a repo
-      lives under" (config.rs DIR, docs/served-files.md §1), but the only
-      thing under it is `templates/`, while every declaration still sits in a
-      single `verctl.toml` at the root. Splitting it per concern — packages,
-      pins, ci, assets, prepare — was talked about and never recorded, so
-      nothing says whether it is decided, and a fresh reader cannot tell.
-      Settle it before adding more top-level tables. What has to be answered:
-      is a split actually better than one file a reader greps, does it mean
-      YAML or TOML, what happens to `verctl.toml` for the repos already on it
-      (VER-024 is what that migration costs), and does qctl's tasks.yaml
-      precedent argue for one file per concern or against it. If the answer
-      is no, say so here and stop reopening it.
 
   - id: VER-023
     title: Is this how a modern Rust CLI is built?
