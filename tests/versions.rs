@@ -2,6 +2,7 @@
 
 use git2::{Repository, Signature};
 use indoc::{formatdoc, indoc};
+use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -75,13 +76,22 @@ fn is_host_actions_key(key: &str) -> bool {
     key == "CI" || key.starts_with("GITHUB_")
 }
 
+/// Everything the child may keep. Split from the environment it reads so the
+/// rule is testable against a planted one: `std::env` cannot be given a
+/// non-Unicode key without `set_var`, and `unsafe_code = "forbid"` rules that
+/// out. `vars()` would panic on such a key, so this never decodes one — a key
+/// we cannot read is not a key we are stripping.
+fn inherited(
+    vars: impl IntoIterator<Item = (OsString, OsString)>,
+) -> impl Iterator<Item = (OsString, OsString)> {
+    vars.into_iter()
+        .filter(|(key, _)| !key.to_str().is_some_and(is_host_actions_key))
+}
+
 fn check_cmd(root: &Path) -> std::process::Command {
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"));
-    // `vars()` panics on a non-Unicode entry; the env_remove chain this
-    // replaced never decoded the environment at all. Keep that property:
-    // a key we cannot read is not a key we are stripping.
     cmd.env_clear()
-        .envs(std::env::vars_os().filter(|(key, _)| !key.to_str().is_some_and(is_host_actions_key)))
+        .envs(inherited(std::env::vars_os()))
         .current_dir(root)
         .args(["check", "--versions", "--color", "never"]);
     cmd
@@ -226,6 +236,50 @@ fn cli_hand_edit_fails_and_prints_table() {
     assert!(stdout.contains("1.0.0"), "{stdout}");
     assert!(stdout.contains("1.0.1"), "{stdout}");
     assert!(stderr.contains("fragment"), "{stderr}");
+}
+
+/// End-to-end through the real `Command`, so it covers `check_cmd` itself and
+/// not just the rule. It only bites where host keys exist — which is CI, the
+/// place that broke. `actions_keys_are_dropped_and_unreadable_keys_survive`
+/// carries the rule everywhere else.
+#[test]
+fn check_cmd_hands_the_child_no_actions_keys() {
+    let dir = TempDir::new().unwrap();
+    let cmd = check_cmd(dir.path());
+    let keys: Vec<String> = cmd
+        .get_envs()
+        .map(|(key, _)| key.to_string_lossy().into_owned())
+        .collect();
+    assert!(!keys.is_empty(), "the parent environment is forwarded");
+    let leaked: Vec<&String> = keys.iter().filter(|key| is_host_actions_key(key)).collect();
+    assert!(leaked.is_empty(), "{leaked:?} reached the child");
+    assert!(
+        keys.iter().any(|key| key == "PATH"),
+        "PATH must survive or the binary cannot run: {keys:?}"
+    );
+}
+
+/// The test above passes for the wrong reason on a host with no `GITHUB_*`
+/// set: a leak would only surface in CI. Plant the environment instead, with
+/// a key that is not valid UTF-8, so both halves of the rule are real here.
+#[cfg(unix)]
+#[test]
+fn actions_keys_are_dropped_and_unreadable_keys_survive() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let opaque = OsString::from_vec(vec![0xff, 0xfe]);
+    let planted = vec![
+        (OsString::from("PATH"), OsString::from("/usr/bin")),
+        (OsString::from("CI"), OsString::from("true")),
+        (
+            OsString::from("GITHUB_EVENT_PATH"),
+            OsString::from("/event.json"),
+        ),
+        (OsString::from("GITHUB_BASE_REF"), OsString::from("main")),
+        (opaque.clone(), OsString::from("not utf-8")),
+    ];
+    let kept: Vec<OsString> = inherited(planted).map(|(key, _)| key).collect();
+    assert_eq!(kept, [OsString::from("PATH"), opaque]);
 }
 
 #[test]
