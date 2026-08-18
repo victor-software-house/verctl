@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  actions: write
 
 env:
   GIT_CONFIG_COUNT: "1"
@@ -41,12 +40,12 @@ jobs:
         with:
           version: 2026.8.2
           cache: true
-          # This run is a closed pull request: its merge ref no longer
-          # exists, so the Actions cache refuses every write. Read only.
-          cache_save: false
+          cache_save: ${{ github.event_name == 'workflow_dispatch' }}
       - run: mise install --locked
+      # ci.yml owns this key; restore it, never write it.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
+          shared-key: verctl-plan
           save-if: false
       - name: Plan native assets
         id: plan
@@ -85,13 +84,12 @@ jobs:
         with:
           version: 2026.8.2
           cache: true
-          # This run is a closed pull request: its merge ref no longer
-          # exists, so the Actions cache refuses every write. Read only.
-          cache_save: false
+          cache_save: ${{ github.event_name == 'workflow_dispatch' }}
       - run: mise install --locked
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          save-if: false
+          shared-key: verctl-assets-${{ matrix.id }}
+          save-if: ${{ github.event_name == 'workflow_dispatch' }}
       - name: Build and upload
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -119,9 +117,7 @@ jobs:
         with:
           version: 2026.8.2
           cache: true
-          # This run is a closed pull request: its merge ref no longer
-          # exists, so the Actions cache refuses every write. Read only.
-          cache_save: false
+          cache_save: ${{ github.event_name == 'workflow_dispatch' }}
           install: false
       - name: Pin with the tarball just published
         id: pin
