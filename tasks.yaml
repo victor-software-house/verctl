@@ -145,6 +145,42 @@ queue:
       today only bash can express.
 
 horizon:
+  - id: VER-019
+    title: Triage the review backlog from the closed PRs
+    scope: verctl
+    kind: evaluation
+    outcome: >-
+      Every review finding on already-merged code is either a named
+      defect with a fix, or written off with the reason.
+    open: >-
+      2026-08-18: nine findings were raised on PRs #4, #6, #9, #12, #13,
+      #14 and never triaged, because those PRs were closed with the
+      comments unread. Listed so they stop being invisible; none is
+      confirmed except where noted. Security-shaped first.
+      (1) #12: CARGO_REGISTRY_TOKEN is exported into the same step that
+      compiles this repo's source, so a build script sees the crates.io
+      token. Same trust boundary as publishing at all, but publishing
+      from the released binary instead of a fresh build would remove it —
+      see VER-016, which wants that step off the compiler anyway.
+      (2) #12: `${{ matrix.id }}` and `${{ needs.crate.outputs.tag }}`
+      are interpolated straight into `run:` bodies. The values come from
+      verctl.toml on the default branch, not from a fork, so this needs
+      write access to exploit; passing them through `env:` costs nothing.
+      (3) #9: the version guard runs on a shallow checkout in some lanes,
+      where `check --versions` cannot reach the merge base.
+      (4) #6: `consume_fragments` runs only in the `--pr` branch, so a
+      local `prepare` leaves the fragments it already applied.
+      (5) #6: publish forces `--access public` for bun packages.
+      (6) #6: no npm auth is set up for the bun publisher.
+      (7) #6: `tag_for` falls back to the first package's version, which
+      is wrong for a repo whose packages version independently.
+      (8) #4: HEAD is not restored after the Version PR branch write, and
+      `add_all(["*"])` stages more than the plan named.
+      (9) #14: `recurse_untracked_dirs(true)` walks into large ignored
+      trees. Retired 2026-08-18: #13's invalid `runner` context in a
+      workflow-level `env` is gone — no workflow or example uses the
+      `runner` context, and actionlint 1.7.12 passes every file.
+
   - id: VER-016
     title: The plan job should not install a compiler to parse TOML
     scope: verctl
