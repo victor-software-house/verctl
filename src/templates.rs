@@ -613,6 +613,34 @@ mod tests {
     /// templates — `prepare` still works there, as it did before templates
     /// existed. A repository whose index cannot be read is a different case,
     /// and `git::tracked` reports that as an error.
+    /// One repository may hold several projects. The index speaks in paths from
+    /// the working tree, so a project in a subdirectory has to be found by the
+    /// path it uses itself — and a sibling project's templates are not its.
+    #[test]
+    fn a_project_below_the_repository_root_serves_its_own_templates() {
+        let root = repo(&[
+            (&format!("tool/{TEMPLATE_PATH}"), TEMPLATE),
+            (&format!("tool/{SERVED}"), BEFORE),
+            (&format!("other/{TEMPLATE_PATH}"), TEMPLATE),
+        ]);
+        let project = root.path().join("tool");
+        assert_eq!(
+            write(
+                &project,
+                &Templates::default(),
+                &versions(&[("verctl", "0.0.2"), ("ctl-core", "0.1.0")])
+            )
+            .unwrap(),
+            [project.join(SERVED)],
+            "the project's own template, named the way the project names it"
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join(format!("other/{SERVED}"))).ok(),
+            None,
+            "a sibling project's template is not this one's to render"
+        );
+    }
+
     #[test]
     fn a_tree_with_no_repository_has_no_templates() {
         let root = TempDir::new().unwrap();

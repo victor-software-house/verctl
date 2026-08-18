@@ -1,7 +1,9 @@
 use crate::changelog::{self, ReleaseInput};
+use crate::config::Config;
 use crate::fragment::Fragment;
 use crate::git;
 use crate::github;
+use crate::pins;
 use crate::prepare::PlanEntry;
 use anyhow::{Context, Result, ensure};
 use ctl_core::{formatdoc, writedoc};
@@ -32,6 +34,29 @@ fn env_token() -> Option<String> {
         }
     }
     None
+}
+
+/// Every package's version as the released tree will say it: what the manifests
+/// say now, with this release's bumps applied over them.
+///
+/// A pin moves only what the release names, because everything else in that
+/// file is already right. A template renders a whole file, so it needs every
+/// version the file mentions — a served file that names a package no fragment
+/// bumped would otherwise have nothing to render.
+pub fn served_versions(
+    root: &Path,
+    config: &Config,
+    planned: &[(String, String)],
+) -> Result<Vec<(String, String)>> {
+    let mut versions = pins::current_versions(root, config)?;
+    for (name, version) in planned {
+        if let Some(entry) = versions.iter_mut().find(|(package, _)| package == name) {
+            entry.1.clone_from(version);
+        } else {
+            versions.push((name.clone(), version.clone()));
+        }
+    }
+    Ok(versions)
 }
 
 /// Fragments that named at least one package in `plan`.
@@ -260,5 +285,57 @@ pub fn pr_body(changelog: &str) -> String {
         "Prepared by verctl.".into()
     } else {
         body.to_owned()
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use indoc::indoc;
+
+    /// A release that bumps one of two packages still has to render a served
+    /// file that mentions both, so the version map covers every package —
+    /// the release's version for what it bumps, the manifest's for the rest.
+    #[test]
+    fn a_partial_release_still_knows_every_version() {
+        let root = tempfile::TempDir::new().unwrap();
+        fs::create_dir_all(root.path().join("core")).unwrap();
+        fs::write(
+            root.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                name = "verctl"
+                version = "0.0.3"
+            "#},
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("core/Cargo.toml"),
+            indoc! {r#"
+                [package]
+                name = "ctl-core"
+                version = "0.1.7"
+            "#},
+        )
+        .unwrap();
+        let config: Config = toml::from_str(indoc! {r#"
+            [[packages]]
+            name = "verctl"
+            path = "Cargo.toml"
+
+            [[packages]]
+            name = "ctl-core"
+            path = "core/Cargo.toml"
+        "#})
+        .unwrap();
+        let planned = [("verctl".to_owned(), "0.0.4".to_owned())];
+        assert_eq!(
+            served_versions(root.path(), &config, &planned).unwrap(),
+            [
+                ("verctl".to_owned(), "0.0.4".to_owned()),
+                ("ctl-core".to_owned(), "0.1.7".to_owned()),
+            ]
+        );
     }
 }
