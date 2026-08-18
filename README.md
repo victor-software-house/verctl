@@ -123,6 +123,99 @@ Stdout is the version (read) or the new file (write).
 
 `0.x` rejects a `major` fragment.
 
+## Runners
+
+Which machines run the work is configuration. A **machine** is declared once
+under `[runners]`; the jobs that run on it name it.
+
+```toml
+# One machine. `labels` is how GitHub finds it — every label at once, so this
+# is a single machine carrying three labels, not three machines.
+[runners.big]
+labels = ["self-hosted", "linux", "x64"]
+
+# One validation job per [ci.NAME]. Naming two machines gives two checks,
+# `verify (big)` and `verify (ns)`. Omit [ci] for one `verify` on ubuntu-latest.
+[ci.verify]
+runners = ["big"]
+
+# One build target per [assets.NAME]: the name is the job, the tarball, and
+# the platform. One tarball is one machine, so `runner` is not a list.
+[assets.darwin-arm64]
+
+[assets.linux-x64]
+runner = "big"
+```
+
+| section | one table is | its name is | with no `runners` / `runner` |
+|:--|:--|:--|:--|
+| `[runners.NAME]` | one machine | how jobs refer to it | — |
+| `[ci.NAME]` | a PR / push validation job | the check name | `ubuntu-latest` |
+| `[assets.NAME]` | a release build job and its tarball | the check name, the `--build` argument, part of the filename | the built-in record for that name |
+
+Two sections take runners and no others, because of what config is for here:
+
+> **verctl decides how many jobs there are. Your workflow file decides where a
+> fixed job runs.**
+
+A static YAML file cannot declare N jobs without knowing N, and only the repo
+knows N. That fan-out is what `[ci]` and `[assets]` buy; the machine rides along
+on it. Every other job verctl ships — `plan`, `crate`, `pin`, `prepare` — is
+always exactly one job, so nothing decides its count and nothing needs to
+configure it. Its `runs-on` is one literal in a workflow you own and already
+copied from `examples/`:
+
+```yaml
+  plan:
+    runs-on: [self-hosted, linux, x64]   # yours to edit; no verctl.toml needed
+```
+
+So a repo with no hosted runners at all is already served: edit those literals
+and declare `[ci]` / `[assets]`. `plan` could not read its machine from config
+anyway — `runs-on` resolves before the job exists, and `plan` is the job that
+reads `verctl.toml`.
+
+Names sort alphabetically, not in file order, so `[ci.verify]` written above
+`[ci.audit]` still plans `audit` first. Checks are independent, so the order is
+display only.
+
+Only `labels` reaches GitHub. A runner **name** is a name in the file: it
+resolves against `[runners]` or fails there, listing what is declared, so a
+label can never pass itself off as a machine and verctl never invents a label.
+A label GitHub does not know queues the way any wrong label queues — verctl
+cannot tell which machines carry which labels, so it passes them through.
+
+Built-in target records, so a public repo needs no config to stay on free
+hosted minutes:
+
+| name | labels | `os` | `arch` | `triple` |
+|:--|:--|:--|:--|:--|
+| `darwin-arm64` | `["macos-latest"]` | `darwin` | `arm64` | `aarch64-apple-darwin` |
+| `linux-x64` | `["ubuntu-latest"]` | `linux` | `x64` | `x86_64-unknown-linux-gnu` |
+
+Each field is a default the repo overrides one at a time: naming a `runner`
+moves the machine and leaves the platform alone. A name outside that set
+describes a platform verctl knows nothing about, so it must describe all of it
+— `runner`, `os`, `arch`, and `triple` are all required, and a partial record
+is an error rather than a build against an empty target triple. `os = "darwin"`
+renders as `macos` in the filename; that is the only rename. `triple` stays
+its own field because the machine and what it builds need not match: an x64
+linux runner can build `aarch64-unknown-linux-gnu`.
+
+`[ci]` is exactly as trusted as `.github/workflows/ci.yml`: for a
+`pull_request` event both come from the pull request's own tree, so a fork PR
+that can declare a label could equally have written that label into the
+workflow file. Neither is a reason to expose a self-hosted runner group to a
+public repository — keep `allows_public_repositories=false` there and keep
+fork-PR approval on, and read declared labels as untrusted input in a repo
+where that is not true.
+
+`verctl ci` and `verctl assets` print what resolved, so a default is visible
+output rather than an assumption. Both also write a matrix for
+`$GITHUB_OUTPUT`: GitHub needs `runs-on` before a job exists, so a small
+`plan` job emits the labels and the real jobs consume them
+([`examples/workflows/ci.yml`](examples/workflows/ci.yml)).
+
 ## Actions
 
 These replace `changesets/action`. They are **GitHub Actions, not a

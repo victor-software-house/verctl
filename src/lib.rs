@@ -5,6 +5,7 @@
 pub mod assets;
 pub mod bump;
 pub mod changelog;
+pub mod ci;
 pub mod cli;
 pub mod config;
 pub mod detect;
@@ -18,4 +19,5 @@ pub mod process;
 pub mod publish;
 pub mod publisher;
 pub mod release;
+pub mod runners;
 pub mod versions;

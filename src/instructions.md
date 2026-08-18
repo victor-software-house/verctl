@@ -103,9 +103,32 @@ tables; tests pass `--color never`.
 Happy path after the Version PR merges is
 `victor-software-house/verctl/actions/publish`. It runs when the
 `version-packages` PR is merged. Native tarballs are a second job,
-only when `[assets].targets` is non-empty. PR CI stays on one
-runner. `verctl assets` prints the matrix; `--build` + `--upload`
-is `actions/asset`. OIDC trusted publishing is later (VER-007).
+only when `[assets].targets` is non-empty. `verctl assets` prints the
+matrix; `--build` + `--upload` is `actions/asset`. OIDC trusted
+publishing is later (VER-007).
+
+Machines are configuration, not a hardcoded map. A machine is declared
+once as `[runners.NAME]` with `labels`, the literal GitHub label list
+that GitHub reads as AND — one machine, however many labels. Jobs name
+machines: `[ci.NAME]` takes `runners = [...]`, one check each, and
+`[assets.NAME]` takes a single `runner`, because one tarball is one
+machine. A name resolves against `[runners]` or fails; only labels
+reach `runs-on`. Omit `[ci]` for one `verify` on `ubuntu-latest`; PR CI
+stays unary by default because compiling on two hosts for a PR is
+waste. A built-in target (`darwin-arm64`, `linux-x64`) fills in
+`runner`, `os`, `arch`, and `triple`; any other name must state all
+four. `verctl ci` writes the matrix for a `plan` job, since `runs-on`
+exists before the job does.
+
+verctl decides how many jobs there are; the workflow file decides
+where a fixed job runs. `[ci]` and `[assets]` exist because only the
+repo knows how many verify checks or tarballs it wants, and a static
+YAML file cannot declare N jobs without knowing N. `plan`, `crate`,
+`pin`, and `prepare` are always exactly one job each, so their
+`runs-on` is a literal in the workflow the consumer owns — not a
+config key. Do not add one. There is no `[release]` runner table and
+none is planned: publishing a crate twice is wrong the same way two
+machines per tarball is wrong.
 
 ## Stop conditions
 

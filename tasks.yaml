@@ -40,18 +40,62 @@ queue:
       hosted minutes and a private one can point at its own labels.
     blocked_by: []
     acceptance:
-      - "`[assets]` takes a runner per target; omitted uses a documented default."
-      - verctl assets prints the declared runner and the matrix carries it.
-      - A public repo needs no config to keep macos-latest / ubuntu-latest.
-      - A declared self-hosted or nscloud label reaches runs-on unchanged.
-      - Tests cover default, override, and a runner on an undeclared target.
+      - A machine is declared once as [runners.NAME] with labels; [ci.NAME] names several, [assets.NAME] exactly one.
+      - verctl ci and verctl assets print what resolved and the matrix carries it.
+      - A public repo needs no config to keep macos-latest / ubuntu-latest, and no [ci] to keep one verify job.
+      - A declared self-hosted or nscloud label set reaches runs-on unchanged, in order.
+      - An undeclared machine name fails listing the declared ones; a label is never accepted as a name.
+      - Tests cover default, override, multi-label, fan-out naming, empty list, and a partial undeclared target.
     notes: >-
-      2026-08-17: the target-to-runner map is hardcoded, so every
-      consumer inherits macos-latest / ubuntu-latest. That is free on a
-      public repo and wrong on a private one, and unconfigurable either
-      way. Found while adopting the lane in qctl (qctl#3).
+      2026-08-17: found while adopting the lane in qctl (qctl#3). Two
+      claims first written here were wrong and are corrected: a per-target
+      `runner` override already existed, and a job can be told its runner
+      by an earlier job. The real defects are that `runner` is one string
+      where GitHub takes a label set, that CI has no configuration surface
+      at all, and that an unknown id with a partial record is accepted and
+      reaches `cargo build --target ""`. Shape settled after several wrong
+      turns, recorded so they are not retried: anonymous list rows needing
+      an `id` field (`[[ci.jobs]]`, `runners = [{ labels = [...] }]`) were
+      rejected as ceremony — names are table headers instead; a `runners`
+      list on an asset target was rejected because two machines would
+      overwrite one tarball, which the shape now makes unsayable; and one
+      identical shape per phase was abandoned once it put `os`/`arch` on a
+      job while its labels sat a level below. A name→labels registry is
+      deliberately not the alias table rejected earlier: an alias made an
+      invented word look like a resolved label, whereas a machine name
+      resolves against `[runners]` or fails and never reaches GitHub.
+      M1 (generating ci.yml) and M3 (a repo variable) were considered
+      and rejected for M2, the plan-job bootstrap the publish lane already
+      uses; M3 would move the value out of verctl.toml entirely.
+      Asked why `plan` is not configurable, the inventory settled the law:
+      verctl decides how many jobs there are, the workflow file decides
+      where a fixed job runs. Unary jobs (`plan`, `crate`, `pin`,
+      `prepare`) all have literal machines; only `verify` and `assets`,
+      whose count the repo decides, read config. A static YAML file cannot
+      declare N jobs without knowing N — that fan-out is what config buys,
+      and the machine rides along on it. So `[release]` is dropped, not
+      deferred: publish and pin are inherently unary, nothing decides their
+      count, and a self-hosted-only repo is already served by editing three
+      literals in workflows it owns. `verctl check --ci` was rejected with
+      it — verifying those literals needs a YAML dependency this crate does
+      not have, to check a value the law puts there on purpose.
 
 horizon:
+  - id: VER-016
+    title: The plan job should not install a compiler to parse TOML
+    scope: verctl
+    kind: evaluation
+    outcome: >-
+      The ci.yml bootstrap costs what reading verctl.toml costs, and
+      verify stops waiting on a toolchain it does not share.
+    open: >-
+      Measured on run 32078158505: plan took 33s, of which 21s was mise
+      plus rust-cache, and verify did not start until 37s in. It needs
+      verctl and verctl.toml, not cargo. Decide between dropping
+      rust-cache from that job and running verctl from the release
+      tarball (mise -E release) rather than a dev build. Efficiency
+      only — the runner contract itself is settled (VER-015).
+
   - id: VER-013
     title: Stock lockfile refresh after cargo bumps
     scope: verctl

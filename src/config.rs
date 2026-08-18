@@ -144,74 +144,55 @@ impl PackageSpec {
     }
 }
 
-/// Native GitHub Release tarballs. Omit for libraries, or list one
-/// target when a single binary is enough.
+/// One machine, declared once as `[runners.NAME]`. The header names it; this
+/// is how GitHub finds it. Every label is required at once, so a three-label
+/// runner is one machine carrying three labels, not three machines.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Runner {
+    pub labels: Vec<String>,
+}
+
+/// One job, declared as `[ci.NAME]`. The header names it; `runners` names the
+/// machines from `[runners]` it runs on, one check each. No `os`/`arch`/
+/// `triple`: validation runs a machine's checks, it does not cross-compile.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct Job {
+    pub runners: Option<Vec<String>>,
+}
+
+/// Native GitHub Release tarballs, plus the recipe every target shares. Omit
+/// for libraries. Each `[assets.NAME]` sub-table is one target.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Assets {
     pub bin: Option<String>,
-    #[serde(default)]
-    pub targets: Vec<AssetTarget>,
     /// Ran once per target before `build`. Stock rust recipe uses rustup.
     pub prepare: Option<Vec<String>>,
     /// How to produce the binary. Stock rust recipe is `cargo build --release`.
     pub build: Option<Vec<String>>,
     /// Path to the built binary, with `{bin}` `{triple}` `{os}` `{arch}`.
     pub binary: Option<String>,
+    /// Retired `targets = [...]` list, captured only so the repos still on it
+    /// get the migration instead of a serde type error from the map below.
+    /// Remove once qctl and ctl-core have bumped their verctl pin.
+    #[serde(default, rename = "targets")]
+    pub retired_targets: Option<toml::Value>,
+    /// Every remaining sub-table: `[assets.linux-x64]` and friends. A typo'd
+    /// recipe key lands here and fails as an unknown target, loudly.
+    #[serde(flatten)]
+    pub targets: BTreeMap<String, AssetTarget>,
 }
 
-/// `"linux-x64"` or `{ id = "linux-x64", runner = "ubuntu-24.04" }`.
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum AssetTarget {
-    Id(String),
-    Spec {
-        id: String,
-        runner: Option<String>,
-        os: Option<String>,
-        arch: Option<String>,
-        triple: Option<String>,
-    },
-}
-
-impl AssetTarget {
-    #[must_use]
-    pub fn id(&self) -> &str {
-        match self {
-            Self::Id(id) | Self::Spec { id, .. } => id,
-        }
-    }
-
-    #[must_use]
-    pub fn runner(&self) -> Option<&str> {
-        match self {
-            Self::Id(_) => None,
-            Self::Spec { runner, .. } => runner.as_deref(),
-        }
-    }
-
-    #[must_use]
-    pub fn os(&self) -> Option<&str> {
-        match self {
-            Self::Id(_) => None,
-            Self::Spec { os, .. } => os.as_deref(),
-        }
-    }
-
-    #[must_use]
-    pub fn arch(&self) -> Option<&str> {
-        match self {
-            Self::Id(_) => None,
-            Self::Spec { arch, .. } => arch.as_deref(),
-        }
-    }
-
-    #[must_use]
-    pub fn triple(&self) -> Option<&str> {
-        match self {
-            Self::Id(_) => None,
-            Self::Spec { triple, .. } => triple.as_deref(),
-        }
-    }
+/// One build target: the platform it produces and the single machine that
+/// builds it. One tarball, one machine — so `runner` is not a list.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
+#[serde(deny_unknown_fields)]
+pub struct AssetTarget {
+    pub runner: Option<String>,
+    pub os: Option<String>,
+    pub arch: Option<String>,
+    pub triple: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -221,8 +202,15 @@ pub struct Config {
     pub packages: Vec<PackageSpec>,
     #[serde(default)]
     pub publishers: BTreeMap<String, PublisherSpec>,
+    /// Machines, declared once and named. Entirely repo-owned: verctl ships no
+    /// built-in names.
+    #[serde(default)]
+    pub runners: BTreeMap<String, Runner>,
     #[serde(default)]
     pub assets: Option<Assets>,
+    /// PR and push validation. Empty means one `verify` on `ubuntu-latest`.
+    #[serde(default)]
+    pub ci: BTreeMap<String, Job>,
     #[serde(default)]
     pub prepare: Prepare,
     /// Collocated tool pins rewritten when `package` is bumped.

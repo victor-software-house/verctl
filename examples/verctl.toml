@@ -1,6 +1,12 @@
-# Built-in drivers `cargo` and `npm` (version keys) and publishers
-# `cargo` and `bun` are stock recipes. Redefine or add your own.
+# A complete verctl.toml. Every table here is live, not commented out, so
+# `tests/examples.rs` parses this exact file and plans from it — the examples
+# cannot drift from the schema without failing the build. Copy it and delete
+# what you do not need; only [[packages]] is required.
 
+# `cargo` and `npm` are stock drivers and `cargo` and `bun` are stock
+# publishers. Redeclaring one merges over the stock recipe rather than
+# replacing it, so this pair changes nothing and is here to show the shape.
+# Because it is a merge, a table may carry only the field it overrides.
 [drivers.cargo]
 format = "toml"
 keys = ["workspace.package.version", "package.version"]
@@ -8,40 +14,94 @@ keys = ["workspace.package.version", "package.version"]
 [drivers.npm]
 format = "json"
 keys = ["version"]
-# after = "bun install"
+# after = "bun install"      # omit and verctl infers from the lockfile
 
-# [[packages]]
-# name = "@org/pkg"
-# path = "package.json"
-# publisher = "bun"
-# registry = "github"
-#
-# [publishers.twine]
-# noun = "package"
-# argv = ["uv", "publish"]
+# A manifest verctl neither parses nor knows: give it a read and a write
+# command instead of format+keys. A string is a mise task, an array is execvp
+# (no shell). Stdin is the file; stdout is the version (read) or the whole new
+# file (write), and a write also gets VERCTL_VERSION.
+[drivers.plain]
+read = ["cat"]
+write = ["printenv", "VERCTL_VERSION"]
 
-# String form is a mise task (no shell):
-# read = "ver-read-version"
-# write = "ver-write-version"
-#
-# Array form is execvp:
-# read = ["jq", "-r", ".version"]
-#
-# [[packages]]
-# name = "verctl"
-# path = "Cargo.toml"
-# driver = "cargo"
-#
-# Omit [assets] for a library. One target when a single binary covers
-# every consumer you care about.
-# Per-package CHANGELOG.md sits next to the manifest. Override with
-# changelog = "docs/FOO.md" when it does not.
-#
-# [prepare]
-# after = ["mise", "run", "version-sync"]
-# stage = ["packages/*/src/version.rs"]
-#
-# [assets]
-# targets = ["darwin-arm64", "linux-x64"]
-# Pin a runner only when latest is wrong:
-# targets = [{ id = "darwin-arm64", runner = "macos-15" }]
+# Any stack publishes through one table of argv. This adds uv alongside the
+# stock cargo and bun recipes without a new verb.
+[publishers.twine]
+noun = "package"
+argv = ["uv", "publish"]
+
+[[packages]]
+name = "verctl"
+path = "Cargo.toml"
+# driver = "cargo"           # inferred from the file name
+
+[[packages]]
+name = "@org/pkg"
+path = "package.json"
+publisher = "bun"
+registry = "github"
+# changelog = "docs/PKG.md"  # defaults to CHANGELOG.md beside the manifest
+
+# A file name that implies nothing, so both the driver and the publisher are
+# named. This is what the `plain` driver and `[publishers.twine]` above are
+# for — nothing here is declared without a package that uses it.
+[[packages]]
+name = "py-tool"
+path = "VERSION"
+driver = "plain"
+publisher = "twine"
+
+# One argv after every bump, on the Version PR. `stage` lists the extra paths
+# it may write; any other dirty file fails the run.
+[prepare]
+after = ["mise", "run", "version-sync"]
+stage = ["packages/*/src/version.rs"]
+
+# Machines are declared once. The header names one, `labels` is how GitHub
+# finds it — every label at once, so `big` is a single machine carrying three
+# labels, not three machines. verctl ships no built-in machine names: this
+# table is yours, and only `labels` ever reaches runs-on.
+[runners.big]
+labels = ["self-hosted", "linux", "x64"]
+
+[runners.ns]
+labels = ["nscloud-ubuntu-24.04-amd64-4x8"]
+
+# Omit [assets] entirely for a library. `bin` is the recipe every target
+# shares; prepare/build/binary override the stock rust recipe.
+[assets]
+bin = "verctl"
+
+# One [assets.NAME] table per host binary. The name is the job, the tarball,
+# and the platform. darwin-arm64 and linux-x64 are built in, so naming one is
+# enough — and it keeps free hosted minutes.
+[assets.darwin-arm64]
+
+# Name a `runner` only when the built-in machine is wrong. One tarball is one
+# machine, so this is one name and never a list.
+[assets.linux-x64]
+runner = "big"
+
+# A name outside darwin-arm64 / linux-x64 describes a platform verctl knows
+# nothing about, so it must describe all of it.
+[assets.linux-arm64]
+runner = "ns"
+os = "linux"
+arch = "arm64"
+triple = "aarch64-unknown-linux-gnu"
+
+# PR and push validation. Omit [ci] for one `verify` job on ubuntu-latest.
+# A job may name several machines: one check each, `verify (ns)` and
+# `verify (big)`. No os/arch/triple — validation does not cross-compile.
+[ci.verify]
+runners = ["ns", "big"]
+
+# A second job is a second table, and stays a separate check.
+[ci.audit]
+runners = ["ns"]
+
+# Collocated mise pins rewritten by `verctl pin` after the tarball exists.
+[[pins]]
+file = "mise.release.toml"
+tool = "github:victor-software-house/verctl"
+package = "verctl"
