@@ -309,19 +309,23 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
             bump: entry.bump.as_str().to_owned(),
         })
         .collect();
+    let planned: Vec<(String, String)> = plan
+        .iter()
+        .map(|entry| (entry.name.clone(), entry.to.clone()))
+        .collect();
+    // Before a manifest moves: a stale [[pins]] entry must not leave
+    // versions bumped with no changelog, no follow-up, and fragments
+    // still on disk.
+    let pinned = pins::plan(root, &config.pins, &planned)?;
     if dry_run {
-        let planned: Vec<(String, String)> = plan
-            .iter()
-            .map(|entry| (entry.name.clone(), entry.to.clone()))
-            .collect();
-        let pinned = pins::plan(root, &config.pins, &planned)?;
         return preview_report(root, &plan, &fragments, bumps, pinned, args.open_pr());
     }
     let follow_up = prepare::apply_plan(&plan)?;
     // The tag names the merge commit, so a pin that lands after publish
     // never reaches the tree consumers fetch by ref. Rewrite them here,
-    // where they ride the Version PR.
-    let pinned = pins::write(root, &config.pins, &pins::current_versions(root, &config)?)?;
+    // where they ride the Version PR. Only the versions this release
+    // names: a pin on a package no fragment bumped stays where it is.
+    let pinned = pins::write(root, &config.pins, &planned)?;
     let consumed = release::contributing_fragments(&plan, &fragments);
     let changelog = release::changelog_sections(&plan, &fragments)?;
     let changelogs = release::write_changelogs(&config, root, &plan, &fragments)?;

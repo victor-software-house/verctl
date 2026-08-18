@@ -316,3 +316,109 @@ fn a_dry_run_reports_the_pin_without_writing_it() {
         "a dry run names the file it would rewrite and rewrites nothing"
     );
 }
+
+/// Pins move with the bump, not with whatever a manifest happens to say.
+/// A pin left one release behind on purpose is not this release's business.
+#[test]
+fn a_pin_on_a_package_no_fragment_bumped_stays_where_it_is() {
+    let root = TempDir::new().unwrap();
+    fs::write(
+        root.path().join("verctl.toml"),
+        indoc! {r#"
+            [[packages]]
+            name = "demo"
+            path = "Cargo.toml"
+
+            [[packages]]
+            name = "other"
+            path = "other/Cargo.toml"
+
+            [[pins]]
+            file = "pinned.toml"
+            tool = "github:acme/other"
+            package = "other"
+        "#},
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.0.0"
+        "#},
+    )
+    .unwrap();
+    fs::create_dir_all(root.path().join("other")).unwrap();
+    fs::write(
+        root.path().join("other/Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "other"
+            version = "3.0.0"
+        "#},
+    )
+    .unwrap();
+    let lagging = indoc! {r#"
+        [tools]
+        "github:acme/other" = "2.0.0"
+    "#};
+    fs::write(root.path().join("pinned.toml"), lagging).unwrap();
+    fs::create_dir_all(root.path().join(".changeset")).unwrap();
+    fs::write(
+        root.path().join(".changeset/one.md"),
+        indoc! {"
+            ---
+            demo: patch
+            ---
+
+            Bump.
+        "},
+    )
+    .unwrap();
+    init_repo(root.path());
+    let output = prepare(root.path());
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(root.path().join("pinned.toml")).unwrap(),
+        lagging,
+        "no fragment named `other`, so its pin is not this release's business"
+    );
+}
+
+/// A pin that cannot be rewritten is caught before anything is written.
+/// Otherwise prepare stops with versions bumped, no changelog, and the
+/// fragments still on disk.
+#[test]
+fn a_broken_pin_fails_before_any_manifest_moves() {
+    let root = TempDir::new().unwrap();
+    write_min(
+        root.path(),
+        indoc! {r#"
+            [[pins]]
+            file = "pinned.toml"
+            tool = "github:acme/demo"
+            package = "demo"
+        "#},
+    );
+    fs::write(root.path().join("pinned.toml"), "# no [tools] table\n").unwrap();
+    init_repo(root.path());
+    let output = prepare(root.path());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("pinned.toml"), "{stderr}");
+    assert!(
+        fs::read_to_string(root.path().join("Cargo.toml"))
+            .unwrap()
+            .contains("version = \"1.0.0\""),
+        "the manifest must not move when a pin cannot be rewritten"
+    );
+    assert!(
+        root.path().join(".changeset/one.md").exists(),
+        "the fragment must survive a failed prepare"
+    );
+}
