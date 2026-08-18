@@ -275,6 +275,23 @@ impl Render for PrepareReport {
     }
 }
 
+/// The versions templates render from.
+///
+/// A pin moves only what this release names, but a template renders a whole
+/// file: a served file that mentions a package no fragment bumped still has to
+/// say that package's current version. That map costs every manifest a read, so
+/// a repo that serves nothing from a template never builds it.
+fn versions_for_templates(
+    root: &Path,
+    config: &Config,
+    planned: &[(String, String)],
+) -> Result<Vec<(String, String)>> {
+    if templates::any(root, &config.templates)? {
+        return release::served_versions(root, config, planned);
+    }
+    Ok(planned.to_vec())
+}
+
 fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     let dry_run = args.dry_run();
     let config = Config::load(&args.config)?;
@@ -314,11 +331,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
         .iter()
         .map(|entry| (entry.name.clone(), entry.to.clone()))
         .collect();
-    // A pin moves only what this release names, but a template renders a whole
-    // file: a served file that mentions a package no fragment bumped still has
-    // to say that package's current version, or a partial release could not be
-    // rendered at all.
-    let served = release::served_versions(root, &config, &planned)?;
+    let served = versions_for_templates(root, &config, &planned)?;
     // Before a manifest moves: a stale [[pins]] entry must not leave
     // versions bumped with no changelog, no follow-up, and fragments
     // still on disk.

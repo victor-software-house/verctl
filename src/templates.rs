@@ -67,6 +67,14 @@ pub fn write(
     render(root, config, versions, true)
 }
 
+/// Whether this repo serves anything from a template at all.
+///
+/// A repo that serves nothing must not pay for what rendering needs — reading
+/// every package's manifest to build the version map — so the caller asks first.
+pub fn any(root: &Path, config: &Templates) -> Result<bool> {
+    Ok(!sources(root, config)?.is_empty())
+}
+
 /// Same checks as `write`, without touching disk.
 pub fn plan(
     root: &Path,
@@ -639,6 +647,17 @@ mod tests {
             None,
             "a sibling project's template is not this one's to render"
         );
+    }
+
+    /// A repo that serves nothing says so before anything is read on its
+    /// behalf: rendering needs every package's version, and a repo with no
+    /// template must not pay for that map.
+    #[test]
+    fn a_repo_with_no_template_serves_nothing() {
+        let bare = repo(&[("README.md", "nothing to serve\n")]);
+        assert!(!any(bare.path(), &Templates::default()).unwrap());
+        let serving = repo(&[(TEMPLATE_PATH, TEMPLATE)]);
+        assert!(any(serving.path(), &Templates::default()).unwrap());
     }
 
     #[test]
