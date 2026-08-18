@@ -100,11 +100,52 @@ runners = ["ns", "big"]
 [ci.audit]
 runners = ["ns"]
 
-# Collocated mise pins. `prepare` rewrites them onto the Version PR
-# commit, which is the commit the tag names, so the released tree carries
-# them. A file that must name an already-published tarball — the pin this
-# repo's own release lane installs — cannot be listed here.
+# Where served-file templates live. These are the defaults, so a repo that
+# follows the convention writes no [templates] table at all. Each template
+# declares its own target — see docs/served-files.md.
+[templates]
+source = ".verctl/templates"
+suffix = ".jinja"
+
+# A version spelling, named once here and listed by every file that carries it,
+# so two files that say the same thing say it in one place. `match` is literal
+# text with `{version}` where the version goes; `occurrences` is how often a
+# listing file must say it, and both too few and too many stop the release.
+[patterns.install]
+match = "github:victor-software-house/verctl@{version}"
+occurrences = "once"
+
+# "many" is for a document whose examples come and go, where only "still
+# tracked" is worth asserting. "never" guards a spelling that was retired,
+# `{ exactly = 2 }` and `{ at_least = 2 }` name counts.
+[patterns.mention]
+match = "verctl@{version}"
+occurrences = "many"
+
+# Files that carry a version and cannot be generated: `prepare` rewrites them
+# onto the Version PR commit, which is the commit the tag names, so the released
+# tree carries them. A file that must name an already-published tarball — the
+# pin a repo's own release lane installs — cannot be listed here either, because
+# it can only move to a version that already exists.
+#
+# `tool` is the structural form: a mise `[tools]` entry, plus every `?ref=v…`
+# include in the same file whose URL names this repo.
 [[pins]]
 file = "examples/mise.toml"
 tool = "github:victor-software-house/verctl"
 package = "verctl"
+
+# `patterns` is the textual form, for a file with no format to speak of — a
+# README sentence, a bash header. A file lists the patterns it carries by name;
+# a name nothing declares, a name listed twice, and a pattern no file lists all
+# fail the load.
+[[pins]]
+file = "README.md"
+package = "verctl"
+patterns = ["install", "mention"]
+
+# The same `install` spelling, in a second file. Naming it once is the point.
+[[pins]]
+file = "docs/install.md"
+package = "verctl"
+patterns = ["install"]

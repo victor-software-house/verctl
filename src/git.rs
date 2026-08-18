@@ -130,6 +130,23 @@ pub fn workdir_covering(dir: &Path) -> Option<PathBuf> {
         .and_then(|workdir| workdir.canonicalize().ok())
 }
 
+/// Every path git tracks in the tree at `root`, repo-relative.
+///
+/// The index, not a directory walk: build output, vendored trees, and
+/// anything else gitignored is not part of what this repo publishes. A tree
+/// with no repository tracks nothing — it cannot serve a file by tag — but a
+/// repository whose index cannot be read is an error, never an empty answer.
+pub fn tracked(root: &Path) -> Result<Vec<PathBuf>> {
+    let Some(repo) = repo_covering(root) else {
+        return Ok(Vec::new());
+    };
+    let index = repo.index().context("git index")?;
+    Ok(index
+        .iter()
+        .filter_map(|entry| String::from_utf8(entry.path).ok().map(PathBuf::from))
+        .collect())
+}
+
 fn repo_covering(root: &Path) -> Option<Repository> {
     if let Ok(repo) = Repository::open(root) {
         return Some(repo);

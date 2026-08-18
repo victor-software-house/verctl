@@ -9,13 +9,14 @@ stage = ["Cargo.lock"]
 name = "verctl"
 path = "Cargo.toml"
 
-# The Version PR rewrites this so the tag carries a working example.
-# mise.release.toml is deliberately absent: it names the tarball this
-# lane installs, so it can only move to a version that already exists.
-[[pins]]
-file = "examples/mise.toml"
-tool = "github:victor-software-house/verctl"
-package = "verctl"
+# examples/mise.toml is served from .verctl/templates/mise.toml.jinja, so it
+# needs no entry here. mise.release.toml is the one file that cannot be either:
+# it names the tarball this lane installs, so it can only move to a version that
+# already exists, and it is bumped by hand.
+#
+# [patterns] and [[pins]] are deliberately absent: this repo hand-authors no
+# other version site. examples/verctl.toml shows the shape a repo that does
+# would write.
 
 # One table per host binary; the name is the job, the tarball, and the
 # platform. Omit for a library. Both are built-in records, so `runner`, `os`,

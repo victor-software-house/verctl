@@ -20,4 +20,5 @@ pub mod publish;
 pub mod publisher;
 pub mod release;
 pub mod runners;
+pub mod templates;
 pub mod versions;

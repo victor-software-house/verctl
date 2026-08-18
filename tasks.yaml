@@ -124,11 +124,12 @@ queue:
     blocked_by: [VER-017]
     acceptance:
       - "`[prepare].after` and `.stage` already exist: the pin rewrite needs no second hook vocabulary."
-      - A consumer template renders the released versions wherever that template lives in its tree.
-      - A match-and-replace overlay covers what no template can own (a mise task header, a README install line).
-      - "`[[pins]]` TOML rewriting keeps working: templates coexist with it, they do not replace it."
+      - A template renders the released versions onto the Version PR commit, and declares its own target inside itself.
+      - A named pattern covers what no template can own (a README install line), listed by every file that carries it.
+      - "`[[pins]]` structural rewriting keeps working: templates coexist with it, they do not replace it."
       - "mise pin sites are first class: [tools] tables and `#MISE tools = { … }` task headers."
       - "No new Action and no post-release push: the rewrite happens where prepare already writes."
+      - The contract is written down before the keys are, and a repo that follows the convention declares no table.
     notes: >-
       2026-08-18, decided: making verctl cover every file format out of
       the box was never the plan and does not scale, so the answer is
@@ -147,6 +148,40 @@ queue:
       prepare time with the version being released, which is known then.
       mise.release.lock is out of scope for the same reason the bootstrap
       pin is: it hashes a tarball that does not exist yet.
+      2026-08-18, shipped: docs/served-files.md is the contract, and both
+      mechanisms are in. Templates live flat in .verctl/templates/ and
+      declare path / name / executable as top-level Jinja exports, parsed
+      into one schema (serde) and validated at the boundary (garde);
+      discovery is the git index, so an untracked template renders
+      nowhere. Patterns are named once as [patterns.<id>] and listed by
+      every file that carries one, with a declared arity
+      (once / many / never / exactly / at_least) that stops the release in
+      both directions. verctl dogfoods it: examples/mise.toml is rendered
+      from .verctl/templates/mise.toml.jinja, proven by a real prepare in
+      a disposable copy of this tree writing 0.0.4 into both the [tools]
+      pin and the ?ref=. Left over, VER-020: `check` is not wired to the
+      same validation, and nothing yet refuses a file that a template and
+      a pin both own.
+
+  - id: VER-020
+    title: check validates served files, and one file has one owner
+    scope: verctl
+    outcome: >-
+      A served file edited by hand, or claimed by both a template and a
+      pin, fails on the PR that does it instead of at release time.
+    blocked_by: [VER-018]
+    acceptance:
+      - "`check` runs the same validation prepare does: every pattern still matches at its declared arity."
+      - "`check` compares every served file to what its template renders at the versions on HEAD."
+      - A file that a template renders and a [[pins]] entry also names fails before anything is written.
+      - The failure names the file and which two declarations claim it.
+    notes: >-
+      2026-08-18: docs/served-files.md §6 describes check as designed, not
+      implemented — only prepare and its dry run validate today, so drift
+      introduced by hand survives until a release. The double-owner gap is
+      real and silent: prepare_report rewrites pins first and renders
+      templates second, so a template would clobber the rewrite without
+      saying so.
 
 horizon:
   - id: VER-019

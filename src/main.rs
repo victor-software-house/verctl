@@ -15,6 +15,7 @@ use verctl::prepare;
 use verctl::process;
 use verctl::publish;
 use verctl::release;
+use verctl::templates;
 use verctl::versions;
 
 const INSTRUCTIONS: &str = include_str!("instructions.md");
@@ -316,7 +317,8 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     // Before a manifest moves: a stale [[pins]] entry must not leave
     // versions bumped with no changelog, no follow-up, and fragments
     // still on disk.
-    let pinned = pins::plan(root, &config.pins, &planned)?;
+    let mut pinned = pins::plan(root, &config.pins, &planned)?;
+    pinned.extend(templates::plan(root, &config.templates, &planned)?);
     if dry_run {
         return preview_report(root, &plan, &fragments, bumps, pinned, args.open_pr());
     }
@@ -325,7 +327,10 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     // never reaches the tree consumers fetch by ref. Rewrite them here,
     // where they ride the Version PR. Only the versions this release
     // names: a pin on a package no fragment bumped stays where it is.
-    let pinned = pins::write(root, &config.pins, &planned)?;
+    let mut pinned = pins::write(root, &config.pins, &planned)?;
+    // Served files are rendered from the templates beside them, on the same
+    // commit, and staged from here — a repo never lists them in stage.
+    pinned.extend(templates::write(root, &config.templates, &planned)?);
     let consumed = release::contributing_fragments(&plan, &fragments);
     let changelog = release::changelog_sections(&plan, &fragments)?;
     let changelogs = release::write_changelogs(&config, root, &plan, &fragments)?;
