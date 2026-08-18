@@ -238,36 +238,11 @@ fn cli_hand_edit_fails_and_prints_table() {
     assert!(stderr.contains("fragment"), "{stderr}");
 }
 
-/// End-to-end through the real `Command`, so it covers `check_cmd` itself and
-/// not just the rule. It only bites where host keys exist — which is CI, the
-/// place that broke. `actions_keys_are_dropped_and_unreadable_keys_survive`
-/// carries the rule everywhere else.
-/// Unix-only for `PATH`: Windows spells it `Path`, and nothing here ships for
-/// Windows.
-#[cfg(unix)]
-#[test]
-fn check_cmd_hands_the_child_no_actions_keys() {
-    let dir = TempDir::new().unwrap();
-    let cmd = check_cmd(dir.path());
-    let keys: Vec<&std::ffi::OsStr> = cmd.get_envs().map(|(key, _)| key).collect();
-    assert!(!keys.is_empty(), "the parent environment is forwarded");
-    // Decode the way the rule decodes. Reading these lossily would be stricter
-    // than the filter — `GITHUB_\xff` would look like a leak the filter was
-    // right to keep, because it never matched a key it could not read.
-    let leaked: Vec<&&std::ffi::OsStr> = keys
-        .iter()
-        .filter(|key| key.to_str().is_some_and(is_host_actions_key))
-        .collect();
-    assert!(leaked.is_empty(), "{leaked:?} reached the child");
-    assert!(
-        keys.contains(&std::ffi::OsStr::new("PATH")),
-        "PATH must survive or the binary cannot run: {keys:?}"
-    );
-}
-
-/// The test above passes for the wrong reason on a host with no `GITHUB_*`
-/// set: a leak would only surface in CI. Plant the environment instead, with
-/// a key that is not valid UTF-8, so both halves of the rule are real here.
+/// Asserting against the real environment would prove nothing on a host with
+/// no `GITHUB_*` set. Plant one instead, including a key that is not valid
+/// UTF-8, so both halves of the rule hold everywhere. That `check_cmd` applies
+/// the rule is what the CLI tests above already prove: remove its `env_clear`
+/// and four of them fail wherever host keys exist.
 #[cfg(unix)]
 #[test]
 fn actions_keys_are_dropped_and_unreadable_keys_survive() {
