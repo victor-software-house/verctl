@@ -80,6 +80,38 @@ queue:
       it — verifying those literals needs a YAML dependency this crate does
       not have, to check a value the law puts there on purpose.
 
+  - id: VER-025
+    title: Declarations live in .verctl/, one YAML file per concern
+    scope: verctl
+    outcome: >-
+      A repo has one verctl directory, and inside it one file per thing a
+      reader might be looking for. `verctl.toml` is gone, not tolerated.
+    blocked_by: []
+    acceptance:
+      - "`.verctl/` holds one YAML file per concern, and every section of today's config has one: drivers, packages, publishers, runners, assets, ci, prepare, templates, patterns, pins — beside the templates directory already there."
+      - "Cross-section rules keep working, so the files are merged into one document before garde runs: `every_pattern_is_listed` still checks patterns against pins, and a job or asset target naming an undeclared runner still fails."
+      - YAML, not TOML, so every file a repo writes for a ctl CLI is the same language as tasks.yaml.
+      - "`verctl.toml` is not read at all: no fallback, no deprecation window, no both-are-accepted state."
+      - Every known consumer moves in the same slice — this repo, qctl, and ctl-core — and the old file is deleted from each.
+      - Loading is still one boundary, so a complaint names its file and field the way it does today.
+    notes: >-
+      2026-08-18, decided by Victor and recorded late — this row exists
+      because the decision lived in a conversation instead of the repo, which
+      is the failure the cold-start rule is about. His words, twice: first
+      "keep the damn config in there, .verctl/config.toml etc etc … anything
+      more than that, then we should use a damn directory already", then, on
+      seeing this written up as an open question, "we should just fucking drop
+      fucking verctl.toml and keep shit under .verctl/{config, etc etc}.yaml".
+      The second supersedes the first on two points: the format is YAML, and
+      `verctl.toml` is dropped rather than still recognized. A per-concern
+      split, YAML only, with both consumers migrated, is what was agreed at
+      the time.
+      This is a break to a contract we own, so the rule applies: inventory
+      every producer and consumer, migrate them in the same slice, remove the
+      old path. VER-021 declares this its blocker rather than saying so in
+      prose, because a schema written against verctl.toml is written twice.
+      VER-024 is the smaller version of the same problem and can ride along.
+
   - id: VER-020
     title: check validates served files, and one file has one owner
     scope: verctl
@@ -104,13 +136,13 @@ queue:
     title: Every config file we own has a JSON Schema, at a URL an IDE can fetch
     scope: verctl
     outcome: >-
-      Editing verctl.toml, tasks.yaml, or a changeset fragment in an IDE
-      completes the keys and marks a wrong one, in every ctl repo, with
+      Editing a repo's declarations, tasks.yaml, or a changeset fragment in an
+      IDE completes the keys and marks a wrong one, in every ctl repo, with
       no editor-local setup.
-    blocked_by: []
+    blocked_by: [VER-025]
     acceptance:
       - The schemas are generated from the Rust types, so a key that exists in code exists in the schema and no other.
-      - "verctl.toml carries `#:schema <url>`; tasks.yaml and changeset fragments carry `# yaml-language-server: $schema=<url>`."
+      - "Every declaration file a repo writes carries `# yaml-language-server: $schema=<url>`, and so do tasks.yaml and changeset fragments."
       - The URL is versioned, and a repo's own schema line is kept current by a [patterns] pin, not by hand.
       - "A generated schema that drifts from the types fails a check, the same way a served file does."
       - qctl and ctl-core carry the same lines for the same files.
@@ -145,7 +177,7 @@ queue:
     outcome: >-
       Every ctl CLI parses and validates declared input the same way,
       from one implementation, instead of three that drift.
-    blocked_by: []
+    blocked_by: [VER-025]
     acceptance:
       - "The shared validators (`inside_the_repo`, `one_file_name`, `at_least_one`, `cannot_be_empty`) live in ctl-core and verctl uses them from there."
       - "Config loading — read, parse with serde, validate once with garde against the whole document — is one ctl-core entry point."
@@ -157,6 +189,26 @@ queue:
       not verctl-shaped. ctl-core carries the matching row, CTC-008,
       merged 2026-08-18 as ctl-core#7, so the destination is agreed
       before anything moves.
+
+  - id: VER-024
+    title: Delete the retired [assets].targets shim
+    scope: verctl
+    outcome: >-
+      A config key that no longer exists is not still half-parsed. The
+      migration message has done its job and goes with it.
+    blocked_by: []
+    acceptance:
+      - "`Assets::retired_targets` and the bail in assets.rs are gone, along with the test that asserts the message."
+      - Both consumers are checked first — qctl and ctl-core name no `[assets].targets` and their verctl pin is at or past the release that replaced it.
+      - "A repo that still writes the old key gets serde's unknown-field error, which is the correct answer once nothing migrates."
+    notes: >-
+      2026-08-18: written down because it was not. The shim exists only so a
+      repo still on `targets = [...]` reads the migration instead of a serde
+      type error, and its own doc comment says "remove once qctl and ctl-core
+      have bumped their verctl pin" — a removal condition with no row to
+      enforce it, which is how compatibility code becomes permanent. Verify
+      the condition rather than assume it: grep both consumers for the key
+      and read their pins.
 
 horizon:
   - id: VER-019
