@@ -40,7 +40,14 @@ boundary and validated there — never a series of lookups with conversions at u
 sites.
 
 - `serde` parses shape and types. `garde` validates the parsed value
-  (`#[garde(custom(…))]`), so a complaint names its field.
+  (`#[garde(custom(…))]`), so a complaint names its field. Every schema is
+  validated once, at its boundary — `Config::load` for the file a repo writes,
+  `Declared::parse` for what a template exports — and nothing downstream
+  re-checks. A rule that needs the rest of the document takes it as garde's
+  context (`#[garde(context(Config as config))]`).
+- Rules live in `src/schema.rs` when more than one schema wants them, and they
+  say what a person has to change: "must declare at least one label", not
+  "length is lower than 1". Never ship a stock validator's wording.
 - Every field states what it means when unsaid, in its doc comment, and gets its
   default from `#[serde(default)]`. A default that cannot be written as an
   attribute (one derived from a file name) is seeded before parsing, so the field

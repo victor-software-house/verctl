@@ -1,14 +1,11 @@
 //! Rewrite collocated tool pins when a package version changes.
 
-use crate::config::{Config, Pin, PinPattern};
+use crate::config::{Config, PLACEHOLDER, Pin, PinPattern};
 use anyhow::{Context, Result, bail};
 use regex::{NoExpand, Regex, escape};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use toml_edit::{DocumentMut, Item, value};
-
-/// What a `[[pins]]` pattern puts where the version goes.
-const PLACEHOLDER: &str = "{version}";
 
 /// A version, as every pin site spells one.
 const VERSION: &str = r"[0-9]+(?:\.[0-9]+)*";

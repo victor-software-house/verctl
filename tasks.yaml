@@ -183,6 +183,55 @@ queue:
       templates second, so a template would clobber the rewrite without
       saying so.
 
+  - id: VER-021
+    title: Every config file we own has a JSON Schema, at a URL an IDE can fetch
+    scope: verctl
+    outcome: >-
+      Editing verctl.toml, tasks.yaml, or a changeset fragment in an IDE
+      completes the keys and marks a wrong one, in every ctl repo, with
+      no editor-local setup.
+    blocked_by: [VER-018]
+    acceptance:
+      - The schemas are generated from the Rust types, so a key that exists in code exists in the schema and no other.
+      - "verctl.toml carries `#:schema <url>`; tasks.yaml and changeset fragments carry `# yaml-language-server: $schema=<url>`."
+      - The URL is versioned, and a repo's own schema line is kept current by a [patterns] pin, not by hand.
+      - "A generated schema that drifts from the types fails a check, the same way a served file does."
+      - qctl and ctl-core carry the same lines for the same files.
+    notes: >-
+      2026-08-18, decided with Victor: free and already versioned wins over
+      a prettier host, so this follows the pattern that already exists
+      rather than inventing one. Evidence: qctl ships schema/tasks.schema.json
+      as a release asset, ctl-core's tasks.yaml already points $schema at
+      `releases/download/v0.0.1/tasks.schema.json`, and qctl's own ledger
+      already decided the URL is a pinned tag and never /latest — a schema
+      that changes under an unchanged file is worse than an old one. What is
+      missing is the rest: verctl.toml and changeset fragments have no
+      schema at all, qctl's is hand-written JSON rather than generated from
+      the types, and every pinned URL is bumped by hand. The staleness
+      objection is what VER-018 just answered: a schema URL is a version
+      site like any other, so it becomes a [patterns] entry and prepare
+      keeps it current on the Version PR. mise ships its own schema and we
+      only reference it; template declarations are not a file an editor
+      validates by URL.
+
+  - id: VER-022
+    title: Move the reusable schema layer into ctl-core
+    scope: verctl
+    outcome: >-
+      Every ctl CLI parses and validates declared input the same way,
+      from one implementation, instead of three that drift.
+    blocked_by: [VER-018]
+    acceptance:
+      - "The shared validators (`inside_the_repo`, `one_file_name`, `at_least_one`, `cannot_be_empty`) live in ctl-core and verctl uses them from there."
+      - "Config loading — read, parse with serde, validate once with garde against the whole document — is one ctl-core entry point."
+      - "The template renderer's declare-your-own-target mechanism is available to any ctl CLI, not just verctl."
+      - No verctl-specific vocabulary leaks into ctl-core, and no copy of the layer is left behind here.
+    notes: >-
+      2026-08-18: src/schema.rs is already shared between verctl's TOML
+      config and its Jinja template declarations, which is the proof it is
+      not verctl-shaped. ctl-core carries the matching row; do that one
+      first so this is a move, not a fork.
+
 horizon:
   - id: VER-019
     title: Triage the review backlog from the closed PRs
@@ -308,6 +357,26 @@ horizon:
     kind: deferred
     outcome: Public npm uses trusted publishing, not NPM_TOKEN.
     open: bun publish --tolerate-republish already ships. OIDC is the remaining auth path.
+
+  - id: VER-023
+    title: Is this how a modern Rust CLI is built?
+    scope: verctl
+    kind: evaluation
+    outcome: >-
+      The crate layout, error handling, test structure, and fixture
+      approach are what current Rust practice recommends — or we know
+      exactly where we differ and why we keep it.
+    open: >-
+      2026-08-18, raised by Victor: nothing here is unmanageable, but the
+      pattern was never checked against the field. Questions worth
+      researching rather than guessing: flat `src/*.rs` modules versus
+      grouped ones as the crate keeps growing; anyhow everywhere versus a
+      typed error at the library boundary with anyhow only in main; unit
+      tests in-file versus `tests/` (both are used here, with no stated
+      rule); hand-written table tests versus a fixture or snapshot crate;
+      and how much of the answer belongs in ctl-core so all three CLIs
+      share it (VER-022). Deliverable is a short written standard in
+      ctl-core plus a list of what to change here, not a rewrite.
 
 archive:
   - id: VER-012

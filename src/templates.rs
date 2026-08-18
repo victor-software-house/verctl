@@ -23,13 +23,13 @@
 
 use crate::config::Templates;
 use crate::git;
+use crate::schema::{inside_the_repo, one_file_name};
 use anyhow::{Context, Result, bail};
 use garde::Validate;
 use minijinja::value::Value;
 use minijinja::{Environment, State, UndefinedBehavior, context};
 use serde::Deserialize;
 use std::collections::BTreeMap;
-use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
@@ -57,26 +57,6 @@ struct Declared {
     /// So there is no third state, and no mode field: unsaid means 0644.
     #[serde(default)]
     executable: bool,
-}
-
-/// A directory a template may write into: relative, and never upward.
-#[allow(clippy::trivially_copy_pass_by_ref, clippy::ptr_arg)]
-fn inside_the_repo(path: &PathBuf, _: &()) -> garde::Result {
-    if path.is_absolute() || path.components().any(|part| part == Component::ParentDir) {
-        return Err(garde::Error::new("must stay inside the repository"));
-    }
-    Ok(())
-}
-
-/// One file name, not a path: the directory is `path`, so separators here
-/// would be two ways to say one thing.
-#[allow(clippy::trivially_copy_pass_by_ref)]
-fn one_file_name(name: &str, _: &()) -> garde::Result {
-    let candidate = Path::new(name);
-    if candidate.components().count() != 1 || candidate.file_name() != Some(OsStr::new(name)) {
-        return Err(garde::Error::new("must be one file name"));
-    }
-    Ok(())
 }
 
 pub fn write(

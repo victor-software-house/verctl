@@ -73,7 +73,9 @@ exception: a served file whose template says nothing is served 0644, and a stale
 Declarations are checked at the boundary, once, before anything is written:
 serde parses the exports into one schema and [garde] validates it, so
 `path = 5`, `path = "../.."`, and `name = "tasks/q"` each fail the release
-naming the field. Any other export is the template's own business — a `tool`
+naming the field. `verctl.toml` is held to the same standard by the same
+validators — a pin that reaches out of the repository fails exactly the way a
+template that does would. Any other export is the template's own business — a `tool`
 name it uses to build a line is not a declaration.
 
 Trim declarations with `{%- … -%}`: a shebang has to stay on line one.
