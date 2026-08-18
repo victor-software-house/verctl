@@ -158,6 +158,26 @@ queue:
       merged 2026-08-18 as ctl-core#7, so the destination is agreed
       before anything moves.
 
+  - id: VER-024
+    title: Delete the retired [assets].targets shim
+    scope: verctl
+    outcome: >-
+      A config key that no longer exists is not still half-parsed. The
+      migration message has done its job and goes with it.
+    blocked_by: []
+    acceptance:
+      - "`Assets::retired_targets` and the bail in assets.rs are gone, along with the test that asserts the message."
+      - Both consumers are checked first — qctl and ctl-core name no `[assets].targets` and their verctl pin is at or past the release that replaced it.
+      - "A repo that still writes the old key gets serde's unknown-field error, which is the correct answer once nothing migrates."
+    notes: >-
+      2026-08-18: written down because it was not. The shim exists only so a
+      repo still on `targets = [...]` reads the migration instead of a serde
+      type error, and its own doc comment says "remove once qctl and ctl-core
+      have bumped their verctl pin" — a removal condition with no row to
+      enforce it, which is how compatibility code becomes permanent. Verify
+      the condition rather than assume it: grep both consumers for the key
+      and read their pins.
+
 horizon:
   - id: VER-019
     title: Triage the review backlog from the closed PRs
@@ -283,6 +303,28 @@ horizon:
     kind: deferred
     outcome: Public npm uses trusted publishing, not NPM_TOKEN.
     open: bun publish --tolerate-republish already ships. OIDC is the remaining auth path.
+
+  - id: VER-025
+    title: Does the config belong in .verctl/, split by concern?
+    scope: verctl
+    kind: evaluation
+    outcome: >-
+      A repo's declarations live wherever a reader would look for them, and
+      that place is decided once instead of drifting one key at a time.
+    open: >-
+      2026-08-18, written down because it only ever existed in conversation:
+      `.verctl/` is already the directory "everything verctl owns in a repo
+      lives under" (config.rs DIR, docs/served-files.md §1), but the only
+      thing under it is `templates/`, while every declaration still sits in a
+      single `verctl.toml` at the root. Splitting it per concern — packages,
+      pins, ci, assets, prepare — was talked about and never recorded, so
+      nothing says whether it is decided, and a fresh reader cannot tell.
+      Settle it before adding more top-level tables. What has to be answered:
+      is a split actually better than one file a reader greps, does it mean
+      YAML or TOML, what happens to `verctl.toml` for the repos already on it
+      (VER-024 is what that migration costs), and does qctl's tasks.yaml
+      precedent argue for one file per concern or against it. If the answer
+      is no, say so here and stop reopening it.
 
   - id: VER-023
     title: Is this how a modern Rust CLI is built?
