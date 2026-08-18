@@ -2,7 +2,7 @@
 # `mise run ver -- prepare --pr` opens the first Version PR.
 
 [prepare]
-after = ["cargo", "generate-lockfile"]
+after = ["cargo", "update", "--workspace"]
 stage = ["Cargo.lock"]
 
 [[packages]]

@@ -120,7 +120,13 @@ horizon:
       `Cargo.lock` stage glob — and a repo that does not know to is one
       Version PR away from a dirty-tree `cargo package --locked`.
       Running the driver's own after is the fix; the opt-in escape is
-      then a `[prepare]` that overrides it.
+      then a `[prepare]` that overrides it. The command itself is settled
+      and no longer part of the question: measured on a scratch copy with
+      the manifest bumped to 0.0.9, `cargo generate-lockfile` printed
+      `Locking 138 packages` and `Adding serde_yml v0.0.12` for a 3-line
+      diff, while `cargo update --workspace` printed `Locking 1 package`
+      for a 1-line diff. The driver, this repo, qctl, and ctl-core all
+      name the narrow one now.
 
   - id: VER-014
     title: First-party composite Action packages
