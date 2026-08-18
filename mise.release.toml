@@ -2,7 +2,7 @@
 # Published tarball only. No rust.
 
 [tools]
-"github:victor-software-house/verctl" = "0.0.3"
+"github:victor-software-house/verctl" = "0.0.4"
 
 [tasks.ver]
 description = "Released verctl binary"
