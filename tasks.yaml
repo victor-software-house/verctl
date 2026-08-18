@@ -167,9 +167,9 @@ queue:
       this file rewrote it through serde_yaml and dropped every comment,
       line 1 included, so `# yaml-language-server: $schema=…` survives only
       until the next `q start` or `q archive`. tasks.yaml cannot carry a
-      schema pointer until qctl writes comments back; the same is why no
-      comment in this file is load-bearing, and why an archived blocker is
-      recorded in notes rather than beside the key.
+      schema pointer until qctl writes comments back. The same applies to
+      every comment here: none of them survive a verb, which is why an
+      archived blocker is recorded in notes rather than beside the key.
 
   - id: VER-022
     title: Move the reusable schema layer into ctl-core
