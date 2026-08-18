@@ -2,6 +2,7 @@
 
 use git2::{Repository, Signature};
 use indoc::{formatdoc, indoc};
+use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -65,6 +66,35 @@ fn load(root: &Path) -> Config {
 
 fn check(root: &Path, skip: Skip) -> anyhow::Result<versions::VersionReport> {
     versions::require_with(root, &load(root), skip, &versions::stock_candidates())
+}
+
+/// Isolate from the host Actions event. Version PR CI sets
+/// `GITHUB_EVENT_PATH` to a labeled payload; leaking that into these
+/// processes would exempt a hand-edit. Callers that need a var set it
+/// after this helper.
+fn is_host_actions_key(key: &str) -> bool {
+    key == "CI" || key.starts_with("GITHUB_")
+}
+
+/// Everything the child may keep. Split from the environment it reads so the
+/// rule is testable against a planted one: `std::env` cannot be given a
+/// non-Unicode key without `set_var`, and `unsafe_code = "forbid"` rules that
+/// out. `vars()` would panic on such a key, so this never decodes one — a key
+/// we cannot read is not a key we are stripping.
+fn inherited(
+    vars: impl IntoIterator<Item = (OsString, OsString)>,
+) -> impl Iterator<Item = (OsString, OsString)> {
+    vars.into_iter()
+        .filter(|(key, _)| !key.to_str().is_some_and(is_host_actions_key))
+}
+
+fn check_cmd(root: &Path) -> std::process::Command {
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"));
+    cmd.env_clear()
+        .envs(inherited(std::env::vars_os()))
+        .current_dir(root)
+        .args(["check", "--versions", "--color", "never"]);
+    cmd
 }
 
 #[test]
@@ -198,13 +228,7 @@ fn bun_package_json_hand_edit_fails() {
 fn cli_hand_edit_fails_and_prints_table() {
     let (dir, _) = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
-        .current_dir(dir.path())
-        .env_remove("CI")
-        .env_remove("GITHUB_ACTIONS")
-        .args(["check", "--versions", "--color", "never"])
-        .output()
-        .unwrap();
+    let output = check_cmd(dir.path()).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "{stdout}{stderr}");
@@ -214,17 +238,50 @@ fn cli_hand_edit_fails_and_prints_table() {
     assert!(stderr.contains("fragment"), "{stderr}");
 }
 
+/// Asserting against the real environment would prove nothing on a host with
+/// no `GITHUB_*` set. Plant one instead, including a key that is not valid
+/// UTF-8, so both halves of the rule hold everywhere. That `check_cmd` applies
+/// the rule is what the CLI tests above already prove: remove its `env_clear`
+/// and four of them fail wherever host keys exist.
+#[cfg(unix)]
+#[test]
+fn actions_keys_are_dropped_and_unreadable_keys_survive() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let opaque = OsString::from_vec(vec![0xff, 0xfe]);
+    let planted = vec![
+        (OsString::from("PATH"), OsString::from("/usr/bin")),
+        (OsString::from("CI"), OsString::from("true")),
+        (
+            OsString::from("GITHUB_EVENT_PATH"),
+            OsString::from("/event.json"),
+        ),
+        (OsString::from("GITHUB_BASE_REF"), OsString::from("main")),
+        (opaque.clone(), OsString::from("not utf-8")),
+    ];
+    let kept: Vec<OsString> = inherited(planted).map(|(key, _)| key).collect();
+    assert_eq!(kept, [OsString::from("PATH"), opaque]);
+}
+
+#[test]
+fn host_actions_keys_are_not_inherited() {
+    assert!(is_host_actions_key("CI"));
+    assert!(is_host_actions_key("GITHUB_EVENT_PATH"));
+    assert!(is_host_actions_key("GITHUB_BASE_REF"));
+    assert!(is_host_actions_key("GITHUB_REPOSITORY"));
+    assert!(is_host_actions_key("GITHUB_HEAD_REF"));
+    assert!(is_host_actions_key("GITHUB_REF_NAME"));
+    assert!(!is_host_actions_key("PATH"));
+    assert!(!is_host_actions_key("HOME"));
+}
+
 #[test]
 fn ci_env_does_not_skip() {
     let (dir, _) = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
-        .current_dir(dir.path())
+    let output = check_cmd(dir.path())
         .env("CI", "true")
         .env("GITHUB_ACTIONS", "true")
-        .env_remove("GITHUB_HEAD_REF")
-        .env_remove("GITHUB_EVENT_PATH")
-        .args(["check", "--versions", "--color", "never"])
         .output()
         .unwrap();
     assert!(!output.status.success());
@@ -320,13 +377,9 @@ fn current_branch_reads_version_packages() {
 fn pull_request_head_ref_is_not_an_exemption() {
     let (dir, _) = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
-        .current_dir(dir.path())
-        .env_remove("CI")
-        .env_remove("GITHUB_EVENT_PATH")
+    let output = check_cmd(dir.path())
         .env("GITHUB_ACTIONS", "true")
         .env("GITHUB_HEAD_REF", "version-packages")
-        .args(["check", "--versions", "--color", "never"])
         .output()
         .unwrap();
     assert!(
@@ -346,12 +399,9 @@ fn pull_request_version_label_is_exempt() {
         r#"{"pull_request":{"labels":[{"name":"verctl:version"}]}}"#,
     )
     .unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
-        .current_dir(dir.path())
-        .env_remove("CI")
+    let output = check_cmd(dir.path())
         .env("GITHUB_ACTIONS", "true")
         .env("GITHUB_EVENT_PATH", &event)
-        .args(["check", "--versions", "--color", "never"])
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -370,12 +420,9 @@ fn issue_event_label_is_not_an_exemption() {
         r#"{"issue":{"labels":[{"name":"verctl:version"}]}}"#,
     )
     .unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
-        .current_dir(dir.path())
-        .env_remove("CI")
+    let output = check_cmd(dir.path())
         .env("GITHUB_ACTIONS", "true")
         .env("GITHUB_EVENT_PATH", &event)
-        .args(["check", "--versions", "--color", "never"])
         .output()
         .unwrap();
     assert!(
@@ -389,13 +436,9 @@ fn issue_event_label_is_not_an_exemption() {
 fn github_ref_name_is_not_an_exemption() {
     let (dir, _) = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
-        .current_dir(dir.path())
-        .env_remove("CI")
-        .env_remove("GITHUB_EVENT_PATH")
+    let output = check_cmd(dir.path())
         .env("GITHUB_ACTIONS", "true")
         .env("GITHUB_REF_NAME", "version-packages")
-        .args(["check", "--versions", "--color", "never"])
         .output()
         .unwrap();
     assert!(
@@ -426,11 +469,8 @@ fn configured_version_label_is_the_exemption() {
         r#"{"pull_request":{"labels":[{"name":"verctl:version"}]}}"#,
     )
     .unwrap();
-    let defaulted = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
-        .current_dir(dir.path())
-        .env_remove("CI")
+    let defaulted = check_cmd(dir.path())
         .env("GITHUB_EVENT_PATH", &default_event)
-        .args(["check", "--versions", "--color", "never"])
         .output()
         .unwrap();
     assert!(
@@ -443,11 +483,8 @@ fn configured_version_label_is_the_exemption() {
         r#"{"pull_request":{"labels":[{"name":"ship-it"}]}}"#,
     )
     .unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
-        .current_dir(dir.path())
-        .env_remove("CI")
+    let output = check_cmd(dir.path())
         .env("GITHUB_EVENT_PATH", &event)
-        .args(["check", "--versions", "--color", "never"])
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -463,14 +500,7 @@ fn version_packages_branch_cli_is_exempt() {
     repo.reference("refs/heads/version-packages", oid, true, "test")
         .unwrap();
     repo.set_head("refs/heads/version-packages").unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
-        .current_dir(dir.path())
-        .env_remove("CI")
-        .env_remove("GITHUB_EVENT_PATH")
-        .env_remove("GITHUB_ACTIONS")
-        .args(["check", "--versions", "--color", "never"])
-        .output()
-        .unwrap();
+    let output = check_cmd(dir.path()).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success(), "{stdout}");
     assert!(stdout.contains("version-pr"), "{stdout}");
