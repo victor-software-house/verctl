@@ -119,6 +119,17 @@ fn prove_default_history(root: &Path, candidates: &[String]) -> Result<()> {
     }
 }
 
+/// The working tree that holds `dir`, canonicalized.
+///
+/// The ceiling for an upward file search: nothing above a repository
+/// root belongs to the project inside it.
+#[must_use]
+pub fn workdir_covering(dir: &Path) -> Option<PathBuf> {
+    repo_covering(dir)?
+        .workdir()
+        .and_then(|workdir| workdir.canonicalize().ok())
+}
+
 fn repo_covering(root: &Path) -> Option<Repository> {
     if let Ok(repo) = Repository::open(root) {
         return Some(repo);
