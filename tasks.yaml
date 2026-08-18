@@ -81,36 +81,38 @@ queue:
       not have, to check a value the law puts there on purpose.
 
   - id: VER-017
-    title: The pin phase is an Action, like the other three
+    title: Pins ride the Version PR, and publish pushes only the tag
     scope: verctl
     outcome: >-
-      A consumer declaring [[pins]] gets them rewritten and committed by
-      naming one action, not by copying release-critical bash.
+      The released tree carries its own pins, so a consumer that fetches
+      by tag or ?ref= gets the version it asked for.
     blocked_by: []
     acceptance:
-      - actions/pin runs verctl pin, commits only the files verctl reported, and pushes to the default branch.
-      - A repo declaring no [[pins]] exits clean instead of committing an empty change.
-      - Whatever an earlier step left staged does not ride along on the release commit.
-      - examples/workflows/publish.yml shows the job, so a consumer copies it instead of inventing it.
-      - README and verctl instructions name all four actions.
+      - prepare rewrites [[pins]] and the pin files are part of the Version PR commit.
+      - A dry run names the files it would rewrite and writes nothing.
+      - A pin no configured package claims is left untouched.
+      - publish pushes the tag and nothing else; no pin job, no actions/pin.
+      - A pin that must name an already-published tarball is documented as ineligible.
     notes: >-
-      2026-08-18: found because qctl's examples/mise.toml still pinned
-      ?ref=v0.0.1 with nothing to move it. The gap was in the reference
-      workflow, not in qctl: examples/workflows/publish.yml had no pin job
-      at all, so every consumer that copied it inherited the hole, and
-      ctl-core copied its @main refs along with it. Verified in a scratch
-      repo against a bare remote: the rewrite moved both the [tools]
-      version and the ?ref=, the commit carried consumer/mise.toml only
-      while a staged junk.txt stayed out of the tree, a second run printed
-      "pins already name the released versions" and pushed nothing, and an
-      empty [[pins]] list exited clean. Two defects were found and fixed
-      that way, both from an unscoped index: `git diff --cached` with no
-      pathspec would have committed anything already staged, and an empty
-      file list fell through to a commit. This repo's own publish.yml pin
-      job deliberately stays hand-rolled — it must run the binary
-      published seconds earlier, which PATH does not have, and the action
-      requires verctl on PATH. Adoption in qctl follows once this merges,
-      since the ref has to be a real SHA.
+      2026-08-18: started as "the pin phase is an Action" and was wrong at
+      the root, caught by Victor: the only thing publish should push is
+      the tag. Proof the old shape could not work: qctl's tag v0.0.2
+      contains tasks/q/q pinning 0.0.1 and README ?ref=v0.0.1, because
+      `verctl publish` cuts the tag in the crate job and the pin commit
+      landed after it. A post-release commit can never reach the tree a
+      tag names. The Version PR is the right phase for exactly the reason
+      it exists: it is regenerated idempotently on every push to main and
+      it already holds every other released change. The bootstrap pin is
+      the one exception and stays out of [[pins]]: mise.release.toml names
+      the tarball a lane installs, so it can only move to a version that
+      already exists, and pinning it to the version being released would
+      make `mise install --locked` fail before publish could create it.
+      That exception costs nothing here, because this repo's own lanes run
+      MISE_ENV=dev and build the checkout — a lane that installed its own
+      tarball could only ever run the previous release. actions/pin was
+      written, proven against a bare remote, and deleted unmerged; the
+      scratch-repo evidence is kept only because it is why the timing
+      question got asked.
 
   - id: VER-018
     title: The pin phase materializes templates and runs consumer hooks
@@ -121,12 +123,12 @@ queue:
       format.
     blocked_by: [VER-017]
     acceptance:
-      - "`[pin]` takes `after` and `stage`, the vocabulary `[prepare]` already has."
+      - "`[prepare].after` and `.stage` already exist: the pin rewrite needs no second hook vocabulary."
       - A consumer template renders the released versions wherever that template lives in its tree.
       - A match-and-replace overlay covers what no template can own (a mise task header, a README install line).
       - "`[[pins]]` TOML rewriting keeps working: templates coexist with it, they do not replace it."
       - "mise pin sites are first class: [tools] tables and `#MISE tools = { … }` task headers."
-      - actions/pin grows no new input per consumer scenario.
+      - "No new Action and no post-release push: the rewrite happens where prepare already writes."
     notes: >-
       2026-08-18, decided: making verctl cover every file format out of
       the box was never the plan and does not scale, so the answer is
@@ -140,9 +142,11 @@ queue:
       `#MISE tools` header, and README repeats the ?ref= plus an install
       hint. All five were hand-bumped to 0.0.2 on 2026-08-18 as that
       bridge, which is the rot this row removes. verctl's own release
-      wants the same hooks: its pin job runs `mise -E release lock` after
-      the rewrite and commits mise.release.lock beside the pins, which
-      today only bash can express.
+      2026-08-18, later: the timing moved to prepare (VER-017), so this
+      row is only about reach, not about when. A template renders at
+      prepare time with the version being released, which is known then.
+      mise.release.lock is out of scope for the same reason the bootstrap
+      pin is: it hashes a tarball that does not exist yet.
 
 horizon:
   - id: VER-019

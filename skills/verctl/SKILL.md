@@ -27,7 +27,7 @@ machine. Only `labels` reach `runs-on`; a name resolves against
 `[runners]` or fails.
 
 verctl decides how many jobs there are; the workflow file decides where a
-fixed job runs. `plan`, `crate`, `pin`, and `prepare` are always one job
+fixed job runs. `plan`, `crate`, and `prepare` are always one job
 each, so their `runs-on` is a literal in the consumer's workflow — not a
 config key. Do not add one, and do not add a `[release]` runner table.
 

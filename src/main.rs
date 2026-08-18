@@ -196,6 +196,7 @@ struct PrepareReport {
     bumps: Vec<PrepareBump>,
     changelog: String,
     consume: Vec<String>,
+    pins: Vec<String>,
     pr: Option<String>,
     next: Vec<String>,
     dry_run: bool,
@@ -241,6 +242,9 @@ impl PrepareReport {
         for file in &self.consume {
             extra.push(("consume", file.clone()));
         }
+        for file in &self.pins {
+            extra.push(("pin", file.clone()));
+        }
         if let Some(pr) = &self.pr {
             extra.push(("pr", pr.clone()));
         }
@@ -285,6 +289,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
             bumps: Vec::new(),
             changelog: String::new(),
             consume: Vec::new(),
+            pins: Vec::new(),
             pr: args.open_pr().then(|| "no-op".to_owned()),
             next: Vec::new(),
             dry_run,
@@ -305,9 +310,18 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
         })
         .collect();
     if dry_run {
-        return preview_report(root, &plan, &fragments, bumps, args.open_pr());
+        let planned: Vec<(String, String)> = plan
+            .iter()
+            .map(|entry| (entry.name.clone(), entry.to.clone()))
+            .collect();
+        let pinned = pins::plan(root, &config.pins, &planned)?;
+        return preview_report(root, &plan, &fragments, bumps, pinned, args.open_pr());
     }
     let follow_up = prepare::apply_plan(&plan)?;
+    // The tag names the merge commit, so a pin that lands after publish
+    // never reaches the tree consumers fetch by ref. Rewrite them here,
+    // where they ride the Version PR.
+    let pinned = pins::write(root, &config.pins, &pins::current_versions(root, &config)?)?;
     let consumed = release::contributing_fragments(&plan, &fragments);
     let changelog = release::changelog_sections(&plan, &fragments)?;
     let changelogs = release::write_changelogs(&config, root, &plan, &fragments)?;
@@ -326,6 +340,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
         })
         .collect();
     let mut paths: Vec<std::path::PathBuf> = plan.iter().map(|entry| entry.path.clone()).collect();
+    paths.extend(pinned.iter().cloned());
     paths.extend(changelogs);
     paths.extend(consumed.iter().map(|fragment| fragment.path.clone()));
     let staged = git::assert_only_allowed(
@@ -354,6 +369,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     Ok(PrepareReport {
         changelog,
         consume,
+        pins: display_paths(pinned),
         pr,
         next: follow_up,
         dry_run: false,
@@ -361,11 +377,19 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     })
 }
 
+fn display_paths(paths: Vec<std::path::PathBuf>) -> Vec<String> {
+    paths
+        .into_iter()
+        .map(|path| path.display().to_string())
+        .collect()
+}
+
 fn preview_report(
     root: &Path,
     plan: &[prepare::PlanEntry],
     fragments: &[fragment::Fragment],
     bumps: Vec<PrepareBump>,
+    pinned: Vec<std::path::PathBuf>,
     open_pr: bool,
 ) -> Result<PrepareReport> {
     let changelog = release::changelog_sections(plan, fragments)?;
@@ -408,6 +432,7 @@ fn preview_report(
         bumps,
         changelog,
         consume,
+        pins: display_paths(pinned),
         pr,
         next: plan
             .iter()
@@ -525,10 +550,7 @@ fn pin_report(args: &PublishArgs) -> Result<PinReport> {
         pins::write(root, &config.pins, &versions)?
     };
     Ok(PinReport {
-        files: files
-            .into_iter()
-            .map(|path| path.display().to_string())
-            .collect(),
+        files: display_paths(files),
     })
 }
 
