@@ -6,6 +6,7 @@
 # `cargo` and `npm` are stock drivers and `cargo` and `bun` are stock
 # publishers. Redeclaring one merges over the stock recipe rather than
 # replacing it, so this pair changes nothing and is here to show the shape.
+# Because it is a merge, a table may carry only the field it overrides.
 [drivers.cargo]
 format = "toml"
 keys = ["workspace.package.version", "package.version"]
@@ -40,6 +41,15 @@ path = "package.json"
 publisher = "bun"
 registry = "github"
 # changelog = "docs/PKG.md"  # defaults to CHANGELOG.md beside the manifest
+
+# A file name that implies nothing, so both the driver and the publisher are
+# named. This is what the `plain` driver and `[publishers.twine]` above are
+# for — nothing here is declared without a package that uses it.
+[[packages]]
+name = "py-tool"
+path = "VERSION"
+driver = "plain"
+publisher = "twine"
 
 # One argv after every bump, on the Version PR. `stage` lists the extra paths
 # it may write; any other dirty file fails the run.
