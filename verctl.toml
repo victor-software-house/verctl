@@ -9,13 +9,9 @@ stage = ["Cargo.lock"]
 name = "verctl"
 path = "Cargo.toml"
 
-# When this package is bumped, the Version PR also rewrites the
-# released-binary pin so the next cycle installs that tarball.
-[[pins]]
-file = "mise.release.toml"
-tool = "github:victor-software-house/verctl"
-package = "verctl"
-
+# The Version PR rewrites this so the tag carries a working example.
+# mise.release.toml is deliberately absent: it names the tarball this
+# lane installs, so it can only move to a version that already exists.
 [[pins]]
 file = "examples/mise.toml"
 tool = "github:victor-software-house/verctl"

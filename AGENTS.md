@@ -2,8 +2,8 @@
 
 Stack-agnostic Version PR CLI. Fragments are Changesets YAML.
 Changelogs are minijinja (Jinja2) with `internalAuthors` filtering.
-Ship `actions/version-pr` and `actions/publish`. `changelog.ts` is not
-used.
+Ship `actions/version-pr`, `actions/publish`, and `actions/asset`.
+`changelog.ts` is not used.
 
 Operator contract: `verctl instructions` and `skills/verctl/SKILL.md`.
 This repo's queue is [`tasks.yaml`](tasks.yaml) (`VER-###`).
@@ -61,9 +61,12 @@ branch. Exempt on `version-packages` locally, or when the GitHub
 event has the Version PR label (`verctl:version`). CI does not skip.
 mise: `mise.toml` is shared settings only. `mise.dev.toml` is rust
 and `cargo run`. `mise.release.toml` is the published tarball.
-`.miserc.toml` defaults local `MISE_ENV` to `dev`. `verctl pin`
-rewrites `[[pins]]` after publish, once the tarball exists. Actions
-run `verctl` from PATH.
+`.miserc.toml` defaults local `MISE_ENV` to `dev`. `prepare`
+rewrites `[[pins]]` onto the Version PR commit, because the tag names
+that commit and publish pushes nothing but the tag. This repo's own
+bootstrap pin in `mise.release.toml` is deliberately not a `[[pins]]`
+entry: it must name a tarball that already exists. Actions run
+`verctl` from PATH.
 `publish` is exact-SHA plus a matching per-package CHANGELOG heading.
 Cargo and bun are stock recipes, not the architecture. Do not name
 private release skills in this repo.

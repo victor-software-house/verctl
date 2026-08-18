@@ -233,8 +233,9 @@ fn the_example_assets_table_plans_the_targets_it_documents() {
 fn the_example_pin_rewrites_the_file_it_names() {
     let root = planted();
     let config = Config::load(&root.path().join("verctl.toml")).expect("parse");
+    fs::create_dir_all(root.path().join("examples")).expect("examples dir");
     fs::write(
-        root.path().join("mise.release.toml"),
+        root.path().join("examples/mise.toml"),
         indoc! {r#"
             [tools]
             "github:victor-software-house/verctl" = "0.0.1"
@@ -248,8 +249,8 @@ fn the_example_pin_rewrites_the_file_it_names() {
     .expect("pin file");
     let versions = pins::current_versions(root.path(), &config).expect("read versions");
     let written = pins::write(root.path(), &config.pins, &versions).expect("rewrite the pin");
-    assert_eq!(written, [root.path().join("mise.release.toml")]);
-    let body = fs::read_to_string(root.path().join("mise.release.toml")).expect("reread");
+    assert_eq!(written, [root.path().join("examples/mise.toml")]);
+    let body = fs::read_to_string(root.path().join("examples/mise.toml")).expect("reread");
     assert_eq!(
         body,
         indoc! {r#"

@@ -1,4 +1,5 @@
-//! `[prepare].after` and unexpected dirty paths.
+//! What `prepare` is allowed to write: `[prepare].after`, `[[pins]]`,
+//! and unexpected dirty paths.
 #![allow(missing_docs, clippy::unwrap_used)]
 
 use git2::{Repository, Signature};
@@ -168,4 +169,256 @@ fn bunfig_is_passed_as_config() {
         "{argv:?}"
     );
     assert!(!argv.contains(&"--registry".into()), "{argv:?}");
+}
+
+/// The tag names the Version PR commit, so a pin rewritten after publish
+/// never reaches the tree a consumer fetches by ref. `prepare` writes it.
+#[test]
+fn pins_move_with_the_bump() {
+    let root = TempDir::new().unwrap();
+    write_min(
+        root.path(),
+        indoc! {r#"
+            [[pins]]
+            file = "consumer/mise.toml"
+            tool = "github:acme/demo"
+            package = "demo"
+        "#},
+    );
+    fs::create_dir_all(root.path().join("consumer")).unwrap();
+    fs::write(
+        root.path().join("consumer/mise.toml"),
+        indoc! {r#"
+            [tools]
+            "github:acme/demo" = "1.0.0"
+
+            [task_config]
+            includes = [
+              "git::https://github.com/acme/demo.git//tasks/demo?ref=v1.0.0",
+            ]
+        "#},
+    )
+    .unwrap();
+    init_repo(root.path());
+    let output = prepare(root.path());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    assert_eq!(
+        fs::read_to_string(root.path().join("consumer/mise.toml")).unwrap(),
+        indoc! {r#"
+            [tools]
+            "github:acme/demo" = "1.0.1"
+
+            [task_config]
+            includes = [
+              "git::https://github.com/acme/demo.git//tasks/demo?ref=v1.0.1",
+            ]
+        "#},
+        "the tool pin and the ?ref= both name the version being released"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("consumer/mise.toml"), "{stdout}");
+}
+
+/// A rewritten pin is part of the release, not a surprise in the worktree.
+/// Without that, the dirty check would reject the file `prepare` just wrote.
+#[test]
+fn a_rewritten_pin_is_not_unexpected_dirt() {
+    let root = TempDir::new().unwrap();
+    write_min(
+        root.path(),
+        indoc! {r#"
+            [[pins]]
+            file = "pinned.toml"
+            tool = "github:acme/demo"
+            package = "demo"
+        "#},
+    );
+    fs::write(
+        root.path().join("pinned.toml"),
+        indoc! {r#"
+            [tools]
+            "github:acme/demo" = "1.0.0"
+        "#},
+    )
+    .unwrap();
+    init_repo(root.path());
+    let output = prepare(root.path());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    assert!(!stderr.contains("[prepare].stage"), "{stderr}");
+}
+
+#[test]
+fn a_pin_naming_no_configured_package_is_left_alone() {
+    let root = TempDir::new().unwrap();
+    write_min(
+        root.path(),
+        indoc! {r#"
+            [[pins]]
+            file = "pinned.toml"
+            tool = "github:acme/ghost"
+            package = "ghost"
+        "#},
+    );
+    let body = indoc! {r#"
+        [tools]
+        "github:acme/ghost" = "1.0.0"
+    "#};
+    fs::write(root.path().join("pinned.toml"), body).unwrap();
+    init_repo(root.path());
+    let output = prepare(root.path());
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(root.path().join("pinned.toml")).unwrap(),
+        body,
+        "no package named it, so nothing claims the file"
+    );
+}
+
+#[test]
+fn a_dry_run_reports_the_pin_without_writing_it() {
+    let root = TempDir::new().unwrap();
+    write_min(
+        root.path(),
+        indoc! {r#"
+            [[pins]]
+            file = "pinned.toml"
+            tool = "github:acme/demo"
+            package = "demo"
+        "#},
+    );
+    let body = indoc! {r#"
+        [tools]
+        "github:acme/demo" = "1.0.0"
+    "#};
+    fs::write(root.path().join("pinned.toml"), body).unwrap();
+    init_repo(root.path());
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+        .current_dir(root.path())
+        .args(["prepare", "--no-pr", "--dry-run"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(stdout.contains("pinned.toml"), "{stdout}");
+    assert_eq!(
+        fs::read_to_string(root.path().join("pinned.toml")).unwrap(),
+        body,
+        "a dry run names the file it would rewrite and rewrites nothing"
+    );
+}
+
+/// Pins move with the bump, not with whatever a manifest happens to say.
+/// A pin left one release behind on purpose is not this release's business.
+#[test]
+fn a_pin_on_a_package_no_fragment_bumped_stays_where_it_is() {
+    let root = TempDir::new().unwrap();
+    fs::write(
+        root.path().join("verctl.toml"),
+        indoc! {r#"
+            [[packages]]
+            name = "demo"
+            path = "Cargo.toml"
+
+            [[packages]]
+            name = "other"
+            path = "other/Cargo.toml"
+
+            [[pins]]
+            file = "pinned.toml"
+            tool = "github:acme/other"
+            package = "other"
+        "#},
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.0.0"
+        "#},
+    )
+    .unwrap();
+    fs::create_dir_all(root.path().join("other")).unwrap();
+    fs::write(
+        root.path().join("other/Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "other"
+            version = "3.0.0"
+        "#},
+    )
+    .unwrap();
+    let lagging = indoc! {r#"
+        [tools]
+        "github:acme/other" = "2.0.0"
+    "#};
+    fs::write(root.path().join("pinned.toml"), lagging).unwrap();
+    fs::create_dir_all(root.path().join(".changeset")).unwrap();
+    fs::write(
+        root.path().join(".changeset/one.md"),
+        indoc! {"
+            ---
+            demo: patch
+            ---
+
+            Bump.
+        "},
+    )
+    .unwrap();
+    init_repo(root.path());
+    let output = prepare(root.path());
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(root.path().join("pinned.toml")).unwrap(),
+        lagging,
+        "no fragment named `other`, so its pin is not this release's business"
+    );
+}
+
+/// A pin that cannot be rewritten is caught before anything is written.
+/// Otherwise prepare stops with versions bumped, no changelog, and the
+/// fragments still on disk.
+#[test]
+fn a_broken_pin_fails_before_any_manifest_moves() {
+    let root = TempDir::new().unwrap();
+    write_min(
+        root.path(),
+        indoc! {r#"
+            [[pins]]
+            file = "pinned.toml"
+            tool = "github:acme/demo"
+            package = "demo"
+        "#},
+    );
+    fs::write(root.path().join("pinned.toml"), "# no [tools] table\n").unwrap();
+    init_repo(root.path());
+    let output = prepare(root.path());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("pinned.toml"), "{stderr}");
+    assert!(
+        fs::read_to_string(root.path().join("Cargo.toml"))
+            .unwrap()
+            .contains("version = \"1.0.0\""),
+        "the manifest must not move when a pin cannot be rewritten"
+    );
+    assert!(
+        root.path().join(".changeset/one.md").exists(),
+        "the fragment must survive a failed prepare"
+    );
 }

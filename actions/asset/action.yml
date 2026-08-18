@@ -1,7 +1,7 @@
 name: verctl asset
 description: >-
   Build one declared native target and attach the tarball to the
-  GitHub Release. Skip the job when `[assets].targets` is empty.
+  GitHub Release. Skip the job when no `[assets.NAME]` table is declared.
 author: victor-software-house
 branding:
   icon: package
@@ -17,7 +17,7 @@ inputs:
     required: false
     default: verctl.toml
   target:
-    description: Target id from `[assets].targets` (`darwin-arm64`, `linux-x64`).
+    description: Name of an `[assets.NAME]` table (`darwin-arm64`, `linux-x64`).
     required: true
   tag:
     description: Release tag (`v0.0.1`).

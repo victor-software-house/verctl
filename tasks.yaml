@@ -80,7 +80,111 @@ queue:
       it — verifying those literals needs a YAML dependency this crate does
       not have, to check a value the law puts there on purpose.
 
+  - id: VER-017
+    title: Pins ride the Version PR, and publish pushes only the tag
+    scope: verctl
+    outcome: >-
+      The released tree carries its own pins, so a consumer that fetches
+      by tag or ?ref= gets the version it asked for.
+    blocked_by: []
+    acceptance:
+      - prepare rewrites [[pins]] and the pin files are part of the Version PR commit.
+      - A dry run names the files it would rewrite and writes nothing.
+      - A pin no configured package claims is left untouched.
+      - publish pushes the tag and nothing else; no pin job, no actions/pin.
+      - A pin that must name an already-published tarball is documented as ineligible.
+    notes: >-
+      2026-08-18: started as "the pin phase is an Action" and was wrong at
+      the root, caught by Victor: the only thing publish should push is
+      the tag. Proof the old shape could not work: qctl's tag v0.0.2
+      contains tasks/q/q pinning 0.0.1 and README ?ref=v0.0.1, because
+      `verctl publish` cuts the tag in the crate job and the pin commit
+      landed after it. A post-release commit can never reach the tree a
+      tag names. The Version PR is the right phase for exactly the reason
+      it exists: it is regenerated idempotently on every push to main and
+      it already holds every other released change. The bootstrap pin is
+      the one exception and stays out of [[pins]]: mise.release.toml names
+      the tarball a lane installs, so it can only move to a version that
+      already exists, and pinning it to the version being released would
+      make `mise install --locked` fail before publish could create it.
+      That exception costs nothing here, because this repo's own lanes run
+      MISE_ENV=dev and build the checkout — a lane that installed its own
+      tarball could only ever run the previous release. actions/pin was
+      written, proven against a bare remote, and deleted unmerged; the
+      scratch-repo evidence is kept only because it is why the timing
+      question got asked.
+
+  - id: VER-018
+    title: The pin phase materializes templates and runs consumer hooks
+    scope: verctl
+    outcome: >-
+      Anything a release leaves stale is rewritten by declaration,
+      whatever file it lives in, without verctl learning that file's
+      format.
+    blocked_by: [VER-017]
+    acceptance:
+      - "`[prepare].after` and `.stage` already exist: the pin rewrite needs no second hook vocabulary."
+      - A consumer template renders the released versions wherever that template lives in its tree.
+      - A match-and-replace overlay covers what no template can own (a mise task header, a README install line).
+      - "`[[pins]]` TOML rewriting keeps working: templates coexist with it, they do not replace it."
+      - "mise pin sites are first class: [tools] tables and `#MISE tools = { … }` task headers."
+      - "No new Action and no post-release push: the rewrite happens where prepare already writes."
+    notes: >-
+      2026-08-18, decided: making verctl cover every file format out of
+      the box was never the plan and does not scale, so the answer is
+      hooks and templates rather than a parser per format. Teaching
+      `verctl pin` the `#MISE tools = { … }` header form was proposed and
+      rejected for that reason. Templates, overlays, and a plain
+      match-and-replace expression are unavoidable in the long run; a
+      temporary bridge is acceptable until then. Evidence: qctl has five
+      pin sites and `verctl pin` reaches two of them. examples/mise.toml
+      holds the [tools] pin and the ?ref=, tasks/q/q line 5 carries a
+      `#MISE tools` header, and README repeats the ?ref= plus an install
+      hint. All five were hand-bumped to 0.0.2 on 2026-08-18 as that
+      bridge, which is the rot this row removes. verctl's own release
+      2026-08-18, later: the timing moved to prepare (VER-017), so this
+      row is only about reach, not about when. A template renders at
+      prepare time with the version being released, which is known then.
+      mise.release.lock is out of scope for the same reason the bootstrap
+      pin is: it hashes a tarball that does not exist yet.
+
 horizon:
+  - id: VER-019
+    title: Triage the review backlog from the closed PRs
+    scope: verctl
+    kind: evaluation
+    outcome: >-
+      Every review finding on already-merged code is either a named
+      defect with a fix, or written off with the reason.
+    open: >-
+      2026-08-18: nine findings were raised on PRs #4, #6, #9, #12, #13,
+      #14 and never triaged, because those PRs were closed with the
+      comments unread. Listed so they stop being invisible; none is
+      confirmed except where noted. Security-shaped first.
+      (1) #12: CARGO_REGISTRY_TOKEN is exported into the same step that
+      compiles this repo's source, so a build script sees the crates.io
+      token. Same trust boundary as publishing at all, but publishing
+      from the released binary instead of a fresh build would remove it —
+      see VER-016, which wants that step off the compiler anyway.
+      (2) #12: `${{ matrix.id }}` and `${{ needs.crate.outputs.tag }}`
+      are interpolated straight into `run:` bodies. The values come from
+      verctl.toml on the default branch, not from a fork, so this needs
+      write access to exploit; passing them through `env:` costs nothing.
+      (3) #9: the version guard runs on a shallow checkout in some lanes,
+      where `check --versions` cannot reach the merge base.
+      (4) #6: `consume_fragments` runs only in the `--pr` branch, so a
+      local `prepare` leaves the fragments it already applied.
+      (5) #6: publish forces `--access public` for bun packages.
+      (6) #6: no npm auth is set up for the bun publisher.
+      (7) #6: `tag_for` falls back to the first package's version, which
+      is wrong for a repo whose packages version independently.
+      (8) #4: HEAD is not restored after the Version PR branch write, and
+      `add_all(["*"])` stages more than the plan named.
+      (9) #14: `recurse_untracked_dirs(true)` walks into large ignored
+      trees. Retired 2026-08-18: #13's invalid `runner` context in a
+      workflow-level `env` is gone — no workflow or example uses the
+      `runner` context, and actionlint 1.7.12 passes every file.
+
   - id: VER-016
     title: The plan job should not install a compiler to parse TOML
     scope: verctl

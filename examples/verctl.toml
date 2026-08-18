@@ -100,8 +100,11 @@ runners = ["ns", "big"]
 [ci.audit]
 runners = ["ns"]
 
-# Collocated mise pins rewritten by `verctl pin` after the tarball exists.
+# Collocated mise pins. `prepare` rewrites them onto the Version PR
+# commit, which is the commit the tag names, so the released tree carries
+# them. A file that must name an already-published tarball — the pin this
+# repo's own release lane installs — cannot be listed here.
 [[pins]]
-file = "mise.release.toml"
+file = "examples/mise.toml"
 tool = "github:victor-software-house/verctl"
 package = "verctl"

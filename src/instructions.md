@@ -63,11 +63,16 @@ does not skip. A fragment-only commit does not change versions.
 
 This repo splits mise envs: `dev` compiles this checkout, `release`
 is the published tarball. Local default is `dev` (`.miserc.toml`).
-Version PR sets `MISE_ENV=release`. Publish sets `dev,release`.
+This repo's own lanes run `dev`: a lane that installed its own
+tarball could only ever run the previous release, which is exactly
+when new behaviour is needed. Consumers run `release`, because the
+verctl they install is independent of the version they release.
 `verctl pin` rewrites collocated `github:…/verctl` entries (and
-`?ref=v…` includes) to the versions on HEAD. Run it after the
-GitHub Release tarball exists, then `mise -E release lock`. The
-Version PR still installs the previous tarball.
+`?ref=v…` includes) to the versions on HEAD; `prepare` calls it, so
+the Version PR commit carries them. `mise.release.toml` is not a
+`[[pins]]` entry — it names a tarball that must already exist. Bump
+it by hand when a lane wants a newer verb, then `mise -E release
+lock`.
 
 `prepare` writes versions, per-package CHANGELOG.md (next to each
 manifest), and consumes fragments (same as `changeset version`).
@@ -103,9 +108,13 @@ tables; tests pass `--color never`.
 Happy path after the Version PR merges is
 `victor-software-house/verctl/actions/publish`. It runs when the
 `version-packages` PR is merged. Native tarballs are a second job,
-only when `[assets].targets` is non-empty. `verctl assets` prints the
-matrix; `--build` + `--upload` is `actions/asset`. OIDC trusted
-publishing is later (VER-007).
+only when an `[assets.NAME]` table is declared. `verctl assets` prints the
+matrix; `--build` + `--upload` is `actions/asset`. Publish pushes
+nothing but the tag. `[[pins]]` are rewritten by `prepare`, on the
+Version PR commit the tag will name, so the released tree carries its
+own pins. A pin that must name an already-published tarball — a repo's
+own bootstrap tool — is not a `[[pins]]` entry. OIDC trusted publishing
+is later (VER-007).
 
 Machines are configuration, not a hardcoded map. A machine is declared
 once as `[runners.NAME]` with `labels`, the literal GitHub label list

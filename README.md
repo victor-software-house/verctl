@@ -227,6 +227,7 @@ not the `git`/`gh` CLIs. There is no local token setup.
 |:--|:--|
 | [`actions/version-pr`](actions/version-pr/action.yml) | Open or update the Version PR |
 | [`actions/publish`](actions/publish/action.yml) | Run after that PR merges |
+| [`actions/asset`](actions/asset/action.yml) | Build and attach one native target |
 
 Example consumer workflow: [`examples/workflows/version-pr.yml`](examples/workflows/version-pr.yml).
 
