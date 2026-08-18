@@ -123,6 +123,10 @@ admission that a file is hand-authored.
 - **Context is one map.** `versions["<package name>"]`, keyed by the names in
   `[[packages]]`. No bare `version` shorthand, even for a single-package repo:
   the served file should name what it pins.
+- **Every package is in it**, not only the ones this release bumps: the
+  manifests as they read now, with the release's versions over them. A whole
+  file cannot be rendered from half a map, so a served file may mention a
+  package no fragment bumped and still say that package's current version.
 
 ## 4. What a pattern is allowed to be
 
@@ -174,8 +178,11 @@ patterns = ["install"]
 
 ## 5. Failure is loud, and skipping is narrow
 
-Exactly one thing is silently skipped: a pin or template for a package **no
+Exactly one thing is silently skipped: a `[[pins]]` entry for a package **no
 fragment bumped**. That version did not change, so the file must not either.
+Templates are not skipped — rendering the same versions twice produces the same
+bytes, and they are rendered from every package's version (§3), so a served file
+is written whole or the release stops.
 
 Everything else fails the run, before anything is written:
 
