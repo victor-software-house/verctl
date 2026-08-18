@@ -112,7 +112,15 @@ horizon:
       publish --locked does not fail.
     open: >-
       Decide whether this is default after for the cargo driver or a
-      [prepare].after the repo opts into.
+      [prepare].after the repo opts into. 2026-08-18: qctl 0.0.2 failed
+      on exactly this and is evidence for the default. The cargo driver
+      already names `cargo generate-lockfile`, but `apply_plan` returns
+      it as a follow-up that only prints in the `next` column, so every
+      cargo consumer has to restate it as `[prepare].after` plus a
+      `Cargo.lock` stage glob — and a repo that does not know to is one
+      Version PR away from a dirty-tree `cargo package --locked`.
+      Running the driver's own after is the fix; the opt-in escape is
+      then a `[prepare]` that overrides it.
 
   - id: VER-014
     title: First-party composite Action packages
