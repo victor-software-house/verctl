@@ -287,7 +287,7 @@ fn versions_for_templates(
     planned: &[(String, String)],
 ) -> Result<Vec<(String, String)>> {
     if templates::any(root, &config.templates)? {
-        return release::served_versions(root, config, planned);
+        return Ok(release::served_versions(root, config, planned));
     }
     Ok(planned.to_vec())
 }

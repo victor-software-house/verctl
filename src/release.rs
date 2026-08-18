@@ -3,7 +3,6 @@ use crate::config::Config;
 use crate::fragment::Fragment;
 use crate::git;
 use crate::github;
-use crate::pins;
 use crate::prepare::PlanEntry;
 use anyhow::{Context, Result, ensure};
 use ctl_core::{formatdoc, writedoc};
@@ -43,12 +42,27 @@ fn env_token() -> Option<String> {
 /// file is already right. A template renders a whole file, so it needs every
 /// version the file mentions — a served file that names a package no fragment
 /// bumped would otherwise have nothing to render.
+///
+/// A manifest that cannot be read or resolved is left out rather than failing
+/// the release: it is not this release's business unless something serves it,
+/// and a template that names a missing version fails at render time, where the
+/// complaint says which template and which name.
+#[must_use]
 pub fn served_versions(
     root: &Path,
     config: &Config,
     planned: &[(String, String)],
-) -> Result<Vec<(String, String)>> {
-    let mut versions = pins::current_versions(root, config)?;
+) -> Vec<(String, String)> {
+    let mut versions: Vec<(String, String)> = config
+        .packages
+        .iter()
+        .filter_map(|spec| {
+            let raw = fs::read_to_string(root.join(&spec.path)).ok()?;
+            let driver = spec.resolve(config, root).ok()?;
+            let version = driver.read(&raw).ok()?;
+            Some((spec.name.clone(), version.trim().to_owned()))
+        })
+        .collect();
     for (name, version) in planned {
         if let Some(entry) = versions.iter_mut().find(|(package, _)| package == name) {
             entry.1.clone_from(version);
@@ -56,7 +70,7 @@ pub fn served_versions(
             versions.push((name.clone(), version.clone()));
         }
     }
-    Ok(versions)
+    versions
 }
 
 /// Fragments that named at least one package in `plan`.
@@ -331,11 +345,17 @@ mod tests {
         .unwrap();
         let planned = [("verctl".to_owned(), "0.0.4".to_owned())];
         assert_eq!(
-            served_versions(root.path(), &config, &planned).unwrap(),
+            served_versions(root.path(), &config, &planned),
             [
                 ("verctl".to_owned(), "0.0.4".to_owned()),
                 ("ctl-core".to_owned(), "0.1.7".to_owned()),
             ]
+        );
+        fs::remove_file(root.path().join("core/Cargo.toml")).unwrap();
+        assert_eq!(
+            served_versions(root.path(), &config, &planned),
+            [("verctl".to_owned(), "0.0.4".to_owned())],
+            "a manifest nothing in this release can read is left out, not fatal"
         );
     }
 }
