@@ -1,8 +1,11 @@
 use crate::driver::{CommandSpec, Driver, Format};
 use crate::publisher::PublisherSpec;
+use crate::schema::{at_least_one, cannot_be_empty, inside_the_repo};
 use anyhow::{Context, Result, bail, ensure};
+use garde::Validate;
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -147,9 +150,12 @@ impl PackageSpec {
 /// One machine, declared once as `[runners.NAME]`. The header names it; this
 /// is how GitHub finds it. Every label is required at once, so a three-label
 /// runner is one machine carrying three labels, not three machines.
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Validate)]
 #[serde(deny_unknown_fields)]
+#[garde(context(Config))]
 pub struct Runner {
+    /// Every label at once. A machine with none cannot be found at all.
+    #[garde(custom(at_least_one("label")))]
     pub labels: Vec<String>,
 }
 
@@ -195,16 +201,25 @@ pub struct AssetTarget {
     pub triple: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+/// The whole file, and the context every rule in it is checked against: a
+/// pattern is only unused, and an id only unknown, relative to the rest of the
+/// config. `Config::load` parses the shape with serde and then validates it
+/// once, here, so a complaint names the field that has to change.
+#[derive(Debug, Clone, Deserialize, Default, Validate)]
+#[garde(context(Self as config))]
+#[garde(allow_unvalidated)]
 pub struct Config {
     #[serde(default)]
     pub drivers: BTreeMap<String, DriverSpec>,
+    /// What this repo releases. A config that names none has nothing to do.
+    #[garde(custom(at_least_one("package")))]
     pub packages: Vec<PackageSpec>,
     #[serde(default)]
     pub publishers: BTreeMap<String, PublisherSpec>,
     /// Machines, declared once and named. Entirely repo-owned: verctl ships no
     /// built-in names.
     #[serde(default)]
+    #[garde(dive)]
     pub runners: BTreeMap<String, Runner>,
     #[serde(default)]
     pub assets: Option<Assets>,
@@ -213,17 +228,221 @@ pub struct Config {
     pub ci: BTreeMap<String, Job>,
     #[serde(default)]
     pub prepare: Prepare,
+    /// Where served-file templates live. Omit for the convention.
+    #[serde(default)]
+    #[garde(dive)]
+    pub templates: Templates,
+    /// Version spellings, named once and listed by the files that carry them,
+    /// so a spelling three files share is written once.
+    #[serde(default)]
+    #[garde(custom(every_pattern_says_where_the_version_goes))]
+    #[garde(custom(every_pattern_is_listed))]
+    pub patterns: BTreeMap<String, PinPattern>,
     /// Collocated tool pins rewritten when `package` is bumped.
     #[serde(default)]
+    #[garde(dive)]
     pub pins: Vec<Pin>,
 }
 
-/// A mise `[tools]` entry that must track a package version.
-#[derive(Debug, Clone, Deserialize)]
+/// Where the version goes, said once: no placeholder is a spelling that tracks
+/// nothing, two is a spelling with no single version to put anywhere.
+fn every_pattern_says_where_the_version_goes(
+    patterns: &BTreeMap<String, PinPattern>,
+    _: &Config,
+) -> garde::Result {
+    for (id, pattern) in patterns {
+        let found = pattern.r#match.matches(PLACEHOLDER).count();
+        if found != 1 {
+            return Err(garde::Error::new(format!(
+                "{id}: match says {PLACEHOLDER} {found} times, and must say it once"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// A declared pattern nothing lists is dead configuration, not a spare: it
+/// would sit there reading like a tracked spelling while no file is checked
+/// against it.
+fn every_pattern_is_listed(
+    patterns: &BTreeMap<String, PinPattern>,
+    config: &Config,
+) -> garde::Result {
+    let listed: BTreeSet<&str> = config
+        .pins
+        .iter()
+        .flat_map(|pin| pin.pattern_ids.iter().map(String::as_str))
+        .collect();
+    for id in patterns.keys() {
+        if !listed.contains(id.as_str()) {
+            return Err(garde::Error::new(format!(
+                "{id:?} is declared and no pin lists it"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// A file that serves a package version and must track it.
+#[derive(Debug, Clone, Deserialize, Validate)]
+#[garde(context(Config as config))]
+#[garde(allow_unvalidated)]
 pub struct Pin {
+    #[garde(custom(inside_the_repo))]
     pub file: PathBuf,
-    pub tool: String,
+    /// A mise `[tools]` entry, in a file that parses as TOML. Its own
+    /// `?ref=v…` includes move with it.
+    pub tool: Option<String>,
+    /// `[patterns]` ids this file carries, so which file a spelling belongs to
+    /// is written down rather than implied by where a table sits.
+    #[serde(default, rename = "patterns")]
+    #[garde(
+        custom(each_id_is_declared),
+        custom(no_id_is_listed_twice),
+        custom(something_to_rewrite(self.tool.is_some()))
+    )]
+    pub pattern_ids: Vec<String>,
+    /// The patterns those ids name, filled in by `Config::load` — the only way
+    /// to build a pin that rewrites anything.
+    #[serde(skip)]
+    pub patterns: Vec<PinPattern>,
     pub package: String,
+}
+
+/// A name is only a name if something declares it.
+fn each_id_is_declared(ids: &[String], config: &Config) -> garde::Result {
+    for id in ids {
+        if !config.patterns.contains_key(id) {
+            return Err(garde::Error::new(format!("no [patterns.{id}]")));
+        }
+    }
+    Ok(())
+}
+
+/// Listing a spelling twice says nothing twice: arity belongs to the pattern.
+fn no_id_is_listed_twice(ids: &[String], _: &Config) -> garde::Result {
+    let mut seen = BTreeSet::new();
+    for id in ids {
+        if !seen.insert(id.as_str()) {
+            return Err(garde::Error::new(format!("lists {id:?} twice")));
+        }
+    }
+    Ok(())
+}
+
+/// A pin with neither a `tool` nor a pattern names a file and asks for nothing.
+fn something_to_rewrite(has_tool: bool) -> impl Fn(&[String], &Config) -> garde::Result {
+    move |ids, _| {
+        if has_tool || !ids.is_empty() {
+            return Ok(());
+        }
+        Err(garde::Error::new("needs a tool or a pattern to rewrite"))
+    }
+}
+
+/// Everything verctl owns in a repo lives here, so a repo root gains one
+/// entry instead of a scatter of tool files.
+pub const DIR: &str = ".verctl";
+
+/// What a `[[pins]]` pattern puts where the version goes.
+pub const PLACEHOLDER: &str = "{version}";
+
+/// Where the templates for served files live, and how they are marked. The
+/// defaults are the whole convention: a repo that follows it writes nothing.
+#[derive(Debug, Clone, Deserialize, Validate)]
+#[serde(deny_unknown_fields)]
+#[garde(context(Config))]
+pub struct Templates {
+    /// The directory every template lives in, flat. Each one declares its own
+    /// target, so nothing sits beside the file it generates.
+    #[serde(default = "Templates::default_source")]
+    #[garde(custom(inside_the_repo))]
+    pub source: PathBuf,
+    /// What marks a source file as a template of its target.
+    #[serde(default = "Templates::default_suffix")]
+    #[garde(custom(cannot_be_empty(
+        "it is what marks a file in the source tree as a template, like \".jinja\""
+    )))]
+    pub suffix: String,
+}
+
+impl Templates {
+    fn default_source() -> PathBuf {
+        Path::new(DIR).join("templates")
+    }
+
+    fn default_suffix() -> String {
+        ".jinja".to_owned()
+    }
+}
+
+impl Default for Templates {
+    fn default() -> Self {
+        Self {
+            source: Self::default_source(),
+            suffix: Self::default_suffix(),
+        }
+    }
+}
+
+/// One version spelling in a file, and how often the file may say it.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PinPattern {
+    /// The text around a version, `{version}` where the version is. Literal,
+    /// not a regex, so nothing about the file's format is assumed. Exactly one
+    /// placeholder, checked over `[patterns]` so the complaint names the id.
+    pub r#match: String,
+    /// How often the file must say it. A pin that lost its only mention, or
+    /// drifted to one nobody declared, fails the release rather than serving
+    /// a stale version.
+    #[serde(default)]
+    pub occurrences: Occurrences,
+}
+
+/// How many times a pattern must match. A count is not always the useful
+/// shape: a document whose examples come and go needs "one or more", and a
+/// spelling that was retired needs "none".
+#[derive(Debug, Clone, Copy, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Occurrences {
+    /// Exactly one. What a pin normally is, so it is the default.
+    #[default]
+    Once,
+    /// One or more, however many. For a file whose mentions grow and shrink
+    /// on their own, where only "still tracked" is worth asserting.
+    Many,
+    /// None. A spelling that must stay gone, so its return fails a release
+    /// instead of being served.
+    Never,
+    /// Exactly this many, for a file that says it a known number of times.
+    Exactly(usize),
+    /// This many or more.
+    AtLeast(usize),
+}
+
+impl Occurrences {
+    #[must_use]
+    pub const fn allows(self, found: usize) -> bool {
+        match self {
+            Self::Once => found == 1,
+            Self::Many => found >= 1,
+            Self::Never => found == 0,
+            Self::Exactly(count) => found == count,
+            Self::AtLeast(count) => found >= count,
+        }
+    }
+}
+
+impl fmt::Display for Occurrences {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Once => formatter.write_str("exactly once"),
+            Self::Many => formatter.write_str("one or more"),
+            Self::Never => formatter.write_str("never"),
+            Self::Exactly(count) => write!(formatter, "exactly {count} times"),
+            Self::AtLeast(count) => write!(formatter, "{count} or more times"),
+        }
+    }
 }
 
 /// Extra work after version bumps, committed on the Version PR.
@@ -257,12 +476,27 @@ impl Prepare {
 impl Config {
     pub fn load(path: &Path) -> Result<Self> {
         let raw = fs::read_to_string(path).with_context(|| path.display().to_string())?;
-        let config: Self =
+        let mut config: Self =
             toml::from_str(&raw).with_context(|| format!("parse {}", path.display()))?;
-        if config.packages.is_empty() {
-            bail!("{} has no [[packages]]", path.display());
-        }
+        config
+            .validate_with(&config)
+            .with_context(|| path.display().to_string())?;
+        config.resolve_patterns();
         Ok(config)
+    }
+
+    /// Turn every pin's `[patterns]` ids into the patterns they name, so no
+    /// consumer looks an id up again. Validation already proved every name
+    /// resolves, which is why this cannot fail.
+    fn resolve_patterns(&mut self) {
+        let declared = self.patterns.clone();
+        for pin in &mut self.pins {
+            pin.patterns = pin
+                .pattern_ids
+                .iter()
+                .filter_map(|id| declared.get(id).cloned())
+                .collect();
+        }
     }
 
     pub fn find(&self, name: &str) -> Result<&PackageSpec> {
@@ -295,4 +529,250 @@ pub(crate) fn stock_driver(name: &str) -> Result<Driver> {
     DriverSpec::stock(name)
         .with_context(|| format!("unknown stock driver {name:?}"))?
         .into_driver(name)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use indoc::{formatdoc, indoc};
+
+    /// A whole config, so what is under test is what a repo actually writes.
+    fn load(body: &str) -> Result<Config> {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("verctl.toml");
+        fs::write(&path, body).unwrap();
+        Config::load(&path)
+    }
+
+    /// The one package every fixture below needs, and nothing else.
+    const PACKAGE: &str = indoc! {r#"
+        [[packages]]
+        name = "demo"
+        path = "Cargo.toml"
+    "#};
+
+    /// Every arity a repo can write, in the spelling it writes it.
+    #[test]
+    fn every_occurrence_form_parses_and_means_what_it_says() {
+        let config = load(&formatdoc! {r#"
+            {PACKAGE}
+            [patterns.omitted]
+            match = "a@{{version}}"
+
+            [patterns.once]
+            match = "b@{{version}}"
+            occurrences = "once"
+
+            [patterns.many]
+            match = "c@{{version}}"
+            occurrences = "many"
+
+            [patterns.never]
+            match = "d@{{version}}"
+            occurrences = "never"
+
+            [patterns.twice]
+            match = "e@{{version}}"
+            occurrences = {{ exactly = 2 }}
+
+            [patterns.floor]
+            match = "f@{{version}}"
+            occurrences = {{ at_least = 2 }}
+
+            [[pins]]
+            file = "README.md"
+            package = "demo"
+            patterns = ["omitted", "once", "many", "never", "twice", "floor"]
+        "#})
+        .unwrap();
+        let allowed: Vec<Vec<usize>> = config.pins[0]
+            .patterns
+            .iter()
+            .map(|pattern| (0..4).filter(|n| pattern.occurrences.allows(*n)).collect())
+            .collect();
+        assert_eq!(
+            allowed,
+            [
+                vec![1],       // omitted: exactly once
+                vec![1],       // once
+                vec![1, 2, 3], // many
+                vec![0],       // never
+                vec![2],       // exactly 2
+                vec![2, 3],    // at least 2
+            ]
+        );
+    }
+
+    #[test]
+    fn an_unknown_arity_is_not_silently_a_default() {
+        let broken = load(&formatdoc! {r#"
+            {PACKAGE}
+            [patterns.wrong]
+            match = "a@{{version}}"
+            occurrences = "sometimes"
+
+            [[pins]]
+            file = "README.md"
+            package = "demo"
+            patterns = ["wrong"]
+        "#});
+        assert!(broken.is_err());
+    }
+
+    /// One spelling, named once, carried by two files: what ids are for.
+    #[test]
+    fn one_named_pattern_serves_every_file_that_lists_it() {
+        let config = load(&formatdoc! {r#"
+            {PACKAGE}
+            [patterns.install]
+            match = "demo@{{version}}"
+
+            [patterns.mention]
+            match = "v{{version}}"
+            occurrences = "many"
+
+            [[pins]]
+            file = "README.md"
+            package = "demo"
+            patterns = ["install", "mention"]
+
+            [[pins]]
+            file = "docs/install.md"
+            package = "demo"
+            patterns = ["install"]
+        "#})
+        .unwrap();
+        let carried: Vec<Vec<&str>> = config
+            .pins
+            .iter()
+            .map(|pin| {
+                pin.patterns
+                    .iter()
+                    .map(|pattern| pattern.r#match.as_str())
+                    .collect()
+            })
+            .collect();
+        assert_eq!(
+            carried,
+            [vec!["demo@{version}", "v{version}"], vec!["demo@{version}"]],
+            "each file carries the patterns it lists, in the order it lists them"
+        );
+    }
+
+    /// Every rule the schema declares, each naming what a repo has to fix.
+    #[test]
+    #[allow(clippy::too_many_lines)] // one case per rule; a table, not logic
+    fn a_config_that_breaks_a_rule_stops_the_load() {
+        let cases = [
+            (
+                "an id no [patterns] declares",
+                formatdoc! {r#"
+                    {PACKAGE}
+                    [patterns.install]
+                    match = "demo@{{version}}"
+
+                    [[pins]]
+                    file = "README.md"
+                    package = "demo"
+                    patterns = ["install", "instal"]
+                "#},
+                "pins[0].pattern_ids: no [patterns.instal]",
+            ),
+            (
+                "the same id listed twice",
+                formatdoc! {r#"
+                    {PACKAGE}
+                    [patterns.install]
+                    match = "demo@{{version}}"
+
+                    [[pins]]
+                    file = "README.md"
+                    package = "demo"
+                    patterns = ["install", "install"]
+                "#},
+                r#"pins[0].pattern_ids: lists "install" twice"#,
+            ),
+            (
+                "a pattern no pin lists",
+                formatdoc! {r#"
+                    {PACKAGE}
+                    [patterns.install]
+                    match = "demo@{{version}}"
+
+                    [patterns.orphan]
+                    match = "old@{{version}}"
+
+                    [[pins]]
+                    file = "README.md"
+                    package = "demo"
+                    patterns = ["install"]
+                "#},
+                r#"patterns: "orphan" is declared and no pin lists it"#,
+            ),
+            (
+                "a pin with nothing to rewrite",
+                formatdoc! {r#"
+                    {PACKAGE}
+                    [[pins]]
+                    file = "README.md"
+                    package = "demo"
+                "#},
+                "pins[0].pattern_ids: needs a tool or a pattern to rewrite",
+            ),
+            (
+                "a spelling with nowhere to put the version",
+                formatdoc! {r#"
+                    {PACKAGE}
+                    [patterns.install]
+                    match = "demo@1.2.3"
+
+                    [[pins]]
+                    file = "README.md"
+                    package = "demo"
+                    patterns = ["install"]
+                "#},
+                "patterns: install: match says {version} 0 times",
+            ),
+            (
+                "a pin reaching out of the repository",
+                formatdoc! {r#"
+                    {PACKAGE}
+                    [patterns.install]
+                    match = "demo@{{version}}"
+
+                    [[pins]]
+                    file = "../elsewhere/README.md"
+                    package = "demo"
+                    patterns = ["install"]
+                "#},
+                "pins[0].file: must stay inside the repository",
+            ),
+            (
+                "a machine no label can find",
+                formatdoc! {"
+                    {PACKAGE}
+                    [runners.ghost]
+                    labels = []
+                "},
+                "runners.ghost.labels: must declare at least one label",
+            ),
+            (
+                "a suffix that makes every file a template",
+                formatdoc! {r#"
+                    {PACKAGE}
+                    [templates]
+                    suffix = ""
+                "#},
+                "templates.suffix: cannot be empty — it is what marks a file",
+            ),
+        ];
+        for (scenario, body, expected) in cases {
+            let error = load(&body).expect_err(scenario);
+            assert!(
+                format!("{error:#}").contains(expected),
+                "{scenario}: {error:#}"
+            );
+        }
+    }
 }

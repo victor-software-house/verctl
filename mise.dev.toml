@@ -1,5 +1,7 @@
 # Loaded when MISE_ENV contains `dev` (local default via .miserc.toml).
-# Compile this checkout. Not used by Version PR.
+# Compile this checkout. The Version PR lane runs here too (`MISE_ENV: dev` in
+# version-pr.yml), so this repo prepares its own release with the verctl it is
+# about to publish, not the tarball of the last one.
 
 [tools]
 committed = "1.1.11"

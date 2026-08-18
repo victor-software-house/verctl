@@ -130,6 +130,39 @@ pub fn workdir_covering(dir: &Path) -> Option<PathBuf> {
         .and_then(|workdir| workdir.canonicalize().ok())
 }
 
+/// Every path git tracks under `root`, relative to `root` itself.
+///
+/// The index, not a directory walk: build output, vendored trees, and
+/// anything else gitignored is not part of what this repo publishes. The index
+/// speaks in paths from the working tree, and `root` is a project inside it —
+/// one repository may hold several — so anything outside `root` is not this
+/// project's, and what is left is rebased onto it. A tree with no repository
+/// tracks nothing — it cannot serve a file by tag — but a repository whose
+/// index cannot be read is an error, never an empty answer.
+pub fn tracked(root: &Path) -> Result<Vec<PathBuf>> {
+    let Some(repo) = repo_covering(root) else {
+        return Ok(Vec::new());
+    };
+    let index = repo.index().context("git index")?;
+    let project = project_prefix(&repo, root);
+    Ok(index
+        .iter()
+        .filter_map(|entry| String::from_utf8(entry.path).ok().map(PathBuf::from))
+        .filter_map(|path| path.strip_prefix(&project).ok().map(Path::to_path_buf))
+        .collect())
+}
+
+/// Where `root` sits inside the working tree: empty when it is the root.
+fn project_prefix(repo: &Repository, root: &Path) -> PathBuf {
+    let Some(workdir) = repo.workdir().and_then(|dir| dir.canonicalize().ok()) else {
+        return PathBuf::new();
+    };
+    root.canonicalize()
+        .ok()
+        .and_then(|root| root.strip_prefix(&workdir).ok().map(Path::to_path_buf))
+        .unwrap_or_default()
+}
+
 fn repo_covering(root: &Path) -> Option<Repository> {
     if let Ok(repo) = Repository::open(root) {
         return Some(repo);

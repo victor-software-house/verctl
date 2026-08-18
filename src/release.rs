@@ -1,4 +1,5 @@
 use crate::changelog::{self, ReleaseInput};
+use crate::config::Config;
 use crate::fragment::Fragment;
 use crate::git;
 use crate::github;
@@ -32,6 +33,44 @@ fn env_token() -> Option<String> {
         }
     }
     None
+}
+
+/// Every package's version as the released tree will say it: what the manifests
+/// say now, with this release's bumps applied over them.
+///
+/// A pin moves only what the release names, because everything else in that
+/// file is already right. A template renders a whole file, so it needs every
+/// version the file mentions — a served file that names a package no fragment
+/// bumped would otherwise have nothing to render.
+///
+/// A manifest that cannot be read or resolved is left out rather than failing
+/// the release: it is not this release's business unless something serves it,
+/// and a template that names a missing version fails at render time, where the
+/// complaint says which template and which name.
+#[must_use]
+pub fn served_versions(
+    root: &Path,
+    config: &Config,
+    planned: &[(String, String)],
+) -> Vec<(String, String)> {
+    let mut versions: Vec<(String, String)> = config
+        .packages
+        .iter()
+        .filter_map(|spec| {
+            let raw = fs::read_to_string(root.join(&spec.path)).ok()?;
+            let driver = spec.resolve(config, root).ok()?;
+            let version = driver.read(&raw).ok()?;
+            Some((spec.name.clone(), version.trim().to_owned()))
+        })
+        .collect();
+    for (name, version) in planned {
+        if let Some(entry) = versions.iter_mut().find(|(package, _)| package == name) {
+            entry.1.clone_from(version);
+        } else {
+            versions.push((name.clone(), version.clone()));
+        }
+    }
+    versions
 }
 
 /// Fragments that named at least one package in `plan`.
@@ -260,5 +299,63 @@ pub fn pr_body(changelog: &str) -> String {
         "Prepared by verctl.".into()
     } else {
         body.to_owned()
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use indoc::indoc;
+
+    /// A release that bumps one of two packages still has to render a served
+    /// file that mentions both, so the version map covers every package —
+    /// the release's version for what it bumps, the manifest's for the rest.
+    #[test]
+    fn a_partial_release_still_knows_every_version() {
+        let root = tempfile::TempDir::new().unwrap();
+        fs::create_dir_all(root.path().join("core")).unwrap();
+        fs::write(
+            root.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                name = "verctl"
+                version = "0.0.3"
+            "#},
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("core/Cargo.toml"),
+            indoc! {r#"
+                [package]
+                name = "ctl-core"
+                version = "0.1.7"
+            "#},
+        )
+        .unwrap();
+        let config: Config = toml::from_str(indoc! {r#"
+            [[packages]]
+            name = "verctl"
+            path = "Cargo.toml"
+
+            [[packages]]
+            name = "ctl-core"
+            path = "core/Cargo.toml"
+        "#})
+        .unwrap();
+        let planned = [("verctl".to_owned(), "0.0.4".to_owned())];
+        assert_eq!(
+            served_versions(root.path(), &config, &planned),
+            [
+                ("verctl".to_owned(), "0.0.4".to_owned()),
+                ("ctl-core".to_owned(), "0.1.7".to_owned()),
+            ]
+        );
+        fs::remove_file(root.path().join("core/Cargo.toml")).unwrap();
+        assert_eq!(
+            served_versions(root.path(), &config, &planned),
+            [("verctl".to_owned(), "0.0.4".to_owned())],
+            "a manifest nothing in this release can read is left out, not fatal"
+        );
     }
 }

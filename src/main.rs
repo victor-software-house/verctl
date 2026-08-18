@@ -15,6 +15,7 @@ use verctl::prepare;
 use verctl::process;
 use verctl::publish;
 use verctl::release;
+use verctl::templates;
 use verctl::versions;
 
 const INSTRUCTIONS: &str = include_str!("instructions.md");
@@ -274,6 +275,23 @@ impl Render for PrepareReport {
     }
 }
 
+/// The versions templates render from.
+///
+/// A pin moves only what this release names, but a template renders a whole
+/// file: a served file that mentions a package no fragment bumped still has to
+/// say that package's current version. That map costs every manifest a read, so
+/// a repo that serves nothing from a template never builds it.
+fn versions_for_templates(
+    root: &Path,
+    config: &Config,
+    planned: &[(String, String)],
+) -> Result<Vec<(String, String)>> {
+    if templates::any(root, &config.templates)? {
+        return Ok(release::served_versions(root, config, planned));
+    }
+    Ok(planned.to_vec())
+}
+
 fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     let dry_run = args.dry_run();
     let config = Config::load(&args.config)?;
@@ -313,10 +331,12 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
         .iter()
         .map(|entry| (entry.name.clone(), entry.to.clone()))
         .collect();
+    let served = versions_for_templates(root, &config, &planned)?;
     // Before a manifest moves: a stale [[pins]] entry must not leave
     // versions bumped with no changelog, no follow-up, and fragments
     // still on disk.
-    let pinned = pins::plan(root, &config.pins, &planned)?;
+    let mut pinned = pins::plan(root, &config.pins, &planned)?;
+    pinned.extend(templates::plan(root, &config.templates, &served)?);
     if dry_run {
         return preview_report(root, &plan, &fragments, bumps, pinned, args.open_pr());
     }
@@ -325,7 +345,10 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     // never reaches the tree consumers fetch by ref. Rewrite them here,
     // where they ride the Version PR. Only the versions this release
     // names: a pin on a package no fragment bumped stays where it is.
-    let pinned = pins::write(root, &config.pins, &planned)?;
+    let mut pinned = pins::write(root, &config.pins, &planned)?;
+    // Served files are rendered from the templates beside them, on the same
+    // commit, and staged from here — a repo never lists them in stage.
+    pinned.extend(templates::write(root, &config.templates, &served)?);
     let consumed = release::contributing_fragments(&plan, &fragments);
     let changelog = release::changelog_sections(&plan, &fragments)?;
     let changelogs = release::write_changelogs(&config, root, &plan, &fragments)?;

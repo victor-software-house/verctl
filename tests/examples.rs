@@ -45,7 +45,12 @@ fn the_example_config_parses() {
     assert_eq!(names, ["verctl", "@org/pkg", "py-tool"]);
     assert_eq!(config.runners.len(), 2, "two machines are declared");
     assert_eq!(config.publishers.len(), 1, "twine is declared");
-    assert_eq!(config.pins.len(), 1, "one collocated pin is declared");
+    assert_eq!(
+        config.pins.len(),
+        3,
+        "one structural pin and two textual ones"
+    );
+    assert_eq!(config.patterns.len(), 2, "two spellings, named once each");
 }
 
 /// What makes the plan below sufficient: a table no package names is never
@@ -247,9 +252,47 @@ fn the_example_pin_rewrites_the_file_it_names() {
         "#},
     )
     .expect("pin file");
+    fs::write(
+        root.path().join("README.md"),
+        indoc! {"
+            Install: mise x github:victor-software-house/verctl@0.0.1 -- verctl
+            Pin verctl@0.0.1 in CI, and verctl@0.0.1 locally.
+        "},
+    )
+    .expect("doc");
+    fs::create_dir_all(root.path().join("docs")).expect("docs dir");
+    fs::write(
+        root.path().join("docs/install.md"),
+        indoc! {"
+            One line: github:victor-software-house/verctl@0.0.1
+        "},
+    )
+    .expect("second doc");
     let versions = pins::current_versions(root.path(), &config).expect("read versions");
-    let written = pins::write(root.path(), &config.pins, &versions).expect("rewrite the pin");
-    assert_eq!(written, [root.path().join("examples/mise.toml")]);
+    let written = pins::write(root.path(), &config.pins, &versions).expect("rewrite the pins");
+    assert_eq!(
+        written,
+        [
+            root.path().join("examples/mise.toml"),
+            root.path().join("README.md"),
+            root.path().join("docs/install.md"),
+        ]
+    );
+    assert_eq!(
+        fs::read_to_string(root.path().join("README.md")).expect("reread"),
+        indoc! {"
+            Install: mise x github:victor-software-house/verctl@4.5.6 -- verctl
+            Pin verctl@4.5.6 in CI, and verctl@4.5.6 locally.
+        "},
+        "every spelling this file lists moves, at the arity the pattern declares"
+    );
+    assert_eq!(
+        fs::read_to_string(root.path().join("docs/install.md")).expect("reread"),
+        indoc! {"
+            One line: github:victor-software-house/verctl@4.5.6
+        "},
+        "the shared pattern moves in the second file that lists it too"
+    );
     let body = fs::read_to_string(root.path().join("examples/mise.toml")).expect("reread");
     assert_eq!(
         body,

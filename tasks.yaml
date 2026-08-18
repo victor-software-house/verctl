@@ -124,11 +124,12 @@ queue:
     blocked_by: [VER-017]
     acceptance:
       - "`[prepare].after` and `.stage` already exist: the pin rewrite needs no second hook vocabulary."
-      - A consumer template renders the released versions wherever that template lives in its tree.
-      - A match-and-replace overlay covers what no template can own (a mise task header, a README install line).
-      - "`[[pins]]` TOML rewriting keeps working: templates coexist with it, they do not replace it."
+      - A template renders the released versions onto the Version PR commit, and declares its own target inside itself.
+      - A named pattern covers what no template can own (a README install line), listed by every file that carries it.
+      - "`[[pins]]` structural rewriting keeps working: templates coexist with it, they do not replace it."
       - "mise pin sites are first class: [tools] tables and `#MISE tools = { … }` task headers."
       - "No new Action and no post-release push: the rewrite happens where prepare already writes."
+      - The contract is written down before the keys are, and a repo that follows the convention declares no table.
     notes: >-
       2026-08-18, decided: making verctl cover every file format out of
       the box was never the plan and does not scale, so the answer is
@@ -147,6 +148,89 @@ queue:
       prepare time with the version being released, which is known then.
       mise.release.lock is out of scope for the same reason the bootstrap
       pin is: it hashes a tarball that does not exist yet.
+      2026-08-18, shipped: docs/served-files.md is the contract, and both
+      mechanisms are in. Templates live flat in .verctl/templates/ and
+      declare path / name / executable as top-level Jinja exports, parsed
+      into one schema (serde) and validated at the boundary (garde);
+      discovery is the git index, so an untracked template renders
+      nowhere. Patterns are named once as [patterns.<id>] and listed by
+      every file that carries one, with a declared arity
+      (once / many / never / exactly / at_least) that stops the release in
+      both directions. verctl dogfoods it: examples/mise.toml is rendered
+      from .verctl/templates/mise.toml.jinja, proven by a real prepare in
+      a disposable copy of this tree writing 0.0.4 into both the [tools]
+      pin and the ?ref=. Left over, VER-020: `check` is not wired to the
+      same validation, and nothing yet refuses a file that a template and
+      a pin both own.
+
+  - id: VER-020
+    title: check validates served files, and one file has one owner
+    scope: verctl
+    outcome: >-
+      A served file edited by hand, or claimed by both a template and a
+      pin, fails on the PR that does it instead of at release time.
+    blocked_by: [VER-018]
+    acceptance:
+      - "`check` runs the same validation prepare does: every pattern still matches at its declared arity."
+      - "`check` compares every served file to what its template renders at the versions on HEAD."
+      - A file that a template renders and a [[pins]] entry also names fails before anything is written.
+      - The failure names the file and which two declarations claim it.
+    notes: >-
+      2026-08-18: docs/served-files.md §6 describes check as designed, not
+      implemented — only prepare and its dry run validate today, so drift
+      introduced by hand survives until a release. The double-owner gap is
+      real and silent: prepare_report rewrites pins first and renders
+      templates second, so a template would clobber the rewrite without
+      saying so.
+
+  - id: VER-021
+    title: Every config file we own has a JSON Schema, at a URL an IDE can fetch
+    scope: verctl
+    outcome: >-
+      Editing verctl.toml, tasks.yaml, or a changeset fragment in an IDE
+      completes the keys and marks a wrong one, in every ctl repo, with
+      no editor-local setup.
+    blocked_by: [VER-018]
+    acceptance:
+      - The schemas are generated from the Rust types, so a key that exists in code exists in the schema and no other.
+      - "verctl.toml carries `#:schema <url>`; tasks.yaml and changeset fragments carry `# yaml-language-server: $schema=<url>`."
+      - The URL is versioned, and a repo's own schema line is kept current by a [patterns] pin, not by hand.
+      - "A generated schema that drifts from the types fails a check, the same way a served file does."
+      - qctl and ctl-core carry the same lines for the same files.
+    notes: >-
+      2026-08-18, decided with Victor: free and already versioned wins over
+      a prettier host, so this follows the pattern that already exists
+      rather than inventing one. Evidence: qctl ships schema/tasks.schema.json
+      as a release asset, ctl-core's tasks.yaml already points $schema at
+      `releases/download/v0.0.1/tasks.schema.json`, and qctl's own ledger
+      already decided the URL is a pinned tag and never /latest — a schema
+      that changes under an unchanged file is worse than an old one. What is
+      missing is the rest: verctl.toml and changeset fragments have no
+      schema at all, qctl's is hand-written JSON rather than generated from
+      the types, and every pinned URL is bumped by hand. The staleness
+      objection is what VER-018 just answered: a schema URL is a version
+      site like any other, so it becomes a [patterns] entry and prepare
+      keeps it current on the Version PR. mise ships its own schema and we
+      only reference it; template declarations are not a file an editor
+      validates by URL.
+
+  - id: VER-022
+    title: Move the reusable schema layer into ctl-core
+    scope: verctl
+    outcome: >-
+      Every ctl CLI parses and validates declared input the same way,
+      from one implementation, instead of three that drift.
+    blocked_by: [VER-018]
+    acceptance:
+      - "The shared validators (`inside_the_repo`, `one_file_name`, `at_least_one`, `cannot_be_empty`) live in ctl-core and verctl uses them from there."
+      - "Config loading — read, parse with serde, validate once with garde against the whole document — is one ctl-core entry point."
+      - "The template renderer's declare-your-own-target mechanism is available to any ctl CLI, not just verctl."
+      - No verctl-specific vocabulary leaks into ctl-core, and no copy of the layer is left behind here.
+    notes: >-
+      2026-08-18: src/schema.rs is already shared between verctl's TOML
+      config and its Jinja template declarations, which is the proof it is
+      not verctl-shaped. ctl-core carries the matching row; do that one
+      first so this is a move, not a fork.
 
 horizon:
   - id: VER-019
@@ -273,6 +357,26 @@ horizon:
     kind: deferred
     outcome: Public npm uses trusted publishing, not NPM_TOKEN.
     open: bun publish --tolerate-republish already ships. OIDC is the remaining auth path.
+
+  - id: VER-023
+    title: Is this how a modern Rust CLI is built?
+    scope: verctl
+    kind: evaluation
+    outcome: >-
+      The crate layout, error handling, test structure, and fixture
+      approach are what current Rust practice recommends — or we know
+      exactly where we differ and why we keep it.
+    open: >-
+      2026-08-18, raised by Victor: nothing here is unmanageable, but the
+      pattern was never checked against the field. Questions worth
+      researching rather than guessing: flat `src/*.rs` modules versus
+      grouped ones as the crate keeps growing; anyhow everywhere versus a
+      typed error at the library boundary with anyhow only in main; unit
+      tests in-file versus `tests/` (both are used here, with no stated
+      rule); hand-written table tests versus a fixture or snapshot crate;
+      and how much of the answer belongs in ctl-core so all three CLIs
+      share it (VER-022). Deliverable is a short written standard in
+      ctl-core plus a list of what to change here, not a rewrite.
 
 archive:
   - id: VER-012
