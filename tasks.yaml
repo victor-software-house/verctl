@@ -80,6 +80,38 @@ queue:
       it — verifying those literals needs a YAML dependency this crate does
       not have, to check a value the law puts there on purpose.
 
+  - id: VER-017
+    title: The pin phase is an Action, like the other three
+    scope: verctl
+    outcome: >-
+      A consumer declaring [[pins]] gets them rewritten and committed by
+      naming one action, not by copying release-critical bash.
+    blocked_by: []
+    acceptance:
+      - actions/pin runs verctl pin, commits only the files verctl reported, and pushes to the default branch.
+      - A repo declaring no [[pins]] exits clean instead of committing an empty change.
+      - Whatever an earlier step left staged does not ride along on the release commit.
+      - examples/workflows/publish.yml shows the job, so a consumer copies it instead of inventing it.
+      - README and verctl instructions name all four actions.
+    notes: >-
+      2026-08-18: found because qctl's examples/mise.toml still pinned
+      ?ref=v0.0.1 with nothing to move it. The gap was in the reference
+      workflow, not in qctl: examples/workflows/publish.yml had no pin job
+      at all, so every consumer that copied it inherited the hole, and
+      ctl-core copied its @main refs along with it. Verified in a scratch
+      repo against a bare remote: the rewrite moved both the [tools]
+      version and the ?ref=, the commit carried consumer/mise.toml only
+      while a staged junk.txt stayed out of the tree, a second run printed
+      "pins already name the released versions" and pushed nothing, and an
+      empty [[pins]] list exited clean. Two defects were found and fixed
+      that way, both from an unscoped index: `git diff --cached` with no
+      pathspec would have committed anything already staged, and an empty
+      file list fell through to a commit. This repo's own publish.yml pin
+      job deliberately stays hand-rolled — it must run the binary
+      published seconds earlier, which PATH does not have, and the action
+      requires verctl on PATH. Adoption in qctl follows once this merges,
+      since the ref has to be a real SHA.
+
 horizon:
   - id: VER-016
     title: The plan job should not install a compiler to parse TOML

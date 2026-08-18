@@ -1,4 +1,6 @@
-# Crate job always. Asset jobs only when `[assets].targets` is set.
+# Crate job always. Asset jobs only when an `[assets.NAME]` table is set.
+# Pin job only when `[[pins]]` is declared. Copy `verctl/actions/*` at a
+# release SHA, not at `@main` as written here.
 name: Publish
 
 on:
@@ -62,3 +64,24 @@ jobs:
         with:
           target: ${{ matrix.id }}
           tag: ${{ needs.crate.outputs.tag }}
+
+  # Only when `[[pins]]` names a collocated file. It commits the rewritten
+  # pins to the default branch, so it runs after the assets they may name.
+  pin:
+    needs: [crate, assets]
+    if: >-
+      always() &&
+      needs.crate.result == 'success' &&
+      (needs.crate.outputs.has_assets != 'true' || needs.assets.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+          fetch-depth: 0
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          version: 2026.8.2
+          cache: true
+      - run: mise install --locked
+      - uses: victor-software-house/verctl/actions/pin@main

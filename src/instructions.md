@@ -104,8 +104,10 @@ Happy path after the Version PR merges is
 `victor-software-house/verctl/actions/publish`. It runs when the
 `version-packages` PR is merged. Native tarballs are a second job,
 only when `[assets].targets` is non-empty. `verctl assets` prints the
-matrix; `--build` + `--upload` is `actions/asset`. OIDC trusted
-publishing is later (VER-007).
+matrix; `--build` + `--upload` is `actions/asset`. When `[[pins]]` names
+a collocated file, a last job runs `actions/pin`, which rewrites those
+pins to the versions just released and commits them to the default
+branch. OIDC trusted publishing is later (VER-007).
 
 Machines are configuration, not a hardcoded map. A machine is declared
 once as `[runners.NAME]` with `labels`, the literal GitHub label list
