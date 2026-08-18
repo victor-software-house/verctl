@@ -1,6 +1,6 @@
 # Stock drivers. build.rs turns this into src/generated.rs.
 # after is never implied — declare it on the package or driver if you want
-# cargo generate-lockfile, npm install, bun install, pnpm i, etc.
+# cargo update --workspace, npm install, bun install, pnpm i, etc.
 
 [drivers.cargo]
 format = "toml"

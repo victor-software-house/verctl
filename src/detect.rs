@@ -15,7 +15,9 @@ pub fn follow_up(manifest: &Path) -> Option<String> {
 }
 
 fn cargo_follow_up(dir: &Path) -> Option<String> {
-    walk(dir, "Cargo.lock").then(|| "cargo generate-lockfile".into())
+    // Not `generate-lockfile`: that re-resolves every dependency, so a bump
+    // would carry unrelated moves. Only this package's version went stale.
+    walk(dir, "Cargo.lock").then(|| "cargo update --workspace".into())
 }
 
 fn javascript_follow_up(dir: &Path) -> Option<String> {

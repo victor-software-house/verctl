@@ -272,6 +272,83 @@ fn detects_bun_from_lockfile() {
 }
 
 #[test]
+fn a_cargo_lock_asks_for_the_narrowest_refresh() {
+    let root = TempDir::new().expect("tmp");
+    fs::write(
+        root.path().join("verctl.toml"),
+        indoc! {r#"
+            [[packages]]
+            name = "app"
+            path = "Cargo.toml"
+        "#},
+    )
+    .expect("cfg");
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "app"
+            version = "1.0.0"
+        "#},
+    )
+    .expect("manifest");
+    fs::write(root.path().join("Cargo.lock"), "version = 4\n").expect("lock");
+    let config = Config::load(&root.path().join("verctl.toml")).expect("load");
+    let fragment = parse_str(
+        indoc! {"
+            ---
+            app: patch
+            ---
+
+            Patch.
+        "},
+        "a.md",
+    )
+    .expect("frag");
+    let plan = prepare::plan(&config, &[fragment], root.path()).expect("plan");
+    // `generate-lockfile` would re-resolve the whole graph and move
+    // dependencies the bump never touched.
+    assert_eq!(plan[0].driver.after(), Some("cargo update --workspace"));
+}
+
+#[test]
+fn no_cargo_lock_asks_for_nothing() {
+    let root = TempDir::new().expect("tmp");
+    fs::write(
+        root.path().join("verctl.toml"),
+        indoc! {r#"
+            [[packages]]
+            name = "app"
+            path = "Cargo.toml"
+        "#},
+    )
+    .expect("cfg");
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "app"
+            version = "1.0.0"
+        "#},
+    )
+    .expect("manifest");
+    let config = Config::load(&root.path().join("verctl.toml")).expect("load");
+    let fragment = parse_str(
+        indoc! {"
+            ---
+            app: patch
+            ---
+
+            Patch.
+        "},
+        "a.md",
+    )
+    .expect("frag");
+    let plan = prepare::plan(&config, &[fragment], root.path()).expect("plan");
+    assert_eq!(plan[0].driver.after(), None);
+}
+
+#[test]
 fn detects_pnpm_from_lockfile() {
     let root = TempDir::new().expect("tmp");
     fs::write(
