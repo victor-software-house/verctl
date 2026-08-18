@@ -41,8 +41,13 @@ jobs:
         with:
           version: 2026.8.2
           cache: true
+          # This run is a closed pull request: its merge ref no longer
+          # exists, so the Actions cache refuses every write. Read only.
+          cache_save: false
       - run: mise install --locked
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: false
       - name: Plan native assets
         id: plan
         run: mise -E dev run ver -- assets --github-output "$GITHUB_OUTPUT"
@@ -80,8 +85,13 @@ jobs:
         with:
           version: 2026.8.2
           cache: true
+          # This run is a closed pull request: its merge ref no longer
+          # exists, so the Actions cache refuses every write. Read only.
+          cache_save: false
       - run: mise install --locked
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: false
       - name: Build and upload
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -109,6 +119,9 @@ jobs:
         with:
           version: 2026.8.2
           cache: true
+          # This run is a closed pull request: its merge ref no longer
+          # exists, so the Actions cache refuses every write. Read only.
+          cache_save: false
           install: false
       - name: Pin with the tarball just published
         id: pin
