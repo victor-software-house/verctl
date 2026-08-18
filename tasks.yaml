@@ -86,7 +86,7 @@ queue:
     outcome: >-
       A served file edited by hand, or claimed by both a template and a
       pin, fails on the PR that does it instead of at release time.
-    blocked_by: [] # VER-018 archived 2026-08-18
+    blocked_by: []
     acceptance:
       - "`check` runs the same validation prepare does: every pattern still matches at its declared arity."
       - "`check` compares every served file to what its template renders at the versions on HEAD."
@@ -107,7 +107,7 @@ queue:
       Editing verctl.toml, tasks.yaml, or a changeset fragment in an IDE
       completes the keys and marks a wrong one, in every ctl repo, with
       no editor-local setup.
-    blocked_by: [] # VER-018 archived 2026-08-18
+    blocked_by: []
     acceptance:
       - The schemas are generated from the Rust types, so a key that exists in code exists in the schema and no other.
       - "verctl.toml carries `#:schema <url>`; tasks.yaml and changeset fragments carry `# yaml-language-server: $schema=<url>`."
@@ -130,6 +130,14 @@ queue:
       keeps it current on the Version PR. mise ships its own schema and we
       only reference it; template declarations are not a file an editor
       validates by URL.
+      2026-08-18, blocker found by running it: every qctl mutation deletes
+      the schema line it is supposed to protect. `qctl start` on a copy of
+      this file rewrote it through serde_yaml and dropped every comment,
+      line 1 included, so `# yaml-language-server: $schema=…` survives only
+      until the next `q start` or `q archive`. tasks.yaml cannot carry a
+      schema pointer until qctl writes comments back; the same is why no
+      comment in this file is load-bearing, and why an archived blocker is
+      recorded in notes rather than beside the key.
 
   - id: VER-022
     title: Move the reusable schema layer into ctl-core
@@ -137,7 +145,7 @@ queue:
     outcome: >-
       Every ctl CLI parses and validates declared input the same way,
       from one implementation, instead of three that drift.
-    blocked_by: [] # VER-018 archived 2026-08-18
+    blocked_by: []
     acceptance:
       - "The shared validators (`inside_the_repo`, `one_file_name`, `at_least_one`, `cannot_be_empty`) live in ctl-core and verctl uses them from there."
       - "Config loading — read, parse with serde, validate once with garde against the whole document — is one ctl-core entry point."
