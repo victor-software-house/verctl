@@ -48,12 +48,42 @@ fn the_example_config_parses() {
     assert_eq!(config.pins.len(), 1, "one collocated pin is declared");
 }
 
+/// What makes the plan below sufficient: a table no package names is never
+/// rendered, so it could document anything. `cargo`, `npm`, and `bun` are stock
+/// names a manifest implies on its own; any other table has to be claimed by a
+/// package explicitly, or it is documentation nothing runs.
+#[test]
+fn the_example_declares_nothing_a_package_does_not_use() {
+    let config = Config::load(&example()).expect("parse");
+    let claimed: Vec<&str> = config
+        .packages
+        .iter()
+        .filter_map(|package| package.driver.as_deref())
+        .collect();
+    for name in config.drivers.keys() {
+        assert!(
+            matches!(name.as_str(), "cargo" | "npm") || claimed.contains(&name.as_str()),
+            "[drivers.{name}] is declared but no package names it, so nothing renders it"
+        );
+    }
+    let claimed: Vec<&str> = config
+        .packages
+        .iter()
+        .filter_map(|package| package.publisher.as_deref())
+        .collect();
+    for name in config.publishers.keys() {
+        assert!(
+            matches!(name.as_str(), "cargo" | "bun") || claimed.contains(&name.as_str()),
+            "[publishers.{name}] is declared but no package names it"
+        );
+    }
+}
+
 /// Resolving each declared table by hand would skip the stock merge production
 /// applies, so a valid `[drivers.npm] after = "…"` — stock supplying the rest —
 /// would fail here while working in the field. Plan the publish instead: it is
 /// the path that resolves every driver, reads the version through it, and
-/// resolves every publisher. Every table the example declares is used by a
-/// package, so nothing documented escapes this.
+/// resolves every publisher. With the test above, no declared table escapes.
 #[test]
 fn the_example_resolves_every_driver_and_publisher_it_declares() {
     let root = planted();
