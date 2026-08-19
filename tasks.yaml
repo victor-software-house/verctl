@@ -210,6 +210,34 @@ queue:
       the condition rather than assume it: grep both consumers for the key
       and read their pins.
 
+  - id: VER-026
+    title: An untracked template in the source tree stops the release
+    scope: verctl
+    outcome: >-
+      A template a repo committed to nothing renders nothing and says so.
+      Adding a served file and getting silence is not a state a release
+      passes through.
+    blocked_by: []
+    acceptance:
+      - "A `*.jinja` inside `[templates].source` that git does not track fails the run, naming the file: commit it or delete it."
+      - "`only_a_tracked_template_in_the_source_tree_is_rendered` keeps its second half — a template outside the source tree is still ignored without a word — and its first half asserts the error instead of an empty plan."
+      - "§5's claim that exactly one thing is silently skipped reads true again: an unbumped `[[pins]]` package, and nothing else."
+      - "The rationale in §1 stops crediting trackedness with keeping this crate's changelog templates out; `source` already does that by directory."
+    notes: >-
+      2026-08-19, found in qctl while adopting served files: `prepare
+      --dry-run` listed the one `[[pins]]` file and neither of the two
+      templates, with no diagnostic, because they were written but not yet
+      staged. Diagnosed by reading `templates::sources`, which filters
+      `git::tracked` — and the current test pins that silence as intended,
+      asserting an empty plan and an unchanged served file.
+      Refusing to render is right: `prepare` auto-stages rendered outputs, so
+      a template git does not carry would put a served file on the tag whose
+      source is not in the tree, and `check` would have nothing to compare on
+      a fresh clone. What is wrong is what happens next — the release
+      continues and serves the stale hand-authored file, which is the exact
+      failure served files exist to end. It fails open, once per repo, at the
+      moment somebody is learning the feature.
+
 horizon:
   - id: VER-019
     title: Triage the review backlog from the closed PRs
