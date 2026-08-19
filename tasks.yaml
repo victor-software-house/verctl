@@ -246,9 +246,9 @@ queue:
       verctl the machine happens to hold.
     blocked_by: []
     acceptance:
-      - "`tasks/ver/ver` execs `verctl` and lets the task's own `#MISE tools` pin decide, instead of `mise where`, which reads the surrounding config."
+      - "`tasks/ver/ver` becomes a template under `.verctl/templates/` and execs `verctl` in the same change — the pin has to be rendered before anything trusts it. Today the file says 0.0.1 while the crate is at 0.0.4, and only `mise where` is hiding that, so removing it alone would freeze `mise run ver` on 0.0.1."
       - "Proven the way qctl proved it: one machine with two versions installed, one task pinned to the older, and the task runs the older."
-      - "The file is a template under `.verctl/templates/`, so the pin it carries is the release it ships in — today it says 0.0.1 in every tag."
+      - "No release ships one half: a tag whose `tasks/ver/ver` execs `verctl` also carries the version that tag names."
     notes: >-
       2026-08-19, measured in qctl: `mise where <tool>` resolves a version
       from the surrounding config, so a task-scoped `#MISE tools` pin
