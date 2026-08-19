@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="verctl mark: fragments feeding a ruled release block">
+  <rect width="32" height="32" rx="6" fill="#f3efe6"/>
+  <rect x="4" y="5" width="6" height="6" fill="#c45c2a"/>
+  <rect x="4" y="13" width="6" height="6" fill="#c45c2a"/>
+  <rect x="4" y="21" width="6" height="6" fill="#c45c2a"/>
+  <rect x="15" y="4" width="13" height="24" fill="#161616"/>
+  <rect x="18" y="6.75" width="7" height="2.5" fill="#f3efe6"/>
+  <rect x="18" y="14.75" width="7" height="2.5" fill="#f3efe6"/>
+  <rect x="18" y="22.75" width="7" height="2.5" fill="#f3efe6"/>
+</svg>

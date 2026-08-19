@@ -1,6 +1,10 @@
-# yaml-language-server: $schema=https://github.com/victor-software-house/qctl/releases/download/v0.0.1/tasks.schema.json
-schema_version: 1
+# yaml-language-server: $schema=https://github.com/victor-software-house/qctl/releases/download/v0.1.2/tasks.schema.json
+schema_version: 3
 prefix: VER
+
+style:
+  timezone: "-03:00"
+  section_order: [queue, horizon, archive]
 active: VER-011
 
 queue:
@@ -412,7 +416,7 @@ archive:
   - id: VER-018
     title: A repo declares the files it serves instead of scripting them
     scope: verctl
-    completed: "2026-08-18"
+    completed: "2026-08-18T19:50:03"
     disposition: completed
     outcome: >-
       Anything a release leaves stale is rewritten by declaration,
@@ -431,7 +435,7 @@ archive:
   - id: VER-017
     title: Pins ride the Version PR, and publish pushes only the tag
     scope: verctl
-    completed: "2026-08-18"
+    completed: "2026-08-18T19:50:03"
     disposition: completed
     outcome: >-
       The released tree carries its own pins, so a consumer that fetches
@@ -446,7 +450,7 @@ archive:
   - id: VER-012
     title: Block hand-edited versions on the default branch
     scope: verctl
-    completed: "2026-08-17"
+    completed: "2026-08-17T05:59:57"
     disposition: completed
     outcome: >-
       A pre-push or check fails when a declared manifest version
@@ -461,7 +465,7 @@ archive:
   - id: VER-005
     title: "Publish native verctl so mise github: can install it"
     scope: release
-    completed: "2026-08-17"
+    completed: "2026-08-17T02:21:38"
     disposition: completed
     outcome: >-
       crates.io plus GitHub Release assets for darwin-arm64 and linux-x64.
@@ -474,7 +478,7 @@ archive:
   - id: VER-009
     title: Keep verctl on ctl-core after the chassis hardens
     scope: verctl
-    completed: "2026-08-17"
+    completed: "2026-08-17T01:29:52"
     disposition: completed
     outcome: >-
       verctl stays on ctl-core prelude/View/formatdoc. No local help
@@ -486,7 +490,7 @@ archive:
   - id: VER-004
     title: Open or update the Version PR
     scope: verctl
-    completed: "2026-08-17"
+    completed: "2026-08-17T01:29:52"
     disposition: completed
     outcome: >-
       One prepare-release PR consumes fragments, commits version files
@@ -499,7 +503,7 @@ archive:
   - id: VER-003
     title: Write Cargo.toml and package.json versions
     scope: verctl
-    completed: 2026-08-16
+    completed: "2026-08-16T20:11:59"
     disposition: completed
     outcome: >-
       prepare --no-pr applies the max bump per declared package to
@@ -513,7 +517,7 @@ archive:
   - id: VER-002
     title: Render changelogs with minijinja
     scope: verctl
-    completed: 2026-08-16
+    completed: "2026-08-16T19:48:01"
     disposition: completed
     outcome: Defaults are Jinja2 templates rendered by minijinja 2.x.
     evidence:
@@ -523,7 +527,7 @@ archive:
   - id: VER-001
     title: Parse Changesets YAML fragments (quoted and unquoted)
     scope: verctl
-    completed: 2026-08-16
+    completed: "2026-08-16T19:48:01"
     disposition: completed
     outcome: YAML fragments via gray_matter. status and check fail closed.
     evidence:
