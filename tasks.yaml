@@ -222,7 +222,7 @@ queue:
       - "A `*.jinja` inside `[templates].source` that git does not track fails the run, naming the file: commit it or delete it."
       - "`only_a_tracked_template_in_the_source_tree_is_rendered` keeps its second half — a template outside the source tree is still ignored without a word — and its first half asserts the error instead of an empty plan."
       - "§5's claim that exactly one thing is silently skipped reads true again: an unbumped `[[pins]]` package, and nothing else."
-      - "The rationale in §1 stops crediting trackedness with keeping this crate's changelog templates out; `source` already does that by directory."
+      - "§1's \"an untracked template is scratch work and renders nowhere\" is gone, replaced by what it does instead: fail the run, naming the file. The clause beside it — a template outside the source tree is not verctl's to render, which is what keeps this crate's changelog templates out — is already true and stays."
     notes: >-
       2026-08-19, found in qctl while adopting served files: `prepare
       --dry-run` listed the one `[[pins]]` file and neither of the two
