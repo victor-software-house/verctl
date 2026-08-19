@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="verctl mark: stack of shipped releases with the pending version above">
-  <rect width="32" height="32" rx="6" fill="#f3efe6"/>
-  <rect x="10" y="5" width="12" height="4" fill="#c45c2a"/>
-  <rect x="8" y="13" width="16" height="4" fill="#161616"/>
-  <rect x="6" y="18.5" width="20" height="4" fill="#161616"/>
-  <rect x="4" y="24" width="24" height="4" fill="#161616"/>
-</svg>
