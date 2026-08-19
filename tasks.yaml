@@ -238,6 +238,30 @@ queue:
       failure served files exist to end. It fails open, once per repo, at the
       moment somebody is learning the feature.
 
+  - id: VER-027
+    title: The served task runs the verctl its own pin names
+    scope: verctl
+    outcome: >-
+      `mise run ver` runs the version `tasks/ver/ver` pins, not whichever
+      verctl the machine happens to hold.
+    blocked_by: []
+    acceptance:
+      - "`tasks/ver/ver` execs `verctl` and lets the task's own `#MISE tools` pin decide, instead of `mise where`, which reads the surrounding config."
+      - "Proven the way qctl proved it: one machine with two versions installed, one task pinned to the older, and the task runs the older."
+      - "The file is a template under `.verctl/templates/`, so the pin it carries is the release it ships in — today it says 0.0.1 in every tag."
+    notes: >-
+      2026-08-19, measured in qctl: `mise where <tool>` resolves a version
+      from the surrounding config, so a task-scoped `#MISE tools` pin
+      guarantees the install and never the selection. With 0.0.1, 0.1.0 and
+      0.1.1 installed and one task pinned to 0.0.1, `exec qctl "$@"` ran
+      0.0.1 and `exec "$(mise where …)/qctl" "$@"` ran 0.1.1 — mise already
+      puts the task's pinned tool first on PATH. Found by running `mise run q
+      -- status` in this repo, whose include is pinned to qctl v0.0.1 and
+      which still got the schema-3 complaint that only 0.1.1 can produce.
+      `tasks/fork/fork` in forkctl carries the same line and the same bug.
+      That repo has no ledger, so this row is where it is written down until
+      it does.
+
 horizon:
   - id: VER-019
     title: Triage the review backlog from the closed PRs
