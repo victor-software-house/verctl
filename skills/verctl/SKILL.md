@@ -24,6 +24,19 @@ A repo declares everything in `.ctl/ver.yaml`, the one file verctl reads;
 `.ctl/` is shared with the other ctl CLIs and templates live in
 `.ctl/templates/`. There is no `verctl.toml`.
 
+Prefer a template over a pin: a served file is generated, and a `pins` entry
+admits a file is hand-authored. A template declares its own target with
+top-level `{%- set … -%}` exports. Commit it — one the repo neither tracks nor
+ignores fails the run, because rendering nothing would serve the stale file
+instead. An ignored one is disowned and left alone; one outside the source
+tree was never verctl's to render.
+
+A served mise task execs the tool from PATH, never
+`"$(mise where <tool>)/<tool>"`. `mise where` resolves from the surrounding
+config, so it ignores the task's own `#MISE tools` pin, while mise already puts
+that pin first on PATH. Removing it is only safe together with rendering the
+pin, or the task freezes on whatever version the file happens to name.
+
 Machines are `runners` entries with `labels`, declared once and named by
 the jobs that run on them: a `ci` job takes `runners`, one check each; an
 `assets` target takes a single `runner`, because one tarball is one

@@ -42,6 +42,13 @@ is verctl's by virtue of sitting there. `verctl.toml` is gone: not read, not
 tolerated. Every `path` in the file is relative to the directory holding `.ctl/`,
 which `config::root_of` derives.
 
+A template in that tree must be tracked, and one the repo neither tracks nor
+ignores fails the run — rendering nothing would leave the stale file served, and
+that is the failure served files exist to end. Ignored is disowned, a symlink is
+not followed, and outside the source tree was never ours to render. A served
+mise task execs its tool from PATH: `mise where` reads the surrounding config,
+so it ignores the task's own `#MISE tools` pin.
+
 Anything a repo or a template declares is **one struct**, parsed once at the
 boundary and validated there — never a series of lookups with conversions at use
 sites.

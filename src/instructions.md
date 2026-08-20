@@ -116,6 +116,23 @@ own pins. A pin that must name an already-published tarball — a repo's
 own bootstrap tool — is not a `pins` entry. OIDC trusted publishing
 is later (VER-007).
 
+Prefer a template over a pin. A served file under `.ctl/templates/`
+declares its own target in top-level `{%- set … -%}` exports and is
+rendered onto the Version PR commit, so it cannot drift; a `pins`
+entry admits a file is hand-authored. Commit the template: one the
+repo neither tracks nor ignores fails the run, because rendering
+nothing would leave the stale file served. An ignored one is disowned
+and left alone, a symlink is not followed, and one outside the source
+tree was never verctl's to render — which is what keeps this crate's
+changelog templates out. See docs/served-files.md.
+
+A served mise task execs the tool from PATH, never
+`"$(mise where <tool>)/<tool>"`. `mise where` resolves a version from
+the surrounding config, so it ignores the task's own `#MISE tools`
+pin, and mise already puts that pin first on PATH. Drop it only in
+the same change that renders the pin from a template, or the task
+freezes on whatever version the file happens to name.
+
 Machines are configuration, not a hardcoded map. A machine is declared
 once under `runners` with `labels`, the literal GitHub label list
 that GitHub reads as AND — one machine, however many labels. Jobs name
