@@ -465,7 +465,8 @@ impl<'de> Deserialize<'de> for Occurrences {
             };
         }
         let bound = declared.as_mapping().ok_or_else(wrong)?;
-        let [(key, count)] = &bound.iter().collect::<Vec<_>>()[..] else {
+        let entries: Vec<_> = bound.iter().collect();
+        let [(key, count)] = &entries[..] else {
             return Err(wrong());
         };
         let count = usize::try_from(count.as_u64().ok_or_else(wrong)?).map_err(D::Error::custom)?;
