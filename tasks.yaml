@@ -5,68 +5,9 @@ prefix: VER
 style:
   timezone: "-03:00"
   section_order: [queue, horizon, archive]
-active: VER-025
+active: VER-011
 
 queue:
-  - id: VER-025
-    title: Declarations live in .ctl/ver.yaml
-    scope: verctl
-    outcome: >-
-      A repo has one `.ctl` directory that every ctl CLI shares, and verctl's
-      declarations are one YAML file inside it. `verctl.toml` is gone, not
-      tolerated.
-    blocked_by: []
-    acceptance:
-      - "`.ctl/ver.yaml` holds every section verctl.toml holds today: drivers, packages, publishers, runners, assets, ci, prepare, templates, patterns, pins."
-      - "Served-file templates move to `.ctl/templates/`, shared rather than namespaced, and each still declares its own target."
-      - "Cross-section rules keep working, so the files are merged into one document before garde runs: `every_pattern_is_listed` still checks patterns against pins, and a job or asset target naming an undeclared runner still fails."
-      - YAML, not TOML, so every file a repo writes for a ctl CLI is the same language as tasks.yaml.
-      - "`verctl.toml` is not read at all: no fallback, no deprecation window, no both-are-accepted state."
-      - Every known consumer moves in the same slice — this repo, qctl, and ctl-core — and the old file is deleted from each.
-      - Loading is still one boundary, so a complaint names its file and field the way it does today.
-    notes: >-
-      2026-08-18, decided by Victor and recorded late — this row exists
-      because the decision lived in a conversation instead of the repo, which
-      is the failure the cold-start rule is about. His words, twice: first
-      "keep the damn config in there, .verctl/config.toml etc etc … anything
-      more than that, then we should use a damn directory already", then, on
-      seeing this written up as an open question, "we should just fucking drop
-      fucking verctl.toml and keep shit under .verctl/{config, etc etc}.yaml".
-      The second supersedes the first on two points: the format is YAML, and
-      `verctl.toml` is dropped rather than still recognized. A per-concern
-      split, YAML only, with both consumers migrated, is what was agreed at
-      the time.
-      This is a break to a contract we own, so the rule applies: inventory
-      every producer and consumer, migrate them in the same slice, remove the
-      old path. VER-021 declares this its blocker rather than saying so in
-      prose, because a schema written against verctl.toml is written twice.
-      VER-024 is the smaller version of the same problem and can ride along.
-      2026-08-19, from qctl QCTL-019: this slice picks a name two tools have to
-      live with, so pick it on purpose. qctl will need project config of its own
-      — a registry naming the ledgers a repo reads — and if this lands `.verctl/`
-      while that invents `.qctl/`, two tools that ship together have two
-      conventions and nothing written down about why.
-      Decided by Victor the same day, and it supersedes this row's original
-      shape: one `.ctl/` directory, one file per tool, and the file name drops
-      the ctl — `.ctl/ver.yaml`, `.ctl/q.yaml`, `.ctl/fork.yaml`. The names match
-      the tasks a consumer already runs (`mise run ver`, `mise run q`,
-      `mise run fork`), so a file is named after the verb the operator types
-      rather than after the crate that reads it, and ctl-core has one place to
-      look when it becomes the shared layer. `.verctl/` is not the target.
-      What is superseded, explicitly: one YAML file per concern. The sections
-      are already named inside the document, so a directory of ten files split
-      what a reader opens without splitting what they have to understand. If it
-      ever does grow, the loader can accept a directory beside the file without
-      a second migration — that is a follow-up, not this slice. Templates keep a
-      directory of their own at `.ctl/templates/`, shared rather than
-      namespaced, because a template already declares its own target and nothing
-      in one is verctl's except who renders it.
-      One constraint from that side, so the shape is not chosen blind: a
-      committed file can only carry what is true on every machine. qctl's
-      registry splits accordingly — prefixes in the repo, paths on the machine —
-      and any `.ctl/` convention should expect the same split rather than assume
-      everything a tool declares is committable.
-
   - id: VER-011
     title: Finish the Changesets-shaped release loop
     scope: verctl
@@ -170,7 +111,7 @@ queue:
       Editing a repo's declarations, tasks.yaml, or a changeset fragment in an
       IDE completes the keys and marks a wrong one, in every ctl repo, with
       no editor-local setup.
-    blocked_by: [VER-025]
+    blocked_by: []
     acceptance:
       - The schemas are generated from the Rust types, so a key that exists in code exists in the schema and no other.
       - "Every declaration file a repo writes carries `# yaml-language-server: $schema=<url>`, and so do tasks.yaml and changeset fragments."
@@ -208,7 +149,7 @@ queue:
     outcome: >-
       Every ctl CLI parses and validates declared input the same way,
       from one implementation, instead of three that drift.
-    blocked_by: [VER-025]
+    blocked_by: []
     acceptance:
       - "The shared validators (`inside_the_repo`, `one_file_name`, `at_least_one`, `cannot_be_empty`) live in ctl-core and verctl uses them from there."
       - "Config loading — read, parse with serde, validate once with garde against the whole document — is one ctl-core entry point."
@@ -220,26 +161,6 @@ queue:
       not verctl-shaped. ctl-core carries the matching row, CTC-008,
       merged 2026-08-18 as ctl-core#7, so the destination is agreed
       before anything moves.
-
-  - id: VER-024
-    title: Delete the retired [assets].targets shim
-    scope: verctl
-    outcome: >-
-      A config key that no longer exists is not still half-parsed. The
-      migration message has done its job and goes with it.
-    blocked_by: []
-    acceptance:
-      - "`Assets::retired_targets` and the bail in assets.rs are gone, along with the test that asserts the message."
-      - Both consumers are checked first — qctl and ctl-core name no `[assets].targets` and their verctl pin is at or past the release that replaced it.
-      - "A repo that still writes the old key gets serde's unknown-field error, which is the correct answer once nothing migrates."
-    notes: >-
-      2026-08-18: written down because it was not. The shim exists only so a
-      repo still on `targets = [...]` reads the migration instead of a serde
-      type error, and its own doc comment says "remove once qctl and ctl-core
-      have bumped their verctl pin" — a removal condition with no row to
-      enforce it, which is how compatibility code becomes permanent. Verify
-      the condition rather than assume it: grep both consumers for the key
-      and read their pins.
 
   - id: VER-026
     title: An untracked template in the source tree stops the release
@@ -355,16 +276,16 @@ horizon:
       `runner` context, and actionlint 1.7.12 passes every file.
 
   - id: VER-016
-    title: The plan job should not install a compiler to parse TOML
+    title: The plan job should not install a compiler to read the declarations
     scope: verctl
     kind: evaluation
     outcome: >-
-      The ci.yml bootstrap costs what reading verctl.toml costs, and
+      The ci.yml bootstrap costs what reading .ctl/ver.yaml costs, and
       verify stops waiting on a toolchain it does not share.
     open: >-
       Measured on run 32078158505: plan took 33s, of which 21s was mise
       plus rust-cache, and verify did not start until 37s in. It needs
-      verctl and verctl.toml, not cargo. The tarball is the fix and it
+      verctl and .ctl/ver.yaml, not cargo. The tarball is the fix and it
       is gated, not undecided: `git show v0.0.2:src/ci.rs` does not
       resolve, so the published binary has no `ci` verb and
       MISE_ENV=release cannot plan until a release carries VER-015.
@@ -464,6 +385,86 @@ horizon:
       ctl-core plus a list of what to change here, not a rewrite.
 
 archive:
+  - id: VER-024
+    title: Delete the retired [assets].targets shim
+    scope: verctl
+    outcome: >-
+      A config key that no longer exists is not still half-parsed. The
+      migration message has done its job and goes with it.
+    notes: >-
+      2026-08-18: written down because it was not. The shim exists only so a
+      repo still on `targets = [...]` reads the migration instead of a serde
+      type error, and its own doc comment says "remove once qctl and ctl-core
+      have bumped their verctl pin" — a removal condition with no row to
+      enforce it, which is how compatibility code becomes permanent. Verify
+      the condition rather than assume it: grep both consumers for the key
+      and read their pins.
+    completed: 2026-08-19T23:57:38
+    evidence:
+      - 'Removed in verctl#44 with the migration that was its stated removal condition: Assets::retired_targets, the bail in assets.rs, and the test asserting the message are all gone.'
+      - 'The condition was checked, not assumed: qctl declares assets.darwin-arm64 / assets.linux-x64 and ctl-core declares no assets, and both moved their verctl pin to 0.1.0 in the same slice (qctl#32, ctl-core#10).'
+      - A repo still writing the old key now gets serde's unknown-field error, which Config's new deny_unknown_fields makes loud rather than silent.
+    disposition: completed
+
+  - id: VER-025
+    title: Declarations live in .ctl/ver.yaml
+    scope: verctl
+    outcome: >-
+      A repo has one `.ctl` directory that every ctl CLI shares, and verctl's
+      declarations are one YAML file inside it. `verctl.toml` is gone, not
+      tolerated.
+    notes: >-
+      2026-08-18, decided by Victor and recorded late — this row exists
+      because the decision lived in a conversation instead of the repo, which
+      is the failure the cold-start rule is about. His words, twice: first
+      "keep the damn config in there, .verctl/config.toml etc etc … anything
+      more than that, then we should use a damn directory already", then, on
+      seeing this written up as an open question, "we should just fucking drop
+      fucking verctl.toml and keep shit under .verctl/{config, etc etc}.yaml".
+      The second supersedes the first on two points: the format is YAML, and
+      `verctl.toml` is dropped rather than still recognized. A per-concern
+      split, YAML only, with both consumers migrated, is what was agreed at
+      the time.
+      This is a break to a contract we own, so the rule applies: inventory
+      every producer and consumer, migrate them in the same slice, remove the
+      old path. VER-021 declares this its blocker rather than saying so in
+      prose, because a schema written against verctl.toml is written twice.
+      VER-024 is the smaller version of the same problem and can ride along.
+      2026-08-19, from qctl QCTL-019: this slice picks a name two tools have to
+      live with, so pick it on purpose. qctl will need project config of its own
+      — a registry naming the ledgers a repo reads — and if this lands `.verctl/`
+      while that invents `.qctl/`, two tools that ship together have two
+      conventions and nothing written down about why.
+      Decided by Victor the same day, and it supersedes this row's original
+      shape: one `.ctl/` directory, one file per tool, and the file name drops
+      the ctl — `.ctl/ver.yaml`, `.ctl/q.yaml`, `.ctl/fork.yaml`. The names match
+      the tasks a consumer already runs (`mise run ver`, `mise run q`,
+      `mise run fork`), so a file is named after the verb the operator types
+      rather than after the crate that reads it, and ctl-core has one place to
+      look when it becomes the shared layer. `.verctl/` is not the target.
+      What is superseded, explicitly: one YAML file per concern. The sections
+      are already named inside the document, so a directory of ten files split
+      what a reader opens without splitting what they have to understand. If it
+      ever does grow, the loader can accept a directory beside the file without
+      a second migration — that is a follow-up, not this slice. Templates keep a
+      directory of their own at `.ctl/templates/`, shared rather than
+      namespaced, because a template already declares its own target and nothing
+      in one is verctl's except who renders it.
+      One constraint from that side, so the shape is not chosen blind: a
+      committed file can only carry what is true on every machine. qctl's
+      registry splits accordingly — prefixes in the repo, paths on the machine —
+      and any `.ctl/` convention should expect the same split rather than assume
+      everything a tool declares is committable.
+    completed: 2026-08-19T23:57:38
+    evidence:
+      - 'verctl#44 merged f3553c0: .ctl/ver.yaml holds every section verctl.toml held, templates moved to .ctl/templates/, verctl.toml is not read at all.'
+      - 'Cross-section rules still fire on one merged document: every_pattern_is_listed, an undeclared runner on a job or asset target, a pin outside the repository. Loading is still one boundary, now Config::parse.'
+      - v0.1.0 released 2026-08-19 (tag commit 52a7d374), both tarballs attached; git show v0.1.0:verctl.toml is empty and .ctl/ver.yaml is there.
+      - 'Every known consumer moved with its verctl pin in the same commit: ctl-core#10 -> 28920b8, qctl#32 -> 5b86881. Both bump mise.release.toml to 0.1.0 and every action ref to 52a7d374, and both were exercised with the released binary, not a checkout.'
+      - 'qctl''s two templates moved with git mv and still render: a dry run there rewrites README.md, examples/mise.toml, and tasks/q/q.'
+      - 'Two shapes were decided under this row rather than assumed: paths stay relative to the directory holding .ctl/ (config::root_of, table test), and an arity with a bound is {exactly: N} / {at_least: N} because a newtype variant would want a YAML tag. VER-028 records the shared-templates question review raised.'
+    disposition: completed
+
   - id: VER-018
     title: A repo declares the files it serves instead of scripting them
     scope: verctl
