@@ -311,6 +311,10 @@ queue:
       `ensure_release` returns early when `get_by_tag` succeeds
       (src/github.rs:249-250) without looking at where that tag points, and
       `target_commitish` cannot correct a tag that already exists.
+      If VER-038 is taken, the first acceptance line here is superseded rather
+      than also done: a tag created git-side already exists by the time a
+      Release is made, and the API documents `target_commitish` as unused in
+      that case. The re-read lines stand either way.
 
   - id: VER-033
     title: Publish follows the dependency graph, not the declaration order
@@ -463,20 +467,36 @@ horizon:
       A release that names several tags leaves either all of them or none,
       and a rerun from the same commit is a no-op rather than a repair.
     open: >-
-      Whether verctl keeps creating tags through the Releases API at all.
-      VER-039 settles the shape and gets idempotent retry, which is the most
-      the API affords: `releases.create` is one call per tag, so a set is
-      always created one at a time and a run that dies half way leaves a
-      partial set behind. They refuse a partial set precisely because the
-      retry path then has to reason about it, and they get atomicity from
-      `git push --atomic` over locally created tags — a different tagging path
-      than the one verctl has, which is the decision this row holds. Their
-      re-read after pushing is the same law as VER-032 and worth taking either
-      way: a successful push is a claim, not a fact. The other half is the
-      Release body: per-package Releases each want only their own package's
-      changelog section, which `release::notes_for` already extracts and
-      currently concatenates. Cheap once the shape exists, so it waits on
-      VER-039 rather than on this.
+      Whether verctl creates tags git-side instead of letting the Releases API
+      create them. A first write-up of this row said atomicity is not reachable
+      through that API because `releases.create` is one call per tag; that
+      framed the wrong object. Atomicity is wanted over the **tags**, not the
+      Releases — a Release is derived state that can be recreated from a tag and
+      a changelog section, a tag is the thing consumers resolve.
+      Read from a consumer's own implementation rather than their description of
+      it, the two are separate steps and never interleaved. Tags first:
+      `git tag -a <tag> <sha>` per released package at an explicit SHA,
+      annotated rather than lightweight, then a single
+      `git push --atomic origin refs/tags/a:refs/tags/a …` for the whole set.
+      Releases after, one per tag that **already exists**, each body sliced from
+      that package's own changelog between its version heading and the next.
+      Three rules guard the first step, and they are the row's real content: any
+      expected tag already at another commit refuses, a *partial* set refuses
+      rather than being completed, and a full set at the right SHA is skipped so
+      a rerun is a no-op. Then every tag is re-read with
+      `git ls-remote --tags origin refs/tags/<t> refs/tags/<t>^{}`, taking the
+      peeled form first so an annotated tag reports its commit and not the tag
+      object. A push that exited zero is not accepted as evidence it landed —
+      the same law as VER-032.
+      This also settles how VER-032 interacts: once the tag exists before the
+      Release is created, `target_commitish` is documented as unused, so the
+      git-side path makes that field moot rather than something to set. Taking
+      this row is therefore an alternative to VER-032's first acceptance line,
+      not an addition to it.
+      The other half is the Release body: per-package Releases each want only
+      their own package's changelog section, which `release::notes_for` already
+      extracts and currently concatenates. Cheap once VER-039 exists, so it
+      waits on that rather than on this.
 
   - id: VER-019
     title: Triage the review backlog from the closed PRs
