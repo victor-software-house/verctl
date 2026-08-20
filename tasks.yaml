@@ -85,14 +85,16 @@ queue:
       not have, to check a value the law puts there on purpose.
 
   - id: VER-025
-    title: Declarations live in .verctl/, one YAML file per concern
+    title: Declarations live in .ctl/ver.yaml
     scope: verctl
     outcome: >-
-      A repo has one verctl directory, and inside it one file per thing a
-      reader might be looking for. `verctl.toml` is gone, not tolerated.
+      A repo has one `.ctl` directory that every ctl CLI shares, and verctl's
+      declarations are one YAML file inside it. `verctl.toml` is gone, not
+      tolerated.
     blocked_by: []
     acceptance:
-      - "`.verctl/` holds one YAML file per concern, and every section of today's config has one: drivers, packages, publishers, runners, assets, ci, prepare, templates, patterns, pins — beside the templates directory already there."
+      - "`.ctl/ver.yaml` holds every section verctl.toml holds today: drivers, packages, publishers, runners, assets, ci, prepare, templates, patterns, pins."
+      - "Served-file templates move to `.ctl/templates/`, shared rather than namespaced, and each still declares its own target."
       - "Cross-section rules keep working, so the files are merged into one document before garde runs: `every_pattern_is_listed` still checks patterns against pins, and a job or asset target naming an undeclared runner still fails."
       - YAML, not TOML, so every file a repo writes for a ctl CLI is the same language as tasks.yaml.
       - "`verctl.toml` is not read at all: no fallback, no deprecation window, no both-are-accepted state."
@@ -115,6 +117,31 @@ queue:
       old path. VER-021 declares this its blocker rather than saying so in
       prose, because a schema written against verctl.toml is written twice.
       VER-024 is the smaller version of the same problem and can ride along.
+      2026-08-19, from qctl QCTL-019: this slice picks a name two tools have to
+      live with, so pick it on purpose. qctl will need project config of its own
+      — a registry naming the ledgers a repo reads — and if this lands `.verctl/`
+      while that invents `.qctl/`, two tools that ship together have two
+      conventions and nothing written down about why.
+      Decided by Victor the same day, and it supersedes this row's original
+      shape: one `.ctl/` directory, one file per tool, and the file name drops
+      the ctl — `.ctl/ver.yaml`, `.ctl/q.yaml`, `.ctl/fork.yaml`. The names match
+      the tasks a consumer already runs (`mise run ver`, `mise run q`,
+      `mise run fork`), so a file is named after the verb the operator types
+      rather than after the crate that reads it, and ctl-core has one place to
+      look when it becomes the shared layer. `.verctl/` is not the target.
+      What is superseded, explicitly: one YAML file per concern. The sections
+      are already named inside the document, so a directory of ten files split
+      what a reader opens without splitting what they have to understand. If it
+      ever does grow, the loader can accept a directory beside the file without
+      a second migration — that is a follow-up, not this slice. Templates keep a
+      directory of their own at `.ctl/templates/`, shared rather than
+      namespaced, because a template already declares its own target and nothing
+      in one is verctl's except who renders it.
+      One constraint from that side, so the shape is not chosen blind: a
+      committed file can only carry what is true on every machine. qctl's
+      registry splits accordingly — prefixes in the repo, paths on the machine —
+      and any `.ctl/` convention should expect the same split rather than assume
+      everything a tool declares is committable.
 
   - id: VER-020
     title: check validates served files, and one file has one owner
