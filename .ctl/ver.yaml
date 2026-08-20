@@ -37,7 +37,12 @@ assets:
 # consumer sees.
 patterns:
   skill_version:
-    match: "version: {version}"
+    # Anchored on the closing frontmatter fence. Unanchored, this would match a
+    # `version: 1.2.3` written anywhere in the prose — stopping the release on
+    # arity — and would rewrite the numeric head of a `0.1.1-rc1`, leaving the
+    # tail behind. Anchored, either of those simply fails to match, and `once`
+    # turns that into the stopped release the contract promises.
+    match: "version: {version}\n---"
     occurrences: once
 
 pins:
