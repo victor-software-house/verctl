@@ -456,6 +456,39 @@ mod tests {
         );
     }
 
+    /// The layout says nothing, so neither does the search: a template nested
+    /// under the source tree counts, and every loose one is named at once
+    /// rather than one release at a time.
+    #[test]
+    fn every_untracked_template_is_named_at_whatever_depth_it_sits() {
+        let root = repo(&[(SERVED, BEFORE)]);
+        for path in [
+            ".ctl/templates/ver.jinja",
+            ".ctl/templates/nested/deeper/readme.jinja",
+        ] {
+            let full = root.path().join(path);
+            fs::create_dir_all(full.parent().unwrap()).unwrap();
+            fs::write(&full, TEMPLATE).unwrap();
+        }
+        fs::write(root.path().join(".ctl/templates/notes.md"), "not one\n").unwrap();
+        let error = write(
+            root.path(),
+            &Templates::default(),
+            &versions(&[("verctl", "0.0.2"), ("ctl-core", "1.2.3")]),
+        )
+        .unwrap_err();
+        let text = format!("{error:#}");
+        assert!(text.contains(".ctl/templates/ver.jinja"), "{text}");
+        assert!(
+            text.contains(".ctl/templates/nested/deeper/readme.jinja"),
+            "{text}"
+        );
+        assert!(
+            !text.contains("notes.md"),
+            "a file without the suffix is not a template: {text}"
+        );
+    }
+
     /// One template body, every declaration a repo might write: what the
     /// schema accepts, where it lands, and what it refuses.
     #[test]

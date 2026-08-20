@@ -723,6 +723,16 @@ mod tests {
                 "---\r\nversion: 0.0.1\r\n---\r\n",
                 Ok("---\r\nversion: 0.0.2\r\n---\r\n"),
             ),
+            (
+                "an indented key is a line that starts with something else",
+                indoc! {"
+                    ---
+                    tool:
+                      version: 0.0.1
+                    ---
+                "},
+                Err("matches 0 times"),
+            ),
         ];
         for (scenario, before, expected) in cases {
             let root = TempDir::new().unwrap();
@@ -754,6 +764,54 @@ mod tests {
                 (outcome, _) => panic!("{scenario}: {outcome:?}"),
             }
         }
+    }
+
+    /// Owning a line says nothing about how many lines: the arity still does.
+    #[test]
+    fn a_whole_line_pattern_counts_lines_the_way_its_arity_says() {
+        let root = TempDir::new().unwrap();
+        let before = indoc! {"
+            version: 0.0.1
+            not the line: version: 0.0.1
+            version: 0.0.1
+        "};
+        let path = write_file(&root, "pinned.md", before);
+        let two = |occurrences| {
+            [Pin {
+                file: PathBuf::from("pinned.md"),
+                tool: None,
+                pattern_ids: Vec::new(),
+                patterns: vec![PinPattern {
+                    r#match: "version: {version}".into(),
+                    occurrences,
+                    whole_line: true,
+                }],
+                package: "verctl".into(),
+            }]
+        };
+        let err = write(root.path(), &two(Occurrences::Once), &versions("0.0.2")).unwrap_err();
+        assert!(format!("{err:#}").contains("matches 2 times"), "{err:#}");
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            before,
+            "an arity the file breaks writes nothing"
+        );
+
+        write(
+            root.path(),
+            &two(Occurrences::Exactly(2)),
+            &versions("0.0.2"),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            indoc! {"
+                version: 0.0.2
+                not the line: version: 0.0.1
+                version: 0.0.2
+            "},
+            "both lines move and the one that only contains the words does not"
+        );
     }
 
     /// A tool and a pattern in one pin: the structural rewrite for the table
