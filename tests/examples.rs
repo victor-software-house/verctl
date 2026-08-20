@@ -44,7 +44,7 @@ fn planted() -> TempDir {
         indoc! {"
             ---
             name: verctl
-            version: 4.5.6
+            version: 0.0.1
             ---
 
             A bundled skill. Writing version: 9.9.9 here is prose, not the key.

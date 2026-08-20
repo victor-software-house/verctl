@@ -116,8 +116,11 @@ fn rewrite_pattern(body: &str, pattern: &PinPattern, version: &str) -> Result<St
     if after.contains(PLACEHOLDER) {
         bail!("pattern {text:?} has more than one {PLACEHOLDER}");
     }
+    // `R` is CRLF mode: without it `$` sits only before `\n`, so a file checked
+    // out with CRLF endings has a `\r` between the version and the line end and
+    // matches nothing — a correct file stopping a release.
     let (open, close) = if pattern.whole_line {
-        ("(?m)^", "$")
+        ("(?mR)^", "$")
     } else {
         ("", "")
     };
@@ -714,6 +717,11 @@ mod tests {
                     ---
                 "},
                 Err("matches 0 times"),
+            ),
+            (
+                "a line ends where the file says it does, CRLF included",
+                "---\r\nversion: 0.0.1\r\n---\r\n",
+                Ok("---\r\nversion: 0.0.2\r\n---\r\n"),
             ),
         ];
         for (scenario, before, expected) in cases {
