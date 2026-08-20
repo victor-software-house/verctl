@@ -414,29 +414,67 @@ queue:
       pinned binary — but only if the version resolves from the workflow's
       config rather than the release commit's, which is the sentence to write.
 
+  - id: VER-039
+    title: A release declares what its tags are named
+    scope: verctl
+    outcome: A repo says the shape of its release tags in one line with a sane default, and a release that cannot name what it shipped refuses instead of guessing.
+    blocked_by: []
+    acceptance:
+      - tags.template defaults to v{version}, so every repo that writes nothing keeps today's behaviour.
+      - The placeholders are {version} and {name}, the vocabulary patterns.match already uses.
+      - A template with no {name} names one tag; one with {name} names a tag and a Release per released package.
+      - A template with no {name} refuses a release with more than one distinct version, naming the packages and their versions.
+      - Each tag and Release is idempotent, so a retry finishes a set that stopped part way.
+    notes: >-
+      The shape, so the live defect is not waiting on discovery. pi-stuff's
+      strawman is a `tags.template` plus a `releases: per-package | aggregate`
+      enum; the enum is redundant, because **the arity falls out of the
+      template**. A template with no `{name}` can only name one tag; one with
+      `{name}` can only mean one per package. Two fields that cannot disagree
+      should be one field, and the one that survives is the one a reader can
+      look at and know what they get. So: one optional line, defaulting to
+      `v{version}`, in the placeholder vocabulary `patterns.match` already
+      uses — a single-package repo writes nothing and a monorepo writes
+      `template: "{name}@{version}"`.
+      .
+      What this kills: `tag_for` (src/publish.rs:158) dedups the versions and,
+      when more than one survives, tags with the *first declared* package's
+      version — a value with no relationship to the release, chosen silently.
+      With a template there is always an answer: either the shape names every
+      package, or it cannot name this release and says so.
+      .
+      Deliberately not here, because it is where the design risk actually is:
+      splitting the changelog so each Release carries only its own package's
+      section, and creating a tag set all-or-nothing. Atomicity is not reachable
+      through the Releases API — pi-stuff gets it from `git push --atomic` on
+      locally created tags, which is a different tagging path, so it stays with
+      VER-038. Idempotent retry is the weaker property that is reachable now and
+      is what the acceptance asks for. VER-032 is orthogonal: it fixes which
+      commit a tag names, whatever the tag is called.
+
 horizon:
   - id: VER-038
-    title: A repo declares what its release tags are named
+    title: A tag set is created whole or not at all
     scope: verctl
     kind: evaluation
     outcome: >-
-      Tag and Release shape is declared with a sane default, so neither one
-      tag per release nor one tag per package is wired in as the only truth.
+      A release that names several tags leaves either all of them or none,
+      and a rerun from the same commit is a no-op rather than a repair.
     open: >-
-      What declares the shape. `publish::tag_for` (src/publish.rs:158) builds
-      `v{version}` from the one distinct version, and when versions differ it
-      falls back to the *first declared* package's version — which has nothing
-      to do with the release, and is silent. pi-stuff versions 12 packages
-      independently and tags `@scope/pkg@X.Y.Z` per released package, with one
-      Release each carrying only that package's changelog section; most of
-      their releases bump two or more, so this is not their edge case. Their
-      strawman is a `tags.template` plus `releases: per-package | aggregate`.
-      Unresolved, and the reason this is horizon rather than queue: whether the
-      knob is a format string, a format per package type, or a list; what the
-      default is; and whether a tag set then has to be created and pushed
-      all-or-nothing with a re-read, which their own tooling refuses a partial
-      set to get. VER-032 fixes the commit a tag points at and is independent
-      of this. Discovery first — do not pick a shape from this row alone.
+      Whether verctl keeps creating tags through the Releases API at all.
+      VER-039 settles the shape and gets idempotent retry, which is the most
+      the API affords: `releases.create` is one call per tag, so a set is
+      always created one at a time and a run that dies half way leaves a
+      partial set behind. pi-stuff refuses a partial set precisely because the
+      retry path then has to reason about it, and they get atomicity from
+      `git push --atomic` over locally created tags — a different tagging path
+      than the one verctl has, which is the decision this row holds. Their
+      re-read after pushing is the same law as VER-032 and worth taking either
+      way: a successful push is a claim, not a fact. The other half is the
+      Release body: per-package Releases each want only their own package's
+      changelog section, which `release::notes_for` already extracts and
+      currently concatenates. Cheap once the shape exists, so it waits on
+      VER-039 rather than on this.
 
   - id: VER-019
     title: Triage the review backlog from the closed PRs
