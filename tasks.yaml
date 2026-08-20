@@ -293,8 +293,9 @@ queue:
       - An ensure_release that finds the release already there re-reads the tag too, and fails when it names another commit.
       - A test proves a tag created while the default branch has moved still names the release commit.
     notes: >-
-      2026-08-20: found while checking the consumer report in docs/adoption-report.md,
-      asked only that a pushed tag be verified. It is worse than that.
+      2026-08-20: found while checking the consumer report in
+      docs/adoption-report.md, which asked only that a pushed tag be verified
+      after the fact. It is worse than that.
       `github::ensure_release` calls `releases.create(tag)` and never sets
       `target_commitish`, so GitHub tags the default branch's HEAD at the
       moment of the call — not the commit that was built and published. v0.1.3
