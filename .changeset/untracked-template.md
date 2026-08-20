@@ -19,3 +19,9 @@ tree is not verctl's to render, which is what keeps this crate's own
 changelog templates out of the released set; it was never a claim to serve
 anything. And a tree with no repository has no index to not carry a file,
 and cannot serve anything by tag, so it renders nothing without a word.
+
+An ignored template is left alone rather than refused: ignoring a file is a
+repo saying it is not part of what it publishes, which is the same statement
+the index makes. A symlink in the source tree is not followed either, so a
+directory outside the repository cannot have its templates counted as this
+one's.
