@@ -282,7 +282,154 @@ queue:
       state (as `whole_line` does), or docs/served-files.md stops promising
       unconditionally and says which shapes are safe.
 
+  - id: VER-032
+    title: A release tags the commit it published
+    scope: verctl
+    outcome: The tag a release creates resolves to the commit that was built and published, not to whatever the default branch points at when the API call runs.
+    blocked_by: []
+    acceptance:
+      - ensure_release sets target_commitish to the published SHA.
+      - publish re-reads the tag after creating it and fails when it does not resolve to that SHA.
+      - A test proves a tag created while the default branch has moved still names the release commit.
+    notes: >-
+      2026-08-20: found while checking the pi-stuff adoption report, which
+      asked only that a pushed tag be verified. It is worse than that.
+      `github::ensure_release` calls `releases.create(tag)` and never sets
+      `target_commitish`, so GitHub tags the default branch's HEAD at the
+      moment of the call — not the commit that was built and published. v0.1.3
+      is right only because main did not move: `git rev-parse v0.1.3^{}` and
+      `git rev-parse origin/main` are both 2fd33a6c5713. Anything merging to
+      main during the publish job puts the tag on a tree that was never built,
+      which is the served-files contract's one premise (docs/served-files.md:3
+      — "its version must be correct in the tree the tag names").
+
+  - id: VER-033
+    title: Publish follows the dependency graph, not the declaration order
+    scope: verctl
+    outcome: A workspace whose packages depend on each other publishes every dependency before its consumers, and says which order it resolved.
+    blocked_by: []
+    acceptance:
+      - Order comes from the manifests verctl already parses, or from a declared list.
+      - The resolved order is printed, the way ci and assets print what they resolved.
+      - A cycle fails the run naming the packages in it.
+      - A single-package repo sees no change.
+    notes: >-
+      pi-stuff adoption report, ask 2. `publish::plan` iterates
+      `config.packages` in declaration order (src/publish.rs), so a consumer
+      published before its dependency leaves a window where its pinned version
+      does not resolve. They get the order from `turbo run publish:package`
+      today. Their request, verbatim: if it is inferred, print it — "a silent
+      topological sort is a thing nobody debugs until it is wrong".
+
+  - id: VER-034
+    title: Publish declares its own before and after, the way prepare does
+    scope: verctl
+    outcome: A repo can gate a publish on its own artifact check and smoke the registry afterwards, without verctl knowing anything about tarballs or registries.
+    blocked_by: []
+    acceptance:
+      - publish.before argv runs after versions are on HEAD and before the first publisher argv; non-zero stops the run.
+      - publish.after argv runs once, after every package published.
+      - 'Both receive the resolved package set: name, version, manifest path, publisher.'
+      - Neither key set is the same run as today.
+    notes: >-
+      pi-stuff adoption report, asks 3 and 4, filed as one row because it is
+      one hook pair. They keep 247 lines they are not asking us to absorb: a
+      packed-artifact gate that proves the tarball rewrote every `workspace:`
+      and `catalog:` dep into a concrete version, and a post-publish smoke that
+      installs the published version from the registry and imports every
+      export. Both are stack-specific and should stay theirs. What they cannot
+      do is wire them, because `Prepare` has `after` (src/config.rs:519) and
+      publish has no equivalent. Closing that asymmetry is the whole ask.
+
+  - id: VER-035
+    title: The commit a release publishes from is proved, and a waiver is said out loud
+    scope: verctl
+    outcome: A release refuses a commit whose shape says it is not the one the version tool generated, and an operator who overrides that leaves a line in the log saying so.
+    blocked_by: []
+    acceptance:
+      - The release SHA is an ancestor of the default branch.
+      - Workflow files at the release SHA do not differ from the default branch.
+      - The first-parent branch carries exactly one version commit; two always refuse.
+      - Each check has a named waiver, and a waived run prints which one was waived.
+    notes: >-
+      pi-stuff adoption report, ask 5. `prove_version_commit`
+      (src/publish.rs:136) is `require_changelog_versions` plus
+      `require_on_default_history` — they keep both and want three more. The
+      workflow-drift one is the non-obvious one and it cost them a release:
+      retrying an old release SHA runs the workflow *at that SHA*, so if
+      permissions changed since, the run can publish to the registry and then
+      fail to tag — the registry is not revertible and the tags are the audit
+      trail. Their waivers are workflow_dispatch booleans and the run prints
+      `waived: …`. Their warning about building it: bind a dispatch input to a
+      step-level `env:` and quote it, never interpolate `${{ inputs.x }}` into
+      a `run:` string — inputs arrive as strings over REST and are not coerced
+      to booleans, in a job holding contents/packages/id-token write.
+
+  - id: VER-036
+    title: A check that cannot run says so instead of passing
+    scope: verctl
+    outcome: No verctl guard reports success by having skipped itself.
+    blocked_by: []
+    acceptance:
+      - expand fails on an unresolved {placeholder} instead of dropping the argument.
+      - prove_default_history prints which condition made it skip.
+      - One test per site proves the silence is gone.
+    notes: >-
+      Two sites the pi-stuff report raised separately; they are one law, so
+      they are one row. `publisher::expand` filters out any part containing
+      `{` (src/publisher.rs:151), so a typo'd `{registr}` in a custom argv
+      shortens the command line instead of failing, and the error surfaces
+      downstream wearing someone else's name. `prove_default_history` returns
+      `Ok(())` on four conditions — no repo, no head, unpeelable head, no
+      upstream (src/git.rs:95-104) — each defensible alone, but together the
+      check can pass by not running, in exactly the CI shapes where it matters
+      most. Its doc comment already calls two of them skips; the run does not.
+
+  - id: VER-037
+    title: The README answers the questions a first publish asks
+    scope: verctl
+    outcome: A repo publishing through verctl for the first time finds the four answers that currently cost an afternoon each.
+    blocked_by: []
+    acceptance:
+      - What --access does when a registry resolves, and whether a restricted package can be published as public by accident.
+      - What GITHUB_TOKEN means locally, where a gh session is not it.
+      - 'That permission_denied: write_package is a package-settings problem, not a token problem.'
+      - That the tool finalizing a release is the one the workflow pins, not the one at the release commit.
+    notes: >-
+      pi-stuff adoption report, §3.8 and §3.9, folded into one row because
+      every item is a paragraph the README does not have. The finalizer one is
+      theirs and they call it ugly: their publish job checks out the release
+      commit, so the code that tags and releases *afterwards* also comes from
+      that checkout, and a fix to the tagging logic that landed since is not
+      present on a retry. They restore four files from origin/main between
+      publish and tag to work around it. verctl mostly dodges this by being one
+      pinned binary — but only if the version resolves from the workflow's
+      config rather than the release commit's, which is the sentence to write.
+
 horizon:
+  - id: VER-038
+    title: A repo declares what its release tags are named
+    scope: verctl
+    kind: evaluation
+    outcome: >-
+      Tag and Release shape is declared with a sane default, so neither one
+      tag per release nor one tag per package is wired in as the only truth.
+    open: >-
+      What declares the shape. `publish::tag_for` (src/publish.rs:158) builds
+      `v{version}` from the one distinct version, and when versions differ it
+      falls back to the *first declared* package's version — which has nothing
+      to do with the release, and is silent. pi-stuff versions 12 packages
+      independently and tags `@scope/pkg@X.Y.Z` per released package, with one
+      Release each carrying only that package's changelog section; most of
+      their releases bump two or more, so this is not their edge case. Their
+      strawman is a `tags.template` plus `releases: per-package | aggregate`.
+      Unresolved, and the reason this is horizon rather than queue: whether the
+      knob is a format string, a format per package type, or a list; what the
+      default is; and whether a tag set then has to be created and pushed
+      all-or-nothing with a re-read, which their own tooling refuses a partial
+      set to get. VER-032 fixes the commit a tag points at and is independent
+      of this. Discovery first — do not pick a shape from this row alone.
+
   - id: VER-019
     title: Triage the review backlog from the closed PRs
     scope: verctl
