@@ -152,6 +152,16 @@ pub fn tracked(root: &Path) -> Result<Vec<PathBuf>> {
         .collect())
 }
 
+/// Whether a repository covers `root` at all.
+///
+/// `tracked` answers "nothing" both for an empty index and for a tree with no
+/// repository, and those are different states: a file the index does not carry
+/// is untracked only where an index exists to not carry it.
+#[must_use]
+pub fn is_repository(root: &Path) -> bool {
+    repo_covering(root).is_some()
+}
+
 /// Where `root` sits inside the working tree: empty when it is the root.
 fn project_prefix(repo: &Repository, root: &Path) -> PathBuf {
     let Some(workdir) = repo.workdir().and_then(|dir| dir.canonicalize().ok()) else {

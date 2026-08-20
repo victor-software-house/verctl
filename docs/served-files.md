@@ -81,10 +81,18 @@ name it uses to build a line is not a declaration.
 Trim declarations with `{%- … -%}`: a shebang has to stay on line one.
 
 
-Committing one template adds a served file; deleting it retires it. An untracked
-template is scratch work and renders nowhere, and a template outside the source
-tree is not verctl's to render — which is what keeps this crate's own changelog
-templates out of this.
+Committing one template adds a served file; deleting it retires it. Only a
+tracked template renders, because `prepare` stages what it writes: one git does
+not carry would put a served file on the tag with no source beside it, and
+`check` would have nothing to compare against on a fresh clone. An untracked
+template in the source tree therefore **fails the run, naming the file** —
+commit it or delete it. A template *outside* the source tree is not verctl's to
+render, which is what keeps this crate's own changelog templates out of this, and
+that one is silent because it was never a claim to serve anything.
+
+A tree with no repository at all is the one place this cannot apply: there is no
+index to not carry a file, and nothing can be served by tag anyway, so such a
+tree renders nothing and says nothing.
 
 The convention is the default, not the only option:
 
@@ -191,6 +199,7 @@ Everything else fails the run, before anything is written:
 - a declared pattern no file lists — dead configuration, not a spare
 - a `tool` pin whose `[tools]` table or entry is missing
 - a template that does not parse, or names something the release does not have
+- a template in the source tree that git does not track
 - a pin file outside the repository, or reached through a symlink
 
 A partially-rewritten served file is worse than a stopped release, so no file is

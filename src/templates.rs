@@ -172,17 +172,68 @@ impl Declared {
 
 /// Every tracked template in the source tree. Flat or nested, the layout says
 /// nothing: each template declares its own target.
+///
+/// Only tracked, because `prepare` stages what it renders: a template git does
+/// not carry would put a served file on the tag with no source beside it, and
+/// `check` would have nothing to compare against on a fresh clone. But one that
+/// is present and untracked stops the run rather than rendering nothing —
+/// adding a served file and getting silence served the stale file instead.
 fn sources(root: &Path, config: &Templates) -> Result<Vec<PathBuf>> {
-    Ok(git::tracked(root)?
+    let tracked: Vec<PathBuf> = git::tracked(root)?
         .into_iter()
-        .filter(|path| {
-            path.starts_with(&config.source)
-                && path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.ends_with(&config.suffix))
-        })
-        .collect())
+        .filter(|path| is_template(path, config))
+        .collect();
+    if git::is_repository(root) {
+        refuse_untracked(root, config, &tracked)?;
+    }
+    Ok(tracked)
+}
+
+fn is_template(path: &Path, config: &Templates) -> bool {
+    path.starts_with(&config.source)
+        && path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with(&config.suffix))
+}
+
+fn refuse_untracked(root: &Path, config: &Templates, tracked: &[PathBuf]) -> Result<()> {
+    let loose: Vec<String> = present(&root.join(&config.source), &config.suffix)?
+        .iter()
+        .filter_map(|path| path.strip_prefix(root).ok())
+        .filter(|path| !tracked.iter().any(|known| known == path))
+        .map(|path| path.display().to_string())
+        .collect();
+    if loose.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "a template git does not track renders nothing: {} — commit it or delete it",
+        loose.join(", ")
+    );
+}
+
+/// Every template on disk under `dir`, at any depth. A directory that is not
+/// there holds none: a repo serving nothing writes no source tree.
+fn present(dir: &Path, suffix: &str) -> Result<Vec<PathBuf>> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Ok(Vec::new());
+    };
+    let mut found = Vec::new();
+    for entry in entries {
+        let path = entry.with_context(|| dir.display().to_string())?.path();
+        if path.is_dir() {
+            found.extend(present(&path, suffix)?);
+        } else if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with(suffix))
+        {
+            found.push(path);
+        }
+    }
+    found.sort();
+    Ok(found)
 }
 
 /// A target a template may write: inside the repository, not through a
@@ -361,18 +412,22 @@ mod tests {
 
     /// Which pairs exist at all: the tree varies here, not the versions.
     #[test]
-    fn only_a_tracked_template_in_the_source_tree_is_rendered() {
+    fn an_untracked_template_stops_the_run_and_one_outside_is_ignored() {
         let moved = versions(&[("verctl", "0.0.2"), ("ctl-core", "1.2.3")]);
 
         let stray_template = repo(&[(SERVED, BEFORE)]);
         let path = stray_template.path().join(TEMPLATE_PATH);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, TEMPLATE).unwrap();
+        let error = write(stray_template.path(), &Templates::default(), &moved).unwrap_err();
+        let text = format!("{error:#}");
+        assert!(text.contains(TEMPLATE_PATH), "{text}");
+        assert!(text.contains("commit it or delete it"), "{text}");
         assert_eq!(
-            write(stray_template.path(), &Templates::default(), &moved).unwrap(),
-            Vec::<PathBuf>::new()
+            read(&stray_template, SERVED),
+            BEFORE,
+            "the served file is left alone: the run stops before anything is written"
         );
-        assert_eq!(read(&stray_template, SERVED), BEFORE);
 
         let outside = repo(&[("templates/changelog.jinja", "# {{ anything }}\n")]);
         assert_eq!(
@@ -661,8 +716,14 @@ mod tests {
     }
 
     #[test]
+    /// A template here is not untracked — there is no index to not carry it.
+    /// Such a tree cannot serve a file by tag at all, so it renders nothing and
+    /// says nothing, rather than failing the way a repository would.
     fn a_tree_with_no_repository_has_no_templates() {
         let root = TempDir::new().unwrap();
+        let path = root.path().join(TEMPLATE_PATH);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, TEMPLATE).unwrap();
         assert_eq!(
             write(
                 root.path(),
