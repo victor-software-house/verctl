@@ -201,7 +201,12 @@ pub struct AssetTarget {
 /// pattern is only unused, and an id only unknown, relative to the rest of the
 /// config. `Config::parse` reads the shape with serde and then validates it
 /// once, here, so a complaint names the field that has to change.
+///
+/// A section verctl does not know stops the load rather than being dropped:
+/// silently ignoring `pattern:` for `patterns:` would ship a release with the
+/// pins it declares never rewritten.
 #[derive(Debug, Clone, Deserialize, Default, Validate)]
+#[serde(deny_unknown_fields)]
 #[garde(context(Self as config))]
 #[garde(allow_unvalidated)]
 pub struct Config {
@@ -439,34 +444,36 @@ pub enum Occurrences {
     AtLeast(usize),
 }
 
-/// The two shapes an arity is written in: a word on its own, or a bound with
-/// its number. Written out because a bare `usize` variant would deserialize
-/// from a YAML tag (`!exactly 2`), and a repo writes a mapping.
-#[derive(Deserialize)]
-#[serde(untagged, deny_unknown_fields)]
-enum DeclaredOccurrences {
-    Word(OccurrenceWord),
-    Exactly { exactly: usize },
-    AtLeast { at_least: usize },
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum OccurrenceWord {
-    Once,
-    Many,
-    Never,
-}
+/// The vocabulary, spelled out. A derived enum cannot read both shapes a repo
+/// writes: an unbounded word is a plain scalar, and a bound is a mapping that a
+/// newtype variant would only accept as a YAML tag (`!exactly 2`). Untagged
+/// reads both and then reports "matched no variant", naming a type nobody
+/// wrote, so the arity is read here and complains in the words a repo uses.
+const ARITY: &str = "once, many, never, {exactly: N}, or {at_least: N}";
 
 impl<'de> Deserialize<'de> for Occurrences {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Ok(match DeclaredOccurrences::deserialize(deserializer)? {
-            DeclaredOccurrences::Word(OccurrenceWord::Once) => Self::Once,
-            DeclaredOccurrences::Word(OccurrenceWord::Many) => Self::Many,
-            DeclaredOccurrences::Word(OccurrenceWord::Never) => Self::Never,
-            DeclaredOccurrences::Exactly { exactly } => Self::Exactly(exactly),
-            DeclaredOccurrences::AtLeast { at_least } => Self::AtLeast(at_least),
-        })
+        use serde::de::Error;
+        let declared = yaml_serde::Value::deserialize(deserializer)?;
+        let wrong = || D::Error::custom(format!("must be {ARITY}"));
+        if let Some(word) = declared.as_str() {
+            return match word {
+                "once" => Ok(Self::Once),
+                "many" => Ok(Self::Many),
+                "never" => Ok(Self::Never),
+                _ => Err(wrong()),
+            };
+        }
+        let bound = declared.as_mapping().ok_or_else(wrong)?;
+        let [(key, count)] = &bound.iter().collect::<Vec<_>>()[..] else {
+            return Err(wrong());
+        };
+        let count = usize::try_from(count.as_u64().ok_or_else(wrong)?).map_err(D::Error::custom)?;
+        match key.as_str() {
+            Some("exactly") => Ok(Self::Exactly(count)),
+            Some("at_least") => Ok(Self::AtLeast(count)),
+            _ => Err(wrong()),
+        }
     }
 }
 
@@ -665,6 +672,41 @@ mod tests {
                 vec![2, 3],    // at least 2
             ]
         );
+    }
+
+    /// A section verctl does not know is a typo, and a typo that loads is a
+    /// release that quietly does none of what the section asked for.
+    #[test]
+    fn a_misspelled_section_stops_the_load() {
+        let error = load(&formatdoc! {r#"
+            {PACKAGE}
+            pattern:
+              install:
+                match: "demo@{{version}}"
+        "#})
+        .expect_err("pattern is not a section");
+        assert!(format!("{error:#}").contains("pattern"), "{error:#}");
+    }
+
+    /// A bound is one key and its number. A second key means the arity was
+    /// mistyped, and falling through to whichever variant the first key
+    /// satisfies would pin a count nobody wrote.
+    #[test]
+    fn a_bound_with_a_second_key_is_not_the_bound_it_starts_with() {
+        let error = load(&formatdoc! {r#"
+            {PACKAGE}
+            patterns:
+              wrong:
+                match: "a@{{version}}"
+                occurrences: {{exactly: 2, at_leats: 3}}
+
+            pins:
+              - file: README.md
+                package: demo
+                patterns: [wrong]
+        "#})
+        .expect_err("at_leats is not a key");
+        assert!(format!("{error:#}").contains(ARITY), "{error:#}");
     }
 
     #[test]

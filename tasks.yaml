@@ -293,6 +293,30 @@ queue:
       That repo has no ledger, so this row is where it is written down until
       it does.
 
+  - id: VER-028
+    title: Decide who owns a template in the shared .ctl/templates
+    scope: verctl
+    outcome: Two ctl CLIs can both render served files from one repo without either rendering the other's templates.
+    blocked_by: []
+    acceptance:
+      - The rule is decided and written where the loader enforces it, not in a PR comment.
+      - A template belonging to another ctl CLI is either skipped or never in verctl's source tree, and a test proves which.
+      - docs/served-files.md §1 says the rule, and VER-025's shared-not-namespaced line is either upheld or superseded in writing.
+    notes: >-
+      2026-08-19, raised on PR #44 and deliberately not acted on there.
+      `templates.source` defaults to `.ctl/templates`, verctl renders every
+      tracked `*.jinja` under it, and `.ctl/` is shared — so once a second ctl
+      CLI serves files, verctl would render its templates too: an unknown name
+      fails the whole Version PR, and one that only reads `versions[…]` gets
+      written to the other tool's target. Nothing collides today, because no
+      other ctl CLI renders anything, which is why this is a row and not a fix.
+      Scoping the directory to `.ctl/templates/ver/` is the obvious answer and
+      is exactly what VER-025 ruled out ("shared rather than namespaced,
+      because a template already declares its own target"), so it is Victor's
+      to reverse, not this row's to assume. The other shape is a template
+      declaring its owning tool, which keeps the directory shared and pays for
+      it with one more export.
+
 horizon:
   - id: VER-019
     title: Triage the review backlog from the closed PRs
