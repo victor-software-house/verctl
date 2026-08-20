@@ -459,7 +459,7 @@ archive:
     evidence:
       - 'verctl#44 merged f3553c0: .ctl/ver.yaml holds every section verctl.toml held, templates moved to .ctl/templates/, verctl.toml is not read at all.'
       - 'Cross-section rules still fire on one merged document: every_pattern_is_listed, an undeclared runner on a job or asset target, a pin outside the repository. Loading is still one boundary, now Config::parse.'
-      - v0.1.0 released 2026-08-19 (tag commit 52a7d374), both tarballs attached; git show v0.1.0:verctl.toml is empty and .ctl/ver.yaml is there.
+      - 'v0.1.0 released 2026-08-19 (tag commit 52a7d374), both tarballs attached; git show v0.1.0:verctl.toml fails with "path does not exist", and .ctl/ver.yaml is there.'
       - 'Every known consumer moved with its verctl pin in the same commit: ctl-core#10 -> 28920b8, qctl#32 -> 5b86881. Both bump mise.release.toml to 0.1.0 and every action ref to 52a7d374, and both were exercised with the released binary, not a checkout.'
       - 'The consumer list is two, and forkctl is the third repo in the family that is not on it: origin/main carries no verctl.toml, no mise.release.toml, and no verctl action — it releases through mise-tasks/release.sh. Checked rather than assumed, because its served tasks/fork/fork looks like a verctl lane and is not one.'
       - "This repo's own mise.release.toml moved to 0.1.0 too. Its lanes run MISE_ENV=dev, so CI never touched it, but a local MISE_ENV=release would have installed a 0.0.4 that cannot read the file this repo now writes."
