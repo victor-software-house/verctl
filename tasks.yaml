@@ -293,7 +293,7 @@ queue:
       - An ensure_release that finds the release already there re-reads the tag too, and fails when it names another commit.
       - A test proves a tag created while the default branch has moved still names the release commit.
     notes: >-
-      2026-08-20: found while checking the pi-stuff adoption report, which
+      2026-08-20: found while checking the consumer report in docs/adoption-report.md,
       asked only that a pushed tag be verified. It is worse than that.
       `github::ensure_release` calls `releases.create(tag)` and never sets
       `target_commitish`, so GitHub tags the default branch's HEAD at the
@@ -322,11 +322,12 @@ queue:
       - A cycle fails the run naming the packages in it.
       - A single-package repo sees no change.
     notes: >-
-      pi-stuff adoption report, ask 2. `publish::plan` iterates
+      docs/adoption-report.md §2. `publish::plan` iterates
       `config.packages` in declaration order (src/publish.rs), so a consumer
       published before its dependency leaves a window where its pinned version
-      does not resolve. They get the order from `turbo run publish:package`
-      today. Their request, verbatim: if it is inferred, print it — "a silent
+      does not resolve. Their build tool derives the order from the real
+      dependency graph today, which is what they would be giving up. Their
+      request, verbatim: if it is inferred, print it — "a silent
       topological sort is a thing nobody debugs until it is wrong".
 
   - id: VER-034
@@ -340,7 +341,7 @@ queue:
       - 'Both receive the resolved package set: name, version, manifest path, publisher.'
       - Neither key set is the same run as today.
     notes: >-
-      pi-stuff adoption report, asks 3 and 4, filed as one row because it is
+      docs/adoption-report.md §3, filed as one row because it is
       one hook pair. They keep 247 lines they are not asking us to absorb: a
       packed-artifact gate that proves the tarball rewrote every `workspace:`
       and `catalog:` dep into a concrete version, and a post-publish smoke that
@@ -360,7 +361,7 @@ queue:
       - The first-parent branch carries exactly one version commit; two always refuse.
       - Each check has a named waiver, and a waived run prints which one was waived.
     notes: >-
-      pi-stuff adoption report, ask 5. `prove_version_commit`
+      docs/adoption-report.md §4. `prove_version_commit`
       (src/publish.rs:136) is `require_changelog_versions` plus
       `require_on_default_history` — they keep both and want three more. The
       workflow-drift one is the non-obvious one and it cost them a release:
@@ -383,7 +384,7 @@ queue:
       - prove_default_history prints which condition made it skip.
       - One test per site proves the silence is gone.
     notes: >-
-      Two sites the pi-stuff report raised separately; they are one law, so
+      Two sites the consumer report raised separately; they are one law, so
       they are one row. `publisher::expand` filters out any part containing
       `{` (src/publisher.rs:151), so a typo'd `{registr}` in a custom argv
       shortens the command line instead of failing, and the error surfaces
@@ -404,7 +405,7 @@ queue:
       - 'That permission_denied: write_package is a package-settings problem, not a token problem.'
       - That the tool finalizing a release is the one the workflow pins, not the one at the release commit.
     notes: >-
-      pi-stuff adoption report, §3.8 and §3.9, folded into one row because
+      docs/adoption-report.md §6, folded into one row because
       every item is a paragraph the README does not have. The finalizer one is
       theirs and they call it ugly: their publish job checks out the release
       commit, so the code that tags and releases *afterwards* also comes from
@@ -426,7 +427,7 @@ queue:
       - A template with no {name} refuses a release with more than one distinct version, naming the packages and their versions.
       - Each tag and Release is idempotent, so a retry finishes a set that stopped part way.
     notes: >-
-      The shape, so the live defect is not waiting on discovery. pi-stuff's
+      The shape, so the live defect is not waiting on discovery. The consumer's
       strawman is a `tags.template` plus a `releases: per-package | aggregate`
       enum; the enum is redundant, because **the arity falls out of the
       template**. A template with no `{name}` can only name one tag; one with
@@ -446,7 +447,7 @@ queue:
       Deliberately not here, because it is where the design risk actually is:
       splitting the changelog so each Release carries only its own package's
       section, and creating a tag set all-or-nothing. Atomicity is not reachable
-      through the Releases API — pi-stuff gets it from `git push --atomic` on
+      through the Releases API — they get it from `git push --atomic` on
       locally created tags, which is a different tagging path, so it stays with
       VER-038. Idempotent retry is the weaker property that is reachable now and
       is what the acceptance asks for. VER-032 is orthogonal: it fixes which
@@ -465,7 +466,7 @@ horizon:
       VER-039 settles the shape and gets idempotent retry, which is the most
       the API affords: `releases.create` is one call per tag, so a set is
       always created one at a time and a run that dies half way leaves a
-      partial set behind. pi-stuff refuses a partial set precisely because the
+      partial set behind. They refuse a partial set precisely because the
       retry path then has to reason about it, and they get atomicity from
       `git push --atomic` over locally created tags — a different tagging path
       than the one verctl has, which is the decision this row holds. Their
