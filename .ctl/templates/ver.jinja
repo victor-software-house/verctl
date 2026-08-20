@@ -1,11 +1,13 @@
+{%- set path = "tasks/ver" -%}
+{%- set executable = true -%}
 #!/usr/bin/env bash
 # Served: rendered from .ctl/templates/ver.jinja onto the Version PR commit,
 # which is the commit the tag names, so the tag installs itself. Edit the
 # template, never this file.
 #MISE description="Run the verctl version-PR CLI"
-#MISE dir="{{cwd}}"
+#MISE dir="{% raw %}{{cwd}}{% endraw %}"
 #MISE raw_args=true
-#MISE tools = { "github:victor-software-house/verctl" = "0.1.0" }
+#MISE tools = { "github:victor-software-house/verctl" = "{{ versions["verctl"] }}" }
 
 set -euo pipefail
 exec verctl "$@"
