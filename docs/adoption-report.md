@@ -37,6 +37,29 @@ At one distinct version this is exactly right, which is why it has never bitten
 this repo. At two it tags one package and leaves consumers of the other looking
 for a tag that does not exist.
 
+### How they do it, which is the interesting part
+
+Their tags and their Releases are two separate steps, never interleaved.
+
+**Tags first, git-side.** One annotated tag per released package at an explicit
+SHA — `git tag -a <name>@<version> <sha>` — then a single
+`git push --atomic origin refs/tags/a:refs/tags/a …` for the whole set. Three
+rules guard it: any expected tag already at another commit refuses, a *partial*
+set refuses rather than being completed, and a full set at the right SHA is
+skipped, so a rerun is a no-op. Then every tag is re-read with
+`git ls-remote --tags origin refs/tags/<t> refs/tags/<t>^{}`, taking the peeled
+form first so an annotated tag reports its commit rather than the tag object.
+A push that exited zero is not accepted as evidence it landed.
+
+**Releases after**, one per tag that already exists, each body sliced out of that
+package's own changelog between its version heading and the next.
+
+That ordering matters more than it looks. Because the tag exists first, the
+Releases API's `target_commitish` is documented as unused, so the question of
+where a Release puts a tag never arises. The atomicity worth having is over the
+**tags**, not the Releases — a Release is derived state that can be recreated
+from a tag and a changelog section; a tag is what consumers resolve.
+
 Filed as **VER-039** (the shape) and **VER-038** (creating a set whole).
 
 ## 2. Publish must follow the dependency graph
