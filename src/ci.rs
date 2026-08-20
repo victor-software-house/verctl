@@ -1,8 +1,8 @@
 //! Which machines run PR and push validation.
 //!
-//! `[ci.NAME]` is one job; its `runners` name machines from `[runners]`, one
+//! A `ci` entry is one job; its `runners` name machines from `runners`, one
 //! check each. Write nothing and one `verify` job runs on `ubuntu-latest`,
-//! which is what every repo in this family did before the table existed.
+//! which is what every repo in this family did before the section existed.
 //!
 //! GitHub needs `runs-on` before a job exists, so a job cannot read its own
 //! machine from verctl. A small `plan` job emits this matrix and the real jobs
@@ -90,37 +90,36 @@ mod tests {
     use super::plan;
     use crate::config::Config;
 
-    fn load(toml: &str) -> Config {
-        toml::from_str(toml).expect("parse")
+    fn load(yaml: &str) -> Config {
+        Config::parse(yaml).expect("parse")
     }
 
-    const PACKAGE: &str = indoc::indoc! {r#"
-        [[packages]]
-        name = "verctl"
-        path = "Cargo.toml"
-    "#};
+    const PACKAGE: &str = indoc::indoc! {"
+        packages:
+          - name: verctl
+            path: Cargo.toml
+    "};
 
-    const REGISTRY: &str = indoc::indoc! {r#"
-        [[packages]]
-        name = "verctl"
-        path = "Cargo.toml"
+    const REGISTRY: &str = indoc::indoc! {"
+        packages:
+          - name: verctl
+            path: Cargo.toml
 
-        [runners.linux]
-        labels = ["ubuntu-latest"]
-
-        [runners.macos]
-        labels = ["macos-latest"]
-
-        [runners.big]
-        labels = ["self-hosted", "linux", "x64"]
-    "#};
+        runners:
+          linux:
+            labels: [ubuntu-latest]
+          macos:
+            labels: [macos-latest]
+          big:
+            labels: [self-hosted, linux, x64]
+    "};
 
     fn with(extra: &str) -> Config {
         load(&format!("{REGISTRY}{extra}"))
     }
 
     #[test]
-    fn no_ci_table_is_one_verify_on_ubuntu_latest() {
+    fn no_ci_section_is_one_verify_on_ubuntu_latest() {
         let planned = plan(&load(PACKAGE)).unwrap();
         assert_eq!(planned.matrix.include.len(), 1);
         assert_eq!(planned.matrix.include[0].id, "verify");
@@ -130,17 +129,18 @@ mod tests {
 
     #[test]
     fn a_job_with_no_runners_takes_the_default_machine() {
-        let planned = plan(&with("[ci.verify]\n")).unwrap();
+        let planned = plan(&with("ci:\n  verify: {}\n")).unwrap();
         assert_eq!(planned.matrix.include[0].labels, ["ubuntu-latest"]);
         assert_eq!(planned.matrix.include[0].name, "verify");
     }
 
     #[test]
     fn one_machine_with_three_labels_is_one_check() {
-        let planned = plan(&with(indoc::indoc! {r#"
-            [ci.verify]
-            runners = ["big"]
-        "#}))
+        let planned = plan(&with(indoc::indoc! {"
+            ci:
+              verify:
+                runners: [big]
+        "}))
         .unwrap();
         assert_eq!(planned.matrix.include.len(), 1);
         assert_eq!(planned.matrix.include[0].name, "verify");
@@ -152,10 +152,11 @@ mod tests {
 
     #[test]
     fn two_machines_fan_one_job_into_two_named_checks() {
-        let planned = plan(&with(indoc::indoc! {r#"
-            [ci.verify]
-            runners = ["linux", "macos"]
-        "#}))
+        let planned = plan(&with(indoc::indoc! {"
+            ci:
+              verify:
+                runners: [linux, macos]
+        "}))
         .unwrap();
         assert_eq!(planned.matrix.include.len(), 2);
         assert!(planned.matrix.include.iter().all(|row| row.id == "verify"));
@@ -172,12 +173,13 @@ mod tests {
 
     #[test]
     fn separate_jobs_stay_separate_checks() {
-        let planned = plan(&with(indoc::indoc! {r#"
-            [ci.audit]
-            runners = ["linux"]
-            [ci.verify]
-            runners = ["macos"]
-        "#}))
+        let planned = plan(&with(indoc::indoc! {"
+            ci:
+              audit:
+                runners: [linux]
+              verify:
+                runners: [macos]
+        "}))
         .unwrap();
         assert_eq!(
             planned
@@ -192,21 +194,23 @@ mod tests {
 
     #[test]
     fn an_undeclared_machine_is_rejected() {
-        let err = plan(&with(indoc::indoc! {r#"
-            [ci.verify]
-            runners = ["windows"]
-        "#}))
+        let err = plan(&with(indoc::indoc! {"
+            ci:
+              verify:
+                runners: [windows]
+        "}))
         .unwrap_err();
         let text = format!("{err:#}");
-        assert!(text.contains("not declared in [runners]"), "{text}");
+        assert!(text.contains("not declared in runners"), "{text}");
         assert!(text.contains("big, linux, macos"), "{text}");
     }
 
     #[test]
     fn an_empty_runners_list_is_rejected() {
         let err = plan(&with(indoc::indoc! {"
-            [ci.verify]
-            runners = []
+            ci:
+              verify:
+                runners: []
         "}))
         .unwrap_err();
         assert!(
@@ -217,29 +221,28 @@ mod tests {
 
     #[test]
     fn a_build_field_is_not_a_ci_field() {
-        let err = toml::from_str::<Config>(&format!(
+        let err = Config::parse(&format!(
             "{REGISTRY}{}",
-            indoc::indoc! {r#"
-                [ci.verify]
-                triple = "x86_64-unknown-linux-gnu"
-            "#}
+            indoc::indoc! {"
+                ci:
+                  verify:
+                    triple: x86_64-unknown-linux-gnu
+            "}
         ))
         .unwrap_err();
-        assert!(format!("{err}").contains("triple"), "{err}");
+        assert!(format!("{err:#}").contains("triple"), "{err:#}");
     }
 
     #[test]
     fn a_label_is_not_a_machine_name() {
-        // "ubuntu-latest" parses — it is a name like any other — and then fails
-        // to resolve, which is the point: a label cannot pass itself off as a
-        // declared machine.
-        let err = plan(&with(indoc::indoc! {r#"
-            [ci.verify]
-            runners = ["ubuntu-latest"]
-        "#}))
+        let err = plan(&with(indoc::indoc! {"
+            ci:
+              verify:
+                runners: [ubuntu-latest]
+        "}))
         .unwrap_err();
         assert!(
-            format!("{err:#}").contains("not declared in [runners]"),
+            format!("{err:#}").contains("not declared in runners"),
             "{err:#}"
         );
     }

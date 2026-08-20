@@ -1,3 +1,5 @@
+mod common;
+
 use indoc::indoc;
 use std::fs;
 use tempfile::TempDir;
@@ -102,15 +104,14 @@ fn npm_replaces_only_the_version_string() {
 #[test]
 fn prepare_fails_closed_on_unknown_package() {
     let root = TempDir::new().expect("tmp");
-    fs::write(
-        root.path().join("verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "known"
-            path = "Cargo.toml"
-        "#},
-    )
-    .expect("cfg");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: known
+                path: Cargo.toml
+        "},
+    );
     fs::write(
         root.path().join("Cargo.toml"),
         indoc! {r#"
@@ -120,7 +121,7 @@ fn prepare_fails_closed_on_unknown_package() {
         "#},
     )
     .expect("cargo");
-    let config = Config::load(&root.path().join("verctl.toml")).expect("load");
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---
@@ -139,15 +140,14 @@ fn prepare_fails_closed_on_unknown_package() {
 #[test]
 fn prepare_applies_max_bump_across_fragments() {
     let root = TempDir::new().expect("tmp");
-    fs::write(
-        root.path().join("verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "demo"
-            path = "Cargo.toml"
-        "#},
-    )
-    .expect("cfg");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
     fs::write(
         root.path().join("Cargo.toml"),
         indoc! {r#"
@@ -157,7 +157,7 @@ fn prepare_applies_max_bump_across_fragments() {
         "#},
     )
     .expect("cargo");
-    let config = Config::load(&root.path().join("verctl.toml")).expect("load");
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
     let patch = parse_str(
         indoc! {"
             ---
@@ -193,21 +193,21 @@ fn prepare_applies_max_bump_across_fragments() {
 #[test]
 fn declared_toml_keys_are_the_same_as_cargo() {
     let root = TempDir::new().expect("tmp");
-    fs::write(
-        root.path().join("verctl.toml"),
-        indoc! {r#"
-            [drivers.crate]
-            format = "toml"
-            keys = ["package.version"]
-            after = "echo locked"
+    common::write_config(
+        root.path(),
+        indoc! {"
+            drivers:
+              crate:
+                format: toml
+                keys: [package.version]
+                after: echo locked
 
-            [[packages]]
-            name = "demo"
-            path = "Cargo.toml"
-            driver = "crate"
-        "#},
-    )
-    .expect("cfg");
+            packages:
+              - name: demo
+                path: Cargo.toml
+                driver: crate
+        "},
+    );
     fs::write(
         root.path().join("Cargo.toml"),
         indoc! {r#"
@@ -217,7 +217,7 @@ fn declared_toml_keys_are_the_same_as_cargo() {
         "#},
     )
     .expect("cargo");
-    let config = Config::load(&root.path().join("verctl.toml")).expect("load");
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---
@@ -238,15 +238,14 @@ fn declared_toml_keys_are_the_same_as_cargo() {
 #[test]
 fn detects_bun_from_lockfile() {
     let root = TempDir::new().expect("tmp");
-    fs::write(
-        root.path().join("verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "app"
-            path = "package.json"
-        "#},
-    )
-    .expect("cfg");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: app
+                path: package.json
+        "},
+    );
     fs::write(
         root.path().join("package.json"),
         indoc! {r#"
@@ -255,7 +254,7 @@ fn detects_bun_from_lockfile() {
     )
     .expect("pkg");
     fs::write(root.path().join("bun.lock"), "{}\n").expect("lock");
-    let config = Config::load(&root.path().join("verctl.toml")).expect("load");
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---
@@ -274,15 +273,14 @@ fn detects_bun_from_lockfile() {
 #[test]
 fn a_cargo_lock_asks_for_the_narrowest_refresh() {
     let root = TempDir::new().expect("tmp");
-    fs::write(
-        root.path().join("verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "app"
-            path = "Cargo.toml"
-        "#},
-    )
-    .expect("cfg");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: app
+                path: Cargo.toml
+        "},
+    );
     fs::write(
         root.path().join("Cargo.toml"),
         indoc! {r#"
@@ -293,7 +291,7 @@ fn a_cargo_lock_asks_for_the_narrowest_refresh() {
     )
     .expect("manifest");
     fs::write(root.path().join("Cargo.lock"), "version = 4\n").expect("lock");
-    let config = Config::load(&root.path().join("verctl.toml")).expect("load");
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---
@@ -314,15 +312,14 @@ fn a_cargo_lock_asks_for_the_narrowest_refresh() {
 #[test]
 fn no_cargo_lock_asks_for_nothing() {
     let root = TempDir::new().expect("tmp");
-    fs::write(
-        root.path().join("verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "app"
-            path = "Cargo.toml"
-        "#},
-    )
-    .expect("cfg");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: app
+                path: Cargo.toml
+        "},
+    );
     fs::write(
         root.path().join("Cargo.toml"),
         indoc! {r#"
@@ -332,7 +329,7 @@ fn no_cargo_lock_asks_for_nothing() {
         "#},
     )
     .expect("manifest");
-    let config = Config::load(&root.path().join("verctl.toml")).expect("load");
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---
@@ -351,15 +348,14 @@ fn no_cargo_lock_asks_for_nothing() {
 #[test]
 fn detects_pnpm_from_lockfile() {
     let root = TempDir::new().expect("tmp");
-    fs::write(
-        root.path().join("verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "app"
-            path = "package.json"
-        "#},
-    )
-    .expect("cfg");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: app
+                path: package.json
+        "},
+    );
     fs::write(
         root.path().join("package.json"),
         indoc! {r#"
@@ -368,7 +364,7 @@ fn detects_pnpm_from_lockfile() {
     )
     .expect("pkg");
     fs::write(root.path().join("pnpm-lock.yaml"), "lockfileVersion: '9'\n").expect("lock");
-    let config = Config::load(&root.path().join("verctl.toml")).expect("load");
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---
@@ -387,16 +383,15 @@ fn detects_pnpm_from_lockfile() {
 #[test]
 fn package_after_overrides_detection() {
     let root = TempDir::new().expect("tmp");
-    fs::write(
-        root.path().join("verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "app"
-            path = "package.json"
-            after = "mise run install"
-        "#},
-    )
-    .expect("cfg");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: app
+                path: package.json
+                after: mise run install
+        "},
+    );
     fs::write(
         root.path().join("package.json"),
         indoc! {r#"
@@ -405,7 +400,7 @@ fn package_after_overrides_detection() {
     )
     .expect("pkg");
     fs::write(root.path().join("bun.lock"), "{}\n").expect("lock");
-    let config = Config::load(&root.path().join("verctl.toml")).expect("load");
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---

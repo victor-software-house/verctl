@@ -1,0 +1,149 @@
+# A complete .ctl/ver.yaml. Every section here is live, not commented out, so
+# `tests/examples.rs` parses this exact file and plans from it — the examples
+# cannot drift from the schema without failing the build. Copy it and delete
+# what you do not need; only `packages` is required.
+
+# `cargo` and `npm` are stock drivers and `cargo` and `bun` are stock
+# publishers. Redeclaring one merges over the stock recipe rather than
+# replacing it, so this pair changes nothing and is here to show the shape.
+# Because it is a merge, an entry may carry only the field it overrides.
+drivers:
+  cargo:
+    format: toml
+    keys: [workspace.package.version, package.version]
+
+  npm:
+    format: json
+    keys: [version]
+    # after: bun install      # omit and verctl infers from the lockfile
+
+  # A manifest verctl neither parses nor knows: give it a read and a write
+  # command instead of format+keys. A string is a mise task, a list is execvp
+  # (no shell). Stdin is the file; stdout is the version (read) or the whole
+  # new file (write), and a write also gets VERCTL_VERSION.
+  plain:
+    read: [cat]
+    write: [printenv, VERCTL_VERSION]
+
+# Any stack publishes through one list of argv. This adds uv alongside the
+# stock cargo and bun recipes without a new verb.
+publishers:
+  twine:
+    noun: package
+    argv: [uv, publish]
+
+packages:
+  - name: verctl
+    path: Cargo.toml
+    # driver: cargo           # inferred from the file name
+
+  - name: "@org/pkg"
+    path: package.json
+    publisher: bun
+    registry: github
+    # changelog: docs/PKG.md  # defaults to CHANGELOG.md beside the manifest
+
+  # A file name that implies nothing, so both the driver and the publisher are
+  # named. This is what the `plain` driver and `publishers.twine` above are
+  # for — nothing here is declared without a package that uses it.
+  - name: py-tool
+    path: VERSION
+    driver: plain
+    publisher: twine
+
+# One argv after every bump, on the Version PR. `stage` lists the extra paths
+# it may write; any other dirty file fails the run.
+prepare:
+  after: [mise, run, version-sync]
+  stage: ["packages/*/src/version.rs"]
+
+# Machines are declared once. The key names one, `labels` is how GitHub finds
+# it — every label at once, so `big` is a single machine carrying three labels,
+# not three machines. verctl ships no built-in machine names: this section is
+# yours, and only `labels` ever reaches runs-on.
+runners:
+  big:
+    labels: [self-hosted, linux, x64]
+  ns:
+    labels: [nscloud-ubuntu-24.04-amd64-4x8]
+
+# Omit `assets` entirely for a library. `bin` is the recipe every target
+# shares; prepare/build/binary override the stock rust recipe. Every other key
+# is one host binary: the name is the job, the tarball, and the platform.
+assets:
+  bin: verctl
+
+  # darwin-arm64 and linux-x64 are built in, so naming one is enough — and it
+  # keeps free hosted minutes.
+  darwin-arm64: {}
+
+  # Name a `runner` only when the built-in machine is wrong. One tarball is one
+  # machine, so this is one name and never a list.
+  linux-x64:
+    runner: big
+
+  # A name outside darwin-arm64 / linux-x64 describes a platform verctl knows
+  # nothing about, so it must describe all of it.
+  linux-arm64:
+    runner: ns
+    os: linux
+    arch: arm64
+    triple: aarch64-unknown-linux-gnu
+
+# PR and push validation. Omit `ci` for one `verify` job on ubuntu-latest.
+# A job may name several machines: one check each, `verify (ns)` and
+# `verify (big)`. No os/arch/triple — validation does not cross-compile. A
+# second job is a second key, and stays a separate check.
+ci:
+  verify:
+    runners: [ns, big]
+  audit:
+    runners: [ns]
+
+# Where served-file templates live. These are the defaults, so a repo that
+# follows the convention writes no `templates` section at all. Each template
+# declares its own target — see docs/served-files.md.
+templates:
+  source: .ctl/templates
+  suffix: .jinja
+
+# A version spelling, named once here and listed by every file that carries it,
+# so two files that say the same thing say it in one place. `match` is literal
+# text with `{version}` where the version goes; `occurrences` is how often a
+# listing file must say it, and both too few and too many stop the release.
+#
+# "many" is for a document whose examples come and go, where only "still
+# tracked" is worth asserting. "never" guards a spelling that was retired,
+# `{exactly: 2}` and `{at_least: 2}` name counts.
+patterns:
+  install:
+    match: "github:victor-software-house/verctl@{version}"
+    occurrences: once
+  mention:
+    match: "verctl@{version}"
+    occurrences: many
+
+# Files that carry a version and cannot be generated: `prepare` rewrites them
+# onto the Version PR commit, which is the commit the tag names, so the released
+# tree carries them. A file that must name an already-published tarball — the
+# pin a repo's own release lane installs — cannot be listed here either, because
+# it can only move to a version that already exists.
+pins:
+  # `tool` is the structural form: a mise `[tools]` entry, plus every `?ref=v…`
+  # include in the same file whose URL names this repo.
+  - file: examples/mise.toml
+    tool: "github:victor-software-house/verctl"
+    package: verctl
+
+  # `patterns` is the textual form, for a file with no format to speak of — a
+  # README sentence, a bash header. A file lists the patterns it carries by
+  # name; a name nothing declares, a name listed twice, and a pattern no file
+  # lists all fail the load.
+  - file: README.md
+    package: verctl
+    patterns: [install, mention]
+
+  # The same `install` spelling, in a second file. Naming it once is the point.
+  - file: docs/install.md
+    package: verctl
+    patterns: [install]

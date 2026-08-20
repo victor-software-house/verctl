@@ -1,6 +1,6 @@
 //! Render the files a repo serves, from templates that say what they are for.
 //!
-//! Every template lives flat in `.verctl/templates/` and **declares where it
+//! Every template lives flat in `.ctl/templates/` and **declares where it
 //! goes**, in Jinja's own syntax rather than a manifest beside it or a mirrored
 //! directory tree:
 //!
@@ -230,7 +230,7 @@ mod tests {
     "#};
 
     const SERVED: &str = "tasks/ver/ver";
-    const TEMPLATE_PATH: &str = ".verctl/templates/ver.jinja";
+    const TEMPLATE_PATH: &str = ".ctl/templates/ver.jinja";
 
     /// What a release does to `BEFORE`: the exact bytes, or the failure.
     enum Outcome {
@@ -500,7 +500,7 @@ mod tests {
     fn a_flat_template_names_a_target_at_any_depth() {
         let root = repo(&[
             (
-                ".verctl/templates/readme.jinja",
+                ".ctl/templates/readme.jinja",
                 "{%- set name = \"README.md\" -%}\nRun verctl@{{ versions[\"verctl\"] }}.\n",
             ),
             ("README.md", "Run verctl@0.0.1.\n"),
@@ -520,7 +520,7 @@ mod tests {
         );
         assert_eq!(read(&root, "README.md"), "Run verctl@0.0.2.\n");
         assert!(!root.path().join("README.md.jinja").exists());
-        assert!(!root.path().join(".verctl/templates/tasks").exists());
+        assert!(!root.path().join(".ctl/templates/tasks").exists());
     }
 
     /// The one mode bit git records, declared by the template that needs it.
@@ -529,7 +529,7 @@ mod tests {
     fn a_template_declares_the_one_mode_bit_git_records() {
         let root = repo(&[
             (
-                ".verctl/templates/ver.jinja",
+                ".ctl/templates/ver.jinja",
                 indoc! {r#"
                     {%- set path = "tasks/ver" -%}
                     {%- set executable = true -%}
@@ -539,7 +539,7 @@ mod tests {
             ),
             (SERVED, BEFORE),
             (
-                ".verctl/templates/readme.jinja",
+                ".ctl/templates/readme.jinja",
                 indoc! {r#"
                     {%- set name = "README.md" -%}
                     {%- set executable = false -%}

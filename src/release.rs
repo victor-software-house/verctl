@@ -333,15 +333,13 @@ mod tests {
             "#},
         )
         .unwrap();
-        let config: Config = toml::from_str(indoc! {r#"
-            [[packages]]
-            name = "verctl"
-            path = "Cargo.toml"
-
-            [[packages]]
-            name = "ctl-core"
-            path = "core/Cargo.toml"
-        "#})
+        let config = Config::parse(indoc! {"
+            packages:
+              - name: verctl
+                path: Cargo.toml
+              - name: ctl-core
+                path: core/Cargo.toml
+        "})
         .unwrap();
         let planned = [("verctl".to_owned(), "0.0.4".to_owned())];
         assert_eq!(

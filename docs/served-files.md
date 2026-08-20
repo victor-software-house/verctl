@@ -7,7 +7,7 @@ Version PR commit — publish pushes nothing but the tag, so a version written
 after publish is never served.
 
 This document is the contract for how those files stay correct. It is the design
-`prepare`, `check`, and `[[pins]]` implement; read it before adding a key.
+`prepare`, `check`, and `pins` implement; read it before adding a key.
 
 ## Goals
 
@@ -37,9 +37,9 @@ This document is the contract for how those files stay correct. It is the design
 
 ## 1. The filesystem declares, not the config
 
-Everything verctl owns in a repo lives under `.verctl/`, so a repo root gains one
+`.ctl/` is the directory every ctl CLI shares, so a repo root gains one
 entry rather than a scatter of tool files. Templates live flat in
-`.verctl/templates/`, and **each one declares where it goes**, in Jinja's own
+`.ctl/templates/`, and **each one declares where it goes**, in Jinja's own
 syntax:
 
 ```jinja
@@ -73,7 +73,7 @@ exception: a served file whose template says nothing is served 0644, and a stale
 Declarations are checked at the boundary, once, before anything is written:
 serde parses the exports into one schema and [garde] validates it, so
 `path = 5`, `path = "../.."`, and `name = "tasks/q"` each fail the release
-naming the field. `verctl.toml` is held to the same standard by the same
+naming the field. `.ctl/ver.yaml` is held to the same standard by the same
 validators — a pin that reaches out of the repository fails exactly the way a
 template that does would. Any other export is the template's own business — a `tool`
 name it uses to build a line is not a declaration.
@@ -88,10 +88,10 @@ templates out of this.
 
 The convention is the default, not the only option:
 
-```toml
-[templates]
-source = ".verctl/templates"   # default
-suffix = ".jinja"              # default
+```yaml
+templates:
+  source: .ctl/templates   # default
+  suffix: .jinja           # default
 ```
 
 [gitformat-index]: https://git-scm.com/docs/gitformat-index
@@ -102,14 +102,14 @@ suffix = ".jinja"              # default
 Prefer generating a served file. A generated file cannot drift, needs no
 matching, and states its shape in one place.
 
-Reach for `[[pins]]` only for a file that **cannot** be generated:
+Reach for a `pins` entry only for a file that **cannot** be generated:
 
 - it must lag the release (a repo's own bootstrap pin names a tarball that has
   to exist already, so it can only move to a version that already shipped);
 - it is owned by a tool with its own format contract, where a structural edit
   beats a rendered file — a mise `[tools]` table is the one built-in case.
 
-If a file could be a template, make it one. A `[[pins]]` entry is a standing
+If a file could be a template, make it one. A `pins` entry is a standing
 admission that a file is hand-authored.
 
 ## 3. What a rendering is allowed to be
@@ -121,7 +121,7 @@ admission that a file is hand-authored.
 - **Idempotent.** The Version PR is regenerated on every push to main, so
   rendering the same versions twice must produce the same bytes.
 - **Context is one map.** `versions["<package name>"]`, keyed by the names in
-  `[[packages]]`. No bare `version` shorthand, even for a single-package repo:
+  `packages`. No bare `version` shorthand, even for a single-package repo:
   the served file should name what it pins.
 - **Every package is in it**, not only the ones this release bumps: the
   manifests as they read now, with the release's versions over them. A whole
@@ -132,22 +132,21 @@ admission that a file is hand-authored.
 
 A pattern is a spelling, not a file. It is named once and **listed by every file
 that carries it**, so a spelling two files share is written once and which file
-carries it is written down rather than implied by where a table sits:
+carries it is written down rather than implied by where an entry sits:
 
-```toml
-[patterns.install]
-match = "github:victor-software-house/verctl@{version}"
-occurrences = "once"
+```yaml
+patterns:
+  install:
+    match: "github:victor-software-house/verctl@{version}"
+    occurrences: once
 
-[[pins]]
-file = "README.md"
-package = "verctl"
-patterns = ["install"]
-
-[[pins]]
-file = "docs/install.md"
-package = "verctl"
-patterns = ["install"]
+pins:
+  - file: README.md
+    package: verctl
+    patterns: [install]
+  - file: docs/install.md
+    package: verctl
+    patterns: [install]
 ```
 
 - `match` is **literal text**, not a regex, with `{version}` where the version
@@ -178,7 +177,7 @@ patterns = ["install"]
 
 ## 5. Failure is loud, and skipping is narrow
 
-Exactly one thing is silently skipped: a `[[pins]]` entry for a package **no
+Exactly one thing is silently skipped: a `pins` entry for a package **no
 fragment bumped**. That version did not change, so the file must not either.
 Templates are not skipped — rendering the same versions twice produces the same
 bytes, and they are rendered from every package's version (§3), so a served file
@@ -188,7 +187,7 @@ Everything else fails the run, before anything is written:
 
 - a pattern whose arity does not match
 - a pattern with no placeholder, or more than one
-- a `patterns` name no `[patterns.<id>]` declares, or one file lists twice
+- a `patterns` name nothing under `patterns` declares, or one file lists twice
 - a declared pattern no file lists — dead configuration, not a spare
 - a `tool` pin whose `[tools]` table or entry is missing
 - a template that does not parse, or names something the release does not have
@@ -201,7 +200,7 @@ written until every rewrite in it succeeds.
 
 - **`prepare`** — rewrites pins and renders templates onto the Version PR
   commit, the commit the tag will name, and stages them automatically. A repo
-  never lists rendered outputs in `[prepare].stage`.
+  never lists rendered outputs in `prepare.stage`.
 - **`prepare --dry-run` / `--preview`** — runs the same validation and writes
   nothing.
 - **`check`** — every PR and push: patterns still match at their declared
@@ -213,11 +212,11 @@ written until every rewrite in it succeeds.
 
 | Action | Template | Pattern |
 |:--|:--|:--|
-| add | commit `templates/<target>.jinja` | declare `[patterns.<id>]`, list it on the file |
+| add | commit `templates/<target>.jinja` | declare it under `patterns`, list it on the file |
 | change | edit the template; never the rendered file | edit `match` |
 | move | move the template inside the source tree | edit `file` |
 | retire | delete the template | drop the id from the file, and the pattern once nothing lists it |
-| carry in a second file | a second template | list the same id on the second `[[pins]]` |
+| carry in a second file | a second template | list the same id on the second `pins` entry |
 
 A hand edit to a rendered file is a mistake `check` reports, not a supported
 workflow: the template is the source.

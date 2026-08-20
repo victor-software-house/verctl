@@ -12,7 +12,7 @@ This repo's queue is [`tasks.yaml`](tasks.yaml) (`VER-###`).
 
 Multiline Rust is `indoc!` / `formatdoc!` / `writedoc!` / `printdoc!` /
 `eprintdoc!` / `concatdoc!`. **No `concat!`.** **No escaped `\n` in a
-document.** A changelog, fragment, TOML, JSON, or any other fixture
+document.** A changelog, fragment, YAML, TOML, JSON, or any other fixture
 that is more than one line is an `indoc!` block.
 
 ```rust
@@ -35,13 +35,20 @@ character, CRLF (`\r\n`) fixtures, or a one-line payload such as
 
 ## Declared input is a schema
 
+A repo writes its declarations in **`.ctl/ver.yaml`** and nowhere else, and its
+served-file templates in `.ctl/templates/`. `.ctl/` is shared with the other ctl
+CLIs — qctl reads `.ctl/q.yaml`, forkctl `.ctl/fork.yaml` — so nothing under it
+is verctl's by virtue of sitting there. `verctl.toml` is gone: not read, not
+tolerated. Every `path` in the file is relative to the directory holding `.ctl/`,
+which `config::root_of` derives.
+
 Anything a repo or a template declares is **one struct**, parsed once at the
 boundary and validated there — never a series of lookups with conversions at use
 sites.
 
 - `serde` parses shape and types. `garde` validates the parsed value
   (`#[garde(custom(…))]`), so a complaint names its field. Every schema is
-  validated once, at its boundary — `Config::load` for the file a repo writes,
+  validated once, at its boundary — `Config::parse` for the file a repo writes,
   `Declared::parse` for what a template exports — and nothing downstream
   re-checks. A rule that needs the rest of the document takes it as garde's
   context (`#[garde(context(Config as config))]`).
@@ -55,8 +62,8 @@ sites.
 - `Option` means a real third state, not "unset". If a file is either executable
   or not, the field is `bool`.
 - A thing several places share is **named once and listed by name** where it
-  applies (`[patterns.install]`, then `patterns = ["install"]`), never repeated
-  and never bound by where a table happens to sit. Names resolve once at the
+  applies (`patterns.install`, then `patterns: [install]`), never repeated
+  and never bound by where an entry happens to sit. Names resolve once at the
   boundary; an unresolved name, a name listed twice, and a declaration nothing
   lists all fail the load.
 - Vocabulary that a bare number cannot express gets an enum with named variants
@@ -100,9 +107,9 @@ event has the Version PR label (`verctl:version`). CI does not skip.
 mise: `mise.toml` is shared settings only. `mise.dev.toml` is rust
 and `cargo run`. `mise.release.toml` is the published tarball.
 `.miserc.toml` defaults local `MISE_ENV` to `dev`. `prepare`
-rewrites `[[pins]]` onto the Version PR commit, because the tag names
+rewrites `pins` onto the Version PR commit, because the tag names
 that commit and publish pushes nothing but the tag. This repo's own
-bootstrap pin in `mise.release.toml` is deliberately not a `[[pins]]`
+bootstrap pin in `mise.release.toml` is deliberately not a `pins`
 entry: it must name a tarball that already exists. Actions run
 `verctl` from PATH.
 `publish` is exact-SHA plus a matching per-package CHANGELOG heading.

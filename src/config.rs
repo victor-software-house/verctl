@@ -5,6 +5,7 @@ use anyhow::{Context, Result, bail, ensure};
 use garde::Validate;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -103,7 +104,7 @@ pub struct PackageSpec {
     pub name: String,
     pub path: PathBuf,
     pub driver: Option<String>,
-    /// Stock `cargo` / `bun`, a `[publishers.NAME]` key, or omit to infer.
+    /// Stock `cargo` / `bun`, a `publishers` key, or omit to infer.
     pub publisher: Option<String>,
     /// Pretty noun (`crate`, `package`, `wheel`). Defaults from the publisher.
     pub noun: Option<String>,
@@ -147,7 +148,7 @@ impl PackageSpec {
     }
 }
 
-/// One machine, declared once as `[runners.NAME]`. The header names it; this
+/// One machine, declared once under `runners`. The key names it; this
 /// is how GitHub finds it. Every label is required at once, so a three-label
 /// runner is one machine carrying three labels, not three machines.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq, Validate)]
@@ -159,8 +160,8 @@ pub struct Runner {
     pub labels: Vec<String>,
 }
 
-/// One job, declared as `[ci.NAME]`. The header names it; `runners` names the
-/// machines from `[runners]` it runs on, one check each. No `os`/`arch`/
+/// One job, declared under `ci`. The key names it; `runners` names the
+/// machines from `runners` it runs on, one check each. No `os`/`arch`/
 /// `triple`: validation runs a machine's checks, it does not cross-compile.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
@@ -169,7 +170,7 @@ pub struct Job {
 }
 
 /// Native GitHub Release tarballs, plus the recipe every target shares. Omit
-/// for libraries. Each `[assets.NAME]` sub-table is one target.
+/// for libraries. Each named sub-mapping is one target.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Assets {
     pub bin: Option<String>,
@@ -179,12 +180,7 @@ pub struct Assets {
     pub build: Option<Vec<String>>,
     /// Path to the built binary, with `{bin}` `{triple}` `{os}` `{arch}`.
     pub binary: Option<String>,
-    /// Retired `targets = [...]` list, captured only so the repos still on it
-    /// get the migration instead of a serde type error from the map below.
-    /// Remove once qctl and ctl-core have bumped their verctl pin.
-    #[serde(default, rename = "targets")]
-    pub retired_targets: Option<toml::Value>,
-    /// Every remaining sub-table: `[assets.linux-x64]` and friends. A typo'd
+    /// Every remaining sub-mapping: `assets.linux-x64` and friends. A typo'd
     /// recipe key lands here and fails as an unknown target, loudly.
     #[serde(flatten)]
     pub targets: BTreeMap<String, AssetTarget>,
@@ -203,9 +199,14 @@ pub struct AssetTarget {
 
 /// The whole file, and the context every rule in it is checked against: a
 /// pattern is only unused, and an id only unknown, relative to the rest of the
-/// config. `Config::load` parses the shape with serde and then validates it
+/// config. `Config::parse` reads the shape with serde and then validates it
 /// once, here, so a complaint names the field that has to change.
+///
+/// A section verctl does not know stops the load rather than being dropped:
+/// silently ignoring `pattern:` for `patterns:` would ship a release with the
+/// pins it declares never rewritten.
 #[derive(Debug, Clone, Deserialize, Default, Validate)]
+#[serde(deny_unknown_fields)]
 #[garde(context(Self as config))]
 #[garde(allow_unvalidated)]
 pub struct Config {
@@ -293,7 +294,7 @@ pub struct Pin {
     /// A mise `[tools]` entry, in a file that parses as TOML. Its own
     /// `?ref=v…` includes move with it.
     pub tool: Option<String>,
-    /// `[patterns]` ids this file carries, so which file a spelling belongs to
+    /// `patterns` ids this file carries, so which file a spelling belongs to
     /// is written down rather than implied by where a table sits.
     #[serde(default, rename = "patterns")]
     #[garde(
@@ -313,7 +314,7 @@ pub struct Pin {
 fn each_id_is_declared(ids: &[String], config: &Config) -> garde::Result {
     for id in ids {
         if !config.patterns.contains_key(id) {
-            return Err(garde::Error::new(format!("no [patterns.{id}]")));
+            return Err(garde::Error::new(format!("no patterns.{id}")));
         }
     }
     Ok(())
@@ -340,11 +341,35 @@ fn something_to_rewrite(has_tool: bool) -> impl Fn(&[String], &Config) -> garde:
     }
 }
 
-/// Everything verctl owns in a repo lives here, so a repo root gains one
-/// entry instead of a scatter of tool files.
-pub const DIR: &str = ".verctl";
+/// The directory every ctl CLI shares, so a repo root gains one entry however
+/// many of them it uses. verctl owns the files it names here and nothing else.
+pub const DIR: &str = ".ctl";
 
-/// What a `[[pins]]` pattern puts where the version goes.
+/// verctl's declarations, named after the task an operator runs (`mise run
+/// ver`) rather than after the crate that reads them.
+pub const FILE: &str = ".ctl/ver.yaml";
+
+/// The directory a config governs — what every `path` in it is relative to.
+///
+/// Declarations sit in `<root>/.ctl/`, so the directory holding the file is a
+/// level too deep and its parent is the root. `-c crates/foo/.ctl/ver.yaml`
+/// therefore still governs `crates/foo`. A file outside a `.ctl` directory is
+/// read where it sits, which is what an ad-hoc `-c` asks for.
+#[must_use]
+pub fn root_of(config: &Path) -> PathBuf {
+    let dir = here(config.parent());
+    if dir.file_name() == Some(OsStr::new(DIR)) {
+        return here(dir.parent()).to_path_buf();
+    }
+    dir.to_path_buf()
+}
+
+fn here(path: Option<&Path>) -> &Path {
+    path.filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+}
+
+/// What a `pins` pattern puts where the version goes.
 pub const PLACEHOLDER: &str = "{version}";
 
 /// Where the templates for served files live, and how they are marked. The
@@ -390,7 +415,7 @@ impl Default for Templates {
 pub struct PinPattern {
     /// The text around a version, `{version}` where the version is. Literal,
     /// not a regex, so nothing about the file's format is assumed. Exactly one
-    /// placeholder, checked over `[patterns]` so the complaint names the id.
+    /// placeholder, checked over `patterns` so the complaint names the id.
     pub r#match: String,
     /// How often the file must say it. A pin that lost its only mention, or
     /// drifted to one nobody declared, fails the release rather than serving
@@ -402,8 +427,7 @@ pub struct PinPattern {
 /// How many times a pattern must match. A count is not always the useful
 /// shape: a document whose examples come and go needs "one or more", and a
 /// spelling that was retired needs "none".
-#[derive(Debug, Clone, Copy, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum Occurrences {
     /// Exactly one. What a pin normally is, so it is the default.
     #[default]
@@ -418,6 +442,40 @@ pub enum Occurrences {
     Exactly(usize),
     /// This many or more.
     AtLeast(usize),
+}
+
+/// The vocabulary, spelled out. A derived enum cannot read both shapes a repo
+/// writes: an unbounded word is a plain scalar, and a bound is a mapping that a
+/// newtype variant would only accept as a YAML tag (`!exactly 2`). Untagged
+/// reads both and then reports "matched no variant", naming a type nobody
+/// wrote, so the arity is read here and complains in the words a repo uses.
+const ARITY: &str = "once, many, never, {exactly: N}, or {at_least: N}";
+
+impl<'de> Deserialize<'de> for Occurrences {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        let declared = yaml_serde::Value::deserialize(deserializer)?;
+        let wrong = || D::Error::custom(format!("must be {ARITY}"));
+        if let Some(word) = declared.as_str() {
+            return match word {
+                "once" => Ok(Self::Once),
+                "many" => Ok(Self::Many),
+                "never" => Ok(Self::Never),
+                _ => Err(wrong()),
+            };
+        }
+        let bound = declared.as_mapping().ok_or_else(wrong)?;
+        let entries: Vec<_> = bound.iter().collect();
+        let [(key, count)] = &entries[..] else {
+            return Err(wrong());
+        };
+        let count = usize::try_from(count.as_u64().ok_or_else(wrong)?).map_err(D::Error::custom)?;
+        match key.as_str() {
+            Some("exactly") => Ok(Self::Exactly(count)),
+            Some("at_least") => Ok(Self::AtLeast(count)),
+            _ => Err(wrong()),
+        }
+    }
 }
 
 impl Occurrences {
@@ -476,16 +534,20 @@ impl Prepare {
 impl Config {
     pub fn load(path: &Path) -> Result<Self> {
         let raw = fs::read_to_string(path).with_context(|| path.display().to_string())?;
-        let mut config: Self =
-            toml::from_str(&raw).with_context(|| format!("parse {}", path.display()))?;
-        config
-            .validate_with(&config)
-            .with_context(|| path.display().to_string())?;
+        Self::parse(&raw).with_context(|| path.display().to_string())
+    }
+
+    /// The one parse boundary. `load` adds the file name; everything else —
+    /// tests included — comes through here, so a document is read exactly one
+    /// way and a complaint is worded exactly once.
+    pub fn parse(raw: &str) -> Result<Self> {
+        let mut config: Self = yaml_serde::from_str(raw).context("parse")?;
+        config.validate_with(&config)?;
         config.resolve_patterns();
         Ok(config)
     }
 
-    /// Turn every pin's `[patterns]` ids into the patterns they name, so no
+    /// Turn every pin's `patterns` ids into the patterns they name, so no
     /// consumer looks an id up again. Validation already proved every name
     /// resolves, which is why this cannot fail.
     fn resolve_patterns(&mut self) {
@@ -539,51 +601,60 @@ mod tests {
 
     /// A whole config, so what is under test is what a repo actually writes.
     fn load(body: &str) -> Result<Config> {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("verctl.toml");
-        fs::write(&path, body).unwrap();
-        Config::load(&path)
+        Config::parse(body)
     }
 
     /// The one package every fixture below needs, and nothing else.
-    const PACKAGE: &str = indoc! {r#"
-        [[packages]]
-        name = "demo"
-        path = "Cargo.toml"
-    "#};
+    const PACKAGE: &str = indoc! {"
+        packages:
+          - name: demo
+            path: Cargo.toml
+    "};
+
+    /// A `path` is relative to the repository, not to the directory the
+    /// declarations happen to sit in, so `.ctl` never lands in front of it.
+    #[test]
+    fn the_root_is_the_directory_holding_the_ctl_dir() {
+        let cases = [
+            (".ctl/ver.yaml", "."),
+            ("crates/foo/.ctl/ver.yaml", "crates/foo"),
+            ("/srv/repo/.ctl/ver.yaml", "/srv/repo"),
+            ("ver.yaml", "."),
+            ("/tmp/scratch/ver.yaml", "/tmp/scratch"),
+        ];
+        for (config, expected) in cases {
+            assert_eq!(root_of(Path::new(config)), Path::new(expected), "{config}");
+        }
+    }
 
     /// Every arity a repo can write, in the spelling it writes it.
     #[test]
     fn every_occurrence_form_parses_and_means_what_it_says() {
         let config = load(&formatdoc! {r#"
             {PACKAGE}
-            [patterns.omitted]
-            match = "a@{{version}}"
+            patterns:
+              omitted:
+                match: "a@{{version}}"
+              once:
+                match: "b@{{version}}"
+                occurrences: once
+              many:
+                match: "c@{{version}}"
+                occurrences: many
+              never:
+                match: "d@{{version}}"
+                occurrences: never
+              twice:
+                match: "e@{{version}}"
+                occurrences: {{exactly: 2}}
+              floor:
+                match: "f@{{version}}"
+                occurrences: {{at_least: 2}}
 
-            [patterns.once]
-            match = "b@{{version}}"
-            occurrences = "once"
-
-            [patterns.many]
-            match = "c@{{version}}"
-            occurrences = "many"
-
-            [patterns.never]
-            match = "d@{{version}}"
-            occurrences = "never"
-
-            [patterns.twice]
-            match = "e@{{version}}"
-            occurrences = {{ exactly = 2 }}
-
-            [patterns.floor]
-            match = "f@{{version}}"
-            occurrences = {{ at_least = 2 }}
-
-            [[pins]]
-            file = "README.md"
-            package = "demo"
-            patterns = ["omitted", "once", "many", "never", "twice", "floor"]
+            pins:
+              - file: README.md
+                package: demo
+                patterns: [omitted, once, many, never, twice, floor]
         "#})
         .unwrap();
         let allowed: Vec<Vec<usize>> = config.pins[0]
@@ -604,18 +675,54 @@ mod tests {
         );
     }
 
+    /// A section verctl does not know is a typo, and a typo that loads is a
+    /// release that quietly does none of what the section asked for.
+    #[test]
+    fn a_misspelled_section_stops_the_load() {
+        let error = load(&formatdoc! {r#"
+            {PACKAGE}
+            pattern:
+              install:
+                match: "demo@{{version}}"
+        "#})
+        .expect_err("pattern is not a section");
+        assert!(format!("{error:#}").contains("pattern"), "{error:#}");
+    }
+
+    /// A bound is one key and its number. A second key means the arity was
+    /// mistyped, and falling through to whichever variant the first key
+    /// satisfies would pin a count nobody wrote.
+    #[test]
+    fn a_bound_with_a_second_key_is_not_the_bound_it_starts_with() {
+        let error = load(&formatdoc! {r#"
+            {PACKAGE}
+            patterns:
+              wrong:
+                match: "a@{{version}}"
+                occurrences: {{exactly: 2, at_leats: 3}}
+
+            pins:
+              - file: README.md
+                package: demo
+                patterns: [wrong]
+        "#})
+        .expect_err("at_leats is not a key");
+        assert!(format!("{error:#}").contains(ARITY), "{error:#}");
+    }
+
     #[test]
     fn an_unknown_arity_is_not_silently_a_default() {
         let broken = load(&formatdoc! {r#"
             {PACKAGE}
-            [patterns.wrong]
-            match = "a@{{version}}"
-            occurrences = "sometimes"
+            patterns:
+              wrong:
+                match: "a@{{version}}"
+                occurrences: sometimes
 
-            [[pins]]
-            file = "README.md"
-            package = "demo"
-            patterns = ["wrong"]
+            pins:
+              - file: README.md
+                package: demo
+                patterns: [wrong]
         "#});
         assert!(broken.is_err());
     }
@@ -625,22 +732,20 @@ mod tests {
     fn one_named_pattern_serves_every_file_that_lists_it() {
         let config = load(&formatdoc! {r#"
             {PACKAGE}
-            [patterns.install]
-            match = "demo@{{version}}"
+            patterns:
+              install:
+                match: "demo@{{version}}"
+              mention:
+                match: "v{{version}}"
+                occurrences: many
 
-            [patterns.mention]
-            match = "v{{version}}"
-            occurrences = "many"
-
-            [[pins]]
-            file = "README.md"
-            package = "demo"
-            patterns = ["install", "mention"]
-
-            [[pins]]
-            file = "docs/install.md"
-            package = "demo"
-            patterns = ["install"]
+            pins:
+              - file: README.md
+                package: demo
+                patterns: [install, mention]
+              - file: docs/install.md
+                package: demo
+                patterns: [install]
         "#})
         .unwrap();
         let carried: Vec<Vec<&str>> = config
@@ -666,30 +771,32 @@ mod tests {
     fn a_config_that_breaks_a_rule_stops_the_load() {
         let cases = [
             (
-                "an id no [patterns] declares",
+                "an id no patterns section declares",
                 formatdoc! {r#"
                     {PACKAGE}
-                    [patterns.install]
-                    match = "demo@{{version}}"
+                    patterns:
+                      install:
+                        match: "demo@{{version}}"
 
-                    [[pins]]
-                    file = "README.md"
-                    package = "demo"
-                    patterns = ["install", "instal"]
+                    pins:
+                      - file: README.md
+                        package: demo
+                        patterns: [install, instal]
                 "#},
-                "pins[0].pattern_ids: no [patterns.instal]",
+                "pins[0].pattern_ids: no patterns.instal",
             ),
             (
                 "the same id listed twice",
                 formatdoc! {r#"
                     {PACKAGE}
-                    [patterns.install]
-                    match = "demo@{{version}}"
+                    patterns:
+                      install:
+                        match: "demo@{{version}}"
 
-                    [[pins]]
-                    file = "README.md"
-                    package = "demo"
-                    patterns = ["install", "install"]
+                    pins:
+                      - file: README.md
+                        package: demo
+                        patterns: [install, install]
                 "#},
                 r#"pins[0].pattern_ids: lists "install" twice"#,
             ),
@@ -697,40 +804,41 @@ mod tests {
                 "a pattern no pin lists",
                 formatdoc! {r#"
                     {PACKAGE}
-                    [patterns.install]
-                    match = "demo@{{version}}"
+                    patterns:
+                      install:
+                        match: "demo@{{version}}"
+                      orphan:
+                        match: "old@{{version}}"
 
-                    [patterns.orphan]
-                    match = "old@{{version}}"
-
-                    [[pins]]
-                    file = "README.md"
-                    package = "demo"
-                    patterns = ["install"]
+                    pins:
+                      - file: README.md
+                        package: demo
+                        patterns: [install]
                 "#},
                 r#"patterns: "orphan" is declared and no pin lists it"#,
             ),
             (
                 "a pin with nothing to rewrite",
-                formatdoc! {r#"
+                formatdoc! {"
                     {PACKAGE}
-                    [[pins]]
-                    file = "README.md"
-                    package = "demo"
-                "#},
+                    pins:
+                      - file: README.md
+                        package: demo
+                "},
                 "pins[0].pattern_ids: needs a tool or a pattern to rewrite",
             ),
             (
                 "a spelling with nowhere to put the version",
                 formatdoc! {r#"
                     {PACKAGE}
-                    [patterns.install]
-                    match = "demo@1.2.3"
+                    patterns:
+                      install:
+                        match: "demo@1.2.3"
 
-                    [[pins]]
-                    file = "README.md"
-                    package = "demo"
-                    patterns = ["install"]
+                    pins:
+                      - file: README.md
+                        package: demo
+                        patterns: [install]
                 "#},
                 "patterns: install: match says {version} 0 times",
             ),
@@ -738,13 +846,14 @@ mod tests {
                 "a pin reaching out of the repository",
                 formatdoc! {r#"
                     {PACKAGE}
-                    [patterns.install]
-                    match = "demo@{{version}}"
+                    patterns:
+                      install:
+                        match: "demo@{{version}}"
 
-                    [[pins]]
-                    file = "../elsewhere/README.md"
-                    package = "demo"
-                    patterns = ["install"]
+                    pins:
+                      - file: ../elsewhere/README.md
+                        package: demo
+                        patterns: [install]
                 "#},
                 "pins[0].file: must stay inside the repository",
             ),
@@ -752,8 +861,9 @@ mod tests {
                 "a machine no label can find",
                 formatdoc! {"
                     {PACKAGE}
-                    [runners.ghost]
-                    labels = []
+                    runners:
+                      ghost:
+                        labels: []
                 "},
                 "runners.ghost.labels: must declare at least one label",
             ),
@@ -761,8 +871,8 @@ mod tests {
                 "a suffix that makes every file a template",
                 formatdoc! {r#"
                     {PACKAGE}
-                    [templates]
-                    suffix = ""
+                    templates:
+                      suffix: ""
                 "#},
                 "templates.suffix: cannot be empty — it is what marks a file",
             ),

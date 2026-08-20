@@ -31,7 +31,7 @@ pub enum Command {
     Publish(PublishArgs),
     /// Rewrite collocated tool pins to the versions on HEAD.
     Pin(PublishArgs),
-    /// Plan or build native GitHub Release tarballs declared in `[assets]`.
+    /// Plan or build native GitHub Release tarballs declared under `assets`.
     Assets(AssetsArgs),
     /// Plan the validation jobs declared in `[ci]`.
     Ci(CiArgs),
@@ -39,8 +39,8 @@ pub enum Command {
 
 #[derive(Args)]
 pub struct CiArgs {
-    /// Package map. Defaults to verctl.toml in the current directory.
-    #[arg(short = 'c', long, default_value = "verctl.toml", value_hint = clap::ValueHint::FilePath)]
+    /// Package map. Defaults to .ctl/ver.yaml in the current directory.
+    #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
     pub config: PathBuf,
     /// Write `matrix` for `$GITHUB_OUTPUT`.
     #[arg(long, value_hint = clap::ValueHint::FilePath)]
@@ -49,8 +49,8 @@ pub struct CiArgs {
 
 #[derive(Args)]
 pub struct PublishArgs {
-    /// Package map. Defaults to verctl.toml in the current directory.
-    #[arg(short = 'c', long, default_value = "verctl.toml", value_hint = clap::ValueHint::FilePath)]
+    /// Package map. Defaults to .ctl/ver.yaml in the current directory.
+    #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
     pub config: PathBuf,
     #[command(flatten)]
     pub dry: DryRunArgs,
@@ -58,8 +58,8 @@ pub struct PublishArgs {
 
 #[derive(Args)]
 pub struct AssetsArgs {
-    /// Package map. Defaults to verctl.toml in the current directory.
-    #[arg(short = 'c', long, default_value = "verctl.toml", value_hint = clap::ValueHint::FilePath)]
+    /// Package map. Defaults to .ctl/ver.yaml in the current directory.
+    #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
     pub config: PathBuf,
     /// Build this target id (`darwin-arm64`, `linux-x64`). Plan only when omitted.
     #[arg(long)]
@@ -95,7 +95,7 @@ pub struct CheckArgs {
     #[arg(short = 'd', long, default_value = ".changeset", value_hint = clap::ValueHint::DirPath)]
     pub dir: PathBuf,
     /// Package map. Used with `--versions`.
-    #[arg(short = 'c', long, default_value = "verctl.toml", value_hint = clap::ValueHint::FilePath)]
+    #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
     pub config: PathBuf,
     /// Fail when a declared manifest version differs from the default branch.
     #[arg(long)]
@@ -107,8 +107,8 @@ pub struct PrepareArgs {
     /// Directory of fragments. Defaults to .changeset.
     #[arg(short = 'd', long, default_value = ".changeset", value_hint = clap::ValueHint::DirPath)]
     pub dir: PathBuf,
-    /// Package map. Defaults to verctl.toml in the current directory.
-    #[arg(short = 'c', long, default_value = "verctl.toml", value_hint = clap::ValueHint::FilePath)]
+    /// Package map. Defaults to .ctl/ver.yaml in the current directory.
+    #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
     pub config: PathBuf,
     #[command(flatten)]
     pub dry: DryRunArgs,

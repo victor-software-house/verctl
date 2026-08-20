@@ -1,6 +1,8 @@
-//! What `prepare` is allowed to write: `[prepare].after`, `[[pins]]`,
+//! What `prepare` is allowed to write: `prepare.after`, `pins`,
 //! and unexpected dirty paths.
 #![allow(missing_docs, clippy::unwrap_used)]
+
+mod common;
 
 use git2::{Repository, Signature};
 use indoc::indoc;
@@ -23,18 +25,17 @@ fn init_repo(root: &Path) {
 }
 
 fn write_min(root: &Path, extra: &str) {
-    fs::write(
-        root.join("verctl.toml"),
-        format!(
+    common::write_config(
+        root,
+        &format!(
             "{}\n{extra}",
-            indoc! {r#"
-                [[packages]]
-                name = "demo"
-                path = "Cargo.toml"
-            "#}
+            indoc! {"
+                packages:
+                  - name: demo
+                    path: Cargo.toml
+            "}
         ),
-    )
-    .unwrap();
+    );
     fs::write(
         root.join("Cargo.toml"),
         indoc! {r#"
@@ -71,11 +72,11 @@ fn after_may_write_declared_globs() {
     let root = TempDir::new().unwrap();
     write_min(
         root.path(),
-        indoc! {r#"
-            [prepare]
-            after = ["touch", "src/version.rs"]
-            stage = ["src/version.rs"]
-        "#},
+        indoc! {"
+            prepare:
+              after: [touch, src/version.rs]
+              stage: [src/version.rs]
+        "},
     );
     fs::create_dir_all(root.path().join("src")).unwrap();
     init_repo(root.path());
@@ -93,11 +94,11 @@ fn after_deleted_staged_file_is_collected() {
     let root = TempDir::new().unwrap();
     write_min(
         root.path(),
-        indoc! {r#"
-            [prepare]
-            after = ["rm", "src/gone.rs"]
-            stage = ["src/gone.rs"]
-        "#},
+        indoc! {"
+            prepare:
+              after: [rm, src/gone.rs]
+              stage: [src/gone.rs]
+        "},
     );
     fs::create_dir_all(root.path().join("src")).unwrap();
     fs::write(root.path().join("src/gone.rs"), "old\n").unwrap();
@@ -116,32 +117,31 @@ fn after_unexpected_path_fails() {
     let root = TempDir::new().unwrap();
     write_min(
         root.path(),
-        indoc! {r#"
-            [prepare]
-            after = ["touch", "secret.env"]
-        "#},
+        indoc! {"
+            prepare:
+              after: [touch, secret.env]
+        "},
     );
     init_repo(root.path());
     let output = prepare(root.path());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "{stderr}");
     assert!(stderr.contains("secret.env"), "{stderr}");
-    assert!(stderr.contains("[prepare].stage"), "{stderr}");
+    assert!(stderr.contains("prepare.stage"), "{stderr}");
 }
 
 #[test]
 fn bunfig_is_passed_as_config() {
     let root = TempDir::new().unwrap();
-    fs::write(
-        root.path().join("verctl.toml"),
+    common::write_config(
+        root.path(),
         indoc! {r#"
-            [[packages]]
-            name = "@org/pkg"
-            path = "package.json"
-            registry = "github"
+            packages:
+              - name: "@org/pkg"
+                path: package.json
+                registry: github
         "#},
-    )
-    .unwrap();
+    );
     fs::write(
         root.path().join("package.json"),
         indoc! {r#"
@@ -158,7 +158,7 @@ fn bunfig_is_passed_as_config() {
     )
     .unwrap();
     let planned = verctl::publish::plan(
-        &verctl::config::Config::load(&root.path().join("verctl.toml")).unwrap(),
+        &verctl::config::Config::load(&root.path().join(verctl::config::FILE)).unwrap(),
         root.path(),
     )
     .unwrap();
@@ -179,10 +179,10 @@ fn pins_move_with_the_bump() {
     write_min(
         root.path(),
         indoc! {r#"
-            [[pins]]
-            file = "consumer/mise.toml"
-            tool = "github:acme/demo"
-            package = "demo"
+            pins:
+              - file: consumer/mise.toml
+                tool: "github:acme/demo"
+                package: demo
         "#},
     );
     fs::create_dir_all(root.path().join("consumer")).unwrap();
@@ -228,10 +228,10 @@ fn a_rewritten_pin_is_not_unexpected_dirt() {
     write_min(
         root.path(),
         indoc! {r#"
-            [[pins]]
-            file = "pinned.toml"
-            tool = "github:acme/demo"
-            package = "demo"
+            pins:
+              - file: pinned.toml
+                tool: "github:acme/demo"
+                package: demo
         "#},
     );
     fs::write(
@@ -246,7 +246,7 @@ fn a_rewritten_pin_is_not_unexpected_dirt() {
     let output = prepare(root.path());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stderr}");
-    assert!(!stderr.contains("[prepare].stage"), "{stderr}");
+    assert!(!stderr.contains("prepare.stage"), "{stderr}");
 }
 
 #[test]
@@ -255,10 +255,10 @@ fn a_pin_naming_no_configured_package_is_left_alone() {
     write_min(
         root.path(),
         indoc! {r#"
-            [[pins]]
-            file = "pinned.toml"
-            tool = "github:acme/ghost"
-            package = "ghost"
+            pins:
+              - file: pinned.toml
+                tool: "github:acme/ghost"
+                package: ghost
         "#},
     );
     let body = indoc! {r#"
@@ -286,10 +286,10 @@ fn a_dry_run_reports_the_pin_without_writing_it() {
     write_min(
         root.path(),
         indoc! {r#"
-            [[pins]]
-            file = "pinned.toml"
-            tool = "github:acme/demo"
-            package = "demo"
+            pins:
+              - file: pinned.toml
+                tool: "github:acme/demo"
+                package: demo
         "#},
     );
     let body = indoc! {r#"
@@ -322,24 +322,21 @@ fn a_dry_run_reports_the_pin_without_writing_it() {
 #[test]
 fn a_pin_on_a_package_no_fragment_bumped_stays_where_it_is() {
     let root = TempDir::new().unwrap();
-    fs::write(
-        root.path().join("verctl.toml"),
+    common::write_config(
+        root.path(),
         indoc! {r#"
-            [[packages]]
-            name = "demo"
-            path = "Cargo.toml"
+            packages:
+              - name: demo
+                path: Cargo.toml
+              - name: other
+                path: other/Cargo.toml
 
-            [[packages]]
-            name = "other"
-            path = "other/Cargo.toml"
-
-            [[pins]]
-            file = "pinned.toml"
-            tool = "github:acme/other"
-            package = "other"
+            pins:
+              - file: pinned.toml
+                tool: "github:acme/other"
+                package: other
         "#},
-    )
-    .unwrap();
+    );
     fs::write(
         root.path().join("Cargo.toml"),
         indoc! {r#"
@@ -399,10 +396,10 @@ fn a_broken_pin_fails_before_any_manifest_moves() {
     write_min(
         root.path(),
         indoc! {r#"
-            [[pins]]
-            file = "pinned.toml"
-            tool = "github:acme/demo"
-            package = "demo"
+            pins:
+              - file: pinned.toml
+                tool: "github:acme/demo"
+                package: demo
         "#},
     );
     fs::write(root.path().join("pinned.toml"), "# no [tools] table\n").unwrap();

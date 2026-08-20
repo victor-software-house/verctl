@@ -6,7 +6,7 @@ use std::path::Path;
 use verctl::assets;
 use verctl::ci;
 use verctl::cli::{CheckArgs, Cli, Command, PrepareArgs, PublishArgs, StatusArgs};
-use verctl::config::Config;
+use verctl::config::{self, Config};
 use verctl::fragment::{self, Bump};
 use verctl::git;
 use verctl::github;
@@ -118,11 +118,7 @@ impl VersionCheckReport {
 }
 
 fn versions_report(args: &CheckArgs) -> Result<VersionCheckReport> {
-    let root = args
-        .config
-        .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
+    let root = &config::root_of(&args.config);
     let config = Config::load(&args.config)?;
     let report = versions::report(root, &config)?;
     Ok(VersionCheckReport {
@@ -296,11 +292,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     let dry_run = args.dry_run();
     let config = Config::load(&args.config)?;
     let fragments = fragment::load_dir(&args.dir)?;
-    let root = args
-        .config
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
+    let root = &config::root_of(&args.config);
     let plan = prepare::plan(&config, &fragments, root)?;
     if plan.is_empty() {
         return Ok(PrepareReport {
@@ -332,7 +324,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
         .map(|entry| (entry.name.clone(), entry.to.clone()))
         .collect();
     let served = versions_for_templates(root, &config, &planned)?;
-    // Before a manifest moves: a stale [[pins]] entry must not leave
+    // Before a manifest moves: a stale pin must not leave
     // versions bumped with no changelog, no follow-up, and fragments
     // still on disk.
     let mut pinned = pins::plan(root, &config.pins, &planned)?;
@@ -526,11 +518,7 @@ impl Render for PublishReport {
 
 fn publish_report(args: &verctl::cli::PublishArgs) -> Result<PublishReport> {
     let config = Config::load(&args.config)?;
-    let root = args
-        .config
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
+    let root = &config::root_of(&args.config);
     let outcome = publish::run(&config, root, args.dry_run())?;
     Ok(PublishReport {
         packages: outcome.packages,
@@ -565,11 +553,7 @@ impl Render for PinReport {
 
 fn pin_report(args: &PublishArgs) -> Result<PinReport> {
     let config = Config::load(&args.config)?;
-    let root = args
-        .config
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
+    let root = &config::root_of(&args.config);
     let versions = pins::current_versions(root, &config)?;
     let files = if args.dry_run() {
         pins::plan(root, &config.pins, &versions)?
@@ -630,11 +614,7 @@ impl Render for AssetsReport {
 
 fn assets_report(args: &verctl::cli::AssetsArgs) -> Result<AssetsReport> {
     let config = Config::load(&args.config)?;
-    let root = args
-        .config
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
+    let root = &config::root_of(&args.config);
     let planned = assets::plan(&config, root)?;
     if let Some(path) = &args.github_output {
         assets::write_github_output(&planned, path)?;

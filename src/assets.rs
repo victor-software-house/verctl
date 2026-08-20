@@ -1,11 +1,11 @@
-//! Native release assets. Only the targets listed in `[assets]`.
+//! Native release assets. Only the targets listed under `assets`.
 //!
-//! `[assets.NAME]` is one target: the platform it produces and the single
+//! Each named entry is one target: the platform it produces and the single
 //! machine that builds it. One platform is one tarball is one machine, so
-//! `runner` names one machine from `[runners]` and is not a list — two machines
+//! `runner` names one machine from `runners` and is not a list — two machines
 //! under one target would overwrite each other's tarball.
 //!
-//! Omit `[assets]` when there is no host binary. Override `prepare`, `build`,
+//! Omit `assets` when there is no host binary. Override `prepare`, `build`,
 //! and `binary` when the stock rust recipe is the wrong stack. PR CI never
 //! reads this list.
 
@@ -107,7 +107,7 @@ pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
     let package = config
         .packages
         .first()
-        .context("verctl.toml has no [[packages]]")?;
+        .context("the config declares no packages")?;
     let driver = package.resolve(config, root)?;
     let raw = fs::read_to_string(root.join(&package.path))
         .with_context(|| package.path.display().to_string())?;
@@ -118,13 +118,6 @@ pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
         .and_then(|assets| assets.bin.clone())
         .unwrap_or_else(|| package.name.clone());
     let assets = config.assets.clone().unwrap_or_default();
-    if assets.retired_targets.is_some() {
-        bail!(
-            "[assets].targets was retired: write one [assets.NAME] table per target, \
-             each naming its `runner` (built-ins: {})",
-            known_ids()
-        );
-    }
     let custom_build = assets.build.is_some();
     let mut include = Vec::new();
     for (id, spec) in &assets.targets {
@@ -197,7 +190,7 @@ pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
         .include
         .iter()
         .find(|row| row.id == id)
-        .with_context(|| format!("target {id:?} is not in [assets]"))?;
+        .with_context(|| format!("target {id:?} is not in assets"))?;
     let ctx = target_ctx(plan, target);
     if !plan.prepare.is_empty() {
         let prepare = expand(&plan.prepare, &ctx);
@@ -328,24 +321,23 @@ mod tests {
     use crate::config::Config;
     use anyhow::Result;
 
-    fn load(toml: &str) -> Result<Config> {
-        toml::from_str(toml).map_err(Into::into)
+    fn load(yaml: &str) -> Result<Config> {
+        Config::parse(yaml)
     }
 
-    const REGISTRY: &str = indoc::indoc! {r#"
-        [[packages]]
-        name = "verctl"
-        path = "Cargo.toml"
+    const REGISTRY: &str = indoc::indoc! {"
+        packages:
+          - name: verctl
+            path: Cargo.toml
 
-        [runners.big]
-        labels = ["self-hosted", "linux", "x64"]
-
-        [runners.macos15]
-        labels = ["macos-15"]
-
-        [runners.arm]
-        labels = ["ubuntu-24.04-arm"]
-    "#};
+        runners:
+          big:
+            labels: [self-hosted, linux, x64]
+          macos15:
+            labels: [macos-15]
+          arm:
+            labels: [ubuntu-24.04-arm]
+    "};
 
     fn with(extra: &str) -> Result<Config> {
         load(&format!("{REGISTRY}{extra}"))
@@ -370,11 +362,11 @@ mod tests {
 
     #[test]
     fn omitted_assets_means_no_native_jobs() {
-        let config = load(indoc::indoc! {r#"
-            [[packages]]
-            name = "ctl-core"
-            path = "Cargo.toml"
-        "#})
+        let config = load(indoc::indoc! {"
+            packages:
+              - name: ctl-core
+                path: Cargo.toml
+        "})
         .unwrap();
         let plan = planned(&config, "0.0.1").unwrap();
         assert!(!plan.has_assets);
@@ -384,7 +376,7 @@ mod tests {
 
     #[test]
     fn a_built_in_target_needs_only_its_name() {
-        let config = with("[assets.linux-x64]\n").unwrap();
+        let config = with("assets:\n  linux-x64: {}\n").unwrap();
         let plan = planned(&config, "1.2.3").unwrap();
         assert!(plan.has_assets);
         assert_eq!(plan.matrix.include.len(), 1);
@@ -398,24 +390,25 @@ mod tests {
 
     #[test]
     fn a_declared_machine_beats_the_built_in_one() {
-        let config = with(indoc::indoc! {r#"
-            [assets.darwin-arm64]
-            runner = "macos15"
-        "#})
+        let config = with(indoc::indoc! {"
+            assets:
+              darwin-arm64:
+                runner: macos15
+        "})
         .unwrap();
         let plan = planned(&config, "0.0.1").unwrap();
         assert_eq!(plan.matrix.include[0].labels, ["macos-15"]);
         assert_eq!(plan.matrix.include[0].machine, "macos15");
-        // Only the machine moved. The platform is still what it was.
         assert_eq!(plan.matrix.include[0].triple, "aarch64-apple-darwin");
     }
 
     #[test]
     fn a_multi_label_machine_reaches_the_matrix_whole() {
-        let config = with(indoc::indoc! {r#"
-            [assets.linux-x64]
-            runner = "big"
-        "#})
+        let config = with(indoc::indoc! {"
+            assets:
+              linux-x64:
+                runner: big
+        "})
         .unwrap();
         let plan = planned(&config, "0.0.1").unwrap();
         assert_eq!(
@@ -425,30 +418,15 @@ mod tests {
     }
 
     #[test]
-    fn the_retired_targets_list_names_its_migration() {
-        let config = load(indoc::indoc! {r#"
-            [[packages]]
-            name = "verctl"
-            path = "Cargo.toml"
-            [assets]
-            targets = ["linux-x64"]
-        "#})
-        .unwrap();
-        let err = planned(&config, "0.0.1").unwrap_err();
-        let text = format!("{err:#}");
-        assert!(text.contains("was retired"), "{text}");
-        assert!(text.contains("[assets.NAME]"), "{text}");
-    }
-
-    #[test]
     fn a_user_defined_target_needs_the_whole_record() {
-        let config = with(indoc::indoc! {r#"
-            [assets.linux-arm64]
-            runner = "arm"
-            os = "linux"
-            arch = "arm64"
-            triple = "aarch64-unknown-linux-gnu"
-        "#})
+        let config = with(indoc::indoc! {"
+            assets:
+              linux-arm64:
+                runner: arm
+                os: linux
+                arch: arm64
+                triple: aarch64-unknown-linux-gnu
+        "})
         .unwrap();
         let plan = planned(&config, "0.0.2").unwrap();
         assert_eq!(plan.matrix.include[0].triple, "aarch64-unknown-linux-gnu");
@@ -461,10 +439,11 @@ mod tests {
 
     #[test]
     fn a_partial_unknown_target_no_longer_builds_an_empty_triple() {
-        let config = with(indoc::indoc! {r#"
-            [assets.linux-arm64]
-            runner = "arm"
-        "#})
+        let config = with(indoc::indoc! {"
+            assets:
+              linux-arm64:
+                runner: arm
+        "})
         .unwrap();
         let err = planned(&config, "0.0.1").unwrap_err();
         assert!(
@@ -475,7 +454,7 @@ mod tests {
 
     #[test]
     fn an_unknown_target_alone_names_the_built_ins() {
-        let config = with("[assets.windows-x64]\n").unwrap();
+        let config = with("assets:\n  windows-x64: {}\n").unwrap();
         let err = planned(&config, "0.0.1").unwrap_err();
         let text = format!("{err:#}");
         assert!(text.contains("runner, os, arch, triple"), "{text}");
@@ -484,38 +463,40 @@ mod tests {
 
     #[test]
     fn an_undeclared_machine_is_rejected() {
-        let config = with(indoc::indoc! {r#"
-            [assets.linux-x64]
-            runner = "nope"
-        "#})
+        let config = with(indoc::indoc! {"
+            assets:
+              linux-x64:
+                runner: nope
+        "})
         .unwrap();
         let err = planned(&config, "0.0.1").unwrap_err();
         let text = format!("{err:#}");
-        assert!(text.contains("not declared in [runners]"), "{text}");
+        assert!(text.contains("not declared in runners"), "{text}");
         assert!(text.contains("arm, big, macos15"), "{text}");
     }
 
     #[test]
     fn a_target_takes_no_runners_list() {
-        let err = toml::from_str::<Config>(&format!(
+        let err = Config::parse(&format!(
             "{REGISTRY}{}",
-            indoc::indoc! {r#"
-                [assets.linux-x64]
-                runners = ["big"]
-            "#}
+            indoc::indoc! {"
+                assets:
+                  linux-x64:
+                    runners: [big]
+            "}
         ))
         .unwrap_err();
-        assert!(format!("{err}").contains("runners"), "{err}");
+        assert!(format!("{err:#}").contains("runners"), "{err:#}");
     }
 
     #[test]
     fn two_targets_and_the_shared_recipe() {
-        let config = with(indoc::indoc! {r#"
-            [assets]
-            bin = "verctl"
-            [assets.darwin-arm64]
-            [assets.linux-x64]
-        "#})
+        let config = with(indoc::indoc! {"
+            assets:
+              bin: verctl
+              darwin-arm64: {}
+              linux-x64: {}
+        "})
         .unwrap();
         let plan = planned(&config, "0.0.1").unwrap();
         assert_eq!(
@@ -536,8 +517,9 @@ mod tests {
     #[test]
     fn github_matrix_is_only_id_and_labels() {
         let config = with(indoc::indoc! {"
-            [assets.linux-x64]
-            [assets.darwin-arm64]
+            assets:
+              linux-x64: {}
+              darwin-arm64: {}
         "})
         .unwrap();
         let root = tempfile::TempDir::new().unwrap();
@@ -563,11 +545,11 @@ mod tests {
 
     #[test]
     fn github_output_is_one_assignment_per_line() {
-        let config = load(indoc::indoc! {r#"
-            [[packages]]
-            name = "verctl"
-            path = "Cargo.toml"
-        "#})
+        let config = load(indoc::indoc! {"
+            packages:
+              - name: verctl
+                path: Cargo.toml
+        "})
         .unwrap();
         let root = tempfile::TempDir::new().unwrap();
         write_cargo(root.path(), "0.0.1");
