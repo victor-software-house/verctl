@@ -29,3 +29,24 @@ packages:
 assets:
   darwin-arm64: {}
   linux-x64: {}
+
+# The bundled skill says which release its text describes, so a reader can tell
+# whether it predates the binary they hold. It is prose, not a generated file,
+# which is what a pattern is for — a template would claim to own the whole
+# document. The vendored copy tracks `latest-release`, so this line is what a
+# consumer sees.
+patterns:
+  skill_version:
+    # The frontmatter key owns its line, so it says that rather than naming a
+    # neighbour: spelling the closing `---` into the match would break the
+    # moment somebody adds a key after this one. Owning the line also means a
+    # `version: 1.2.3` inside a sentence is not this, and a `0.1.1-rc1` fails
+    # rather than having its numeric head rewritten.
+    match: "version: {version}"
+    whole_line: true
+    occurrences: once
+
+pins:
+  - file: skills/verctl/SKILL.md
+    package: verctl
+    patterns: [skill_version]

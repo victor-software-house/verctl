@@ -239,6 +239,38 @@ queue:
       Removing it also makes the pin provable: with no surrounding entry, a
       consumer that runs the task is running what the task named.
 
+  - id: VER-031
+    title: A pattern that cannot rewrite a whole version refuses it
+    scope: verctl
+    outcome: The rule docs/served-files.md states — a prerelease or floating pin fails the release rather than having its numeric head rewritten — is true of the code, not only of the document.
+    blocked_by: []
+    acceptance:
+      - A pattern whose match is immediately followed by more version-ish text fails the release naming the file and the pattern, instead of rewriting the head and leaving the tail.
+      - A test writes a real prerelease into a pinned file and asserts the release stops and the file is untouched.
+      - If the engine cannot refuse, docs/served-files.md stops promising it, and says what a pattern author must anchor instead.
+    notes: >-
+      2026-08-20, found in review of verctl#50 and measured rather than
+      reasoned about. docs/served-files.md §4 says a version is dotted numerics
+      and nothing else, and that "a prerelease or a floating pin is not a
+      version this rewrites: it fails the release rather than rewriting a
+      numeric head and dropping the tail". It does not. With an unanchored
+      `match: "version: {version}"` and a file reading `version: 0.1.1-rc1`,
+      prepare exited 0 and wrote `version: 0.1.2-rc1` — the head moved, the
+      tail stayed, and the release carried on. Kody raised it, our own document
+      contradicted it, and the run settled it: the implementation is the
+      evidence and the document is currently a promise nobody keeps.
+      The author-side answer shipped in #50 as `whole_line: true`, after the
+      first attempt — spelling the closing `---` into the match — was rejected
+      by Victor as a hack: it only worked because `version:` happened to be the
+      last frontmatter key, so adding a key after it would have broken the
+      release. A line-owning pattern says what it means instead, and turns both
+      a prerelease tail and a stray `version: N.N.N` in prose into a clean arity
+      failure. That covers every pattern that owns a line, which is not every
+      pattern: an inline spelling still rewrites the numeric head of a
+      prerelease and carries on. Whichever way this is settled — the engine
+      refusing, or the document dropping the promise — both surfaces have to end
+      up saying the same thing.
+
 horizon:
   - id: VER-019
     title: Triage the review backlog from the closed PRs

@@ -116,8 +116,20 @@ fn rewrite_pattern(body: &str, pattern: &PinPattern, version: &str) -> Result<St
     if after.contains(PLACEHOLDER) {
         bail!("pattern {text:?} has more than one {PLACEHOLDER}");
     }
-    let finder = Regex::new(&format!("{}{VERSION}{}", escape(before), escape(after)))
-        .with_context(|| format!("pattern {text:?}"))?;
+    // `R` is CRLF mode: without it `$` sits only before `\n`, so a file checked
+    // out with CRLF endings has a `\r` between the version and the line end and
+    // matches nothing — a correct file stopping a release.
+    let (open, close) = if pattern.whole_line {
+        ("(?mR)^", "$")
+    } else {
+        ("", "")
+    };
+    let finder = Regex::new(&format!(
+        "{open}{}{VERSION}{}{close}",
+        escape(before),
+        escape(after)
+    ))
+    .with_context(|| format!("pattern {text:?}"))?;
     let found = finder.find_iter(body).count();
     if !pattern.occurrences.allows(found) {
         bail!(
@@ -205,6 +217,7 @@ mod tests {
                 .map(|(text, occurrences)| PinPattern {
                     r#match: (*text).to_owned(),
                     occurrences: *occurrences,
+                    whole_line: false,
                 })
                 .collect(),
             package: "verctl".into(),
@@ -656,6 +669,93 @@ mod tests {
         );
     }
 
+    /// A line-owning spelling anchors on the line, not on whatever text sits
+    /// next to it. Every case here is the same pattern against a different
+    /// document, because what changes is the neighbourhood, not the spelling.
+    #[test]
+    fn a_whole_line_pattern_owns_its_line_and_nothing_else() {
+        let cases = [
+            (
+                "the line moves, and the key after it is irrelevant",
+                indoc! {"
+                    ---
+                    name: demo
+                    version: 0.0.1
+                    files: [a.md]
+                    ---
+                "},
+                Ok(indoc! {"
+                    ---
+                    name: demo
+                    version: 0.0.2
+                    files: [a.md]
+                    ---
+                "}),
+            ),
+            (
+                "the same words inside a sentence are not the line",
+                indoc! {"
+                    ---
+                    version: 0.0.1
+                    ---
+
+                    Write version: 9.9.9 when you mean the tool's own.
+                "},
+                Ok(indoc! {"
+                    ---
+                    version: 0.0.2
+                    ---
+
+                    Write version: 9.9.9 when you mean the tool's own.
+                "}),
+            ),
+            (
+                "a tail the version does not cover leaves the line unmatched",
+                indoc! {"
+                    ---
+                    version: 0.0.1-rc1
+                    ---
+                "},
+                Err("matches 0 times"),
+            ),
+            (
+                "a line ends where the file says it does, CRLF included",
+                "---\r\nversion: 0.0.1\r\n---\r\n",
+                Ok("---\r\nversion: 0.0.2\r\n---\r\n"),
+            ),
+        ];
+        for (scenario, before, expected) in cases {
+            let root = TempDir::new().unwrap();
+            let path = write_file(&root, "SKILL.md", before);
+            let pins = [Pin {
+                file: PathBuf::from("SKILL.md"),
+                tool: None,
+                pattern_ids: Vec::new(),
+                patterns: vec![PinPattern {
+                    r#match: "version: {version}".into(),
+                    occurrences: Occurrences::Once,
+                    whole_line: true,
+                }],
+                package: "verctl".into(),
+            }];
+            match (write(root.path(), &pins, &versions("0.0.2")), expected) {
+                (Ok(_), Ok(after)) => {
+                    assert_eq!(fs::read_to_string(&path).unwrap(), after, "{scenario}");
+                }
+                (Err(error), Err(needle)) => {
+                    let text = format!("{error:#}");
+                    assert!(text.contains(needle), "{scenario}: {text}");
+                    assert_eq!(
+                        fs::read_to_string(&path).unwrap(),
+                        before,
+                        "{scenario}: nothing is written when the pin cannot be rewritten"
+                    );
+                }
+                (outcome, _) => panic!("{scenario}: {outcome:?}"),
+            }
+        }
+    }
+
     /// A tool and a pattern in one pin: the structural rewrite for the table
     /// mise owns, the pattern for the prose beside it.
     #[test]
@@ -678,6 +778,7 @@ mod tests {
             patterns: vec![PinPattern {
                 r#match: "verctl@{version}".into(),
                 occurrences: Occurrences::Once,
+                whole_line: false,
             }],
             package: "verctl".into(),
         }];
