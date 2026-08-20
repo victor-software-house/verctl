@@ -156,15 +156,14 @@ fn prepare_no_pr_still_writes() {
 #[test]
 fn prepare_pr_noops_without_fragments() {
     let root = TempDir::new().expect("tmp");
-    fs::write(
-        root.path().join("verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "demo"
-            path = "Cargo.toml"
-        "#},
-    )
-    .expect("cfg");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
     fs::write(
         root.path().join("Cargo.toml"),
         indoc! {r#"

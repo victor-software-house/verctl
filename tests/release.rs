@@ -1,3 +1,5 @@
+mod common;
+
 use indoc::indoc;
 use std::fs;
 use tempfile::TempDir;
@@ -127,16 +129,15 @@ fn write_changelogs_renders_fragment_summaries() {
             after: None,
         },
     }];
-    fs::write(
-        root.path().join("verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "demo"
-            path = "Cargo.toml"
-        "#},
-    )
-    .unwrap();
-    let config = verctl::config::Config::load(&root.path().join("verctl.toml")).unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    let config = verctl::config::Config::load(&root.path().join(verctl::config::FILE)).unwrap();
     release::write_changelogs(&config, root.path(), &plan, &[fragment]).unwrap();
     let body = fs::read_to_string(&changelog).unwrap();
     assert!(body.contains("## demo 1.0.1"), "{body}");
@@ -148,18 +149,16 @@ fn each_package_gets_its_own_changelog() {
     let root = TempDir::new().unwrap();
     fs::create_dir_all(root.path().join("crates/a")).unwrap();
     fs::create_dir_all(root.path().join("crates/b")).unwrap();
-    fs::write(
-        root.path().join("verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "a"
-            path = "crates/a/Cargo.toml"
-            [[packages]]
-            name = "b"
-            path = "crates/b/Cargo.toml"
-        "#},
-    )
-    .unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: a
+                path: crates/a/Cargo.toml
+              - name: b
+                path: crates/b/Cargo.toml
+        "},
+    );
     fs::write(
         root.path().join("crates/a/Cargo.toml"),
         indoc! {r#"
@@ -215,18 +214,16 @@ fn notes_for_reads_each_package_changelog() {
     let root = TempDir::new().unwrap();
     fs::create_dir_all(root.path().join("crates/a")).unwrap();
     fs::create_dir_all(root.path().join("crates/b")).unwrap();
-    fs::write(
-        root.path().join("verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "a"
-            path = "crates/a/Cargo.toml"
-            [[packages]]
-            name = "b"
-            path = "crates/b/Cargo.toml"
-        "#},
-    )
-    .unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: a
+                path: crates/a/Cargo.toml
+              - name: b
+                path: crates/b/Cargo.toml
+        "},
+    );
     fs::write(
         root.path().join("crates/a/CHANGELOG.md"),
         indoc! {"
@@ -253,7 +250,7 @@ fn notes_for_reads_each_package_changelog() {
         "},
     )
     .unwrap();
-    let config = verctl::config::Config::load(&root.path().join("verctl.toml")).unwrap();
+    let config = verctl::config::Config::load(&root.path().join(verctl::config::FILE)).unwrap();
     let notes = release::notes_for(&config, root.path(), [("a", "1.0.1"), ("b", "2.1.0")]);
     assert!(notes.contains("## a 1.0.1"), "{notes}");
     assert!(notes.contains("First crate"), "{notes}");
@@ -264,16 +261,15 @@ fn notes_for_reads_each_package_changelog() {
 #[test]
 fn missing_changelog_section_fails_closed() {
     let root = TempDir::new().unwrap();
-    fs::write(
-        root.path().join("verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "demo"
-            path = "Cargo.toml"
-        "#},
-    )
-    .unwrap();
-    let config = verctl::config::Config::load(&root.path().join("verctl.toml")).unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    let config = verctl::config::Config::load(&root.path().join(verctl::config::FILE)).unwrap();
     let err =
         release::require_changelog_versions(&config, root.path(), [("demo", "1.0.1")]).unwrap_err();
     assert!(format!("{err:#}").contains("demo@1.0.1"), "{err:#}");
@@ -339,15 +335,14 @@ fn named_or_bare_heading_covers_the_version() {
 #[test]
 fn local_prepare_writes_changelog_and_consumes() {
     let root = TempDir::new().unwrap();
-    fs::write(
-        root.path().join("verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "demo"
-            path = "Cargo.toml"
-        "#},
-    )
-    .unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
     fs::write(
         root.path().join("Cargo.toml"),
         indoc! {r#"

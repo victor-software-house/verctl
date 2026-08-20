@@ -1,5 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+mod common;
+
 use git2::{Repository, Signature};
 use indoc::{formatdoc, indoc};
 use std::ffi::OsString;
@@ -25,15 +27,14 @@ fn commit_tree(repo: &Repository, message: &str) -> git2::Oid {
 }
 
 fn write_crate(root: &Path, version: &str) {
-    fs::write(
-        root.join("verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "demo"
-            path = "Cargo.toml"
-        "#},
-    )
-    .unwrap();
+    common::write_config(
+        root,
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
     fs::write(
         root.join("Cargo.toml"),
         formatdoc! {r#"
@@ -61,7 +62,7 @@ fn repo_with_origin_main(version: &str) -> (TempDir, Repository) {
 }
 
 fn load(root: &Path) -> Config {
-    Config::load(&root.join("verctl.toml")).unwrap()
+    Config::load(&root.join(verctl::config::FILE)).unwrap()
 }
 
 fn check(root: &Path, skip: Skip) -> anyhow::Result<versions::VersionReport> {
@@ -150,15 +151,14 @@ fn ci_is_exempt() {
 fn new_package_not_on_default_is_ok() {
     let (dir, _) = repo_with_origin_main("1.0.0");
     fs::write(
-        dir.path().join("verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "demo"
-            path = "Cargo.toml"
-            [[packages]]
-            name = "fresh"
-            path = "crates/fresh/Cargo.toml"
-        "#},
+        dir.path().join(verctl::config::FILE),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+              - name: fresh
+                path: crates/fresh/Cargo.toml
+        "},
     )
     .unwrap();
     fs::create_dir_all(dir.path().join("crates/fresh")).unwrap();
@@ -186,15 +186,14 @@ fn no_origin_is_ok() {
 fn bun_package_json_hand_edit_fails() {
     let dir = TempDir::new().unwrap();
     let repo = Repository::init(dir.path()).unwrap();
-    fs::write(
-        dir.path().join("verctl.toml"),
+    common::write_config(
+        dir.path(),
         indoc! {r#"
-            [[packages]]
-            name = "@org/pkg"
-            path = "package.json"
+            packages:
+              - name: "@org/pkg"
+                path: package.json
         "#},
-    )
-    .unwrap();
+    );
     fs::write(
         dir.path().join("package.json"),
         indoc! {r#"
@@ -312,15 +311,14 @@ fn nested_config_maps_onto_the_git_tree() {
     let dir = TempDir::new().unwrap();
     let repo = Repository::init(dir.path()).unwrap();
     fs::create_dir_all(dir.path().join("crates/demo")).unwrap();
-    fs::write(
-        dir.path().join("crates/demo/verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "demo"
-            path = "Cargo.toml"
-        "#},
-    )
-    .unwrap();
+    common::write_config(
+        &dir.path().join("crates/demo"),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
     fs::write(
         dir.path().join("crates/demo/Cargo.toml"),
         indoc! {r#"
@@ -349,7 +347,7 @@ fn nested_config_maps_onto_the_git_tree() {
     .unwrap();
     let err = versions::require_with(
         &dir.path().join("crates/demo"),
-        &Config::load(&dir.path().join("crates/demo/verctl.toml")).unwrap(),
+        &Config::load(&dir.path().join("crates/demo").join(verctl::config::FILE)).unwrap(),
         Skip::None,
         &versions::stock_candidates(),
     )
@@ -453,14 +451,15 @@ fn configured_version_label_is_the_exemption() {
     let (dir, _) = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
     fs::write(
-        dir.path().join("verctl.toml"),
-        indoc! {r#"
-            [prepare]
-            version_label = "ship-it"
-            [[packages]]
-            name = "demo"
-            path = "Cargo.toml"
-        "#},
+        dir.path().join(verctl::config::FILE),
+        indoc! {"
+            prepare:
+              version_label: ship-it
+
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
     )
     .unwrap();
     let default_event = dir.path().join("default.json");

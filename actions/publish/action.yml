@@ -13,9 +13,9 @@ inputs:
     required: false
     default: ${{ github.token }}
   config:
-    description: Path to verctl.toml.
+    description: Path to the declarations file.
     required: false
-    default: verctl.toml
+    default: .ctl/ver.yaml
   dry-run:
     description: Preview only. Set to `true` to skip cargo/bun/GitHub.
     required: false

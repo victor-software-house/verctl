@@ -14,8 +14,8 @@ pub fn current_branch(root: &Path) -> Option<String> {
 
 /// File contents at the merge-base of HEAD and the default branch.
 ///
-/// Paths are relative to `root` (the config directory) and are mapped
-/// onto the git workdir so `-c crates/foo/verctl.toml` still hits the
+/// Paths are relative to `root` (the directory holding `.ctl/`) and are mapped
+/// onto the git workdir so `-c crates/foo/.ctl/ver.yaml` still hits the
 /// right blob. One repository open for the whole list.
 pub fn files_on_merge_base(
     root: &Path,
@@ -336,7 +336,7 @@ pub fn assert_only_allowed(
         return Ok(staged);
     }
     bail!(
-        "prepare produced unexpected paths (declare them in [prepare].stage): {}",
+        "prepare produced unexpected paths (declare them in prepare.stage): {}",
         extra.join(", ")
     );
 }

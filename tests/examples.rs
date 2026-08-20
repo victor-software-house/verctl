@@ -1,4 +1,4 @@
-//! `examples/verctl.toml` is documentation that has to keep parsing. It is a
+//! `examples/ver.yaml` is documentation that has to keep parsing. It is a
 //! real config, not a commented one, so the schema is what validates it.
 
 use indoc::indoc;
@@ -9,7 +9,7 @@ use verctl::config::Config;
 use verctl::{assets, ci, pins};
 
 fn example() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/verctl.toml")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/ver.yaml")
 }
 
 /// The example declares manifests it does not ship. Give it the tree it
@@ -17,7 +17,9 @@ fn example() -> PathBuf {
 #[allow(clippy::expect_used)]
 fn planted() -> TempDir {
     let root = TempDir::new().expect("tmp");
-    fs::copy(example(), root.path().join("verctl.toml")).expect("copy");
+    let config = root.path().join(verctl::config::FILE);
+    fs::create_dir_all(config.parent().expect("parent")).expect("dir");
+    fs::copy(example(), &config).expect("copy");
     fs::write(
         root.path().join("Cargo.toml"),
         indoc! {r#"
@@ -92,7 +94,7 @@ fn the_example_declares_nothing_a_package_does_not_use() {
 #[test]
 fn the_example_resolves_every_driver_and_publisher_it_declares() {
     let root = planted();
-    let config = Config::load(&root.path().join("verctl.toml")).expect("parse");
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("parse");
     let plan = verctl::publish::plan(&config, root.path()).expect("plan the publish");
     let resolved: Vec<(&str, &str, &str, Vec<&str>)> = plan
         .packages
@@ -188,7 +190,7 @@ fn the_example_ci_table_plans_the_checks_it_documents() {
 #[test]
 fn the_example_assets_table_plans_the_targets_it_documents() {
     let root = planted();
-    let config = Config::load(&root.path().join("verctl.toml")).expect("parse");
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("parse");
     let plan = assets::plan(&config, root.path()).expect("plan");
     let targets: Vec<(&str, String, &str, &str)> = plan
         .matrix
@@ -237,7 +239,7 @@ fn the_example_assets_table_plans_the_targets_it_documents() {
 #[test]
 fn the_example_pin_rewrites_the_file_it_names() {
     let root = planted();
-    let config = Config::load(&root.path().join("verctl.toml")).expect("parse");
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("parse");
     fs::create_dir_all(root.path().join("examples")).expect("examples dir");
     fs::write(
         root.path().join("examples/mise.toml"),

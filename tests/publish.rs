@@ -1,6 +1,8 @@
 //! `publish --dry-run` prints the stock command plan and writes nothing.
 #![allow(missing_docs)]
 
+mod common;
+
 use ctl_core::{ColorMode, grid, kv};
 use indoc::indoc;
 use std::fs;
@@ -21,15 +23,14 @@ fn publish_stdout(root: &std::path::Path) -> String {
 #[test]
 fn dry_run_lists_one_cargo_crate() {
     let root = TempDir::new().unwrap();
-    fs::write(
-        root.path().join("verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "demo"
-            path = "Cargo.toml"
-        "#},
-    )
-    .unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
     fs::write(
         root.path().join("Cargo.toml"),
         indoc! {r#"
@@ -58,19 +59,17 @@ fn dry_run_lists_one_cargo_crate() {
 #[test]
 fn dry_run_lists_many_packages() {
     let root = TempDir::new().unwrap();
-    fs::write(
-        root.path().join("verctl.toml"),
+    common::write_config(
+        root.path(),
         indoc! {r#"
-            [[packages]]
-            name = "demo"
-            path = "Cargo.toml"
-            [[packages]]
-            name = "@org/pkg"
-            path = "package.json"
-            registry = "github"
+            packages:
+              - name: demo
+                path: Cargo.toml
+              - name: "@org/pkg"
+                path: package.json
+                registry: github
         "#},
-    )
-    .unwrap();
+    );
     fs::write(
         root.path().join("Cargo.toml"),
         indoc! {r#"
@@ -109,15 +108,14 @@ fn dry_run_lists_many_packages() {
 #[test]
 fn publish_without_changelog_section_fails() {
     let root = TempDir::new().unwrap();
-    fs::write(
-        root.path().join("verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "demo"
-            path = "Cargo.toml"
-        "#},
-    )
-    .unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
     fs::write(
         root.path().join("Cargo.toml"),
         indoc! {r#"
@@ -141,15 +139,14 @@ fn publish_without_changelog_section_fails() {
 #[test]
 fn publish_with_matching_changelog_asks_for_token() {
     let root = TempDir::new().unwrap();
-    fs::write(
-        root.path().join("verctl.toml"),
-        indoc! {r#"
-            [[packages]]
-            name = "demo"
-            path = "Cargo.toml"
-        "#},
-    )
-    .unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
     fs::write(
         root.path().join("Cargo.toml"),
         indoc! {r#"

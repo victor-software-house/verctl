@@ -13,9 +13,9 @@ inputs:
     required: false
     default: ${{ github.token }}
   config:
-    description: Path to verctl.toml.
+    description: Path to the declarations file.
     required: false
-    default: verctl.toml
+    default: .ctl/ver.yaml
   target:
     description: Name of an `[assets.NAME]` table (`darwin-arm64`, `linux-x64`).
     required: true

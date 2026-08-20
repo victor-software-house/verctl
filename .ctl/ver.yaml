@@ -1,0 +1,31 @@
+# This repo's own package. A .changeset fragment plus
+# `mise run ver -- prepare --pr` opens the first Version PR.
+
+# examples/mise.toml is served from .ctl/templates/mise.toml.jinja, so it needs
+# no entry here. mise.release.toml is the one file that cannot be either: it
+# names the tarball this lane installs, so it can only move to a version that
+# already exists, and it is bumped by hand.
+#
+# `patterns` and `pins` are deliberately absent: this repo hand-authors no other
+# version site. examples/ver.yaml shows the shape a repo that does would write.
+
+prepare:
+  after: [cargo, update, --workspace]
+  stage: [Cargo.lock]
+
+packages:
+  - name: verctl
+    path: Cargo.toml
+
+# One key per host binary; the name is the job, the tarball, and the platform.
+# Omit for a library. Both are built-in records, so `runner`, `os`, `arch`, and
+# `triple` come from verctl and this repo stays on free hosted minutes without
+# saying so.
+#
+# `runners` and `ci` are deliberately absent. This repo is public, so the
+# defaults — one `verify` job on ubuntu-latest, built-in machines for the two
+# targets above — are exactly what it wants; declaring them would only restate
+# them. A private repo adds a `runners` entry and points jobs at it.
+assets:
+  darwin-arm64: {}
+  linux-x64: {}

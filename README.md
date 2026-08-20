@@ -92,31 +92,35 @@ Local writes are the default. `prepare --pr` is the Version PR
 `prepare --pr --preview` also shows consumed fragments and open vs update.
 Cargo and npm are stock drivers, not a separate code path.
 
-```toml
-[drivers.cargo]
-format = "toml"
-keys = ["workspace.package.version", "package.version"]
-# after is optional. If omitted, verctl looks at lockfiles /
-# packageManager (bun, pnpm, yarn, npm) and Cargo.lock.
+A repo's declarations live in one file, `.ctl/ver.yaml`. `.ctl/` is the
+directory every ctl CLI shares, so a repo root gains one entry however many of
+them it uses.
 
-[drivers.npm]
-format = "json"
-keys = ["version"]
-# after = "mise run install"          # overrides detection
+```yaml
+drivers:
+  cargo:
+    format: toml
+    keys: [workspace.package.version, package.version]
+    # after is optional. If omitted, verctl looks at lockfiles /
+    # packageManager (bun, pnpm, yarn, npm) and Cargo.lock.
 
-[[packages]]
-name = "verctl"
-path = "Cargo.toml"
-# driver = "cargo"   # inferred from the file name
+  npm:
+    format: json
+    keys: [version]
+    # after: mise run install           # overrides detection
 
-[[packages]]
-name = "other"
-path = "VERSION"
-read = "ver-read-version"          # mise run ver-read-version
-write = ["printenv", "VERCTL_VERSION"]
+packages:
+  - name: verctl
+    path: Cargo.toml
+    # driver: cargo   # inferred from the file name
+
+  - name: other
+    path: VERSION
+    read: ver-read-version              # mise run ver-read-version
+    write: [printenv, VERCTL_VERSION]
 ```
 
-A string is a **mise task**. An array is execvp (no shell).
+A string is a **mise task**. A list is execvp (no shell).
 Stdin is the file. Write drivers also get `VERCTL_VERSION`.
 Stdout is the version (read) or the new file (write).
 `after` is printed, not run.
@@ -126,32 +130,34 @@ Stdout is the version (read) or the new file (write).
 ## Runners
 
 Which machines run the work is configuration. A **machine** is declared once
-under `[runners]`; the jobs that run on it name it.
+under `runners`; the jobs that run on it name it.
 
-```toml
+```yaml
 # One machine. `labels` is how GitHub finds it — every label at once, so this
 # is a single machine carrying three labels, not three machines.
-[runners.big]
-labels = ["self-hosted", "linux", "x64"]
+runners:
+  big:
+    labels: [self-hosted, linux, x64]
 
-# One validation job per [ci.NAME]. Naming two machines gives two checks,
-# `verify (big)` and `verify (ns)`. Omit [ci] for one `verify` on ubuntu-latest.
-[ci.verify]
-runners = ["big"]
+# One validation job per entry. Naming two machines gives two checks,
+# `verify (big)` and `verify (ns)`. Omit `ci` for one `verify` on ubuntu-latest.
+ci:
+  verify:
+    runners: [big]
 
-# One build target per [assets.NAME]: the name is the job, the tarball, and
-# the platform. One tarball is one machine, so `runner` is not a list.
-[assets.darwin-arm64]
-
-[assets.linux-x64]
-runner = "big"
+# One build target per entry: the name is the job, the tarball, and the
+# platform. One tarball is one machine, so `runner` is not a list.
+assets:
+  darwin-arm64: {}
+  linux-x64:
+    runner: big
 ```
 
-| section | one table is | its name is | with no `runners` / `runner` |
+| section | one entry is | its name is | with no `runners` / `runner` |
 |:--|:--|:--|:--|
-| `[runners.NAME]` | one machine | how jobs refer to it | — |
-| `[ci.NAME]` | a PR / push validation job | the check name | `ubuntu-latest` |
-| `[assets.NAME]` | a release build job and its tarball | the check name, the `--build` argument, part of the filename | the built-in record for that name |
+| `runners` | one machine | how jobs refer to it | — |
+| `ci` | a PR / push validation job | the check name | `ubuntu-latest` |
+| `assets` | a release build job and its tarball | the check name, the `--build` argument, part of the filename | the built-in record for that name |
 
 Two sections take runners and no others, because of what config is for here:
 
@@ -159,7 +165,7 @@ Two sections take runners and no others, because of what config is for here:
 > fixed job runs.**
 
 A static YAML file cannot declare N jobs without knowing N, and only the repo
-knows N. That fan-out is what `[ci]` and `[assets]` buy; the machine rides along
+knows N. That fan-out is what `ci` and `assets` buy; the machine rides along
 on it. Every other job verctl ships — `plan`, `crate`, `pin`, `prepare` — is
 always exactly one job, so nothing decides its count and nothing needs to
 configure it. Its `runs-on` is one literal in a workflow you own and already
@@ -167,20 +173,20 @@ copied from `examples/`:
 
 ```yaml
   plan:
-    runs-on: [self-hosted, linux, x64]   # yours to edit; no verctl.toml needed
+    runs-on: [self-hosted, linux, x64]   # yours to edit; no declaration needed
 ```
 
 So a repo with no hosted runners at all is already served: edit those literals
-and declare `[ci]` / `[assets]`. `plan` could not read its machine from config
+and declare `ci` / `assets`. `plan` could not read its machine from config
 anyway — `runs-on` resolves before the job exists, and `plan` is the job that
-reads `verctl.toml`.
+reads the declarations.
 
-Names sort alphabetically, not in file order, so `[ci.verify]` written above
-`[ci.audit]` still plans `audit` first. Checks are independent, so the order is
+Names sort alphabetically, not in file order, so a `verify` job written above
+an `audit` job still plans `audit` first. Checks are independent, so the order is
 display only.
 
 Only `labels` reaches GitHub. A runner **name** is a name in the file: it
-resolves against `[runners]` or fails there, listing what is declared, so a
+resolves against `runners` or fails there, listing what is declared, so a
 label can never pass itself off as a machine and verctl never invents a label.
 A label GitHub does not know queues the way any wrong label queues — verctl
 cannot tell which machines carry which labels, so it passes them through.
@@ -197,12 +203,12 @@ Each field is a default the repo overrides one at a time: naming a `runner`
 moves the machine and leaves the platform alone. A name outside that set
 describes a platform verctl knows nothing about, so it must describe all of it
 — `runner`, `os`, `arch`, and `triple` are all required, and a partial record
-is an error rather than a build against an empty target triple. `os = "darwin"`
+is an error rather than a build against an empty target triple. `os: darwin`
 renders as `macos` in the filename; that is the only rename. `triple` stays
 its own field because the machine and what it builds need not match: an x64
 linux runner can build `aarch64-unknown-linux-gnu`.
 
-`[ci]` is exactly as trusted as `.github/workflows/ci.yml`: for a
+`ci` is exactly as trusted as `.github/workflows/ci.yml`: for a
 `pull_request` event both come from the pull request's own tree, so a fork PR
 that can declare a label could equally have written that label into the
 workflow file. Neither is a reason to expose a self-hosted runner group to a

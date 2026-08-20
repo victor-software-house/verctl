@@ -1,4 +1,4 @@
-//! Machines: declared once as `[runners.NAME]`, named by every job.
+//! Machines: declared once under `runners`, named by every job.
 //!
 //! A runner is one machine and `labels` is how GitHub finds it — every label
 //! at once, so `["self-hosted", "linux", "x64"]` is a single machine carrying
@@ -21,7 +21,7 @@ pub struct Machine {
 }
 
 /// Check every declared machine before any job names one, so a broken
-/// `[runners.NAME]` fails even when nothing uses it yet.
+/// `runners` entry fails even when nothing uses it yet.
 pub fn declared(config: &Config) -> Result<()> {
     for (name, runner) in &config.runners {
         validate(name, runner)?;
@@ -88,7 +88,7 @@ pub fn of(
 pub fn one(config: &Config, kind: &str, job: &str, name: &str) -> Result<Machine> {
     let Some(runner) = config.runners.get(name) else {
         bail!(
-            "{kind} {job:?}: machine {name:?} is not declared in [runners] ({})",
+            "{kind} {job:?}: machine {name:?} is not declared in runners ({})",
             declared_names(&config.runners)
         );
     };
@@ -125,21 +125,27 @@ mod tests {
     use super::{Machine, check_name, declared, of, one};
     use crate::config::Config;
 
-    fn load(toml: &str) -> Config {
-        toml::from_str(toml).expect("parse")
+    fn load(yaml: &str) -> Config {
+        Config::parse(yaml).expect("parse")
     }
 
-    const REGISTRY: &str = indoc::indoc! {r#"
-        [[packages]]
-        name = "verctl"
-        path = "Cargo.toml"
+    /// Shape only. The rules below are the ones `declared` owns, so a fixture
+    /// that breaks one must reach it rather than stopping at the boundary.
+    fn raw(yaml: &str) -> Config {
+        yaml_serde::from_str(yaml).expect("parse")
+    }
 
-        [runners.linux]
-        labels = ["ubuntu-latest"]
+    const REGISTRY: &str = indoc::indoc! {"
+        packages:
+          - name: verctl
+            path: Cargo.toml
 
-        [runners.big]
-        labels = ["self-hosted", "linux", "x64"]
-    "#};
+        runners:
+          linux:
+            labels: [ubuntu-latest]
+          big:
+            labels: [self-hosted, linux, x64]
+    "};
 
     fn named(names: &[&str]) -> Vec<String> {
         names.iter().map(|name| (*name).to_owned()).collect()
@@ -211,17 +217,17 @@ mod tests {
     fn an_undeclared_machine_names_the_declared_ones() {
         let err = one(&load(REGISTRY), "ci job", "verify", "macos").unwrap_err();
         let text = format!("{err:#}");
-        assert!(text.contains("not declared in [runners]"), "{text}");
+        assert!(text.contains("not declared in runners"), "{text}");
         assert!(text.contains("declared: big, linux"), "{text}");
     }
 
     #[test]
     fn an_empty_registry_says_so_rather_than_listing_nothing() {
-        let config = load(indoc::indoc! {r#"
-            [[packages]]
-            name = "verctl"
-            path = "Cargo.toml"
-        "#});
+        let config = load(indoc::indoc! {"
+            packages:
+              - name: verctl
+                path: Cargo.toml
+        "});
         let err = one(&config, "ci job", "verify", "linux").unwrap_err();
         assert!(format!("{err:#}").contains("none declared"), "{err:#}");
     }
@@ -259,13 +265,14 @@ mod tests {
 
     #[test]
     fn a_machine_without_labels_is_rejected_even_when_unused() {
-        let config = load(indoc::indoc! {r#"
-            [[packages]]
-            name = "verctl"
-            path = "Cargo.toml"
-            [runners.broken]
-            labels = []
-        "#});
+        let config = raw(indoc::indoc! {"
+            packages:
+              - name: verctl
+                path: Cargo.toml
+            runners:
+              broken:
+                labels: []
+        "});
         let err = declared(&config).unwrap_err();
         assert!(format!("{err:#}").contains("at least one label"), "{err:#}");
     }
@@ -273,11 +280,12 @@ mod tests {
     #[test]
     fn a_blank_label_is_rejected() {
         let config = load(indoc::indoc! {r#"
-            [[packages]]
-            name = "verctl"
-            path = "Cargo.toml"
-            [runners.broken]
-            labels = ["  "]
+            packages:
+              - name: verctl
+                path: Cargo.toml
+            runners:
+              broken:
+                labels: ["  "]
         "#});
         let err = declared(&config).unwrap_err();
         assert!(format!("{err:#}").contains("empty label"), "{err:#}");
@@ -285,28 +293,29 @@ mod tests {
 
     #[test]
     fn a_repeated_label_inside_one_machine_is_rejected() {
-        let config = load(indoc::indoc! {r#"
-            [[packages]]
-            name = "verctl"
-            path = "Cargo.toml"
-            [runners.broken]
-            labels = ["linux", "linux"]
-        "#});
+        let config = load(indoc::indoc! {"
+            packages:
+              - name: verctl
+                path: Cargo.toml
+            runners:
+              broken:
+                labels: [linux, linux]
+        "});
         let err = declared(&config).unwrap_err();
         assert!(format!("{err:#}").contains("repeated"), "{err:#}");
     }
 
     #[test]
     fn a_bare_label_list_is_not_a_machine() {
-        let err = toml::from_str::<Config>(indoc::indoc! {r#"
-            [[packages]]
-            name = "verctl"
-            path = "Cargo.toml"
-            [runners]
-            linux = ["ubuntu-latest"]
-        "#})
+        let err = Config::parse(indoc::indoc! {"
+            packages:
+              - name: verctl
+                path: Cargo.toml
+            runners:
+              linux: [ubuntu-latest]
+        "})
         .unwrap_err();
-        assert!(format!("{err}").contains("invalid type"), "{err}");
+        assert!(format!("{err:#}").contains("invalid type"), "{err:#}");
     }
 
     #[test]

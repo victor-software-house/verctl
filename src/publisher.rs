@@ -1,6 +1,6 @@
 //! How a package is published. Cargo and bun are stock recipes.
 //!
-//! Override `[publishers.NAME]` or set `publisher` + `argv` on a
+//! Override a `publishers` entry or set `publisher` + `argv` on a
 //! package. Placeholders: `{path}` `{dir}` `{registry}` `{config}`.
 
 use anyhow::{Context, Result, bail};
@@ -194,7 +194,7 @@ pub fn resolve(
                 }
             } else {
                 bail!(
-                    "package {:?} has no publisher (set publisher / [publishers.{name}] / argv)",
+                    "package {:?} has no publisher (set publisher / publishers.{name} / argv)",
                     spec.name
                 );
             }
