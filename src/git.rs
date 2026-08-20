@@ -152,6 +152,19 @@ pub fn tracked(root: &Path) -> Result<Vec<PathBuf>> {
         .collect())
 }
 
+/// Whether the repository is told to ignore `rel`, a path relative to `root`.
+///
+/// Ignoring a file is a repo saying it is not part of what it publishes — the
+/// same statement `tracked` already reads the index for. So an ignored file is
+/// not a forgotten one, and nothing should ask its author to commit it.
+#[must_use]
+pub fn is_ignored(root: &Path, rel: &Path) -> bool {
+    repo_covering(root).is_some_and(|repo| {
+        let project = project_prefix(&repo, root);
+        repo.is_path_ignored(project.join(rel)).unwrap_or(false)
+    })
+}
+
 /// Whether a repository covers `root` at all.
 ///
 /// `tracked` answers "nothing" both for an empty index and for a tree with no
