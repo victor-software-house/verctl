@@ -431,6 +431,9 @@ queue:
       - A template with no {name} names one tag; one with {name} names a tag and a Release per released package.
       - A template with no {name} refuses a release with more than one distinct version, naming the packages and their versions.
       - Each tag and Release is idempotent, so a retry finishes a set that stopped part way.
+      - "`tags` is parsed and validated at the boundary like every other section: an unknown key, a template with no placeholder, and one naming a placeholder that does not exist each fail the load naming the field."
+      - A template that would render the same tag for two packages fails, rather than having the second overwrite the first.
+      - Tests cover the default, a per-package template, one distinct version across many packages, differing versions with and without {name}, a colliding template, and a retry over a half-created set.
     notes: >-
       The shape, so the live defect is not waiting on discovery. The consumer's
       strawman is a `tags.template` plus a `releases: per-package | aggregate`
@@ -493,6 +496,42 @@ horizon:
       git-side path makes that field moot rather than something to set. Taking
       this row is therefore an alternative to VER-032's first acceptance line,
       not an addition to it.
+      2026-08-20, four findings from reading our own code before costing this,
+      because most of the expected objections are not real:
+      (1) Nothing chose the Releases API. There is no decision anywhere; verctl
+      needs a Release for notes and asset upload, `releases.create(tag)` makes
+      the ref as a side effect, and no tag step was ever written. The tag is a
+      byproduct, which is exactly why nothing checks where it lands.
+      (2) verctl already pushes with git, every release.
+      `git::commit_branch_and_push` (src/git.rs:376) writes the Version PR
+      commit and pushes it through git2. This is not a new capability.
+      (3) No grant changes. That push authenticates with
+      `Cred::userpass_plaintext("x-access-token", token)` against an anonymous
+      HTTPS remote verctl builds itself, so it needs neither `actions/checkout`
+      persist-credentials nor `http.extraheader`, and `contents: write` already
+      covers both creating a Release and pushing a ref. Same token, same scope,
+      a path already exercised.
+      (4) **libgit2 cannot do `--atomic`, and this is the real decision.**
+      `git_push_options` carries pb_parallelism, callbacks, proxy_opts,
+      follow_redirects, custom_headers and remote_push_options — no atomic
+      flag, and the string does not occur in libgit2-sys at all
+      (git2 0.21.0). So either verctl shells out to a `git` binary, a hard
+      runtime dependency it does not have today and which would be its first,
+      or it pushes every refspec in one `remote.push` call — one negotiation,
+      but not the capability, so a server may still accept some refs and reject
+      others. The guard rules plus idempotent retry cover that weaker form; the
+      question is whether they cover it well enough to skip the dependency.
+      Two smaller things to settle with it. An annotated tag needs a tagger, and
+      `signature()` (src/git.rs:472) resolves one from repo config, then
+      GIT_AUTHOR_NAME/GITHUB_ACTOR, then `verctl` — on a runner that inherits
+      whatever git config is there, so it wants pinning rather than inheriting.
+      And the failure window moves: today one call leaves tag-and-Release or
+      neither, git-side leaves a tag with no Release, which is the better half
+      to be left holding because a Release is recreatable and a tag is not.
+      Whatever is chosen must be declared and defaulted rather than wired in,
+      and tested at the same depth as VER-039 asks: the three guard rules each
+      proven to refuse, the re-read proven to catch a tag that resolves
+      elsewhere, and a retry over a half-created set proven to complete it.
       The other half is the Release body: per-package Releases each want only
       their own package's changelog section, which `release::notes_for` already
       extracts and currently concatenates. Cheap once VER-039 exists, so it
