@@ -161,6 +161,15 @@ pins:
   goes. Exactly one placeholder. `.`, `?`, `//`, and `$` mean themselves, so a
   pattern is readable by whoever maintains the file it describes.
 - A **version** is dotted numerics (`0.0.2`, `1.2.3`, `0.0.10`). Nothing else.
+- **Give the version a right-hand boundary.** A match ending in literal text has
+  one, so `verctl@{version} today` reads `verctl@1.0.0-rc.1 today` as no match
+  at all and the arity stops the release. A match ending *at* the placeholder
+  has none, and will rewrite the numeric head of a longer version — leaving the
+  tail. `whole_line` is the boundary for a line the match owns; otherwise put
+  the text that follows into `match`. Nothing can be inferred for you here:
+  `download/v{version}` against `download/v1.2.3-linux-x64.tar.gz` is correct
+  and pins 1.2.3, so a rule that refused every trailing `-` would stop real
+  releases.
 - `whole_line` says the match **owns its line** rather than sitting inside one.
   Unsaid, a pattern matches anywhere, which is what an inline spelling wants —
   `github:org/tool@1.2.3` is part of a longer line. A frontmatter key or a
