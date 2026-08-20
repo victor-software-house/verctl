@@ -162,58 +162,6 @@ queue:
       merged 2026-08-18 as ctl-core#7, so the destination is agreed
       before anything moves.
 
-  - id: VER-026
-    title: An untracked template in the source tree stops the release
-    scope: verctl
-    outcome: >-
-      A template a repo committed to nothing renders nothing and says so.
-      Adding a served file and getting silence is not a state a release
-      passes through.
-    blocked_by: []
-    acceptance:
-      - "A `*.jinja` inside `[templates].source` that git does not track fails the run, naming the file: commit it or delete it."
-      - "`only_a_tracked_template_in_the_source_tree_is_rendered` keeps its second half — a template outside the source tree is still ignored without a word — and its first half asserts the error instead of an empty plan."
-      - "§5's claim that exactly one thing is silently skipped reads true again: an unbumped `[[pins]]` package, and nothing else."
-      - "§1's \"an untracked template is scratch work and renders nowhere\" is gone, replaced by what it does instead: fail the run, naming the file. The clause beside it — a template outside the source tree is not verctl's to render, which is what keeps this crate's changelog templates out — is already true and stays."
-    notes: >-
-      2026-08-19, found in qctl while adopting served files: `prepare
-      --dry-run` listed the one `[[pins]]` file and neither of the two
-      templates, with no diagnostic, because they were written but not yet
-      staged. Diagnosed by reading `templates::sources`, which filters
-      `git::tracked` — and the current test pins that silence as intended,
-      asserting an empty plan and an unchanged served file.
-      Refusing to render is right: `prepare` auto-stages rendered outputs, so
-      a template git does not carry would put a served file on the tag whose
-      source is not in the tree, and `check` would have nothing to compare on
-      a fresh clone. What is wrong is what happens next — the release
-      continues and serves the stale hand-authored file, which is the exact
-      failure served files exist to end. It fails open, once per repo, at the
-      moment somebody is learning the feature.
-
-  - id: VER-027
-    title: The served task runs the verctl its own pin names
-    scope: verctl
-    outcome: >-
-      `mise run ver` runs the version `tasks/ver/ver` pins, not whichever
-      verctl the machine happens to hold.
-    blocked_by: []
-    acceptance:
-      - "`tasks/ver/ver` becomes a template under `.verctl/templates/` and execs `verctl` in the same change — the pin has to be rendered before anything trusts it. Today the file says 0.0.1 while the crate is at 0.0.4, and only `mise where` is hiding that, so removing it alone would freeze `mise run ver` on 0.0.1."
-      - "Proven the way qctl proved it: one machine with two versions installed, one task pinned to the older, and the task runs the older."
-      - "No release ships one half: a tag whose `tasks/ver/ver` execs `verctl` also carries the version that tag names."
-    notes: >-
-      2026-08-19, measured in qctl: `mise where <tool>` resolves a version
-      from the surrounding config, so a task-scoped `#MISE tools` pin
-      guarantees the install and never the selection. With 0.0.1, 0.1.0 and
-      0.1.1 installed and one task pinned to 0.0.1, `exec qctl "$@"` ran
-      0.0.1 and `exec "$(mise where …)/qctl" "$@"` ran 0.1.1 — mise already
-      puts the task's pinned tool first on PATH. Found by running `mise run q
-      -- status` in this repo, whose include is pinned to qctl v0.0.1 and
-      which still got the schema-3 complaint that only 0.1.1 can produce.
-      `tasks/fork/fork` in forkctl carries the same line and the same bug.
-      That repo has no ledger, so this row is where it is written down until
-      it does.
-
   - id: VER-028
     title: Decide who owns a template in the shared .ctl/templates
     scope: verctl
@@ -237,6 +185,59 @@ queue:
       to reverse, not this row's to assume. The other shape is a template
       declaring its owning tool, which keeps the directory shared and pays for
       it with one more export.
+
+  - id: VER-029
+    title: The Version PR exemption must not race its own label
+    scope: verctl
+    outcome: The Version PR's own CI passes the hand-edit guard on the first run, without anyone reopening it.
+    blocked_by: []
+    acceptance:
+      - A freshly opened Version PR is exempt on its first CI run, proven on a real release rather than by reading the code.
+      - The exemption still refuses a hand edit on an ordinary PR, and GITHUB_HEAD_REF is still not an exemption.
+      - Whatever carries the signal is written down where the guard reads it, so the next reader does not rediscover the race.
+    notes: >-
+      2026-08-20, hit on the v0.1.1 release and measured, not inferred. The
+      Version PR's own CI failed `check --versions` with "verctl 0.1.0 ->
+      0.1.1", the exact hand edit the guard exists to catch, on the commit
+      `prepare` had just written. `github::event_labels` reads
+      `pull_request.labels` out of `GITHUB_EVENT_PATH`, and that payload is a
+      snapshot taken when the event fired — but `prepare --pr` opens the PR and
+      then applies `verctl:version` in a second call, so the `opened` payload
+      carries an empty label list. Proof: closing and reopening PR #48 fired a
+      fresh event and the same job printed `exempt · version-pr`, with nothing
+      else changed. The PR carried the label the whole time.
+      Not a new break — v0.1.0's Version PR passed, which is what a race looks
+      like. Do not "fix" it by trusting the branch name: `GITHUB_HEAD_REF` is
+      deliberately not an exemption (VER-012), because a contributor can name a
+      branch anything. Candidates worth weighing rather than one assumed here:
+      have `prepare --pr` create the PR with the label already on it if the API
+      allows, add `labeled` to the workflow's `pull_request` types so the label
+      itself triggers a run, or have the guard ask the API for the PR's current
+      labels instead of reading a stale payload.
+
+  - id: VER-030
+    title: The example catalog teaches one pin, not two
+    scope: verctl
+    outcome: A repo copying examples/mise.toml wires the ?ref= tag and nothing else, so no second version site can disagree with the served task.
+    blocked_by: []
+    acceptance:
+      - examples/mise.toml declares no [tools] entry for verctl; the ?ref= include is the whole pin.
+      - mise install --locked still works for a consumer that copies it, with no lockfile row for a tool it no longer names.
+      - The template that renders it says why one pin is the rule, so the next reader does not add the second back.
+    notes: >-
+      2026-08-20, noticed while proving VER-027 at the tag: a clean directory
+      holding only `git show v0.1.1:examples/mise.toml` installs and runs
+      `mise run ver` — but it cannot prove the task's own pin won, because the
+      example's `[tools]` entry names the same version. qctl already settled
+      this as a rule and wrote it into its AGENTS.md: a consumer wires one pin,
+      the `?ref=` tag, because the served task carries its own `#MISE tools`
+      version and wins on PATH, so a `[tools]` entry can only disagree with it —
+      and it needs a lockfile row to survive `mise install --locked`, which is
+      the failure ctl-core#9 hit. qctl queued the same removal for its own
+      example as QCTL-018. This repo's example still teaches two, and it is the
+      example everyone copies, so it teaches the wrong thing twice over.
+      Removing it also makes the pin provable: with no surrounding entry, a
+      consumer that runs the task is running what the task named.
 
 horizon:
   - id: VER-019
@@ -385,6 +386,64 @@ horizon:
       ctl-core plus a list of what to change here, not a rewrite.
 
 archive:
+  - id: VER-027
+    title: The served task runs the verctl its own pin names
+    scope: verctl
+    outcome: >-
+      `mise run ver` runs the version `tasks/ver/ver` pins, not whichever
+      verctl the machine happens to hold.
+    notes: >-
+      2026-08-19, measured in qctl: `mise where <tool>` resolves a version
+      from the surrounding config, so a task-scoped `#MISE tools` pin
+      guarantees the install and never the selection. With 0.0.1, 0.1.0 and
+      0.1.1 installed and one task pinned to 0.0.1, `exec qctl "$@"` ran
+      0.0.1 and `exec "$(mise where …)/qctl" "$@"` ran 0.1.1 — mise already
+      puts the task's pinned tool first on PATH. Found by running `mise run q
+      -- status` in this repo, whose include is pinned to qctl v0.0.1 and
+      which still got the schema-3 complaint that only 0.1.1 can produce.
+      `tasks/fork/fork` in forkctl carries the same line and the same bug.
+      That repo has no ledger, so this row is where it is written down until
+      it does.
+    completed: 2026-08-20T10:38:13
+    evidence:
+      - verctl#47 merged 8389b46, released v0.1.1. tasks/ver/ver is served from .ctl/templates/ver.jinja and execs verctl from PATH; git show v0.1.1:tasks/ver/ver pins 0.1.1, mode 100755.
+      - 'Measured on this machine the way qctl measured it, with 0.0.1 through 0.1.0 installed and a task pinned to 0.0.4 while the config said 0.1.0: exec verctl ran 0.0.4 and exec "$(mise where …)/verctl" ran 0.1.0. The pin is honoured only by the plain exec.'
+      - 'No release shipped one half. Before merging, the hand-written file at 0.1.0 was proven equal to what the template renders, in a scratch clone with the template tracked: the entire diff was the one version line. The Version PR then rewrote exactly that line to 0.1.1.'
+      - 'The tag installs itself, proven on a clean directory holding only git show v0.1.1:examples/mise.toml: mise install then mise run ver -- --version printed verctl 0.1.1. Caveat kept honestly: the example still carries a [tools] entry naming the same version, so that run cannot prove which pin won — queued as VER-030.'
+      - forkctl left alone deliberately. tasks/fork/fork carries the same line and its pin reads 0.0.22 while the latest release is v0.0.22, so it is currently correct — but that repo has no verctl lane and no template, so nothing keeps it correct through the next release. Changing the exec there without a generator would create exactly the freeze this row warns about.
+    disposition: completed
+
+  - id: VER-026
+    title: An untracked template in the source tree stops the release
+    scope: verctl
+    outcome: >-
+      A template a repo committed to nothing renders nothing and says so.
+      Adding a served file and getting silence is not a state a release
+      passes through.
+    notes: >-
+      2026-08-19, found in qctl while adopting served files: `prepare
+      --dry-run` listed the one `[[pins]]` file and neither of the two
+      templates, with no diagnostic, because they were written but not yet
+      staged. Diagnosed by reading `templates::sources`, which filters
+      `git::tracked` — and the current test pins that silence as intended,
+      asserting an empty plan and an unchanged served file.
+      Refusing to render is right: `prepare` auto-stages rendered outputs, so
+      a template git does not carry would put a served file on the tag whose
+      source is not in the tree, and `check` would have nothing to compare on
+      a fresh clone. What is wrong is what happens next — the release
+      continues and serves the stale hand-authored file, which is the exact
+      failure served files exist to end. It fails open, once per repo, at the
+      moment somebody is learning the feature.
+    completed: 2026-08-20T10:38:13
+    evidence:
+      - 'verctl#47 merged 8389b46, released v0.1.1. A template in the source tree the repo neither tracks nor ignores fails the run naming the file; proven live on this repo with a fragment present: exit 1, and the target file was not created.'
+      - 'Both halves mutation-proved rather than assumed green: dropping the refusal fails an_untracked_template_stops_the_run_and_one_outside_is_ignored, and checking unconditionally fails a_tree_with_no_repository_has_no_templates. That second test previously planted no template on disk and so could not have caught it.'
+      - Review widened the rule twice, both correct. An ignored template is disowned rather than forgotten, because ignoring a file is the same statement about publishing that the index makes — git::tracked's own doc already said so, so refusing one contradicted the module. And symlinks are no longer followed, so a directory outside the repository cannot have its templates counted as ours.
+      - The acceptance line said 'git does not track'; what shipped is 'neither tracks nor ignores', which is the correction above and not a narrowing.
+      - 'Kody''s stated mechanism for the symlink case was wrong and is recorded as such: there is no infinite recursion, because present returns empty when read_dir fails, so an ancestor loop terminates past PATH_MAX — measured at 0.03s with the following form restored. The real defect was the foreign file, and the test asserts that; reverting makes it fail naming .ctl/templates/linked/foreign.jinja.'
+      - docs/served-files.md §1 no longer claims an untracked template renders nowhere, §5's failure list carries the case so its 'exactly one thing is skipped silently' reads true again, and verctl instructions, AGENTS.md and skills/verctl/SKILL.md carry the whole rule.
+    disposition: completed
+
   - id: VER-024
     title: Delete the retired [assets].targets shim
     scope: verctl
