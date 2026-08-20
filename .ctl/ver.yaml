@@ -29,3 +29,18 @@ packages:
 assets:
   darwin-arm64: {}
   linux-x64: {}
+
+# The bundled skill says which release its text describes, so a reader can tell
+# whether it predates the binary they hold. It is prose, not a generated file,
+# which is what a pattern is for — a template would claim to own the whole
+# document. The vendored copy tracks `latest-release`, so this line is what a
+# consumer sees.
+patterns:
+  skill_version:
+    match: "version: {version}"
+    occurrences: once
+
+pins:
+  - file: skills/verctl/SKILL.md
+    package: verctl
+    patterns: [skill_version]
