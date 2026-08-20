@@ -115,6 +115,10 @@ templates:
 # "many" is for a document whose examples come and go, where only "still
 # tracked" is worth asserting. "never" guards a spelling that was retired,
 # `{exactly: 2}` and `{at_least: 2}` name counts.
+# `whole_line` says the match owns its line instead of sitting inside one, for a
+# frontmatter key or a shell assignment. It beats naming the neighbouring text,
+# which breaks when the neighbour moves, and it makes `version: 0.1.1-rc1` fail
+# to match rather than have its numeric head rewritten.
 patterns:
   install:
     match: "github:victor-software-house/verctl@{version}"
@@ -122,6 +126,10 @@ patterns:
   mention:
     match: "verctl@{version}"
     occurrences: many
+  frontmatter:
+    match: "version: {version}"
+    whole_line: true
+    occurrences: once
 
 # Files that carry a version and cannot be generated: `prepare` rewrites them
 # onto the Version PR commit, which is the commit the tag names, so the released
@@ -147,3 +155,8 @@ pins:
   - file: docs/install.md
     package: verctl
     patterns: [install]
+
+  # A bundled skill says which release its text describes, on its own line.
+  - file: skills/verctl/SKILL.md
+    package: verctl
+    patterns: [frontmatter]

@@ -37,6 +37,20 @@ fn planted() -> TempDir {
     )
     .expect("npm");
     fs::write(root.path().join("VERSION"), "4.5.6\n").expect("plain");
+    let skill = root.path().join("skills/verctl/SKILL.md");
+    fs::create_dir_all(skill.parent().expect("parent")).expect("skill dir");
+    fs::write(
+        &skill,
+        indoc! {"
+            ---
+            name: verctl
+            version: 4.5.6
+            ---
+
+            A bundled skill. Writing version: 9.9.9 here is prose, not the key.
+        "},
+    )
+    .expect("skill");
     root
 }
 
@@ -49,10 +63,10 @@ fn the_example_config_parses() {
     assert_eq!(config.publishers.len(), 1, "twine is declared");
     assert_eq!(
         config.pins.len(),
-        3,
-        "one structural pin and two textual ones"
+        4,
+        "one structural pin and three textual ones"
     );
-    assert_eq!(config.patterns.len(), 2, "two spellings, named once each");
+    assert_eq!(config.patterns.len(), 3, "three spellings, named once each");
 }
 
 /// What makes the plan below sufficient: a table no package names is never
@@ -278,6 +292,7 @@ fn the_example_pin_rewrites_the_file_it_names() {
             root.path().join("examples/mise.toml"),
             root.path().join("README.md"),
             root.path().join("docs/install.md"),
+            root.path().join("skills/verctl/SKILL.md"),
         ]
     );
     assert_eq!(
@@ -308,5 +323,17 @@ fn the_example_pin_rewrites_the_file_it_names() {
             ]
         "#},
         "the tool pin and the ?ref= move together, and nothing else moves"
+    );
+    assert_eq!(
+        fs::read_to_string(root.path().join("skills/verctl/SKILL.md")).expect("reread"),
+        indoc! {"
+            ---
+            name: verctl
+            version: 4.5.6
+            ---
+
+            A bundled skill. Writing version: 9.9.9 here is prose, not the key.
+        "},
+        "a whole-line pattern moves its own line and leaves the same words in a sentence alone"
     );
 }

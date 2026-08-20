@@ -259,12 +259,17 @@ queue:
       tail stayed, and the release carried on. Kody raised it, our own document
       contradicted it, and the run settled it: the implementation is the
       evidence and the document is currently a promise nobody keeps.
-      Anchoring the pattern is the author-side workaround and is what #50 does
-      (`"version: {version}\n---"`), which turns both this and a stray
-      `version: N.N.N` in prose into a clean arity failure. That fixes one
-      pattern, not the rule, which is why this row exists. Whichever way it is
-      settled — the engine refusing, or the document dropping the promise —
-      both surfaces have to end up saying the same thing.
+      The author-side answer shipped in #50 as `whole_line: true`, after the
+      first attempt — spelling the closing `---` into the match — was rejected
+      by Victor as a hack: it only worked because `version:` happened to be the
+      last frontmatter key, so adding a key after it would have broken the
+      release. A line-owning pattern says what it means instead, and turns both
+      a prerelease tail and a stray `version: N.N.N` in prose into a clean arity
+      failure. That covers every pattern that owns a line, which is not every
+      pattern: an inline spelling still rewrites the numeric head of a
+      prerelease and carries on. Whichever way this is settled — the engine
+      refusing, or the document dropping the promise — both surfaces have to end
+      up saying the same thing.
 
 horizon:
   - id: VER-019

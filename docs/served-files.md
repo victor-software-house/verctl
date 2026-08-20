@@ -161,8 +161,15 @@ pins:
   goes. Exactly one placeholder. `.`, `?`, `//`, and `$` mean themselves, so a
   pattern is readable by whoever maintains the file it describes.
 - A **version** is dotted numerics (`0.0.2`, `1.2.3`, `0.0.10`). Nothing else.
-  A prerelease or a floating pin (`@latest`) is not a version this rewrites: it
-  fails the release rather than rewriting a numeric head and dropping the tail.
+- `whole_line` says the match **owns its line** rather than sitting inside one.
+  Unsaid, a pattern matches anywhere, which is what an inline spelling wants —
+  `github:org/tool@1.2.3` is part of a longer line. A frontmatter key or a
+  shell assignment is not: it owns its line, and saying so beats naming a
+  neighbour, because a match that spells out the text after it breaks when that
+  text moves. Owning the line also decides two cases the version alphabet
+  cannot: the same words inside a sentence are not the line, and a line ending
+  in `0.1.1-rc1` does not end where the version does, so it fails to match and
+  the declared arity stops the release.
 - `occurrences` is **how often the file must say it**. A bare count is not
   always the useful shape, so the vocabulary is explicit:
 

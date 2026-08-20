@@ -422,6 +422,17 @@ pub struct PinPattern {
     /// a stale version.
     #[serde(default)]
     pub occurrences: Occurrences,
+    /// Whether the match is a whole line rather than text inside one.
+    ///
+    /// Unsaid, a pattern matches anywhere, which is what an inline spelling
+    /// wants — `github:org/tool@1.2.3` sits inside a longer line. A pattern
+    /// that owns its line says so instead of anchoring on whatever text
+    /// happens to sit next to it: the alternative is spelling the neighbour
+    /// into `match`, which then breaks when the neighbour moves. It also makes
+    /// a partial version fail rather than rewrite, because a line ending in
+    /// `0.1.1-rc1` does not end where the version does.
+    #[serde(default)]
+    pub whole_line: bool,
 }
 
 /// How many times a pattern must match. A count is not always the useful
