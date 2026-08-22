@@ -515,12 +515,52 @@ horizon:
       `git_push_options` carries pb_parallelism, callbacks, proxy_opts,
       follow_redirects, custom_headers and remote_push_options — no atomic
       flag, and the string does not occur in libgit2-sys at all
-      (git2 0.21.0). So either verctl shells out to a `git` binary, a hard
-      runtime dependency it does not have today and which would be its first,
-      or it pushes every refspec in one `remote.push` call — one negotiation,
-      but not the capability, so a server may still accept some refs and reject
-      others. The guard rules plus idempotent retry cover that weaker form; the
-      question is whether they cover it well enough to skip the dependency.
+      (git2 0.21.0). GitHub does advertise it — read live from
+      `/info/refs?service=git-receive-pack`: `report-status report-status-v2
+      delete-refs side-band-64k ofs-delta atomic object-format=sha1 quiet
+      push-options`. So the capability is there to use and only the client
+      cannot send it.
+      2026-08-20, the option space, because two of these were nearly taken on a
+      wrong premise. Shelling out to a `git` binary and accepting a
+      non-atomic multi-refspec push are both ruled out by the operator.
+      Gitoxide's high-level push does not exist and is **not planned** —
+      GitoxideLabs/gitoxide#306 was closed `not_planned` on 2026-07-22 with
+      `ReceivePack` for V1 and V2 never ticked, and #2434 (signed pushes) the
+      same day. REST `POST /git/refs` and GraphQL `createRef` are one ref per
+      call with no transaction, and libgit2's `git_transaction` is local refs
+      only. Supporting only single-tag templates would abandon the case VER-039
+      exists for. That leaves two.
+      **Fork libgit2.** Six edits mirroring how `push-options` was added:
+      `GIT_CAP_ATOMIC` in smart.h, a fifteenth bit in `transport_smart_caps`
+      (fourteen today), a bool beside `report_status` in push.h, two blocks in
+      `gen_pktline` at lines 811 and 840, caps parsing, and a git2-rs
+      `PushOptions::atomic`. Cheap to write. Expensive to own: verctl is
+      published on crates.io, which forbids git dependencies, and `[patch]` is
+      honoured only in a top-level workspace, so `cargo install verctl` would
+      need republished `vsh-libgit2-sys` and `vsh-git2` — whole libgit2 plus
+      vendored PCRE2 — rebased on every upstream release. There is no smaller
+      surface: git2's features are link and vendoring switches, and
+      libgit2-sys/build.rs compiles the entire C tree regardless.
+      **Assemble gitoxide's lower crates.** What #306 abandoned is high-level
+      push — negotiation, delta generation, ref orchestration. The transport is
+      published and maintained: `gix-transport` 0.57.1 already has
+      `Service::ReceivePack => "git-receive-pack"`, a blocking HTTP
+      smart-protocol client with curl and reqwest backends, `request.rs`,
+      side-band reading in `bufread_ext.rs`, and `gix-credentials`, all
+      feature-gated. With `gix-packetline` for framing, verctl writes the
+      command list and the capability word and nothing else. Our case is
+      degenerate — tags at a known SHA whose commit is already on the remote —
+      so the abandoned half barely applies. Cost: both libgit2 and gitoxide in
+      the tree, and gitoxide bumps semver often across ~40 crates.
+      **Upstreaming is not a plan, measured rather than assumed.** The exact
+      precedent is adding a push capability to libgit2, done once and attempted
+      twice: #6439 opened 2022-12-01 and merged 2024-02-07, **433 days**; #6281
+      opened 2022-04-20 and closed **unmerged** 2024-03-09, dead after 689 days.
+      Two other capability PRs took 279 and 234 days. libgit2's 3.1-day median
+      merge is maintainer housekeeping; 84 of its 106 open PRs are over a year
+      old. Compare gitoxide: 171 PRs merged in 90 days, 0.5-day median, 15 open,
+      **none older than a year**. So a fork would be a fork indefinitely, and
+      "upstream first, fall back to forking" is a year-long lottery.
       Two smaller things to settle with it. An annotated tag needs a tagger, and
       `signature()` (src/git.rs:472) resolves one from repo config, then
       GIT_AUTHOR_NAME/GITHUB_ACTOR, then `verctl` — on a runner that inherits
