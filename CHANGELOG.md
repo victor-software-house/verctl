@@ -1,5 +1,10 @@
 # Changelog
 
+## verctl 0.2.0
+
+- Declare release tag names with `tags.template` (default `v{version}`). A template with `{name}` creates one tag and one Release per package, each filled from that package's CHANGELOG. Without `{name}`, differing versions refuse instead of guessing the first package.
+- Pin each GitHub Release tag to the published HEAD commit. After create, and when a Release already exists, the tag is re-read and the run fails if it names another commit.
+
 ## verctl 0.1.3
 
 - `docs/served-files.md` §4 no longer promises that a prerelease always fails the
