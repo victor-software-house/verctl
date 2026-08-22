@@ -60,10 +60,12 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "${DEFAULT_BRANCH}" ]; then
-            git fetch --depth=1 origin \
-              "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
-            git symbolic-ref refs/remotes/origin/HEAD \
-              "refs/remotes/origin/${DEFAULT_BRANCH}"
+            remote="refs/remotes/origin/${DEFAULT_BRANCH}"
+            if ! git rev-parse --verify "${remote}^{commit}" >/dev/null 2>&1; then
+              git fetch --depth=1 origin \
+                "+refs/heads/${DEFAULT_BRANCH}:${remote}"
+            fi
+            git symbolic-ref refs/remotes/origin/HEAD "${remote}"
           fi
       - name: Publish
         env:
