@@ -51,3 +51,7 @@ config key. Do not add one, and do not add a `release` runner section.
 
 Stop when a 0.x package gets `major`, or when a fragment names a package
 that is not in `packages`.
+
+`tags.template` (default `v{version}`) names release tags. `{name}` makes
+one tag and one Release per package; without it, differing versions refuse.
+Each Release body is that package's CHANGELOG section.

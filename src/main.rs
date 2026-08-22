@@ -464,13 +464,13 @@ fn preview_report(
 #[derive(Serialize)]
 struct PublishReport {
     packages: Vec<publish::PublishLine>,
-    release: Option<String>,
+    releases: Vec<String>,
     dry_run: bool,
 }
 
 impl PublishReport {
     fn pretty(&self, color: ColorMode) -> String {
-        if self.packages.is_empty() && self.release.is_none() {
+        if self.packages.is_empty() && self.releases.is_empty() {
             return kv(color, [("no-op", "nothing to publish")]);
         }
         let with_notes = self.packages.iter().any(|entry| entry.note.is_some());
@@ -491,12 +491,13 @@ impl PublishReport {
             })
             .collect();
         let mut out = grid(color, headers, rows);
-        let mut extra = Vec::new();
-        if let Some(url) = &self.release {
-            extra.push(("release", url.as_str()));
-        }
+        let mut extra: Vec<(&str, String)> = self
+            .releases
+            .iter()
+            .map(|url| ("release", url.clone()))
+            .collect();
         if self.dry_run {
-            extra.push(("dry-run", "nothing published"));
+            extra.push(("dry-run", "nothing published".into()));
         }
         if !extra.is_empty() {
             out.push('\n');
@@ -522,7 +523,7 @@ fn publish_report(args: &verctl::cli::PublishArgs) -> Result<PublishReport> {
     let outcome = publish::run(&config, root, args.dry_run())?;
     Ok(PublishReport {
         packages: outcome.packages,
-        release: outcome.release,
+        releases: outcome.releases,
         dry_run: args.dry_run(),
     })
 }

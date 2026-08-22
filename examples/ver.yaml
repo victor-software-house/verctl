@@ -51,6 +51,15 @@ packages:
     driver: plain
     publisher: twine
 
+# How release tags are named. Omit for `v{version}` — one tag when every
+# released package shares a version. Put `{name}` in the template for one
+# tag (and one Release) per package; each Release body is that package's
+# CHANGELOG section. A template with no `{name}` refuses a release that
+# has more than one distinct version.
+tags:
+  template: "v{version}"
+  # template: "{name}@{version}"
+
 # One argv after every bump, on the Version PR. `stage` lists the extra paths
 # it may write; any other dirty file fails the run.
 prepare:

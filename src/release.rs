@@ -192,7 +192,9 @@ pub fn changelog_section_for(body: &str, name: &str, version: &str) -> Option<St
     None
 }
 
-/// GitHub Release body: the matching section from each package changelog.
+/// GitHub Release body: the matching changelog section for each package the
+/// caller passes. Pass one package for a per-package Release; pass several
+/// only when one Release covers them all.
 #[must_use]
 pub fn notes_for<'a>(
     config: &crate::config::Config,

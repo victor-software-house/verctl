@@ -105,6 +105,17 @@ add another stack without a new verb. GitHub Packages for bun uses a
 nearby `bunfig.toml` as `--config`. Pretty output is ctl-core
 tables; tests pass `--color never`.
 
+Tag names come from `tags.template` (default `v{version}`). The
+placeholders are `{version}` and `{name}` — the same vocabulary
+`patterns.match` uses. A template with no `{name}` names one tag and
+refuses when the release has more than one distinct version. A
+template with `{name}` names one tag and one Release per package; each
+Release body is that package's own CHANGELOG section (path from
+`packages[].changelog`, default `CHANGELOG.md` beside the manifest).
+A template that would render the same tag for two packages fails at
+plan time. Each Release is idempotent: a retry finishes a set that
+stopped part way.
+
 Happy path after the Version PR merges is
 `victor-software-house/verctl/actions/publish`. It runs when the
 `version-packages` PR is merged. Native tarballs are a second job,

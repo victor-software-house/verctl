@@ -68,6 +68,9 @@ fn dry_run_lists_many_packages() {
               - name: "@org/pkg"
                 path: package.json
                 registry: github
+
+            tags:
+              template: "{name}@{version}"
         "#},
     );
     fs::write(
@@ -98,11 +101,54 @@ fn dry_run_lists_many_packages() {
     expected.push_str(&kv(
         ColorMode::Never,
         [
-            ("release", "would create v0.0.1"),
+            ("release", "would create demo@0.0.1"),
+            ("release", "would create @org/pkg@0.0.2"),
             ("dry-run", "nothing published"),
         ],
     ));
     assert_eq!(publish_stdout(root.path()), expected);
+}
+
+#[test]
+fn dry_run_refuses_differing_versions_without_name() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {r#"
+            packages:
+              - name: demo
+                path: Cargo.toml
+              - name: "@org/pkg"
+                path: package.json
+                registry: github
+        "#},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "0.0.1"
+        "#},
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("package.json"),
+        indoc! {r#"
+            { "name": "@org/pkg", "version": "0.0.2" }
+        "#},
+    )
+    .unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+        .current_dir(root.path())
+        .args(["publish", "--dry-run", "--color", "never"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("{name}"), "{stderr}");
+    assert!(stderr.contains("demo@0.0.1"), "{stderr}");
+    assert!(stderr.contains("@org/pkg@0.0.2"), "{stderr}");
 }
 
 #[test]
