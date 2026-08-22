@@ -60,6 +60,8 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "${DEFAULT_BRANCH}" ]; then
+            git fetch --depth=1 origin \
+              "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
             git symbolic-ref refs/remotes/origin/HEAD \
               "refs/remotes/origin/${DEFAULT_BRANCH}"
           fi
