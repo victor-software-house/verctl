@@ -135,18 +135,21 @@ pub fn github_git_user() -> &'static str {
     "x-access-token"
 }
 
-/// `VERCTL_DEFAULT_BRANCH`, then `GITHUB_BASE_REF`.
+/// `VERCTL_DEFAULT_BRANCH` only.
+///
+/// `GITHUB_BASE_REF` is a candidate for `require_on_default_history`,
+/// not a name to rewrite `origin/HEAD` with.
 #[must_use]
 pub fn configured_default_branch() -> Option<String> {
     env::var("VERCTL_DEFAULT_BRANCH")
         .ok()
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
-        .or_else(env_base_ref)
 }
 
-/// Point `origin/HEAD` at `origin/<branch>`. Fetch that one ref at depth 1
-/// only when it is missing.
+/// Point `origin/HEAD` at `origin/<branch>`. Fetch that one ref only
+/// when it is missing. The fetch is the branch's history, not a
+/// depth-1 tip: `require_on_default_history` walks parents.
 pub fn ensure_origin_head(root: &Path, branch: &str, fetch: &FetchDefault) -> Result<()> {
     if branch.is_empty() {
         return Ok(());
@@ -198,7 +201,6 @@ fn fetch_one_branch(repo: &Repository, branch: &str, fetch: &FetchDefault) -> Re
             });
             let mut opts = FetchOptions::new();
             opts.remote_callbacks(callbacks);
-            opts.depth(1);
             remote
                 .fetch(&[spec.as_str()], Some(&mut opts), None)
                 .with_context(|| format!("git fetch {spec}"))?;
@@ -338,7 +340,7 @@ fn env_base_ref() -> Option<String> {
 /// `GITHUB_REF_NAME` is not a candidate: on push it is the branch
 /// being pushed, so `origin/<that branch>` would always match HEAD.
 /// A non-main default on Actions is `origin/HEAD`, which
-/// `ensure_origin_head` fetches at depth 1 and points at
+/// `ensure_origin_head` fetches and points at
 /// `VERCTL_DEFAULT_BRANCH`.
 #[must_use]
 pub fn default_branch_candidates() -> Vec<String> {
@@ -1279,6 +1281,80 @@ mod tests {
             head.symbolic_target().unwrap(),
             Some("refs/remotes/origin/main")
         );
+    }
+
+    #[test]
+    fn fetch_one_branch_does_not_set_depth() {
+        let src = include_str!("git.rs");
+        let prod = src.split("#[cfg(test)]").next().expect("production");
+        assert!(
+            !prod.contains("opts.depth"),
+            "a depth-limited fetch leaves the tip parentless so graph_descendant_of cannot prove ancestry"
+        );
+    }
+
+    #[test]
+    fn configured_default_branch_is_only_verctl_default_branch() {
+        let src = include_str!("git.rs");
+        let start = src
+            .find("pub fn configured_default_branch")
+            .expect("configured_default_branch");
+        let rest = &src[start..];
+        let end = rest
+            .find("pub fn ensure_origin_head")
+            .expect("ensure_origin_head");
+        let body = &rest[..end];
+        assert!(!body.contains("GITHUB_BASE_REF"), "{body}");
+        assert!(!body.contains("env_base_ref"), "{body}");
+    }
+
+    #[test]
+    fn fetched_default_branch_keeps_parents_for_ancestry() {
+        let mut opts = git2::RepositoryInitOptions::new();
+        opts.initial_head("main");
+
+        let upstream_dir = tempfile::TempDir::new().unwrap();
+        let upstream = git2::Repository::init_opts(upstream_dir.path(), &opts).unwrap();
+        commit_tree(&upstream, "A");
+
+        let work_dir = tempfile::TempDir::new().unwrap();
+        let work = git2::Repository::init_opts(work_dir.path(), &opts).unwrap();
+        let url = format!("file://{}", upstream_dir.path().display());
+        work.remote("origin", &url).unwrap();
+        super::ensure_origin_head(work_dir.path(), "main", &super::FetchDefault::Origin).unwrap();
+        let first = work
+            .find_reference("refs/remotes/origin/main")
+            .unwrap()
+            .peel_to_commit()
+            .unwrap()
+            .id();
+        work.set_head_detached(first).unwrap();
+
+        std::fs::write(upstream_dir.path().join("b.txt"), "b\n").unwrap();
+        {
+            let mut index = upstream.index().unwrap();
+            index.add_path(Path::new("b.txt")).unwrap();
+            index.write().unwrap();
+        }
+        commit_tree(&upstream, "B");
+        std::fs::write(upstream_dir.path().join("c.txt"), "c\n").unwrap();
+        {
+            let mut index = upstream.index().unwrap();
+            index.add_path(Path::new("c.txt")).unwrap();
+            index.write().unwrap();
+        }
+        commit_tree(&upstream, "C");
+
+        work.find_reference("refs/remotes/origin/main")
+            .unwrap()
+            .delete()
+            .unwrap();
+        work.find_reference("refs/remotes/origin/HEAD")
+            .unwrap()
+            .delete()
+            .unwrap();
+        super::ensure_origin_head(work_dir.path(), "main", &super::FetchDefault::Origin).unwrap();
+        prove(work_dir.path(), &stock()).unwrap();
     }
 
     #[test]
