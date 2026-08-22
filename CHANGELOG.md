@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.2.3
+
+- `verctl publish` fetches the one missing default-branch ref with its history, not at depth 1, so the ancestry proof can walk parents. It rewrites `origin/HEAD` only from `VERCTL_DEFAULT_BRANCH`, never from `GITHUB_BASE_REF`.
+
 ## verctl 0.2.2
 
 - `verctl publish` fetches `origin/<default>` at depth 1 only when that ref is missing. GitHub git HTTPS authenticates as `x-access-token`; the token is never in the URL and never sent as Bearer. The publish action no longer shells out to `git fetch`.
