@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use octocrab::Octocrab;
 use octocrab::params::State;
 use std::env;
@@ -234,32 +234,102 @@ pub fn ensure_version_label(token: &str, repo: &Repo, number: u64, label: &str) 
     })
 }
 
-/// Create `tag` if it is missing. Returns the release HTML URL.
+/// Create `tag` at `sha` if it is missing. Returns the release HTML URL.
+///
+/// An existing release is not trusted: GitHub's `target_commitish` on the
+/// Release object is a branch name more often than a SHA. The git ref is
+/// re-read either way, and a tag that names another commit fails.
 pub fn ensure_release(
     token: &str,
     repo: &Repo,
     tag: &str,
     name: &str,
     body: &str,
+    sha: &str,
 ) -> Result<String> {
     block(async {
         let crab = client(token)?;
-        let repos = crab.repos(&repo.owner, &repo.name);
-        let releases = repos.releases();
-        match releases.get_by_tag(tag).await {
-            Ok(release) => return Ok(release.html_url.to_string()),
-            Err(octocrab::Error::GitHub { source, .. }) if source.status_code.as_u16() == 404 => {}
-            Err(error) => return Err(error).context("get release by tag"),
-        }
-        let release = releases
-            .create(tag)
-            .name(name)
-            .body(body)
-            .send()
-            .await
-            .context("create GitHub release")?;
-        Ok(release.html_url.to_string())
+        ensure_release_with(&crab, repo, tag, name, body, sha).await
     })
+}
+
+async fn ensure_release_with(
+    crab: &Octocrab,
+    repo: &Repo,
+    tag: &str,
+    name: &str,
+    body: &str,
+    sha: &str,
+) -> Result<String> {
+    let repos = crab.repos(&repo.owner, &repo.name);
+    let releases = repos.releases();
+    match releases.get_by_tag(tag).await {
+        Ok(release) => {
+            require_tag_at(crab, repo, tag, sha).await?;
+            return Ok(release.html_url.to_string());
+        }
+        Err(octocrab::Error::GitHub { source, .. }) if source.status_code.as_u16() == 404 => {}
+        Err(error) => return Err(error).context("get release by tag"),
+    }
+    let release = releases
+        .create(tag)
+        .name(name)
+        .body(body)
+        .target_commitish(sha)
+        .send()
+        .await
+        .context("create GitHub release")?;
+    require_tag_at(crab, repo, tag, sha).await?;
+    Ok(release.html_url.to_string())
+}
+
+async fn require_tag_at(crab: &Octocrab, repo: &Repo, tag: &str, sha: &str) -> Result<()> {
+    let named = tag_commit_sha(crab, repo, tag).await?;
+    ensure!(
+        named.eq_ignore_ascii_case(sha),
+        "tag {tag} names {named}, not the published commit {sha}"
+    );
+    Ok(())
+}
+
+async fn tag_commit_sha(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<String> {
+    let git_ref = crab
+        .repos(&repo.owner, &repo.name)
+        .get_ref(&octocrab::params::repos::Reference::Tag(tag.to_owned()))
+        .await
+        .with_context(|| format!("read tag {tag}"))?;
+    match git_ref.object {
+        octocrab::models::repos::Object::Commit { sha, .. } => Ok(sha),
+        octocrab::models::repos::Object::Tag { sha: tag_sha, .. } => {
+            peel_tag(crab, repo, tag, &tag_sha).await
+        }
+        other => bail!("tag {tag} names {other:?}, not a commit"),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct PeeledTag {
+    object: PeeledTarget,
+}
+
+#[derive(serde::Deserialize)]
+struct PeeledTarget {
+    sha: String,
+}
+
+async fn peel_tag(crab: &Octocrab, repo: &Repo, tag: &str, tag_sha: &str) -> Result<String> {
+    let peeled: PeeledTag = crab
+        .get(
+            format!(
+                "/repos/{owner}/{name}/git/tags/{tag_sha}",
+                owner = repo.owner,
+                name = repo.name
+            ),
+            None::<&()>,
+        )
+        .await
+        .with_context(|| format!("peel tag {tag}"))?;
+    Ok(peeled.object.sha)
 }
 
 /// Attach `tarball` to the release for `tag`.
@@ -317,7 +387,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_remote, parse_slug};
+    use super::{Octocrab, parse_remote, parse_slug};
+    use wiremock::matchers::{body_partial_json, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[test]
     fn slug_and_remotes() {
@@ -368,5 +440,189 @@ mod tests {
     #[test]
     fn rejects_non_github() {
         assert!(parse_remote("https://gitlab.com/acme/app.git").is_err());
+    }
+
+    const OWNER: &str = "acme";
+    const NAME: &str = "app";
+    const TAG: &str = "v1.0.0";
+    const PUBLISHED: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const OTHER: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const TAG_OBJECT: &str = "cccccccccccccccccccccccccccccccccccccccc";
+
+    fn repo() -> super::Repo {
+        super::Repo {
+            owner: OWNER.into(),
+            name: NAME.into(),
+        }
+    }
+
+    fn crab(uri: &str) -> Octocrab {
+        Octocrab::builder()
+            .personal_token("token".to_owned())
+            .base_uri(uri)
+            .unwrap()
+            .build()
+            .unwrap()
+    }
+
+    fn missing_release() -> Mock {
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases/tags/{TAG}")))
+            .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
+                "message": "Not Found",
+                "documentation_url": "https://docs.github.com"
+            })))
+    }
+
+    fn existing_release() -> Mock {
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases/tags/{TAG}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(release_json("main")))
+    }
+
+    fn create_at_published_sha() -> Mock {
+        Mock::given(method("POST"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases")))
+            .and(body_partial_json(serde_json::json!({
+                "tag_name": TAG,
+                "target_commitish": PUBLISHED
+            })))
+            .respond_with(ResponseTemplate::new(201).set_body_json(release_json("main")))
+    }
+
+    fn lightweight_tag(sha: &str) -> Mock {
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/git/ref/tags/{TAG}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ref": format!("refs/tags/{TAG}"),
+                "node_id": "R",
+                "url": format!("https://api.github.com/repos/{OWNER}/{NAME}/git/refs/tags/{TAG}"),
+                "object": {
+                    "type": "commit",
+                    "sha": sha,
+                    "url": format!("https://api.github.com/repos/{OWNER}/{NAME}/git/commits/{sha}")
+                }
+            })))
+    }
+
+    fn annotated_tag() -> Mock {
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/git/ref/tags/{TAG}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ref": format!("refs/tags/{TAG}"),
+                "node_id": "R",
+                "url": format!("https://api.github.com/repos/{OWNER}/{NAME}/git/refs/tags/{TAG}"),
+                "object": {
+                    "type": "tag",
+                    "sha": TAG_OBJECT,
+                    "url": format!("https://api.github.com/repos/{OWNER}/{NAME}/git/tags/{TAG_OBJECT}")
+                }
+            })))
+    }
+
+    fn peeled_tag_object(sha: &str) -> Mock {
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/git/tags/{TAG_OBJECT}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "node_id": "T",
+                "tag": TAG,
+                "sha": TAG_OBJECT,
+                "url": format!("https://api.github.com/repos/{OWNER}/{NAME}/git/tags/{TAG_OBJECT}"),
+                "message": TAG,
+                "object": {
+                    "type": "commit",
+                    "sha": sha,
+                    "url": format!("https://api.github.com/repos/{OWNER}/{NAME}/git/commits/{sha}")
+                }
+            })))
+    }
+
+    fn release_json(target_commitish: &str) -> serde_json::Value {
+        serde_json::json!({
+            "url": format!("https://api.github.com/repos/{OWNER}/{NAME}/releases/1"),
+            "html_url": format!("https://github.com/{OWNER}/{NAME}/releases/tag/{TAG}"),
+            "assets_url": format!("https://api.github.com/repos/{OWNER}/{NAME}/releases/1/assets"),
+            "upload_url": format!("https://uploads.github.com/repos/{OWNER}/{NAME}/releases/1/assets{{?name,label}}"),
+            "tarball_url": format!("https://api.github.com/repos/{OWNER}/{NAME}/tarball/{TAG}"),
+            "zipball_url": format!("https://api.github.com/repos/{OWNER}/{NAME}/zipball/{TAG}"),
+            "id": 1,
+            "node_id": "R",
+            "tag_name": TAG,
+            "target_commitish": target_commitish,
+            "name": TAG,
+            "body": "notes",
+            "draft": false,
+            "prerelease": false,
+            "created_at": "2026-08-22T00:00:00Z",
+            "published_at": "2026-08-22T00:00:00Z",
+            "assets": []
+        })
+    }
+
+    #[tokio::test]
+    async fn create_tags_the_published_commit_not_the_default_branch() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        create_at_published_sha().mount(&server).await;
+        lightweight_tag(PUBLISHED).mount(&server).await;
+        let url =
+            super::ensure_release_with(&crab(&server.uri()), &repo(), TAG, TAG, "notes", PUBLISHED)
+                .await
+                .unwrap();
+        assert!(url.contains(TAG), "{url}");
+    }
+
+    #[tokio::test]
+    async fn create_fails_when_the_tag_lands_elsewhere() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        create_at_published_sha().mount(&server).await;
+        lightweight_tag(OTHER).mount(&server).await;
+        let error =
+            super::ensure_release_with(&crab(&server.uri()), &repo(), TAG, TAG, "notes", PUBLISHED)
+                .await
+                .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains(OTHER), "{message}");
+        assert!(message.contains(PUBLISHED), "{message}");
+    }
+
+    #[tokio::test]
+    async fn existing_release_at_the_published_commit_is_ok() {
+        let server = MockServer::start().await;
+        existing_release().mount(&server).await;
+        lightweight_tag(PUBLISHED).mount(&server).await;
+        let url =
+            super::ensure_release_with(&crab(&server.uri()), &repo(), TAG, TAG, "notes", PUBLISHED)
+                .await
+                .unwrap();
+        assert!(url.contains(TAG), "{url}");
+    }
+
+    #[tokio::test]
+    async fn existing_release_at_another_commit_fails() {
+        let server = MockServer::start().await;
+        existing_release().mount(&server).await;
+        lightweight_tag(OTHER).mount(&server).await;
+        let error =
+            super::ensure_release_with(&crab(&server.uri()), &repo(), TAG, TAG, "notes", PUBLISHED)
+                .await
+                .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains(OTHER), "{message}");
+        assert!(message.contains(PUBLISHED), "{message}");
+    }
+
+    #[tokio::test]
+    async fn annotated_tag_peels_to_the_commit() {
+        let server = MockServer::start().await;
+        existing_release().mount(&server).await;
+        annotated_tag().mount(&server).await;
+        peeled_tag_object(PUBLISHED).mount(&server).await;
+        let url =
+            super::ensure_release_with(&crab(&server.uri()), &repo(), TAG, TAG, "notes", PUBLISHED)
+                .await
+                .unwrap();
+        assert!(url.contains(TAG), "{url}");
     }
 }

@@ -12,6 +12,17 @@ pub fn current_branch(root: &Path) -> Option<String> {
     (name != "HEAD").then(|| name.to_owned())
 }
 
+/// The commit HEAD currently names, as a full hex SHA.
+pub fn head_sha(root: &Path) -> Result<String> {
+    let repo =
+        Repository::discover(root).context("publish needs a git repository to name the tag")?;
+    let commit = repo
+        .head()
+        .and_then(|head| head.peel_to_commit())
+        .context("publish needs HEAD to name the tag")?;
+    Ok(commit.id().to_string())
+}
+
 /// File contents at the merge-base of HEAD and the default branch.
 ///
 /// Paths are relative to `root` (the directory holding `.ctl/`) and are mapped
@@ -1031,6 +1042,12 @@ mod tests {
         add_origin(&repo);
         track(&repo, "main", oid);
         prove(dir.path(), &stock()).unwrap();
+    }
+
+    #[test]
+    fn head_sha_is_the_peeled_head_commit() {
+        let (dir, _, oid) = fixture();
+        assert_eq!(super::head_sha(dir.path()).unwrap(), oid.to_string());
     }
 
     #[test]

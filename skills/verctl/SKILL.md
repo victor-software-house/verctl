@@ -54,4 +54,5 @@ that is not in `packages`.
 
 `tags.template` (default `v{version}`) names release tags. `{name}` makes
 one tag and one Release per package; without it, differing versions refuse.
-Each Release body is that package's CHANGELOG section.
+Each Release body is that package's CHANGELOG section. The tag is created
+at HEAD and re-read; a tag that names another commit fails.
