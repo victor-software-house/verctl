@@ -96,11 +96,12 @@ heading (the Version PR writes those) and, when `origin` exists,
 HEAD is an ancestor of the default branch (`origin/HEAD`, then
 `GITHUB_BASE_REF`, then `main`/`master`). It does not sniff the
 commit subject and does not treat `GITHUB_REF_NAME` as the default
-(that is the branch being pushed). `actions/publish` fetches
-`refs/heads/<default>` at depth 1 into `origin/<default>`, then points
-`origin/HEAD` at it, because a shallow checkout of the merge SHA never
-has that ref. Locally `git clone` already has it; otherwise
-`git remote set-head origin --auto`. How is a `publishers` entry: argv + placeholders.
+(that is the branch being pushed). `verctl publish` points `origin/HEAD`
+at `origin/<default>` (`VERCTL_DEFAULT_BRANCH`, then `GITHUB_BASE_REF`).
+It fetches that one ref at depth 1 only when it is missing. GitHub git
+HTTPS authenticates as `x-access-token`; the token is never in the URL
+and never sent as Bearer. Locally `git clone` already has the ref;
+otherwise `git remote set-head origin --auto`. How is a `publishers` entry: argv + placeholders.
 Cargo and bun are stock recipes (first-class examples). Override or
 add another stack without a new verb. GitHub Packages for bun uses a
 nearby `bunfig.toml` as `--config`. Pretty output is ctl-core

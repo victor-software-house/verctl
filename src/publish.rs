@@ -154,6 +154,9 @@ fn prove_version_commit(config: &Config, root: &Path, planned: &PublishPlan) -> 
             .iter()
             .map(|entry| (entry.name.as_str(), entry.version.as_str())),
     )?;
+    if let Some(branch) = git::configured_default_branch() {
+        git::ensure_origin_head(root, &branch, &git::FetchDefault::from_env())?;
+    }
     git::require_on_default_history(root)
 }
 

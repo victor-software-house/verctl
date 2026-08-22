@@ -54,21 +54,11 @@ jobs:
       - name: Plan native assets
         id: plan
         run: mise -E dev run ver -- assets --github-output "$GITHUB_OUTPUT"
-      - name: Point origin/HEAD at the repository default branch
-        env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: |
-          set -euo pipefail
-          if [ -n "${DEFAULT_BRANCH}" ]; then
-            git fetch --depth=1 origin \
-              "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
-            git symbolic-ref refs/remotes/origin/HEAD \
-              "refs/remotes/origin/${DEFAULT_BRANCH}"
-          fi
       - name: Publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
+          VERCTL_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: mise -E dev run ver -- publish
 
   assets:
