@@ -232,7 +232,8 @@ fn env_base_ref() -> Option<String> {
 /// `GITHUB_REF_NAME` is not a candidate: on push it is the branch
 /// being pushed, so `origin/<that branch>` would always match HEAD.
 /// A non-main default on Actions is `origin/HEAD`, which
-/// `actions/publish` writes from `github.event.repository.default_branch`.
+/// `actions/publish` fetches at depth 1 and points at
+/// `github.event.repository.default_branch`.
 #[must_use]
 pub fn default_branch_candidates() -> Vec<String> {
     candidate_names(env_base_ref().as_deref())
@@ -406,7 +407,9 @@ pub fn commit_branch_and_push(
         return Ok(PushOutcome::Empty);
     };
 
-    let https = format!("https://github.com/{}/{}.git", github.owner, github.name);
+    let owner = &github.owner;
+    let name = &github.name;
+    let https = format!("https://github.com/{owner}/{name}.git");
     let mut remote = repo
         .remote_anonymous(&https)
         .context("anonymous https remote")?;

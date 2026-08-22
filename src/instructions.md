@@ -96,10 +96,11 @@ heading (the Version PR writes those) and, when `origin` exists,
 HEAD is an ancestor of the default branch (`origin/HEAD`, then
 `GITHUB_BASE_REF`, then `main`/`master`). It does not sniff the
 commit subject and does not treat `GITHUB_REF_NAME` as the default
-(that is the branch being pushed). `actions/publish` points
-`origin/HEAD` at `github.event.repository.default_branch` because
-checkout never creates that symref. Locally `git clone` already
-has it; otherwise `git remote set-head origin --auto`. How is a `publishers` entry: argv + placeholders.
+(that is the branch being pushed). `actions/publish` fetches
+`refs/heads/<default>` at depth 1 into `origin/<default>`, then points
+`origin/HEAD` at it, because a shallow checkout of the merge SHA never
+has that ref. Locally `git clone` already has it; otherwise
+`git remote set-head origin --auto`. How is a `publishers` entry: argv + placeholders.
 Cargo and bun are stock recipes (first-class examples). Override or
 add another stack without a new verb. GitHub Packages for bun uses a
 nearby `bunfig.toml` as `--config`. Pretty output is ctl-core
