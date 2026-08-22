@@ -56,6 +56,7 @@ that is not in `packages`.
 one tag and one Release per package; without it, differing versions refuse.
 Each Release body is that package's CHANGELOG section. The tag is created
 at HEAD and re-read; a tag that names another commit fails.
-`verctl publish` fetches the default branch at depth 1 only when
-`origin/<default>` is missing. GitHub git HTTPS uses `x-access-token`,
+`verctl publish` fetches the default branch (that one ref, with history)
+only when `origin/<default>` is missing. It rewrites `origin/HEAD` only
+from `VERCTL_DEFAULT_BRANCH`. GitHub git HTTPS uses `x-access-token`,
 never Bearer, and never puts the token in the URL.
