@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.2.2
+
+- `verctl publish` fetches `origin/<default>` at depth 1 only when that ref is missing. GitHub git HTTPS authenticates as `x-access-token`; the token is never in the URL and never sent as Bearer. The publish action no longer shells out to `git fetch`.
+
 ## verctl 0.2.1
 
 - `actions/publish` fetches the default branch at depth 1 before pointing `origin/HEAD` at it, so a shallow checkout of the merge SHA still has that ref.
