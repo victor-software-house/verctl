@@ -61,6 +61,11 @@ where a Release puts a tag never arises. The atomicity worth having is over the
 from a tag and a changelog section; a tag is what consumers resolve.
 
 Filed as **VER-039** (the shape) and **VER-038** (creating a set whole).
+VER-039 ships `tags.template` (default `v{version}`; `{name}` for one tag and
+one Release per package) and fills each Release body from that package's own
+CHANGELOG section. The silent first-package guess is gone: a template without
+`{name}` refuses when versions differ. Git-side atomic tag push stays with
+VER-038.
 
 ## 2. Publish must follow the dependency graph
 

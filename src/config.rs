@@ -233,6 +233,12 @@ pub struct Config {
     #[serde(default)]
     #[garde(dive)]
     pub templates: Templates,
+    /// How release tags are named. Omit for `v{version}` — one tag when every
+    /// released package shares a version. Put `{name}` in the template for one
+    /// tag (and one Release) per package.
+    #[serde(default)]
+    #[garde(dive)]
+    pub tags: Tags,
     /// Version spellings, named once and listed by the files that carry them,
     /// so a spelling three files share is written once.
     #[serde(default)]
@@ -371,6 +377,112 @@ fn here(path: Option<&Path>) -> &Path {
 
 /// What a `pins` pattern puts where the version goes.
 pub const PLACEHOLDER: &str = "{version}";
+
+/// What a tag template puts where the package name goes.
+pub const NAME_PLACEHOLDER: &str = "{name}";
+
+/// How release tags are named. The arity falls out of the template: no
+/// `{name}` means one tag for the release; `{name}` means one tag per package.
+#[derive(Debug, Clone, Deserialize, Validate)]
+#[serde(deny_unknown_fields)]
+#[garde(context(Config))]
+pub struct Tags {
+    /// Literal text with `{version}` and optionally `{name}`. Defaults to
+    /// `v{version}`, so a repo that writes nothing keeps today's behaviour.
+    #[serde(default = "Tags::default_template")]
+    #[garde(
+        custom(cannot_be_empty(
+            "it is the shape of every release tag, like \"v{version}\" or \"{name}@{version}\""
+        )),
+        custom(tag_template_placeholders)
+    )]
+    pub template: String,
+}
+
+impl Tags {
+    fn default_template() -> String {
+        format!("v{PLACEHOLDER}")
+    }
+
+    #[must_use]
+    pub fn uses_name(&self) -> bool {
+        self.template.contains(NAME_PLACEHOLDER)
+    }
+
+    /// Substitute `{version}` and, when given, `{name}`. The load already
+    /// proved those are the only braces, so a leftover `{` here is a bug.
+    pub fn render(&self, version: &str, name: Option<&str>) -> Result<String> {
+        let mut out = self.template.replace(PLACEHOLDER, version);
+        if let Some(name) = name {
+            out = out.replace(NAME_PLACEHOLDER, name);
+        } else if out.contains(NAME_PLACEHOLDER) {
+            bail!(
+                "tags.template {:?} needs {NAME_PLACEHOLDER} but no package name was given",
+                self.template
+            );
+        }
+        ensure!(
+            !out.contains('{') && !out.contains('}'),
+            "tags.template {:?} still has braces after substitution",
+            self.template
+        );
+        Ok(out)
+    }
+}
+
+impl Default for Tags {
+    fn default() -> Self {
+        Self {
+            template: Self::default_template(),
+        }
+    }
+}
+
+/// A tag template may only say `{version}` and `{name}`, must say at least one
+/// of them, and must say `{version}` — a name with no version cannot date a
+/// release.
+fn tag_template_placeholders(template: &str, _: &Config) -> garde::Result {
+    let mut saw_version = false;
+    let mut saw_name = false;
+    let mut rest = template;
+    while let Some(start) = rest.find('{') {
+        let after = &rest[start + 1..];
+        let Some(end) = after.find('}') else {
+            return Err(garde::Error::new("has an opening '{' with no closing '}'"));
+        };
+        let name = &after[..end];
+        match name {
+            "version" => saw_version = true,
+            "name" => saw_name = true,
+            _ => {
+                return Err(garde::Error::new(format!(
+                    "names {{{name}}}, and the only placeholders are {PLACEHOLDER} and {NAME_PLACEHOLDER}"
+                )));
+            }
+        }
+        rest = &after[end + 1..];
+    }
+    if !saw_version && !saw_name {
+        return Err(garde::Error::new(format!(
+            "has no placeholder — put {PLACEHOLDER} where the version goes"
+        )));
+    }
+    if !saw_version {
+        return Err(garde::Error::new(format!(
+            "must say {PLACEHOLDER} — a tag with only {NAME_PLACEHOLDER} cannot date a release"
+        )));
+    }
+    let leftover = template
+        .replace(PLACEHOLDER, "")
+        .replace(NAME_PLACEHOLDER, "");
+    if leftover.contains('{') || leftover.contains('}') {
+        return Err(garde::Error::new(format!(
+            "has a '{{' or '}}' that is not {PLACEHOLDER} or {NAME_PLACEHOLDER}"
+        )));
+    }
+    let _ = saw_name;
+    Ok(())
+}
 
 /// Where the templates for served files live, and how they are marked. The
 /// defaults are the whole convention: a repo that follows it writes nothing.
@@ -886,6 +998,51 @@ mod tests {
                       suffix: ""
                 "#},
                 "templates.suffix: cannot be empty — it is what marks a file",
+            ),
+            (
+                "a tag template naming a placeholder that does not exist",
+                formatdoc! {r#"
+                    {PACKAGE}
+                    tags:
+                      template: "v{{ver}}"
+                "#},
+                "tags.template: names {ver}, and the only placeholders are {version} and {name}",
+            ),
+            (
+                "a tag template with no placeholder",
+                formatdoc! {r#"
+                    {PACKAGE}
+                    tags:
+                      template: "latest"
+                "#},
+                "tags.template: has no placeholder",
+            ),
+            (
+                "a tag template with only the package name",
+                formatdoc! {r#"
+                    {PACKAGE}
+                    tags:
+                      template: "{{name}}"
+                "#},
+                "tags.template: must say {version}",
+            ),
+            (
+                "an empty tag template",
+                formatdoc! {r#"
+                    {PACKAGE}
+                    tags:
+                      template: ""
+                "#},
+                "tags.template: cannot be empty",
+            ),
+            (
+                "a tag template with a leftover brace",
+                formatdoc! {r#"
+                    {PACKAGE}
+                    tags:
+                      template: "v{{version}}}}"
+                "#},
+                "tags.template: has a '{' or '}' that is not {version} or {name}",
             ),
         ];
         for (scenario, body, expected) in cases {

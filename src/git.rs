@@ -302,7 +302,7 @@ pub fn assert_only_allowed(
         .unwrap_or_else(|_| workdir.to_path_buf());
     let mut extra = Vec::new();
     let mut staged = Vec::new();
-    for entry in statuses.iter() {
+    for entry in &statuses {
         let Ok(rel) = entry.path() else {
             continue;
         };
@@ -337,7 +337,7 @@ pub fn assert_only_allowed(
         let ignored = repo
             .statuses(Some(&mut ignored))
             .context("git status (ignored)")?;
-        for entry in ignored.iter() {
+        for entry in &ignored {
             if !entry.status().intersects(Status::IGNORED) {
                 continue;
             }

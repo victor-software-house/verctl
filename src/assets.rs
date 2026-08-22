@@ -112,6 +112,10 @@ pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
     let raw = fs::read_to_string(root.join(&package.path))
         .with_context(|| package.path.display().to_string())?;
     let version = driver.read(&raw)?.trim().to_owned();
+    let tag = config.tags.render(
+        &version,
+        config.tags.uses_name().then_some(package.name.as_str()),
+    )?;
     let bin = config
         .assets
         .as_ref()
@@ -126,7 +130,7 @@ pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
     Ok(AssetsPlan {
         bin,
         version: version.clone(),
-        tag: format!("v{version}"),
+        tag,
         has_assets: !include.is_empty(),
         matrix: Matrix { include },
         prepare: assets.prepare.unwrap_or_else(|| {
@@ -372,6 +376,22 @@ mod tests {
         assert!(!plan.has_assets);
         assert_eq!(plan.matrix.include.len(), 0);
         assert_eq!(plan.tag, "v0.0.1");
+    }
+
+    #[test]
+    fn assets_tag_follows_the_declared_template() {
+        let config = load(indoc::indoc! {r#"
+            packages:
+              - name: ctl-core
+                path: Cargo.toml
+            tags:
+              template: "{name}@{version}"
+            assets:
+              linux-x64: {}
+        "#})
+        .unwrap();
+        let plan = planned(&config, "0.0.1").unwrap();
+        assert_eq!(plan.tag, "ctl-core@0.0.1");
     }
 
     #[test]

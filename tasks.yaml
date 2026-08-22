@@ -420,47 +420,6 @@ queue:
       pinned binary — but only if the version resolves from the workflow's
       config rather than the release commit's, which is the sentence to write.
 
-  - id: VER-039
-    title: A release declares what its tags are named
-    scope: verctl
-    outcome: A repo says the shape of its release tags in one line with a sane default, and a release that cannot name what it shipped refuses instead of guessing.
-    blocked_by: []
-    acceptance:
-      - tags.template defaults to v{version}, so every repo that writes nothing keeps today's behaviour.
-      - The placeholders are {version} and {name}, the vocabulary patterns.match already uses.
-      - A template with no {name} names one tag; one with {name} names a tag and a Release per released package.
-      - A template with no {name} refuses a release with more than one distinct version, naming the packages and their versions.
-      - Each tag and Release is idempotent, so a retry finishes a set that stopped part way.
-      - "`tags` is parsed and validated at the boundary like every other section: an unknown key, a template with no placeholder, and one naming a placeholder that does not exist each fail the load naming the field."
-      - A template that would render the same tag for two packages fails, rather than having the second overwrite the first.
-      - Tests cover the default, a per-package template, one distinct version across many packages, differing versions with and without {name}, a colliding template, and a retry over a half-created set.
-    notes: >-
-      The shape, so the live defect is not waiting on discovery. The consumer's
-      strawman is a `tags.template` plus a `releases: per-package | aggregate`
-      enum; the enum is redundant, because **the arity falls out of the
-      template**. A template with no `{name}` can only name one tag; one with
-      `{name}` can only mean one per package. Two fields that cannot disagree
-      should be one field, and the one that survives is the one a reader can
-      look at and know what they get. So: one optional line, defaulting to
-      `v{version}`, in the placeholder vocabulary `patterns.match` already
-      uses — a single-package repo writes nothing and a monorepo writes
-      `template: "{name}@{version}"`.
-      .
-      What this kills: `tag_for` (src/publish.rs:158) dedups the versions and,
-      when more than one survives, tags with the *first declared* package's
-      version — a value with no relationship to the release, chosen silently.
-      With a template there is always an answer: either the shape names every
-      package, or it cannot name this release and says so.
-      .
-      Deliberately not here, because it is where the design risk actually is:
-      splitting the changelog so each Release carries only its own package's
-      section, and creating a tag set all-or-nothing. Atomicity is not reachable
-      through the Releases API — they get it from `git push --atomic` on
-      locally created tags, which is a different tagging path, so it stays with
-      VER-038. Idempotent retry is the weaker property that is reachable now and
-      is what the acceptance asks for. VER-032 is orthogonal: it fixes which
-      commit a tag names, whatever the tag is called.
-
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
@@ -723,6 +682,41 @@ horizon:
       ctl-core plus a list of what to change here, not a rewrite.
 
 archive:
+  - id: VER-039
+    title: A release declares what its tags are named
+    scope: verctl
+    outcome: A repo says the shape of its release tags in one line with a sane default, and a release that cannot name what it shipped refuses instead of guessing.
+    notes: >-
+      The shape, so the live defect is not waiting on discovery. The consumer's
+      strawman is a `tags.template` plus a `releases: per-package | aggregate`
+      enum; the enum is redundant, because **the arity falls out of the
+      template**. A template with no `{name}` can only name one tag; one with
+      `{name}` can only mean one per package. Two fields that cannot disagree
+      should be one field, and the one that survives is the one a reader can
+      look at and know what they get. So: one optional line, defaulting to
+      `v{version}`, in the placeholder vocabulary `patterns.match` already
+      uses — a single-package repo writes nothing and a monorepo writes
+      `template: "{name}@{version}"`.
+      .
+      What this kills: `tag_for` (src/publish.rs:158) dedups the versions and,
+      when more than one survives, tags with the *first declared* package's
+      version — a value with no relationship to the release, chosen silently.
+      With a template there is always an answer: either the shape names every
+      package, or it cannot name this release and says so.
+      .
+      Deliberately not here, because it is where the design risk actually is:
+      splitting the changelog so each Release carries only its own package's
+      section, and creating a tag set all-or-nothing. Atomicity is not reachable
+      through the Releases API — they get it from `git push --atomic` on
+      locally created tags, which is a different tagging path, so it stays with
+      VER-038. Idempotent retry is the weaker property that is reachable now and
+      is what the acceptance asks for. VER-032 is orthogonal: it fixes which
+      commit a tag names, whatever the tag is called.
+    completed: 2026-08-22T13:04:12
+    evidence:
+      - 'feat/039-declare-the-tag-shape: tags.template + per-package Release bodies'
+    disposition: completed
+
   - id: VER-027
     title: The served task runs the verctl its own pin names
     scope: verctl

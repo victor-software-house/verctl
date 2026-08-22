@@ -6,7 +6,7 @@
 [tools]
 committed = "1.1.11"
 lefthook = "2.1.10"
-rust = { version = "nightly", components = "rustfmt,clippy" }
+rust = { version = "nightly-2026-08-16", components = "rustfmt,clippy" }
 
 [deps.cargo]
 auto = true
