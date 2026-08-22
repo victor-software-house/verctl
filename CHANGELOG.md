@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.2.1
+
+- `actions/publish` fetches the default branch at depth 1 before pointing `origin/HEAD` at it, so a shallow checkout of the merge SHA still has that ref.
+
 ## verctl 0.2.0
 
 - Declare release tag names with `tags.template` (default `v{version}`). A template with `{name}` creates one tag and one Release per package, each filled from that package's CHANGELOG. Without `{name}`, differing versions refuse instead of guessing the first package.
