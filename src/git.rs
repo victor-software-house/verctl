@@ -1,6 +1,8 @@
 use crate::github::Repo;
-use anyhow::{Context, Result, bail};
-use git2::{Cred, PushOptions, RemoteCallbacks, Repository, Signature, Status, StatusOptions};
+use anyhow::{Context, Result, bail, ensure};
+use git2::{
+    Cred, FetchOptions, PushOptions, RemoteCallbacks, Repository, Signature, Status, StatusOptions,
+};
 use std::env;
 use std::path::{Path, PathBuf};
 
@@ -99,6 +101,110 @@ pub fn upstream_default_branch(root: &Path) -> Option<String> {
 /// the graph also fails closed.
 pub fn require_on_default_history(root: &Path) -> Result<()> {
     prove_default_history(root, &candidate_names(env_base_ref().as_deref()))
+}
+
+/// How to fetch `origin/<branch>` when that ref is missing.
+pub enum FetchDefault {
+    /// `git fetch origin`.
+    Origin,
+    /// GitHub HTTPS. Credentials are the callback, never the URL.
+    GitHub { token: String, repository: String },
+}
+
+impl FetchDefault {
+    #[must_use]
+    pub fn from_env() -> Self {
+        match (env::var("GITHUB_TOKEN"), env::var("GITHUB_REPOSITORY")) {
+            (Ok(token), Ok(repository)) if !token.is_empty() && !repository.is_empty() => {
+                Self::GitHub { token, repository }
+            }
+            _ => Self::Origin,
+        }
+    }
+}
+
+/// HTTPS URL for an `owner/name` slug. No credentials in the URL.
+#[must_use]
+pub fn github_https_url(repository: &str) -> String {
+    format!("https://github.com/{repository}.git")
+}
+
+/// Username GitHub git-over-HTTPS expects. Not an HTTP Bearer scheme.
+#[must_use]
+pub fn github_git_user() -> &'static str {
+    "x-access-token"
+}
+
+/// `VERCTL_DEFAULT_BRANCH`, then `GITHUB_BASE_REF`.
+#[must_use]
+pub fn configured_default_branch() -> Option<String> {
+    env::var("VERCTL_DEFAULT_BRANCH")
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .or_else(env_base_ref)
+}
+
+/// Point `origin/HEAD` at `origin/<branch>`. Fetch that one ref at depth 1
+/// only when it is missing.
+pub fn ensure_origin_head(root: &Path, branch: &str, fetch: &FetchDefault) -> Result<()> {
+    if branch.is_empty() {
+        return Ok(());
+    }
+    let Some(repo) = repo_covering(root) else {
+        return Ok(());
+    };
+    if repo.find_remote("origin").is_err() {
+        return Ok(());
+    }
+    let remote_ref = format!("refs/remotes/origin/{branch}");
+    if peel_remote(&repo, &remote_ref).is_none() {
+        fetch_one_branch(&repo, branch, fetch)?;
+    }
+    ensure!(
+        peel_remote(&repo, &remote_ref).is_some(),
+        "cannot resolve the default branch ({remote_ref} is missing; fetch the default branch)"
+    );
+    repo.reference_symbolic(
+        "refs/remotes/origin/HEAD",
+        &remote_ref,
+        true,
+        "verctl default branch",
+    )
+    .context("point origin/HEAD at the default branch")?;
+    Ok(())
+}
+
+fn fetch_one_branch(repo: &Repository, branch: &str, fetch: &FetchDefault) -> Result<()> {
+    let spec = format!("+refs/heads/{branch}:refs/remotes/origin/{branch}");
+    match fetch {
+        FetchDefault::Origin => {
+            let mut remote = repo
+                .find_remote("origin")
+                .context("fetch the default branch")?;
+            remote
+                .fetch(&[spec.as_str()], None, None)
+                .with_context(|| format!("git fetch {spec}"))?;
+        }
+        FetchDefault::GitHub { token, repository } => {
+            let url = github_https_url(repository);
+            let mut remote = repo
+                .remote_anonymous(&url)
+                .context("anonymous https remote")?;
+            let mut callbacks = RemoteCallbacks::new();
+            let token = token.clone();
+            callbacks.credentials(move |_url, _username, _allowed| {
+                Cred::userpass_plaintext(github_git_user(), &token)
+            });
+            let mut opts = FetchOptions::new();
+            opts.remote_callbacks(callbacks);
+            opts.depth(1);
+            remote
+                .fetch(&[spec.as_str()], Some(&mut opts), None)
+                .with_context(|| format!("git fetch {spec}"))?;
+        }
+    }
+    Ok(())
 }
 
 fn prove_default_history(root: &Path, candidates: &[String]) -> Result<()> {
@@ -232,8 +338,8 @@ fn env_base_ref() -> Option<String> {
 /// `GITHUB_REF_NAME` is not a candidate: on push it is the branch
 /// being pushed, so `origin/<that branch>` would always match HEAD.
 /// A non-main default on Actions is `origin/HEAD`, which
-/// `actions/publish` fetches at depth 1 and points at
-/// `github.event.repository.default_branch`.
+/// `ensure_origin_head` fetches at depth 1 and points at
+/// `VERCTL_DEFAULT_BRANCH`.
 #[must_use]
 pub fn default_branch_candidates() -> Vec<String> {
     candidate_names(env_base_ref().as_deref())
@@ -1115,6 +1221,64 @@ mod tests {
         set_origin_head(&repo, "trunk");
         let err = prove(dir.path(), &stock()).unwrap_err();
         assert!(format!("{err:#}").contains("origin/trunk"), "{err:#}");
+    }
+
+    #[test]
+    fn github_https_url_has_no_credentials() {
+        let url = super::github_https_url("victor-software-house/qctl");
+        assert_eq!(url, "https://github.com/victor-software-house/qctl.git");
+        let lower = url.to_ascii_lowercase();
+        assert!(!lower.contains("bearer"), "{url}");
+        assert!(!lower.contains("token"), "{url}");
+        assert!(!lower.contains("x-access-token"), "{url}");
+    }
+
+    #[test]
+    fn github_git_user_is_x_access_token() {
+        assert_eq!(super::github_git_user(), "x-access-token");
+    }
+
+    #[test]
+    fn ensure_origin_head_skips_fetch_when_the_ref_exists() {
+        let (dir, repo, oid) = fixture();
+        repo.remote("origin", "https://127.0.0.1:1/nope.git")
+            .unwrap();
+        track(&repo, "main", oid);
+        super::ensure_origin_head(dir.path(), "main", &super::FetchDefault::Origin).unwrap();
+        let head = repo.find_reference("refs/remotes/origin/HEAD").unwrap();
+        assert_eq!(
+            head.symbolic_target().unwrap(),
+            Some("refs/remotes/origin/main")
+        );
+    }
+
+    #[test]
+    fn ensure_origin_head_fetches_a_missing_ref_from_origin() {
+        let mut opts = git2::RepositoryInitOptions::new();
+        opts.initial_head("main");
+
+        let upstream_dir = tempfile::TempDir::new().unwrap();
+        let upstream = git2::Repository::init_opts(upstream_dir.path(), &opts).unwrap();
+        commit_tree(&upstream, "init");
+
+        let work_dir = tempfile::TempDir::new().unwrap();
+        let work = git2::Repository::init_opts(work_dir.path(), &opts).unwrap();
+        commit_tree(&work, "local");
+        let url = format!("file://{}", upstream_dir.path().display());
+        work.remote("origin", &url).unwrap();
+
+        super::ensure_origin_head(work_dir.path(), "main", &super::FetchDefault::Origin).unwrap();
+        assert!(
+            work.find_reference("refs/remotes/origin/main")
+                .unwrap()
+                .peel_to_commit()
+                .is_ok()
+        );
+        let head = work.find_reference("refs/remotes/origin/HEAD").unwrap();
+        assert_eq!(
+            head.symbolic_target().unwrap(),
+            Some("refs/remotes/origin/main")
+        );
     }
 
     #[test]

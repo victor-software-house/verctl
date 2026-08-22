@@ -24,41 +24,13 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Point origin/HEAD at the repository default branch
-      shell: bash
-      env:
-        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        GITHUB_TOKEN: ${{ inputs.token }}
-        GITHUB_REPOSITORY: ${{ github.repository }}
-      run: |
-        set -euo pipefail
-        # checkout never creates origin/HEAD, and a shallow checkout of
-        # the merge SHA never fetches the default branch. One ref at
-        # depth 1 is enough when HEAD is that tip. Do not use
-        # GITHUB_REF_NAME: on push it is the branch being pushed.
-        # Skip the fetch when the ref is already here (fetch-depth: 0).
-        # Bearer extraheader is not a git credential; GitHub git HTTPS
-        # wants x-access-token.
-        if [ -n "${DEFAULT_BRANCH}" ]; then
-          remote="refs/remotes/origin/${DEFAULT_BRANCH}"
-          if ! git rev-parse --verify "${remote}^{commit}" >/dev/null 2>&1; then
-            if [ -n "${GITHUB_TOKEN}" ] && [ -n "${GITHUB_REPOSITORY}" ]; then
-              git fetch --depth=1 \
-                "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-                "+refs/heads/${DEFAULT_BRANCH}:${remote}"
-            else
-              git fetch --depth=1 origin \
-                "+refs/heads/${DEFAULT_BRANCH}:${remote}"
-            fi
-          fi
-          git symbolic-ref refs/remotes/origin/HEAD "${remote}"
-        fi
     - name: Publish
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.token }}
         VERCTL_CONFIG: ${{ inputs.config }}
         VERCTL_DRY_RUN: ${{ inputs.dry-run }}
+        VERCTL_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       run: |
         set -euo pipefail
         extra=()
