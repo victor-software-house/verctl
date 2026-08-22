@@ -408,6 +408,26 @@ impl Tags {
     pub fn uses_name(&self) -> bool {
         self.template.contains(NAME_PLACEHOLDER)
     }
+
+    /// Substitute `{version}` and, when given, `{name}`. The load already
+    /// proved those are the only braces, so a leftover `{` here is a bug.
+    pub fn render(&self, version: &str, name: Option<&str>) -> Result<String> {
+        let mut out = self.template.replace(PLACEHOLDER, version);
+        if let Some(name) = name {
+            out = out.replace(NAME_PLACEHOLDER, name);
+        } else if out.contains(NAME_PLACEHOLDER) {
+            bail!(
+                "tags.template {:?} needs {NAME_PLACEHOLDER} but no package name was given",
+                self.template
+            );
+        }
+        ensure!(
+            !out.contains('{') && !out.contains('}'),
+            "tags.template {:?} still has braces after substitution",
+            self.template
+        );
+        Ok(out)
+    }
 }
 
 impl Default for Tags {
@@ -450,6 +470,14 @@ fn tag_template_placeholders(template: &str, _: &Config) -> garde::Result {
     if !saw_version {
         return Err(garde::Error::new(format!(
             "must say {PLACEHOLDER} — a tag with only {NAME_PLACEHOLDER} cannot date a release"
+        )));
+    }
+    let leftover = template
+        .replace(PLACEHOLDER, "")
+        .replace(NAME_PLACEHOLDER, "");
+    if leftover.contains('{') || leftover.contains('}') {
+        return Err(garde::Error::new(format!(
+            "has a '{{' or '}}' that is not {PLACEHOLDER} or {NAME_PLACEHOLDER}"
         )));
     }
     let _ = saw_name;
@@ -1006,6 +1034,15 @@ mod tests {
                       template: ""
                 "#},
                 "tags.template: cannot be empty",
+            ),
+            (
+                "a tag template with a leftover brace",
+                formatdoc! {r#"
+                    {PACKAGE}
+                    tags:
+                      template: "v{{version}}}}"
+                "#},
+                "tags.template: has a '{' or '}' that is not {version} or {name}",
             ),
         ];
         for (scenario, body, expected) in cases {

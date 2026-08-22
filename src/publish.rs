@@ -4,7 +4,7 @@
 //! bun are stock recipes, not the only stacks. How tags are named comes
 //! from `[tags].template` — see [`tags_for`].
 
-use crate::config::{Config, NAME_PLACEHOLDER, PLACEHOLDER};
+use crate::config::{Config, NAME_PLACEHOLDER};
 use crate::git;
 use crate::github;
 use crate::process;
@@ -176,14 +176,14 @@ pub fn tags_for(config: &Config, packages: &[PublishEntry]) -> Result<Vec<TagPla
         !packages.is_empty(),
         "the config declares no packages to publish"
     );
-    let template = &config.tags.template;
     if config.tags.uses_name() {
-        return per_package_tags(template, packages);
+        return per_package_tags(config, packages);
     }
-    one_shared_tag(template, packages)
+    one_shared_tag(config, packages)
 }
 
-fn one_shared_tag(template: &str, packages: &[PublishEntry]) -> Result<Vec<TagPlan>> {
+fn one_shared_tag(config: &Config, packages: &[PublishEntry]) -> Result<Vec<TagPlan>> {
+    let template = &config.tags.template;
     let mut by_version: BTreeMap<&str, Vec<&PublishEntry>> = BTreeMap::new();
     for entry in packages {
         by_version
@@ -202,7 +202,7 @@ fn one_shared_tag(template: &str, packages: &[PublishEntry]) -> Result<Vec<TagPl
         );
     }
     let version = packages[0].version.as_str();
-    let tag = render_tag(template, version, None)?;
+    let tag = config.tags.render(version, None)?;
     let title = packages.first().map_or_else(
         || tag.clone(),
         |entry| format!("{} {}", entry.name, entry.version),
@@ -214,11 +214,12 @@ fn one_shared_tag(template: &str, packages: &[PublishEntry]) -> Result<Vec<TagPl
     }])
 }
 
-fn per_package_tags(template: &str, packages: &[PublishEntry]) -> Result<Vec<TagPlan>> {
+fn per_package_tags(config: &Config, packages: &[PublishEntry]) -> Result<Vec<TagPlan>> {
+    let template = &config.tags.template;
     let mut seen: BTreeMap<String, String> = BTreeMap::new();
     let mut tags = Vec::with_capacity(packages.len());
     for entry in packages {
-        let tag = render_tag(template, &entry.version, Some(&entry.name))?;
+        let tag = config.tags.render(&entry.version, Some(&entry.name))?;
         if let Some(earlier) = seen.insert(tag.clone(), entry.name.clone()) {
             bail!(
                 "tags.template {template:?} renders the same tag {tag:?} for {earlier} and {}",
@@ -232,20 +233,6 @@ fn per_package_tags(template: &str, packages: &[PublishEntry]) -> Result<Vec<Tag
         });
     }
     Ok(tags)
-}
-
-fn render_tag(template: &str, version: &str, name: Option<&str>) -> Result<String> {
-    let mut out = template.replace(PLACEHOLDER, version);
-    if let Some(name) = name {
-        out = out.replace(NAME_PLACEHOLDER, name);
-    } else if out.contains(NAME_PLACEHOLDER) {
-        bail!("tags.template {template:?} needs {NAME_PLACEHOLDER} but no package name was given");
-    }
-    ensure!(
-        !out.contains('{') && !out.contains('}'),
-        "tags.template {template:?} still has braces after substitution"
-    );
-    Ok(out)
 }
 
 #[cfg(test)]
