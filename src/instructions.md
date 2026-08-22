@@ -113,8 +113,10 @@ template with `{name}` names one tag and one Release per package; each
 Release body is that package's own CHANGELOG section (path from
 `packages[].changelog`, default `CHANGELOG.md` beside the manifest).
 A template that would render the same tag for two packages fails at
-plan time. Each Release is idempotent: a retry finishes a set that
-stopped part way.
+plan time. Each Release is created at HEAD (`target_commitish` is that
+SHA). After create, and when a Release already exists, the tag is
+re-read and the run fails if it names another commit. A retry at the
+same commit is a no-op.
 
 Happy path after the Version PR merges is
 `victor-software-house/verctl/actions/publish`. It runs when the

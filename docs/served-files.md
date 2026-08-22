@@ -4,7 +4,9 @@ A **served file** is a file consumers read out of a tag: the task file a
 `?ref=` include fetches, the example catalog someone copies, the README line
 they paste. Its version must be correct in the tree the tag names, which is the
 Version PR commit — publish pushes nothing but the tag, so a version written
-after publish is never served.
+after publish is never served. The tag is created at that commit
+(`target_commitish`), then re-read; a tag that names another commit fails
+instead of being reused.
 
 This document is the contract for how those files stay correct. It is the design
 `prepare`, `check`, and `pins` implement; read it before adding a key.

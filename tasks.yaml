@@ -282,40 +282,6 @@ queue:
       state (as `whole_line` does), or docs/served-files.md stops promising
       unconditionally and says which shapes are safe.
 
-  - id: VER-032
-    title: A release tags the commit it published
-    scope: verctl
-    outcome: The tag a release creates resolves to the commit that was built and published, not to whatever the default branch points at when the API call runs.
-    blocked_by: []
-    acceptance:
-      - ensure_release sets target_commitish to the published SHA.
-      - publish re-reads the tag after creating it and fails when it does not resolve to that SHA.
-      - An ensure_release that finds the release already there re-reads the tag too, and fails when it names another commit.
-      - A test proves a tag created while the default branch has moved still names the release commit.
-    notes: >-
-      2026-08-20: found while checking the consumer report in
-      docs/adoption-report.md, which asked only that a pushed tag be verified
-      after the fact. It is worse than that.
-      `github::ensure_release` calls `releases.create(tag)` and never sets
-      `target_commitish`, so GitHub tags the default branch's HEAD at the
-      moment of the call — not the commit that was built and published. v0.1.3
-      is right only because main did not move: `git rev-parse v0.1.3^{}` and
-      `git rev-parse origin/main` are both 2fd33a6c5713. Anything merging to
-      main during the publish job puts the tag on a tree that was never built,
-      which is the served-files contract's one premise (docs/served-files.md:3
-      — "its version must be correct in the tree the tag names"). Nothing else
-      creates the tag: no `git tag` or `refs/tags` anywhere in src/, no tag
-      step in .github/workflows/publish.yml, and `git cat-file -t v0.1.3` says
-      `commit` — a lightweight tag, which is what the Releases API makes. The
-      retry path needs the same treatment for a different reason:
-      `ensure_release` returns early when `get_by_tag` succeeds
-      (src/github.rs:249-250) without looking at where that tag points, and
-      `target_commitish` cannot correct a tag that already exists.
-      If VER-038 is taken, the first acceptance line here is superseded rather
-      than also done: a tag created git-side already exists by the time a
-      Release is made, and the API documents `target_commitish` as unused in
-      that case. The re-read lines stand either way.
-
   - id: VER-033
     title: Publish follows the dependency graph, not the declaration order
     scope: verctl
@@ -682,6 +648,40 @@ horizon:
       ctl-core plus a list of what to change here, not a rewrite.
 
 archive:
+  - id: VER-032
+    title: A release tags the commit it published
+    scope: verctl
+    outcome: The tag a release creates resolves to the commit that was built and published, not to whatever the default branch points at when the API call runs.
+    notes: >-
+      2026-08-20: found while checking the consumer report in
+      docs/adoption-report.md, which asked only that a pushed tag be verified
+      after the fact. It is worse than that.
+      `github::ensure_release` calls `releases.create(tag)` and never sets
+      `target_commitish`, so GitHub tags the default branch's HEAD at the
+      moment of the call — not the commit that was built and published. v0.1.3
+      is right only because main did not move: `git rev-parse v0.1.3^{}` and
+      `git rev-parse origin/main` are both 2fd33a6c5713. Anything merging to
+      main during the publish job puts the tag on a tree that was never built,
+      which is the served-files contract's one premise (docs/served-files.md:3
+      — "its version must be correct in the tree the tag names"). Nothing else
+      creates the tag: no `git tag` or `refs/tags` anywhere in src/, no tag
+      step in .github/workflows/publish.yml, and `git cat-file -t v0.1.3` says
+      `commit` — a lightweight tag, which is what the Releases API makes. The
+      retry path needs the same treatment for a different reason:
+      `ensure_release` returns early when `get_by_tag` succeeds
+      (src/github.rs:249-250) without looking at where that tag points, and
+      `target_commitish` cannot correct a tag that already exists.
+      If VER-038 is taken, the first acceptance line here is superseded rather
+      than also done: a tag created git-side already exists by the time a
+      Release is made, and the API documents `target_commitish` as unused in
+      that case. The re-read lines stand either way.
+    completed: 2026-08-22T13:59:28
+    evidence:
+      - ensure_release sets target_commitish to HEAD SHA.
+      - The tag is re-read after create and on retry; a mismatch fails.
+      - 'wiremock: create_tags_the_published_commit_not_the_default_branch'
+    disposition: completed
+
   - id: VER-039
     title: A release declares what its tags are named
     scope: verctl
