@@ -9,10 +9,10 @@ lockfile = true
 # example that installs itself. A verb added after the release you copy is not
 # in that tarball yet — pin the release that carries the verb you copied.
 [tools]
-"github:victor-software-house/verctl" = "0.2.3"
+"github:victor-software-house/verctl" = "0.2.4"
 
 [task_config]
 includes = [
-  "git::https://github.com/victor-software-house/verctl.git//tasks/ver?ref=v0.2.3",
+  "git::https://github.com/victor-software-house/verctl.git//tasks/ver?ref=v0.2.4",
   "mise-tasks",
 ]
