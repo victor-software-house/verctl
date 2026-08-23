@@ -8,6 +8,7 @@
 #MISE dir="{% raw %}{{cwd}}{% endraw %}"
 #MISE raw_args=true
 #MISE tools = { "github:victor-software-house/verctl" = "{{ versions["verctl"] }}" }
+#USAGE mount "mise run --quiet ver -- --usage-spec=ver"
 
 set -euo pipefail
 exec verctl "$@"

@@ -8,6 +8,16 @@ Ship `actions/version-pr`, `actions/publish`, and `actions/asset`.
 Operator contract: `verctl instructions` and `skills/verctl/SKILL.md`.
 This repo's queue is [`tasks.yaml`](tasks.yaml) (`VER-###`).
 
+The `ver` task's `#USAGE mount` line is `ctl_core::mount_line("ver")`.
+Put it in the template. Do not copy it onto `tasks/ver/ver` while that
+file still pins a release that lacks `--usage-spec`. The Version PR
+writes the mount and the new pin together. Operators run
+`mise run ver status` with no `--`.
+
+`skills/verctl/SKILL.md` `version:` is a pin (`.ctl/ver.yaml`). Tests
+require that line to equal `CARGO_PKG_VERSION`, and the skill to show
+`mise run ver status` with no `--` before verbs. A stale skill fails CI.
+
 ## Strings (do not regress)
 
 Multiline Rust is `indoc!` / `formatdoc!` / `writedoc!` / `printdoc!` /

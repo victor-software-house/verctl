@@ -1,5 +1,5 @@
 # This repo's own package. A .changeset fragment plus
-# `mise run ver -- prepare --pr` opens the first Version PR.
+# `mise run ver prepare --pr` opens the first Version PR.
 
 # examples/mise.toml is served from .ctl/templates/mise.toml.jinja, so it needs
 # no entry here. mise.release.toml is the one file that cannot be either: it

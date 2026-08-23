@@ -39,4 +39,4 @@ jobs:
       - name: Prepare release
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: mise run ver -- prepare --pr
+        run: mise run ver prepare --pr

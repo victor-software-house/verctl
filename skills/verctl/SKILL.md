@@ -15,6 +15,15 @@ version: 0.2.3
 default) compiles this checkout. `MISE_ENV=release` is the published
 tarball. Actions run `verctl` from PATH.
 
+```sh
+mise run ver status
+mise run ver check
+mise run ver prepare --pr
+```
+
+Never `mise run ver --`. The `--` in `#USAGE mount` is mise's completion
+bootstrap.
+
 Fragments are `.changeset/*.md` with YAML fences (quoted or unquoted
 keys). Changelog Markdown is rendered with minijinja. Author
 filtering is `internalAuthors` in config, not template branches. Consumers use
