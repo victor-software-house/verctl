@@ -200,8 +200,11 @@ impl Present for PrepareReport {
             && self.next.is_empty()
             && self.pr.as_deref().is_none_or(|pr| pr == "no-op");
         if no_version_change {
-            return Document::new()
-                .fields(Fields::new().row("no-op", "no version-changing fragments"));
+            let mut fields = Fields::new().row("no-op", "no version-changing fragments");
+            if self.dry_run {
+                fields = fields.row("dry-run", "nothing written");
+            }
+            return Document::new().fields(fields);
         }
         let mut document = Document::new();
         if !self.bumps.is_empty() {
@@ -391,7 +394,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_prepare_reports_a_no_op() {
+    fn empty_prepare_dry_run_reports_both_states() {
         let report = Report::Prepare(PrepareReport {
             bumps: Vec::new(),
             changelog: String::new(),
@@ -399,13 +402,14 @@ mod tests {
             pins: Vec::new(),
             pr: None,
             next: Vec::new(),
-            dry_run: false,
+            dry_run: true,
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
             .width(80)
             .capture(&report)
             .expect("prepare report");
         assert!(pretty.text().contains("no version-changing fragments"));
+        assert!(pretty.text().contains("nothing written"));
     }
 
     #[test]
