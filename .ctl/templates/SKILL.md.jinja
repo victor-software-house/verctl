@@ -34,12 +34,14 @@ A repo declares everything in `.ctl/ver.yaml`, the one file verctl reads;
 `.ctl/` is shared with the other ctl CLIs and templates live in
 `.ctl/templates/`. There is no `verctl.toml`.
 
-{% raw %}Prefer a template over a pin: a served file is generated, and a `pins` entry
+{% raw %}
+Prefer a template over a pin: a served file is generated, and a `pins` entry
 admits a file is hand-authored. A template declares its own target with
 top-level `{%- set … -%}` exports. Commit it — one the repo neither tracks nor
 ignores fails the run, because rendering nothing would serve the stale file
 instead. An ignored one is disowned and left alone; one outside the source
-tree was never verctl's to render.{% endraw %}
+tree was never verctl's to render.
+{% endraw %}
 
 A served mise task execs the tool from PATH, never
 `"$(mise where <tool>)/<tool>"`. `mise where` resolves from the surrounding
