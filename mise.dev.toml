@@ -5,6 +5,7 @@
 
 [tools]
 committed = "1.1.11"
+conftest = "0.69.0"
 lefthook = "2.1.10"
 rust = { version = "nightly-2026-08-16", components = "rustfmt,clippy" }
 
@@ -36,9 +37,13 @@ run = 'committed "${usage_commits}"'
 description = "Fail if manifest versions differ from the default branch"
 run = "cargo run -- check --versions"
 
+[tasks.policy]
+description = "Conftest on GitHub workflows"
+run = "conftest test --policy policy .github/workflows"
+
 [tasks.verify]
-description = "Format, lint, test, and version guard"
-depends = ["format", "lint"]
+description = "Format, lint, policy, test, and version guard"
+depends = ["format", "lint", "policy"]
 run = "cargo test --all-features && cargo run -- check --versions"
 
 [tasks.build]

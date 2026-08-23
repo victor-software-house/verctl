@@ -23,3 +23,6 @@ pub mod runners;
 pub mod schema;
 pub mod templates;
 pub mod versions;
+
+#[cfg(test)]
+mod operator_docs;

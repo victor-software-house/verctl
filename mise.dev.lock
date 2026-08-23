@@ -29,6 +29,10 @@ checksum = "sha256:af4f5a65320471751ed1dfbb5502f15f4857cea797b077c6049acb2b995d2
 url = "https://github.com/crate-ci/committed/releases/download/v1.1.11/committed-v1.1.11-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/crate-ci/committed/releases/assets/361545840"
 
+[[tools.conftest]]
+version = "0.69.0"
+backend = "aqua:open-policy-agent/conftest"
+
 [[tools.lefthook]]
 version = "2.1.10"
 backend = "aqua:evilmartians/lefthook"

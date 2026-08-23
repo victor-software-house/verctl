@@ -1,13 +1,13 @@
 # This repo's own package. A .changeset fragment plus
 # `mise run ver prepare --pr` opens the first Version PR.
 
-# examples/mise.toml is served from .ctl/templates/mise.toml.jinja, so it needs
-# no entry here. mise.release.toml is the one file that cannot be either: it
-# names the tarball this lane installs, so it can only move to a version that
-# already exists, and it is bumped by hand.
+# examples/mise.toml and skills/verctl/SKILL.md are served from
+# .ctl/templates/, so they need no pin. mise.release.toml is the one
+# file that cannot be either: it names the tarball this lane installs,
+# so it can only move to a version that already exists, and it is
+# bumped by hand.
 #
-# `patterns` and `pins` are deliberately absent: this repo hand-authors no other
-# version site. examples/ver.yaml shows the shape a repo that does would write.
+# examples/ver.yaml shows the shape a repo that pins by hand would write.
 
 prepare:
   after: [cargo, update, --workspace]
@@ -29,24 +29,3 @@ packages:
 assets:
   darwin-arm64: {}
   linux-x64: {}
-
-# The bundled skill says which release its text describes, so a reader can tell
-# whether it predates the binary they hold. It is prose, not a generated file,
-# which is what a pattern is for — a template would claim to own the whole
-# document. The vendored copy tracks `latest-release`, so this line is what a
-# consumer sees.
-patterns:
-  skill_version:
-    # The frontmatter key owns its line, so it says that rather than naming a
-    # neighbour: spelling the closing `---` into the match would break the
-    # moment somebody adds a key after this one. Owning the line also means a
-    # `version: 1.2.3` inside a sentence is not this, and a `0.1.1-rc1` fails
-    # rather than having its numeric head rewritten.
-    match: "version: {version}"
-    whole_line: true
-    occurrences: once
-
-pins:
-  - file: skills/verctl/SKILL.md
-    package: verctl
-    patterns: [skill_version]
