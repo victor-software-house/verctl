@@ -1,5 +1,10 @@
 # Changelog
 
+## verctl 0.2.4
+
+- The operator skill template wraps Jinja examples in `raw` so `prepare` can render it.
+- Served `ver` task mounts the ctl-core Usage spec. `mise run ver status` needs no `--`.
+
 ## verctl 0.2.3
 
 - `verctl publish` fetches the one missing default-branch ref with its history, not at depth 1, so the ancestry proof can walk parents. It rewrites `origin/HEAD` only from `VERCTL_DEFAULT_BRANCH`, never from `GITHUB_BASE_REF`.
