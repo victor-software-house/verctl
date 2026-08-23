@@ -7,7 +7,7 @@ deny contains msg if {
 	some step in job.steps
 	run := step.run
 	is_string(run)
-	line := trim_space(split(run, "\n")[0])
-	startswith(line, "mise run ver --")
+	some line in split(run, "\n")
+	regex.match(`(^|[[:space:]])mise[[:space:]].*\brun[[:space:]].*\bver[[:space:]]+--`, line)
 	msg := sprintf("%s: mise run ver -- is mise's separator; use mise run ver <verb>", [name])
 }
