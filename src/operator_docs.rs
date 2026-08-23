@@ -63,18 +63,24 @@ fn served_skill_version_matches_the_package() {
 }
 
 #[test]
-fn skill_template_renders() {
-    let mut env = minijinja::Environment::new();
-    env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
-    let source = crate_file(SKILL_TEMPLATE);
-    let tmpl = env
-        .template_from_named_str("skill", &source)
-        .unwrap_or_else(|error| panic!("{error:#}"));
-    let versions = std::collections::BTreeMap::from([("verctl".to_string(), "0.0.0".to_string())]);
-    let ctx = minijinja::context! { versions => versions };
-    let _rendered = tmpl
-        .render(&ctx)
-        .unwrap_or_else(|error| panic!("{error:#}"));
+fn every_served_template_renders() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let config = crate::config::Config::load(&root.join(".ctl/ver.yaml"))
+        .unwrap_or_else(|error| panic!("load .ctl/ver.yaml: {error:#}"));
+    let served = crate::templates::plan(
+        root,
+        &config.templates,
+        &[(
+            env!("CARGO_PKG_NAME").to_string(),
+            env!("CARGO_PKG_VERSION").to_string(),
+        )],
+    )
+    .unwrap_or_else(|error| panic!("{error:#}"));
+    let skill = root.join(SKILL);
+    assert!(
+        served.iter().any(|path| path == &skill),
+        "{SKILL_TEMPLATE} must still serve {SKILL}"
+    );
 }
 
 #[test]
