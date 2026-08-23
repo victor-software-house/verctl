@@ -119,10 +119,10 @@ impl Present for VersionCheckReport {
     }
 
     fn message_kind(&self) -> MessageKind {
-        if self.failure().is_some() {
-            MessageKind::Error
-        } else {
+        if self.drifted().is_empty() {
             MessageKind::Success
+        } else {
+            MessageKind::Error
         }
     }
 }
@@ -193,7 +193,13 @@ pub(super) struct PrepareBump {
 
 impl Present for PrepareReport {
     fn present(&self) -> Document {
-        if self.pr.as_deref() == Some("no-op") && self.bumps.is_empty() {
+        let no_version_change = self.bumps.is_empty()
+            && self.changelog.trim().is_empty()
+            && self.consume.is_empty()
+            && self.pins.is_empty()
+            && self.next.is_empty()
+            && self.pr.as_deref().is_none_or(|pr| pr == "no-op");
+        if no_version_change {
             return Document::new()
                 .fields(Fields::new().row("no-op", "no version-changing fragments"));
         }
@@ -275,7 +281,10 @@ impl Present for PublishReport {
         if self.dry_run {
             fields = fields.row("dry-run", "nothing published");
         }
-        let document = Document::new().table(table);
+        let mut document = Document::new();
+        if !self.packages.is_empty() {
+            document = document.table(table);
+        }
         if fields.is_empty() {
             document
         } else {
@@ -351,7 +360,10 @@ mod tests {
     use ctl_core::prelude::{ColorMode, OutputFormat, Stream, View};
     use indoc::formatdoc;
 
-    use super::{CheckReport, Report, StatusFragment, StatusPackage, StatusReport};
+    use super::{
+        CheckReport, PrepareReport, PublishReport, Report, StatusFragment, StatusPackage,
+        StatusReport,
+    };
 
     #[test]
     fn check_report_keeps_pretty_and_json_shapes() {
@@ -376,6 +388,45 @@ mod tests {
         assert_eq!(json.stream(), Stream::Stdout);
         assert_eq!(json.text(), "{\"ok\":2}\n");
         assert!(!json.text().contains('\u{1b}'));
+    }
+
+    #[test]
+    fn empty_prepare_reports_a_no_op() {
+        let report = Report::Prepare(PrepareReport {
+            bumps: Vec::new(),
+            changelog: String::new(),
+            consume: Vec::new(),
+            pins: Vec::new(),
+            pr: None,
+            next: Vec::new(),
+            dry_run: false,
+        });
+        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+            .width(80)
+            .capture(&report)
+            .expect("prepare report");
+        assert!(pretty.text().contains("no version-changing fragments"));
+    }
+
+    #[test]
+    fn releases_without_packages_have_no_empty_table() {
+        let report = Report::Publish(PublishReport {
+            packages: Vec::new(),
+            releases: vec!["https://example.test/v1".into()],
+            dry_run: false,
+        });
+        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+            .width(80)
+            .capture(&report)
+            .expect("publish report");
+        assert_eq!(
+            pretty.text(),
+            formatdoc! {"
+                ┌─────────┬─────────────────────────┐
+                │ release ┆ https://example.test/v1 │
+                └─────────┴─────────────────────────┘
+            "},
+        );
     }
 
     #[test]
