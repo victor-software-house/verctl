@@ -24,6 +24,10 @@ mise run ver prepare --pr
 Never `mise run ver --`. The `--` in `#USAGE mount` is mise's completion
 bootstrap.
 
+Every command returns one typed report. Use `--format json` for the same data
+without ANSI; JSON errors use stdout, while human errors use stderr. `--quiet`
+suppresses only successful human output.
+
 Fragments are `.changeset/*.md` with YAML fences (quoted or unquoted
 keys). Changelog Markdown is rendered with minijinja. Author
 filtering is `internalAuthors` in config, not template branches. Consumers use

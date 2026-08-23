@@ -3,8 +3,7 @@
 
 mod common;
 
-use ctl_core::{ColorMode, grid, kv};
-use indoc::indoc;
+use indoc::{formatdoc, indoc};
 use std::fs;
 use tempfile::TempDir;
 
@@ -40,19 +39,18 @@ fn dry_run_lists_one_cargo_crate() {
         "#},
     )
     .unwrap();
-    let mut expected = grid(
-        ColorMode::Never,
-        &["name", "version", "via"],
-        [vec!["demo".into(), "0.0.1".into(), "cargo".into()]],
-    );
-    expected.push('\n');
-    expected.push_str(&kv(
-        ColorMode::Never,
-        [
-            ("release", "would create v0.0.1"),
-            ("dry-run", "nothing published"),
-        ],
-    ));
+    let expected = formatdoc! {"
+        ┌──────┬─────────┬───────┐
+        │ name ┆ version ┆ via   │
+        ╞══════╪═════════╪═══════╡
+        │ demo ┆ 0.0.1   ┆ cargo │
+        └──────┴─────────┴───────┘
+
+        ┌─────────┬─────────────────────┐
+        │ release ┆ would create v0.0.1 │
+        │ dry-run ┆ nothing published   │
+        └─────────┴─────────────────────┘
+    "};
     assert_eq!(publish_stdout(root.path()), expected);
 }
 
@@ -89,23 +87,20 @@ fn dry_run_lists_many_packages() {
         "#},
     )
     .unwrap();
-    let mut expected = grid(
-        ColorMode::Never,
-        &["name", "version", "via"],
-        [
-            vec!["demo".into(), "0.0.1".into(), "cargo".into()],
-            vec!["@org/pkg".into(), "0.0.2".into(), "bun github".into()],
-        ],
-    );
-    expected.push('\n');
-    expected.push_str(&kv(
-        ColorMode::Never,
-        [
-            ("release", "would create demo@0.0.1"),
-            ("release", "would create @org/pkg@0.0.2"),
-            ("dry-run", "nothing published"),
-        ],
-    ));
+    let expected = formatdoc! {"
+        ┌──────────┬─────────┬────────────┐
+        │ name     ┆ version ┆ via        │
+        ╞══════════╪═════════╪════════════╡
+        │ demo     ┆ 0.0.1   ┆ cargo      │
+        │ @org/pkg ┆ 0.0.2   ┆ bun github │
+        └──────────┴─────────┴────────────┘
+
+        ┌─────────┬─────────────────────────────┐
+        │ release ┆ would create demo@0.0.1     │
+        │ release ┆ would create @org/pkg@0.0.2 │
+        │ dry-run ┆ nothing published           │
+        └─────────┴─────────────────────────────┘
+    "};
     assert_eq!(publish_stdout(root.path()), expected);
 }
 

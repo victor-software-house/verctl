@@ -107,8 +107,8 @@ is never in the URL and never sent as Bearer. Locally `git clone`
 already has the ref; otherwise `git remote set-head origin --auto`. How is a `publishers` entry: argv + placeholders.
 Cargo and bun are stock recipes (first-class examples). Override or
 add another stack without a new verb. GitHub Packages for bun uses a
-nearby `bunfig.toml` as `--config`. Pretty output is ctl-core
-tables; tests pass `--color never`.
+nearby `bunfig.toml` as `--config`. One typed report feeds ctl-core pretty,
+colorless, and JSON output; tests pass `--color never`.
 
 Tag names come from `tags.template` (default `v{version}`). The
 placeholders are `{version}` and `{name}` — the same vocabulary

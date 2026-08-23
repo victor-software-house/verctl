@@ -431,9 +431,9 @@ dependencies = [
 
 [[package]]
 name = "ctl-core"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80327241c88a1eed440c0d2cd4d7f652baf6e1dbabc1b9c745f1ffea77476d0d"
+checksum = "e959449449649fe160168a5ff704e2aa54dfae03ec7182ce33135ba799114816"
 dependencies = [
  "anstream",
  "anstyle",
@@ -442,9 +442,9 @@ dependencies = [
  "comfy-table",
  "document-features",
  "indoc",
- "minijinja",
  "serde",
  "serde_json",
+ "unicode-width 0.2.2",
  "usage-lib",
 ]
 
