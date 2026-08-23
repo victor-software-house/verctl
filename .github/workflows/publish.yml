@@ -53,13 +53,13 @@ jobs:
           save-if: false
       - name: Plan native assets
         id: plan
-        run: mise -E dev run ver -- assets --github-output "$GITHUB_OUTPUT"
+        run: mise -E dev run ver assets --github-output "$GITHUB_OUTPUT"
       - name: Publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
           VERCTL_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: mise -E dev run ver -- publish
+        run: mise -E dev run ver publish
 
   assets:
     name: ${{ matrix.id }}
@@ -91,7 +91,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
-          mise -E dev run ver -- assets
+          mise -E dev run ver assets
           --build "${{ matrix.id }}"
           --upload
           --tag "${{ needs.crate.outputs.tag }}"

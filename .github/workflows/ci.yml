@@ -50,7 +50,7 @@ jobs:
           shared-key: verctl-plan
       - name: Plan validation jobs
         id: plan
-        run: mise run ver -- ci --github-output "$GITHUB_OUTPUT"
+        run: mise run ver ci --github-output "$GITHUB_OUTPUT"
 
   verify:
     name: ${{ matrix.name }}

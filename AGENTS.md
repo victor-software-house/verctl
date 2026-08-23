@@ -5,8 +5,19 @@ Changelogs are minijinja (Jinja2) with `internalAuthors` filtering.
 Ship `actions/version-pr`, `actions/publish`, and `actions/asset`.
 `changelog.ts` is not used.
 
-Operator contract: `verctl instructions` and `skills/verctl/SKILL.md`.
-This repo's queue is [`tasks.yaml`](tasks.yaml) (`VER-###`).
+Operator contract: `verctl instructions` (installed with the binary) and
+`skills/verctl/SKILL.md` (operator skill, served from
+`.ctl/templates/SKILL.md.jinja`). This repo's queue is
+[`tasks.yaml`](tasks.yaml) (`VER-###`). Do not put operator invocation in
+this file. There is no repo-local `.agents/skills/`.
+
+The `ver` task's `#USAGE mount` line is `ctl_core::mount_line("ver")`.
+Put it in `.ctl/templates/ver.jinja`. Do not copy it onto `tasks/ver/ver`
+while that file still pins a release that lacks `--usage-spec`.
+
+A clap verb the operator skill never names (word, code span, heading)
+fails `operator_docs` tests. Mention it anywhere; do not maintain a
+second command list.
 
 ## Strings (do not regress)
 

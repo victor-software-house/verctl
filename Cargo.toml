@@ -28,7 +28,7 @@ disallowed_macros = "deny"
 anyhow = "1.0.100"
 bytes = "1.11.1"
 clap = { version = "4.6.5", features = ["derive"] }
-ctl-core = "0.0.3"
+ctl-core = { version = "0.1.0", features = ["usage"] }
 duct = "1.1.1"
 glob = "0.3.3"
 git2 = { version = "0.21.0", features = ["https", "vendored-libgit2", "vendored-openssl"] }

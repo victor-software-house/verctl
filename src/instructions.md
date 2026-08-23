@@ -6,9 +6,12 @@ It is not `@changesets/cli` and not a forkctl verb.
 ## Invocation
 
 ```
-mise run ver -- status
-mise run ver -- instructions
+mise run ver status
+mise run ver instructions
 ```
+
+The `--` in `#USAGE mount` is mise's completion bootstrap. Do not put
+it in front of verbs.
 
 Until a tagged GitHub Release exists, use a local or
 `cargo install --git` build, then `verctl`.

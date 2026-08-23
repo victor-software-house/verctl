@@ -21,6 +21,9 @@ use verctl::versions;
 const INSTRUCTIONS: &str = include_str!("instructions.md");
 
 fn main() -> ExitCode {
+    if let Some(code) = take::<Cli>("ver") {
+        return code;
+    }
     go::<Cli>("verctl", |cli| {
         let view = cli.format.view(cli.color.color());
         match cli.command {
