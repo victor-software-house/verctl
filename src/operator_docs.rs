@@ -63,6 +63,25 @@ fn served_skill_version_matches_the_package() {
 }
 
 #[test]
+fn every_served_template_renders() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    assert!(
+        crate::git::is_repository(root),
+        "templates::plan discovers sources from the git index"
+    );
+    let config = crate::config::Config::load(&root.join(".ctl/ver.yaml"))
+        .unwrap_or_else(|error| panic!("load .ctl/ver.yaml: {error:#}"));
+    let versions = crate::release::served_versions(root, &config, &[]);
+    let served = crate::templates::plan(root, &config.templates, &versions)
+        .unwrap_or_else(|error| panic!("{error:#}"));
+    let skill = root.join(SKILL);
+    assert!(
+        served.iter().any(|path| path == &skill),
+        "{SKILL_TEMPLATE} must still serve {SKILL}"
+    );
+}
+
+#[test]
 fn skill_template_names_every_clap_verb() {
     let body = crate_file(SKILL_TEMPLATE);
     let missing: Vec<String> = verbs()
