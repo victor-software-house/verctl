@@ -33,6 +33,31 @@ url_api = "https://api.github.com/repos/crate-ci/committed/releases/assets/36154
 version = "0.69.0"
 backend = "aqua:open-policy-agent/conftest"
 
+[tools.conftest."platforms.linux-x64"]
+checksum = "sha256:96fc2fbf11f0afde51256647127e6f00a64ce839a4d9a0a1aef2426c0e6f4b3f"
+url = "https://github.com/open-policy-agent/conftest/releases/download/v0.69.0/conftest_0.69.0_Linux_x86_64.tar.gz"
+url_api = "https://api.github.com/repos/open-policy-agent/conftest/releases/assets/499923547"
+
+[tools.conftest."platforms.linux-x64-musl"]
+checksum = "sha256:96fc2fbf11f0afde51256647127e6f00a64ce839a4d9a0a1aef2426c0e6f4b3f"
+url = "https://github.com/open-policy-agent/conftest/releases/download/v0.69.0/conftest_0.69.0_Linux_x86_64.tar.gz"
+url_api = "https://api.github.com/repos/open-policy-agent/conftest/releases/assets/499923547"
+
+[tools.conftest."platforms.macos-arm64"]
+checksum = "sha256:78302d045f0ec52e9786a06c6c621ac4516b4c5dd1e54efc8050c86c29b964d9"
+url = "https://github.com/open-policy-agent/conftest/releases/download/v0.69.0/conftest_0.69.0_Darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/open-policy-agent/conftest/releases/assets/499923548"
+
+[tools.conftest."platforms.macos-x64"]
+checksum = "sha256:74fc9073fc7a5f11ffe00db7599d2b155d179acc70e83ffc7ab4a8750e6ee24e"
+url = "https://github.com/open-policy-agent/conftest/releases/download/v0.69.0/conftest_0.69.0_Darwin_x86_64.tar.gz"
+url_api = "https://api.github.com/repos/open-policy-agent/conftest/releases/assets/499923549"
+
+[tools.conftest."platforms.windows-x64"]
+checksum = "sha256:be95f90cd22d00e709a7ad37bdac357c103b4f81d92dc51ca75a60e5f3905cf5"
+url = "https://github.com/open-policy-agent/conftest/releases/download/v0.69.0/conftest_0.69.0_Windows_x86_64.zip"
+url_api = "https://api.github.com/repos/open-policy-agent/conftest/releases/assets/499923545"
+
 [[tools.lefthook]]
 version = "2.1.10"
 backend = "aqua:evilmartians/lefthook"
