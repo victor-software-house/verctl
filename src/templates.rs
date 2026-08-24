@@ -21,10 +21,12 @@
 //! `Served`. Trim declarations with `{%- … -%}`: a shebang has to stay on line
 //! one.
 
+use crate::cli::Cli;
 use crate::config::Templates;
 use crate::git;
 use crate::schema::{inside_the_repo, one_file_name};
 use anyhow::{Context, Result, bail};
+use ctl_core::{Surface, surface::add_fragments};
 use garde::Validate;
 use minijinja::value::Value;
 use minijinja::{Environment, State, UndefinedBehavior, context};
@@ -90,15 +92,18 @@ fn render(
     versions: &[(String, String)],
     persist: bool,
 ) -> Result<Vec<PathBuf>> {
+    let verctl_surface = Surface::new::<Cli>("ver");
     let context = context! {
         versions => versions
             .iter()
             .map(|(name, version)| (name.clone(), version.clone()))
             .collect::<BTreeMap<_, _>>(),
+        verctl_surface,
     };
     let mut environment = Environment::new();
     environment.set_undefined_behavior(UndefinedBehavior::Strict);
     environment.set_keep_trailing_newline(true);
+    add_fragments(&mut environment).context("register ctl-core operator fragments")?;
 
     let mut rendered = Vec::new();
     for template in sources(root, config)? {

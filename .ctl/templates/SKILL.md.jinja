@@ -1,4 +1,7 @@
 {%- set path = "skills/verctl" -%}
+{%- from "ctl/version.md.jinja" import version_line -%}
+{%- from "ctl/invocation.md.jinja" import mounted_invocation -%}
+{%- from "ctl/commands.md.jinja" import command_inventory -%}
 ---
 name: verctl
 description: >-
@@ -7,7 +10,7 @@ description: >-
   .changeset fragments, or stack-agnostic changelog templates. Not
   @changesets/cli and not a forkctl verb.
 license: MIT
-version: {{ versions["verctl"] }}
+{{ version_line(versions["verctl"]) }}
 ---
 
 # verctl
@@ -15,14 +18,9 @@ version: {{ versions["verctl"] }}
 `verctl instructions` is the installed contract. Actions run `verctl` from
 PATH.
 
-```sh
-mise run ver status
-mise run ver check
-mise run ver prepare --pr
-```
+{{ mounted_invocation(verctl_surface, ["status", "check", "prepare --pr"]) }}
 
-Never `mise run ver --`. The `--` in `#USAGE mount` is mise's completion
-bootstrap.
+{{ command_inventory(verctl_surface) | trim }}
 
 Every command returns one typed report. Use `--format json` for the same data
 without ANSI; JSON errors use stdout, while human errors use stderr. `--quiet`

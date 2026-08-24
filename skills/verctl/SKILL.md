@@ -14,14 +14,29 @@ version: 0.3.0
 `verctl instructions` is the installed contract. Actions run `verctl` from
 PATH.
 
+## Invocation
+
 ```sh
 mise run ver status
 mise run ver check
 mise run ver prepare --pr
 ```
 
-Never `mise run ver --`. The `--` in `#USAGE mount` is mise's completion
-bootstrap.
+Never `mise run ver --`. The `--` in `#USAGE mount` is mise's
+completion bootstrap.
+
+## Commands
+
+| Command | Aliases | Purpose |
+|:--|:--|:--|
+| `instructions` | — | Print the installed-version operator contract |
+| `status` | — | List pending .changeset fragments |
+| `check` | — | Validate fragments, or `--versions` against the default branch |
+| `prepare` | — | Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews |
+| `publish` | — | Publish the versions on HEAD (cargo / bun + GitHub Release) |
+| `pin` | — | Rewrite collocated tool pins to the versions on HEAD |
+| `assets` | — | Plan or build native GitHub Release tarballs declared under `assets` |
+| `ci` | — | Plan the validation jobs declared in `[ci]` |
 
 Every command returns one typed report. Use `--format json` for the same data
 without ANSI; JSON errors use stdout, while human errors use stderr. `--quiet`

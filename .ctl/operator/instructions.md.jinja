@@ -1,30 +1,13 @@
+{%- from "ctl/invocation.md.jinja" import mounted_invocation -%}
+{%- from "ctl/commands.md.jinja" import command_inventory -%}
 # verctl agent instructions
 
 `verctl` consumes Changesets-format fragments and prepares a Version PR.
 It is not `@changesets/cli` and not a forkctl verb.
 
-## Invocation
+{{ mounted_invocation(surface, ["status", "instructions"]) }}
 
-```sh
-mise run ver status
-mise run ver instructions
-```
-
-Never `mise run ver --`. The `--` in `#USAGE mount` is mise's
-completion bootstrap.
-
-## Commands
-
-| Command | Aliases | Purpose |
-|:--|:--|:--|
-| `instructions` | — | Print the installed-version operator contract |
-| `status` | — | List pending .changeset fragments |
-| `check` | — | Validate fragments, or `--versions` against the default branch |
-| `prepare` | — | Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews |
-| `publish` | — | Publish the versions on HEAD (cargo / bun + GitHub Release) |
-| `pin` | — | Rewrite collocated tool pins to the versions on HEAD |
-| `assets` | — | Plan or build native GitHub Release tarballs declared under `assets` |
-| `ci` | — | Plan the validation jobs declared in `[ci]` |
+{{ command_inventory(surface) | trim }}
 
 Until a tagged GitHub Release exists, use a local or
 `cargo install --git` build, then `verctl`.
@@ -67,7 +50,7 @@ Context: `summary`, `pull_request`, `commit`, `continuations`,
 
 Happy path is GitHub Actions: `victor-software-house/verctl/actions/version-pr`,
 not `changesets/action`, not a GitHub App. The workflow already has
-`git`, `gh`, and `${{ github.token }}`. No PAT. No App install.
+{% raw %}`git`, `gh`, and `${{ github.token }}`. No PAT. No App install.{% endraw %}
 
 Do not hand-edit versions. `verctl check --versions` compares each
 declared manifest to the merge-base of HEAD and the default branch.
@@ -148,7 +131,7 @@ own bootstrap tool — is not a `pins` entry. OIDC trusted publishing
 is later (VER-007).
 
 Prefer a template over a pin. A served file under `.ctl/templates/`
-declares its own target in top-level `{%- set … -%}` exports and is
+{% raw %}declares its own target in top-level `{%- set … -%}` exports and is{% endraw %}
 rendered onto the Version PR commit, so it cannot drift; a `pins`
 entry admits a file is hand-authored. Commit the template: one the
 repo neither tracks nor ignores fails the run, because rendering
