@@ -1,7 +1,5 @@
 use anyhow::{Context, Result};
 use ctl_core::prelude::*;
-use serde::Serialize;
-use std::io::{self, Write};
 use std::path::Path;
 use verctl::assets;
 use verctl::ci;
@@ -18,105 +16,36 @@ use verctl::release;
 use verctl::templates;
 use verctl::versions;
 
+mod presentation;
+
+use presentation::{
+    AssetsReport, CheckReport, CiReport, InstructionsReport, PinReport, PrepareBump, PrepareReport,
+    PublishReport, Report, StatusFragment, StatusPackage, StatusReport, VersionCheckReport,
+};
+
 const INSTRUCTIONS: &str = include_str!("instructions.md");
 
 fn main() -> ExitCode {
-    if let Some(code) = take::<Cli>("ver") {
-        return code;
-    }
-    go::<Cli>("verctl", |cli| {
-        let view = cli.format.view(cli.color.color());
-        match cli.command {
-            Command::Instructions => io::stdout().write_all(INSTRUCTIONS.as_bytes())?,
-            Command::Status(args) => view.show(&status_report(&args)?)?,
-            Command::Check(args) => {
-                if args.versions {
-                    let report = versions_report(&args)?;
-                    view.show(&report)?;
-                    report.require()?;
-                } else {
-                    let ok = fragment::load_dir(&args.dir)?.len();
-                    view.show(&CheckReport { ok })?;
-                }
-            }
-            Command::Prepare(args) => view.show(&prepare_report(&args)?)?,
-            Command::Publish(args) => view.show(&publish_report(&args)?)?,
-            Command::Pin(args) => view.show(&pin_report(&args)?)?,
-            Command::Assets(args) => view.show(&assets_report(&args)?)?,
-            Command::Ci(args) => view.show(&ci_report(&args)?)?,
+    App::<Cli>::new("verctl")
+        .mounted_as("ver")
+        .view(|cli| cli.format.view(cli.color.color()))
+        .run(execute)
+}
+
+fn execute(cli: Cli) -> Result<Report> {
+    match cli.command {
+        Command::Instructions => Ok(Report::Instructions(InstructionsReport::new(INSTRUCTIONS))),
+        Command::Status(args) => status_report(&args).map(Report::Status),
+        Command::Check(args) if args.versions => versions_report(&args).map(Report::VersionCheck),
+        Command::Check(args) => {
+            let ok = fragment::load_dir(&args.dir)?.len();
+            Ok(Report::Check(CheckReport { ok }))
         }
-        Ok(())
-    })
-}
-
-#[derive(Serialize)]
-struct CheckReport {
-    ok: usize,
-}
-
-impl CheckReport {
-    fn pretty(&self, color: ColorMode) -> String {
-        kv(color, [("ok", format!("{n} fragment(s)", n = self.ok))])
-    }
-}
-
-impl Render for CheckReport {
-    fn render_pretty(&self) -> String {
-        self.pretty(ColorMode::Always)
-    }
-
-    fn render_pretty_colored(&self, color: ColorMode) -> String {
-        self.pretty(color)
-    }
-}
-
-#[derive(Serialize)]
-struct VersionCheckReport {
-    skip: Option<String>,
-    rows: Vec<versions::VersionRow>,
-}
-
-impl VersionCheckReport {
-    fn pretty(&self, color: ColorMode) -> String {
-        if let Some(skip) = &self.skip {
-            return kv(color, [("exempt", skip.clone())]);
-        }
-        let drifted: Vec<&versions::VersionRow> =
-            self.rows.iter().filter(|row| row.drifted()).collect();
-        if drifted.is_empty() {
-            return kv(color, [("versions", "match")]);
-        }
-        let rows: Vec<Vec<String>> = drifted
-            .iter()
-            .map(|row| {
-                vec![
-                    row.name.clone(),
-                    row.remote.clone().unwrap_or_else(|| "-".into()),
-                    row.local.clone(),
-                ]
-            })
-            .collect();
-        grid(color, &["name", "default", "local"], rows)
-    }
-}
-
-impl Render for VersionCheckReport {
-    fn render_pretty(&self) -> String {
-        self.pretty(ColorMode::Always)
-    }
-
-    fn render_pretty_colored(&self, color: ColorMode) -> String {
-        self.pretty(color)
-    }
-}
-
-impl VersionCheckReport {
-    fn require(&self) -> Result<()> {
-        let report = versions::VersionReport {
-            skip: self.skip.clone(),
-            rows: self.rows.clone(),
-        };
-        report.require_clean()
+        Command::Prepare(args) => prepare_report(&args).map(Report::Prepare),
+        Command::Publish(args) => publish_report(&args).map(Report::Publish),
+        Command::Pin(args) => pin_report(&args).map(Report::Pin),
+        Command::Assets(args) => assets_report(&args).map(Report::Assets),
+        Command::Ci(args) => ci_report(&args).map(Report::Ci),
     }
 }
 
@@ -128,150 +57,6 @@ fn versions_report(args: &CheckArgs) -> Result<VersionCheckReport> {
         skip: report.skip,
         rows: report.rows,
     })
-}
-
-#[derive(Serialize)]
-struct StatusReport {
-    pending: usize,
-    max: String,
-    fragments: Vec<StatusFragment>,
-}
-
-#[derive(Serialize)]
-struct StatusFragment {
-    file: String,
-    max: String,
-    packages: Vec<StatusPackage>,
-}
-
-#[derive(Serialize)]
-struct StatusPackage {
-    name: String,
-    bump: String,
-}
-
-impl StatusReport {
-    fn pretty(&self, color: ColorMode) -> String {
-        if self.pending == 0 {
-            return kv(color, [("pending", "0")]);
-        }
-        let rows: Vec<Vec<String>> = self
-            .fragments
-            .iter()
-            .flat_map(|fragment| {
-                fragment.packages.iter().map(|package| {
-                    vec![
-                        fragment.file.clone(),
-                        package.name.clone(),
-                        package.bump.clone(),
-                    ]
-                })
-            })
-            .collect();
-        let mut out = grid(color, &["file", "package", "bump"], rows);
-        out.push('\n');
-        out.push_str(&kv(
-            color,
-            [
-                ("pending", self.pending.to_string()),
-                ("max", self.max.clone()),
-            ],
-        ));
-        out
-    }
-}
-
-impl Render for StatusReport {
-    fn render_pretty(&self) -> String {
-        self.pretty(ColorMode::Always)
-    }
-
-    fn render_pretty_colored(&self, color: ColorMode) -> String {
-        self.pretty(color)
-    }
-}
-
-#[derive(Clone, Serialize)]
-struct PrepareReport {
-    bumps: Vec<PrepareBump>,
-    changelog: String,
-    consume: Vec<String>,
-    pins: Vec<String>,
-    pr: Option<String>,
-    next: Vec<String>,
-    dry_run: bool,
-}
-
-#[derive(Clone, Serialize)]
-struct PrepareBump {
-    name: String,
-    from: String,
-    to: String,
-    bump: String,
-}
-
-impl PrepareReport {
-    fn pretty(&self, color: ColorMode) -> String {
-        if self.pr.as_deref() == Some("no-op") && self.bumps.is_empty() {
-            return kv(color, [("no-op", "no version-changing fragments")]);
-        }
-        let mut out = String::new();
-        if !self.bumps.is_empty() {
-            let rows: Vec<Vec<String>> = self
-                .bumps
-                .iter()
-                .map(|bump| {
-                    vec![
-                        bump.name.clone(),
-                        bump.from.clone(),
-                        bump.to.clone(),
-                        bump.bump.clone(),
-                    ]
-                })
-                .collect();
-            out.push_str(&grid(color, &["name", "from", "to", "bump"], rows));
-        }
-        if !self.changelog.trim().is_empty() {
-            if !out.is_empty() {
-                out.push('\n');
-            }
-            out.push_str(self.changelog.trim_end());
-            out.push('\n');
-        }
-        let mut extra: Vec<(&str, String)> = Vec::new();
-        for file in &self.consume {
-            extra.push(("consume", file.clone()));
-        }
-        for file in &self.pins {
-            extra.push(("pin", file.clone()));
-        }
-        if let Some(pr) = &self.pr {
-            extra.push(("pr", pr.clone()));
-        }
-        for cmd in &self.next {
-            extra.push(("next", cmd.clone()));
-        }
-        if self.dry_run {
-            extra.push(("dry-run", "nothing written".into()));
-        }
-        if !extra.is_empty() {
-            if !out.is_empty() {
-                out.push('\n');
-            }
-            out.push_str(&kv(color, extra));
-        }
-        out
-    }
-}
-
-impl Render for PrepareReport {
-    fn render_pretty(&self) -> String {
-        self.pretty(ColorMode::Always)
-    }
-
-    fn render_pretty_colored(&self, color: ColorMode) -> String {
-        self.pretty(color)
-    }
 }
 
 /// The versions templates render from.
@@ -464,62 +249,6 @@ fn preview_report(
     })
 }
 
-#[derive(Serialize)]
-struct PublishReport {
-    packages: Vec<publish::PublishLine>,
-    releases: Vec<String>,
-    dry_run: bool,
-}
-
-impl PublishReport {
-    fn pretty(&self, color: ColorMode) -> String {
-        if self.packages.is_empty() && self.releases.is_empty() {
-            return kv(color, [("no-op", "nothing to publish")]);
-        }
-        let with_notes = self.packages.iter().any(|entry| entry.note.is_some());
-        let headers: &[&str] = if with_notes {
-            &["name", "version", "via", "note"]
-        } else {
-            &["name", "version", "via"]
-        };
-        let rows: Vec<Vec<String>> = self
-            .packages
-            .iter()
-            .map(|entry| {
-                let mut row = vec![entry.name.clone(), entry.version.clone(), entry.via.clone()];
-                if with_notes {
-                    row.push(entry.note.clone().unwrap_or_default());
-                }
-                row
-            })
-            .collect();
-        let mut out = grid(color, headers, rows);
-        let mut extra: Vec<(&str, String)> = self
-            .releases
-            .iter()
-            .map(|url| ("release", url.clone()))
-            .collect();
-        if self.dry_run {
-            extra.push(("dry-run", "nothing published".into()));
-        }
-        if !extra.is_empty() {
-            out.push('\n');
-            out.push_str(&kv(color, extra));
-        }
-        out
-    }
-}
-
-impl Render for PublishReport {
-    fn render_pretty(&self) -> String {
-        self.pretty(ColorMode::Always)
-    }
-
-    fn render_pretty_colored(&self, color: ColorMode) -> String {
-        self.pretty(color)
-    }
-}
-
 fn publish_report(args: &verctl::cli::PublishArgs) -> Result<PublishReport> {
     let config = Config::load(&args.config)?;
     let root = &config::root_of(&args.config);
@@ -529,30 +258,6 @@ fn publish_report(args: &verctl::cli::PublishArgs) -> Result<PublishReport> {
         releases: outcome.releases,
         dry_run: args.dry_run(),
     })
-}
-
-#[derive(Serialize)]
-struct PinReport {
-    files: Vec<String>,
-}
-
-impl PinReport {
-    fn pretty(&self, color: ColorMode) -> String {
-        if self.files.is_empty() {
-            return kv(color, [("pins", "none")]);
-        }
-        kv(color, self.files.iter().map(|file| ("pin", file.clone())))
-    }
-}
-
-impl Render for PinReport {
-    fn render_pretty(&self) -> String {
-        self.pretty(ColorMode::Always)
-    }
-
-    fn render_pretty_colored(&self, color: ColorMode) -> String {
-        self.pretty(color)
-    }
 }
 
 fn pin_report(args: &PublishArgs) -> Result<PinReport> {
@@ -567,53 +272,6 @@ fn pin_report(args: &PublishArgs) -> Result<PinReport> {
     Ok(PinReport {
         files: display_paths(files),
     })
-}
-
-#[derive(Serialize)]
-struct AssetsReport {
-    #[serde(flatten)]
-    plan: assets::AssetsPlan,
-    tarball: Option<String>,
-    uploaded: Option<String>,
-}
-
-impl AssetsReport {
-    fn pretty(&self, color: ColorMode) -> String {
-        if !self.plan.has_assets {
-            return kv(
-                color,
-                [("assets", "none (library or one host build is enough)")],
-            );
-        }
-        let rows: Vec<Vec<String>> = self
-            .plan
-            .matrix
-            .include
-            .iter()
-            .map(|row| vec![row.id.clone(), row.labels.join(", "), row.asset.clone()])
-            .collect();
-        let mut out = grid(color, &["target", "runs-on", "asset"], rows);
-        let mut extra = vec![("tag", self.plan.tag.as_str())];
-        if let Some(path) = &self.tarball {
-            extra.push(("tarball", path.as_str()));
-        }
-        if let Some(url) = &self.uploaded {
-            extra.push(("upload", url.as_str()));
-        }
-        out.push('\n');
-        out.push_str(&kv(color, extra));
-        out
-    }
-}
-
-impl Render for AssetsReport {
-    fn render_pretty(&self) -> String {
-        self.pretty(ColorMode::Always)
-    }
-
-    fn render_pretty_colored(&self, color: ColorMode) -> String {
-        self.pretty(color)
-    }
 }
 
 fn assets_report(args: &verctl::cli::AssetsArgs) -> Result<AssetsReport> {
@@ -643,35 +301,6 @@ fn assets_report(args: &verctl::cli::AssetsArgs) -> Result<AssetsReport> {
         tarball: None,
         uploaded: None,
     })
-}
-
-#[derive(Serialize)]
-struct CiReport {
-    #[serde(flatten)]
-    plan: ci::CiPlan,
-}
-
-impl CiReport {
-    fn pretty(&self, color: ColorMode) -> String {
-        let rows: Vec<Vec<String>> = self
-            .plan
-            .matrix
-            .include
-            .iter()
-            .map(|job| vec![job.name.clone(), job.labels.join(", ")])
-            .collect();
-        grid(color, &["check", "runs-on"], rows)
-    }
-}
-
-impl Render for CiReport {
-    fn render_pretty(&self) -> String {
-        self.pretty(ColorMode::Always)
-    }
-
-    fn render_pretty_colored(&self, color: ColorMode) -> String {
-        self.pretty(color)
-    }
 }
 
 fn ci_report(args: &verctl::cli::CiArgs) -> Result<CiReport> {

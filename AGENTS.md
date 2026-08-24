@@ -96,12 +96,15 @@ Doc comments carry the why, on the item. Inline `//` prose inside a function
 body is litter — if a line needs explaining, name it better or lift it into the
 item's doc comment.
 
-## Pretty and color
+## Presentation
 
-ctl-core owns tables. `grid` / `kv` take `ColorMode`. Tests pass
-`--color never` or call `grid(ColorMode::Never, …)`. No homemade
-`strip_ansi`. Packages print as a **grid** (`name` / `version` / `via`),
-not a kv dump.
+Command handlers return one serializable `Report`; they never print, select a
+view, or inspect the terminal. `presentation.rs` maps that model to ctl-core
+`Document`, `Fields`, and `Table` primitives through `Present`. ctl-core alone
+owns streams, color, width, wrapping, and table rendering. Tests use an explicit
+width and `ColorMode::Never` for stable snapshots. JSON serializes the same
+report and never contains ANSI. Packages remain a table (`name` / `version` /
+`via`), not fields.
 
 ## Argv fixtures
 

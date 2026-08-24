@@ -224,16 +224,16 @@ fn bun_package_json_hand_edit_fails() {
 }
 
 #[test]
-fn cli_hand_edit_fails_and_prints_table() {
+fn cli_hand_edit_fails_with_one_stderr_report() {
     let (dir, _) = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
     let output = check_cmd(dir.path()).output().unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!output.status.success(), "{stdout}{stderr}");
-    assert!(stdout.contains("demo"), "{stdout}");
-    assert!(stdout.contains("1.0.0"), "{stdout}");
-    assert!(stdout.contains("1.0.1"), "{stdout}");
+    assert!(!output.status.success(), "{stderr}");
+    assert_eq!(output.stdout, &[] as &[u8]);
+    assert!(stderr.contains("demo"), "{stderr}");
+    assert!(stderr.contains("1.0.0"), "{stderr}");
+    assert!(stderr.contains("1.0.1"), "{stderr}");
     assert!(stderr.contains("fragment"), "{stderr}");
 }
 

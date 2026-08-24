@@ -42,6 +42,81 @@ fn status_lists_mixed_packages() {
 }
 
 #[test]
+fn status_json_uses_the_same_report_without_ansi() {
+    let root = TempDir::new().expect("tempdir");
+    let dir = root.path().join(".changeset");
+    fs::create_dir_all(&dir).expect("dir");
+    fs::write(
+        dir.join("change.md"),
+        indoc! {"
+            ---
+            demo: patch
+            ---
+
+            Patch.
+        "},
+    )
+    .expect("write");
+    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+        .args(["status", "--format", "json", "--color", "always", "-d"])
+        .arg(&dir)
+        .output()
+        .expect("spawn");
+    assert!(output.status.success());
+    assert_eq!(output.stderr, &[] as &[u8]);
+    assert!(!output.stdout.contains(&0x1b));
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("JSON");
+    assert_eq!(value["pending"], 1);
+    assert_eq!(value["max"], "patch");
+    assert_eq!(value["fragments"][0]["packages"][0]["name"], "demo");
+}
+
+#[test]
+fn quiet_suppresses_only_successful_pretty_status() {
+    let root = TempDir::new().expect("tempdir");
+    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+        .args(["status", "--quiet", "-d"])
+        .arg(root.path().join("missing"))
+        .output()
+        .expect("spawn");
+    assert!(output.status.success());
+    assert_eq!(output.stdout, &[] as &[u8]);
+    assert_eq!(output.stderr, &[] as &[u8]);
+}
+
+#[test]
+fn json_errors_use_stdout_and_one_envelope() {
+    let root = TempDir::new().expect("tempdir");
+    let dir = root.path().join(".changeset");
+    fs::create_dir_all(&dir).expect("dir");
+    fs::write(dir.join("bad.md"), "nope").expect("write");
+    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+        .args(["check", "--format", "json", "-d"])
+        .arg(&dir)
+        .output()
+        .expect("spawn");
+    assert!(!output.status.success());
+    assert_eq!(output.stderr, &[] as &[u8]);
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("JSON");
+    assert_eq!(value["status"], "err");
+    assert_eq!(value["error"]["bin"], "verctl");
+}
+
+#[test]
+fn instructions_preserve_the_installed_markdown() {
+    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+        .arg("instructions")
+        .output()
+        .expect("spawn");
+    assert!(output.status.success());
+    assert_eq!(output.stderr, &[] as &[u8]);
+    let expected =
+        fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/instructions.md"))
+            .expect("instructions");
+    assert_eq!(output.stdout, expected);
+}
+
+#[test]
 fn check_fails_closed_on_bad_fragment() {
     let root = TempDir::new().expect("tempdir");
     let dir = root.path().join(".changeset");
