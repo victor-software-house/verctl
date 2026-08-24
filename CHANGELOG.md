@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.3.1
+
+- Render the operator skill and installed instructions from ctl-core Surface fragments, keeping Clap as the only command inventory and the shared mounted invocation as the only no-`--` rule.
+
 ## verctl 0.3.0
 
 - Route every command through ctl-core's typed App and semantic Document presentation kernel, so pretty, colorless, JSON, help, errors, and exit codes share one report model.
