@@ -246,6 +246,13 @@ Example consumer workflow: [`examples/workflows/version-pr.yml`](examples/workfl
 
 Mise owns tools. Publish uses Actions OIDC, not a PAT.
 
+## Operator documents
+
+Clap remains the command grammar. ctl-core `Surface` renders the shared version,
+mounted invocation/no-`--`, and visible command-inventory fragments. Verctl's
+Jinja templates retain domain prose, and `operator_docs` byte-compares their
+renders with `skills/verctl/SKILL.md` and `src/instructions.md`.
+
 ## License
 
 MIT.

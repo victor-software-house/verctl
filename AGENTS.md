@@ -15,9 +15,11 @@ The `ver` task's `#USAGE mount` line is `ctl_core::mount_line("ver")`.
 Put it in `.ctl/templates/ver.jinja`. Do not copy it onto `tasks/ver/ver`
 while that file still pins a release that lacks `--usage-spec`.
 
-A clap verb the operator skill never names (word, code span, heading)
-fails `operator_docs` tests. Mention it anywhere; do not maintain a
-second command list.
+Operator templates render a ctl-core `Surface` from `Cli`. The shared command
+inventory is the only verb list, and the shared invocation fragment owns the
+mounted examples and no-`--` rule. `operator_docs` byte-compares both renders
+with the committed skill and installed instructions; update them with
+`UPDATE_OPERATOR_DOCS=1 cargo test operator_docs`.
 
 ## Strings (do not regress)
 
