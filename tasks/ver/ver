@@ -5,7 +5,7 @@
 #MISE description="Run the verctl version-PR CLI"
 #MISE dir="{{cwd}}"
 #MISE raw_args=true
-#MISE tools = { "github:victor-software-house/verctl" = "0.2.4" }
+#MISE tools = { "github:victor-software-house/verctl" = "0.3.0" }
 #USAGE mount "mise run --quiet ver -- --usage-spec=ver"
 
 set -euo pipefail

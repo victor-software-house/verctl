@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.3.0
+
+- Route every command through ctl-core's typed App and semantic Document presentation kernel, so pretty, colorless, JSON, help, errors, and exit codes share one report model.
+
 ## verctl 0.2.4
 
 - The operator skill template wraps Jinja examples in `raw` so `prepare` can render it.
