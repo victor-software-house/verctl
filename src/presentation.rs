@@ -48,14 +48,14 @@ pub(super) struct InstructionsReport {
 impl InstructionsReport {
     pub(super) fn new(instructions: &str) -> Self {
         Self {
-            instructions: instructions.trim_end().to_owned(),
+            instructions: instructions.to_owned(),
         }
     }
 }
 
 impl Present for InstructionsReport {
     fn present(&self) -> Document {
-        Document::new().paragraph(self.instructions.clone())
+        Document::new().verbatim(self.instructions.clone())
     }
 }
 

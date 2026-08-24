@@ -431,9 +431,9 @@ dependencies = [
 
 [[package]]
 name = "ctl-core"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e959449449649fe160168a5ff704e2aa54dfae03ec7182ce33135ba799114816"
+checksum = "0feec2255a6940ef291ace0d8f5b549d2630d89eab2b4d3b54a432229ae543c2"
 dependencies = [
  "anstream",
  "anstyle",
@@ -444,6 +444,8 @@ dependencies = [
  "indoc",
  "serde",
  "serde_json",
+ "unicode-bidi",
+ "unicode-general-category",
  "unicode-width 0.2.2",
  "usage-lib",
 ]
@@ -2686,6 +2688,18 @@ name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
+
+[[package]]
+name = "unicode-bidi"
+version = "0.3.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c1cb5db39152898a79168971543b1cb5020dff7fe43c8dc468b0885f5e29df5"
+
+[[package]]
+name = "unicode-general-category"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b993bddc193ae5bd0d623b49ec06ac3e9312875fdae725a975c51db1cc1677f"
 
 [[package]]
 name = "unicode-ident"
