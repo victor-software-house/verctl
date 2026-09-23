@@ -9,7 +9,10 @@
 name: CI
 
 on:
+  # The Version PR is opened, then labeled; the version check reads the
+  # label from the event, so the labeled event must start a run too.
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
 
