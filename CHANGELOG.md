@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.3.2
+
+- Adopt ctl-core 0.6.3: borderless records, bold package names, indented JSON, and an 80-column fallback width in piped output.
+
 ## verctl 0.3.1
 
 - Render the operator skill and installed instructions from ctl-core Surface fragments, keeping Clap as the only command inventory and the shared mounted invocation as the only no-`--` rule.
