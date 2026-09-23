@@ -46,10 +46,8 @@ fn dry_run_lists_one_cargo_crate() {
         │ demo ┆ 0.0.1   ┆ cargo │
         └──────┴─────────┴───────┘
 
-        ┌─────────┬─────────────────────┐
-        │ release ┆ would create v0.0.1 │
-        │ dry-run ┆ nothing published   │
-        └─────────┴─────────────────────┘
+        release  would create v0.0.1
+        dry-run  nothing published
     "};
     assert_eq!(publish_stdout(root.path()), expected);
 }
@@ -95,11 +93,9 @@ fn dry_run_lists_many_packages() {
         │ @org/pkg ┆ 0.0.2   ┆ bun github │
         └──────────┴─────────┴────────────┘
 
-        ┌─────────┬─────────────────────────────┐
-        │ release ┆ would create demo@0.0.1     │
-        │ release ┆ would create @org/pkg@0.0.2 │
-        │ dry-run ┆ nothing published           │
-        └─────────┴─────────────────────────────┘
+        release  would create demo@0.0.1
+        release  would create @org/pkg@0.0.2
+        dry-run  nothing published
     "};
     assert_eq!(publish_stdout(root.path()), expected);
 }

@@ -101,7 +101,7 @@ impl Present for VersionCheckReport {
             return Document::new().fields(Fields::new().row("versions", "match"));
         }
         let table = drifted.iter().fold(
-            Table::new(["name", "default", "local"]).token_column(0),
+            Table::new(["name", "default", "local"]).id_column(0),
             |table, row| {
                 table.row([
                     row.name.clone(),
@@ -153,7 +153,7 @@ impl Present for StatusReport {
             return Document::new().fields(Fields::new().row("pending", "0"));
         }
         let table = self.fragments.iter().fold(
-            Table::new(["file", "package", "bump"]).token_column(1),
+            Table::new(["file", "package", "bump"]).id_column(1),
             |table, fragment| {
                 fragment.packages.iter().fold(table, |table, package| {
                     table.row([
@@ -209,7 +209,7 @@ impl Present for PrepareReport {
         let mut document = Document::new();
         if !self.bumps.is_empty() {
             let table = self.bumps.iter().fold(
-                Table::new(["name", "from", "to", "bump"]).token_column(0),
+                Table::new(["name", "from", "to", "bump"]).id_column(0),
                 |table, bump| {
                     table.row([
                         bump.name.clone(),
@@ -266,17 +266,16 @@ impl Present for PublishReport {
         } else {
             vec!["name", "version", "via"]
         };
-        let table =
-            self.packages
-                .iter()
-                .fold(Table::new(headers).token_column(0), |table, entry| {
-                    let mut row =
-                        vec![entry.name.clone(), entry.version.clone(), entry.via.clone()];
-                    if with_notes {
-                        row.push(entry.note.clone().unwrap_or_default());
-                    }
-                    table.row(row)
-                });
+        let table = self
+            .packages
+            .iter()
+            .fold(Table::new(headers).id_column(0), |table, entry| {
+                let mut row = vec![entry.name.clone(), entry.version.clone(), entry.via.clone()];
+                if with_notes {
+                    row.push(entry.note.clone().unwrap_or_default());
+                }
+                table.row(row)
+            });
         let mut fields = Fields::new();
         for release in &self.releases {
             fields = fields.row("release", release.clone());
@@ -379,9 +378,7 @@ mod tests {
         assert_eq!(
             pretty.text(),
             formatdoc! {"
-                ┌────┬───────────────┐
-                │ ok ┆ 2 fragment(s) │
-                └────┴───────────────┘
+                ok  2 fragment(s)
             "},
         );
 
@@ -389,7 +386,10 @@ mod tests {
             .capture(&report)
             .expect("JSON report");
         assert_eq!(json.stream(), Stream::Stdout);
-        assert_eq!(json.text(), "{\"ok\":2}\n");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(json.text()).expect("JSON"),
+            serde_json::json!({ "ok": 2 })
+        );
         assert!(!json.text().contains('\u{1b}'));
     }
 
@@ -426,9 +426,7 @@ mod tests {
         assert_eq!(
             pretty.text(),
             formatdoc! {"
-                ┌─────────┬─────────────────────────┐
-                │ release ┆ https://example.test/v1 │
-                └─────────┴─────────────────────────┘
+                release  https://example.test/v1
             "},
         );
     }
@@ -460,18 +458,24 @@ mod tests {
                 │ change.md ┆ demo    ┆ minor │
                 └───────────┴─────────┴───────┘
 
-                ┌─────────┬───────┐
-                │ pending ┆ 1     │
-                │ max     ┆ minor │
-                └─────────┴───────┘
+                pending  1
+                    max  minor
             "},
         );
         let json = View::new(OutputFormat::Json, ColorMode::Never)
             .capture(&report)
             .expect("JSON report");
         assert_eq!(
-            json.text(),
-            "{\"pending\":1,\"max\":\"minor\",\"fragments\":[{\"file\":\"change.md\",\"max\":\"minor\",\"packages\":[{\"name\":\"demo\",\"bump\":\"minor\"}]}]}\n",
+            serde_json::from_str::<serde_json::Value>(json.text()).expect("JSON"),
+            serde_json::json!({
+                "pending": 1,
+                "max": "minor",
+                "fragments": [{
+                    "file": "change.md",
+                    "max": "minor",
+                    "packages": [{ "name": "demo", "bump": "minor" }],
+                }],
+            })
         );
     }
 }
