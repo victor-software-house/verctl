@@ -1,5 +1,5 @@
-# yaml-language-server: $schema=https://github.com/victor-software-house/qctl/releases/download/v0.1.2/tasks.schema.json
-schema_version: 3
+# yaml-language-server: $schema=https://github.com/victor-software-house/qctl/releases/download/v0.4.2/tasks.schema.json
+schema_version: 4
 prefix: VER
 
 style:
@@ -25,15 +25,9 @@ queue:
       - Pretty is ctl-core ColorMode tables; tests use --color never.
       - Native assets only when [assets] is set; PR CI stays one runner.
       - Asset jobs are named by target id; cargo/bun inherit stdio.
-    notes: >-
-      Original product goal. Do not name the private release-skill in
-      repo docs. Rust and bun are stock examples, not the architecture.
-      Adopt ctl-core fixture trees (CTC-006) instead of more fs::write
-      + indoc copies. 2026-08-17: status/check/prepare are ColorMode
-      tables; publish proves changelog headings + default-branch
-      history (no commit-subject sniff); GitHub notes come from each
-      package CHANGELOG. Hand-edit guard shipped as VER-012 / PR #9.
-      Still open for archive: lockfile-after-bump (VER-013).
+    notes:
+      - >-
+        Original product goal. Do not name the private release-skill in repo docs. Rust and bun are stock examples, not the architecture. Adopt ctl-core fixture trees (CTC-006) instead of more fs::write + indoc copies. 2026-08-17: status/check/prepare are ColorMode tables; publish proves changelog headings + default-branch history (no commit-subject sniff); GitHub notes come from each package CHANGELOG. Hand-edit guard shipped as VER-012 / PR #9. Still open for archive: lockfile-after-bump (VER-013).
 
   - id: VER-015
     title: Asset runners are configuration, not a hardcoded map
@@ -50,39 +44,9 @@ queue:
       - A declared self-hosted or nscloud label set reaches runs-on unchanged, in order.
       - An undeclared machine name fails listing the declared ones; a label is never accepted as a name.
       - Tests cover default, override, multi-label, fan-out naming, empty list, and a partial undeclared target.
-    notes: >-
-      2026-08-17: found while adopting the lane in qctl (qctl#3). Two
-      claims first written here were wrong and are corrected: a per-target
-      `runner` override already existed, and a job can be told its runner
-      by an earlier job. The real defects are that `runner` is one string
-      where GitHub takes a label set, that CI has no configuration surface
-      at all, and that an unknown id with a partial record is accepted and
-      reaches `cargo build --target ""`. Shape settled after several wrong
-      turns, recorded so they are not retried: anonymous list rows needing
-      an `id` field (`[[ci.jobs]]`, `runners = [{ labels = [...] }]`) were
-      rejected as ceremony — names are table headers instead; a `runners`
-      list on an asset target was rejected because two machines would
-      overwrite one tarball, which the shape now makes unsayable; and one
-      identical shape per phase was abandoned once it put `os`/`arch` on a
-      job while its labels sat a level below. A name→labels registry is
-      deliberately not the alias table rejected earlier: an alias made an
-      invented word look like a resolved label, whereas a machine name
-      resolves against `[runners]` or fails and never reaches GitHub.
-      M1 (generating ci.yml) and M3 (a repo variable) were considered
-      and rejected for M2, the plan-job bootstrap the publish lane already
-      uses; M3 would move the value out of verctl.toml entirely.
-      Asked why `plan` is not configurable, the inventory settled the law:
-      verctl decides how many jobs there are, the workflow file decides
-      where a fixed job runs. Unary jobs (`plan`, `crate`, `pin`,
-      `prepare`) all have literal machines; only `verify` and `assets`,
-      whose count the repo decides, read config. A static YAML file cannot
-      declare N jobs without knowing N — that fan-out is what config buys,
-      and the machine rides along on it. So `[release]` is dropped, not
-      deferred: publish and pin are inherently unary, nothing decides their
-      count, and a self-hosted-only repo is already served by editing three
-      literals in workflows it owns. `verctl check --ci` was rejected with
-      it — verifying those literals needs a YAML dependency this crate does
-      not have, to check a value the law puts there on purpose.
+    notes:
+      - >-
+        2026-08-17: found while adopting the lane in qctl (qctl#3). Two claims first written here were wrong and are corrected: a per-target `runner` override already existed, and a job can be told its runner by an earlier job. The real defects are that `runner` is one string where GitHub takes a label set, that CI has no configuration surface at all, and that an unknown id with a partial record is accepted and reaches `cargo build --target ""`. Shape settled after several wrong turns, recorded so they are not retried: anonymous list rows needing an `id` field (`[[ci.jobs]]`, `runners = [{ labels = [...] }]`) were rejected as ceremony — names are table headers instead; a `runners` list on an asset target was rejected because two machines would overwrite one tarball, which the shape now makes unsayable; and one identical shape per phase was abandoned once it put `os`/`arch` on a job while its labels sat a level below. A name→labels registry is deliberately not the alias table rejected earlier: an alias made an invented word look like a resolved label, whereas a machine name resolves against `[runners]` or fails and never reaches GitHub. M1 (generating ci.yml) and M3 (a repo variable) were considered and rejected for M2, the plan-job bootstrap the publish lane already uses; M3 would move the value out of verctl.toml entirely. Asked why `plan` is not configurable, the inventory settled the law: verctl decides how many jobs there are, the workflow file decides where a fixed job runs. Unary jobs (`plan`, `crate`, `pin`, `prepare`) all have literal machines; only `verify` and `assets`, whose count the repo decides, read config. A static YAML file cannot declare N jobs without knowing N — that fan-out is what config buys, and the machine rides along on it. So `[release]` is dropped, not deferred: publish and pin are inherently unary, nothing decides their count, and a self-hosted-only repo is already served by editing three literals in workflows it owns. `verctl check --ci` was rejected with it — verifying those literals needs a YAML dependency this crate does not have, to check a value the law puts there on purpose.
 
   - id: VER-020
     title: check validates served files, and one file has one owner
@@ -96,13 +60,9 @@ queue:
       - "`check` compares every served file to what its template renders at the versions on HEAD."
       - A file that a template renders and a [[pins]] entry also names fails before anything is written.
       - The failure names the file and which two declarations claim it.
-    notes: >-
-      2026-08-18: docs/served-files.md §6 describes check as designed, not
-      implemented — only prepare and its dry run validate today, so drift
-      introduced by hand survives until a release. The double-owner gap is
-      real and silent: prepare_report rewrites pins first and renders
-      templates second, so a template would clobber the rewrite without
-      saying so.
+    notes:
+      - >-
+        2026-08-18: docs/served-files.md §6 describes check as designed, not implemented — only prepare and its dry run validate today, so drift introduced by hand survives until a release. The double-owner gap is real and silent: prepare_report rewrites pins first and renders templates second, so a template would clobber the rewrite without saying so.
 
   - id: VER-021
     title: Every config file we own has a JSON Schema, at a URL an IDE can fetch
@@ -118,30 +78,11 @@ queue:
       - The URL is versioned, and a repo's own schema line is kept current by a [patterns] pin, not by hand.
       - "A generated schema that drifts from the types fails a check, the same way a served file does."
       - qctl and ctl-core carry the same lines for the same files.
-    notes: >-
-      2026-08-18, decided with Victor: free and already versioned wins over
-      a prettier host, so this follows the pattern that already exists
-      rather than inventing one. Evidence: qctl ships schema/tasks.schema.json
-      as a release asset, ctl-core's tasks.yaml already points $schema at
-      `releases/download/v0.0.1/tasks.schema.json`, and qctl's own ledger
-      already decided the URL is a pinned tag and never /latest — a schema
-      that changes under an unchanged file is worse than an old one. What is
-      missing is the rest: verctl.toml and changeset fragments have no
-      schema at all, qctl's is hand-written JSON rather than generated from
-      the types, and every pinned URL is bumped by hand. The staleness
-      objection is what VER-018 just answered: a schema URL is a version
-      site like any other, so it becomes a [patterns] entry and prepare
-      keeps it current on the Version PR. mise ships its own schema and we
-      only reference it; template declarations are not a file an editor
-      validates by URL.
-      2026-08-18, blocker found by running it: every qctl mutation deletes
-      the schema line it is supposed to protect. `qctl start` on a copy of
-      this file rewrote it through serde_yaml and dropped every comment,
-      line 1 included, so `# yaml-language-server: $schema=…` survives only
-      until the next `q start` or `q archive`. tasks.yaml cannot carry a
-      schema pointer until qctl writes comments back. The same applies to
-      every comment here: none of them survive a verb, which is why an
-      archived blocker is recorded in notes rather than beside the key.
+    notes:
+      - >-
+        2026-08-18, decided with Victor: free and already versioned wins over a prettier host, so this follows the pattern that already exists rather than inventing one. Evidence: qctl ships schema/tasks.schema.json as a release asset, ctl-core's tasks.yaml already points $schema at `releases/download/v0.0.1/tasks.schema.json`, and qctl's own ledger already decided the URL is a pinned tag and never /latest — a schema that changes under an unchanged file is worse than an old one. What is missing is the rest: verctl.toml and changeset fragments have no schema at all, qctl's is hand-written JSON rather than generated from the types, and every pinned URL is bumped by hand. The staleness objection is what VER-018 just answered: a schema URL is a version site like any other, so it becomes a [patterns] entry and prepare keeps it current on the Version PR. mise ships its own schema and we only reference it; template declarations are not a file an editor validates by URL.
+      - >-
+        2026-08-18, blocker found by running it: every qctl mutation deletes the schema line it is supposed to protect. `qctl start` on a copy of this file rewrote it through serde_yaml and dropped every comment, line 1 included, so `# yaml-language-server: $schema=…` survives only until the next `q start` or `q archive`. tasks.yaml cannot carry a schema pointer until qctl writes comments back. The same applies to every comment here: none of them survive a verb, which is why an archived blocker is recorded in notes rather than beside the key.
 
   - id: VER-022
     title: Move the reusable schema layer into ctl-core
@@ -155,12 +96,9 @@ queue:
       - "Config loading — read, parse with serde, validate once with garde against the whole document — is one ctl-core entry point."
       - "The template renderer's declare-your-own-target mechanism is available to any ctl CLI, not just verctl."
       - No verctl-specific vocabulary leaks into ctl-core, and no copy of the layer is left behind here.
-    notes: >-
-      2026-08-18: src/schema.rs is already shared between verctl's TOML
-      config and its Jinja template declarations, which is the proof it is
-      not verctl-shaped. ctl-core carries the matching row, CTC-008,
-      merged 2026-08-18 as ctl-core#7, so the destination is agreed
-      before anything moves.
+    notes:
+      - >-
+        2026-08-18: src/schema.rs is already shared between verctl's TOML config and its Jinja template declarations, which is the proof it is not verctl-shaped. ctl-core carries the matching row, CTC-008, merged 2026-08-18 as ctl-core#7, so the destination is agreed before anything moves.
 
   - id: VER-028
     title: Decide who owns a template in the shared .ctl/templates
@@ -171,20 +109,9 @@ queue:
       - The rule is decided and written where the loader enforces it, not in a PR comment.
       - A template belonging to another ctl CLI is either skipped or never in verctl's source tree, and a test proves which.
       - docs/served-files.md §1 says the rule, and VER-025's shared-not-namespaced line is either upheld or superseded in writing.
-    notes: >-
-      2026-08-19, raised on PR #44 and deliberately not acted on there.
-      `templates.source` defaults to `.ctl/templates`, verctl renders every
-      tracked `*.jinja` under it, and `.ctl/` is shared — so once a second ctl
-      CLI serves files, verctl would render its templates too: an unknown name
-      fails the whole Version PR, and one that only reads `versions[…]` gets
-      written to the other tool's target. Nothing collides today, because no
-      other ctl CLI renders anything, which is why this is a row and not a fix.
-      Scoping the directory to `.ctl/templates/ver/` is the obvious answer and
-      is exactly what VER-025 ruled out ("shared rather than namespaced,
-      because a template already declares its own target"), so it is Victor's
-      to reverse, not this row's to assume. The other shape is a template
-      declaring its owning tool, which keeps the directory shared and pays for
-      it with one more export.
+    notes:
+      - >-
+        2026-08-19, raised on PR #44 and deliberately not acted on there. `templates.source` defaults to `.ctl/templates`, verctl renders every tracked `*.jinja` under it, and `.ctl/` is shared — so once a second ctl CLI serves files, verctl would render its templates too: an unknown name fails the whole Version PR, and one that only reads `versions[…]` gets written to the other tool's target. Nothing collides today, because no other ctl CLI renders anything, which is why this is a row and not a fix. Scoping the directory to `.ctl/templates/ver/` is the obvious answer and is exactly what VER-025 ruled out ("shared rather than namespaced, because a template already declares its own target"), so it is Victor's to reverse, not this row's to assume. The other shape is a template declaring its owning tool, which keeps the directory shared and pays for it with one more export.
 
   - id: VER-029
     title: The Version PR exemption must not race its own label
@@ -195,25 +122,9 @@ queue:
       - A freshly opened Version PR is exempt on its first CI run, proven on a real release rather than by reading the code.
       - The exemption still refuses a hand edit on an ordinary PR, and GITHUB_HEAD_REF is still not an exemption.
       - Whatever carries the signal is written down where the guard reads it, so the next reader does not rediscover the race.
-    notes: >-
-      2026-08-20, hit on the v0.1.1 release and measured, not inferred. The
-      Version PR's own CI failed `check --versions` with "verctl 0.1.0 ->
-      0.1.1", the exact hand edit the guard exists to catch, on the commit
-      `prepare` had just written. `github::event_labels` reads
-      `pull_request.labels` out of `GITHUB_EVENT_PATH`, and that payload is a
-      snapshot taken when the event fired — but `prepare --pr` opens the PR and
-      then applies `verctl:version` in a second call, so the `opened` payload
-      carries an empty label list. Proof: closing and reopening PR #48 fired a
-      fresh event and the same job printed `exempt · version-pr`, with nothing
-      else changed. The PR carried the label the whole time.
-      Not a new break — v0.1.0's Version PR passed, which is what a race looks
-      like. Do not "fix" it by trusting the branch name: `GITHUB_HEAD_REF` is
-      deliberately not an exemption (VER-012), because a contributor can name a
-      branch anything. Candidates worth weighing rather than one assumed here:
-      have `prepare --pr` create the PR with the label already on it if the API
-      allows, add `labeled` to the workflow's `pull_request` types so the label
-      itself triggers a run, or have the guard ask the API for the PR's current
-      labels instead of reading a stale payload.
+    notes:
+      - >-
+        2026-08-20, hit on the v0.1.1 release and measured, not inferred. The Version PR's own CI failed `check --versions` with "verctl 0.1.0 -> 0.1.1", the exact hand edit the guard exists to catch, on the commit `prepare` had just written. `github::event_labels` reads `pull_request.labels` out of `GITHUB_EVENT_PATH`, and that payload is a snapshot taken when the event fired — but `prepare --pr` opens the PR and then applies `verctl:version` in a second call, so the `opened` payload carries an empty label list. Proof: closing and reopening PR #48 fired a fresh event and the same job printed `exempt · version-pr`, with nothing else changed. The PR carried the label the whole time. Not a new break — v0.1.0's Version PR passed, which is what a race looks like. Do not "fix" it by trusting the branch name: `GITHUB_HEAD_REF` is deliberately not an exemption (VER-012), because a contributor can name a branch anything. Candidates worth weighing rather than one assumed here: have `prepare --pr` create the PR with the label already on it if the API allows, add `labeled` to the workflow's `pull_request` types so the label itself triggers a run, or have the guard ask the API for the PR's current labels instead of reading a stale payload.
 
   - id: VER-030
     title: The example catalog teaches one pin, not two
@@ -224,20 +135,9 @@ queue:
       - examples/mise.toml declares no [tools] entry for verctl; the ?ref= include is the whole pin.
       - mise install --locked still works for a consumer that copies it, with no lockfile row for a tool it no longer names.
       - The template that renders it says why one pin is the rule, so the next reader does not add the second back.
-    notes: >-
-      2026-08-20, noticed while proving VER-027 at the tag: a clean directory
-      holding only `git show v0.1.1:examples/mise.toml` installs and runs
-      `mise run ver` — but it cannot prove the task's own pin won, because the
-      example's `[tools]` entry names the same version. qctl already settled
-      this as a rule and wrote it into its AGENTS.md: a consumer wires one pin,
-      the `?ref=` tag, because the served task carries its own `#MISE tools`
-      version and wins on PATH, so a `[tools]` entry can only disagree with it —
-      and it needs a lockfile row to survive `mise install --locked`, which is
-      the failure ctl-core#9 hit. qctl queued the same removal for its own
-      example as QCTL-018. This repo's example still teaches two, and it is the
-      example everyone copies, so it teaches the wrong thing twice over.
-      Removing it also makes the pin provable: with no surrounding entry, a
-      consumer that runs the task is running what the task named.
+    notes:
+      - >-
+        2026-08-20, noticed while proving VER-027 at the tag: a clean directory holding only `git show v0.1.1:examples/mise.toml` installs and runs `mise run ver` — but it cannot prove the task's own pin won, because the example's `[tools]` entry names the same version. qctl already settled this as a rule and wrote it into its AGENTS.md: a consumer wires one pin, the `?ref=` tag, because the served task carries its own `#MISE tools` version and wins on PATH, so a `[tools]` entry can only disagree with it — and it needs a lockfile row to survive `mise install --locked`, which is the failure ctl-core#9 hit. qctl queued the same removal for its own example as QCTL-018. This repo's example still teaches two, and it is the example everyone copies, so it teaches the wrong thing twice over. Removing it also makes the pin provable: with no surrounding entry, a consumer that runs the task is running what the task named.
 
   - id: VER-031
     title: A pattern that cannot rewrite a whole version refuses it
@@ -248,39 +148,9 @@ queue:
       - A pattern whose match is immediately followed by more version-ish text fails the release naming the file and the pattern, instead of rewriting the head and leaving the tail.
       - A test writes a real prerelease into a pinned file and asserts the release stops and the file is untouched.
       - If the engine cannot refuse, docs/served-files.md stops promising it, and says what a pattern author must anchor instead.
-    notes: >-
-      2026-08-20, found in review of verctl#50 and measured rather than
-      reasoned about. docs/served-files.md §4 says a version is dotted numerics
-      and nothing else, and that "a prerelease or a floating pin is not a
-      version this rewrites: it fails the release rather than rewriting a
-      numeric head and dropping the tail". It does not. With an unanchored
-      `match: "version: {version}"` and a file reading `version: 0.1.1-rc1`,
-      prepare exited 0 and wrote `version: 0.1.2-rc1` — the head moved, the
-      tail stayed, and the release carried on. Kody raised it, our own document
-      contradicted it, and the run settled it: the implementation is the
-      evidence and the document is currently a promise nobody keeps.
-      The condition is exact, and narrower than first written here. A pattern
-      whose `match` ends in literal text already refuses: the test
-      `a_prerelease_pin_fails_instead_of_half_rewriting` uses
-      `"verctl@{version} today"`, and against `verctl@1.0.0-rc.1 today` the
-      digits match but ` today` does not follow, so it fails at arity. Only a
-      match that ends *at* the placeholder has no right-hand boundary, and that
-      is the case that rewrites the head.
-      The author-side answer shipped in #50 as `whole_line: true`, after the
-      first attempt — spelling the closing `---` into the match — was rejected
-      by Victor as a hack: it only worked because `version:` happened to be the
-      last frontmatter key, so adding a key after it would have broken the
-      release. A line-owning pattern supplies the boundary from the line, which
-      is unambiguous.
-      What is left is an inline pattern ending at the placeholder. Do not
-      "fix" it by refusing when the next character continues the version: the
-      discriminator is not local. `download/v{version}` against
-      `download/v1.2.3-linux-x64.tar.gz` has `-` right after the match and is
-      completely correct — the version is 1.2.3 and the rest is the filename.
-      Refusing there would stop real releases, which is why this is a row and
-      not a one-line guard. Either the engine grows a boundary an author can
-      state (as `whole_line` does), or docs/served-files.md stops promising
-      unconditionally and says which shapes are safe.
+    notes:
+      - >-
+        2026-08-20, found in review of verctl#50 and measured rather than reasoned about. docs/served-files.md §4 says a version is dotted numerics and nothing else, and that "a prerelease or a floating pin is not a version this rewrites: it fails the release rather than rewriting a numeric head and dropping the tail". It does not. With an unanchored `match: "version: {version}"` and a file reading `version: 0.1.1-rc1`, prepare exited 0 and wrote `version: 0.1.2-rc1` — the head moved, the tail stayed, and the release carried on. Kody raised it, our own document contradicted it, and the run settled it: the implementation is the evidence and the document is currently a promise nobody keeps. The condition is exact, and narrower than first written here. A pattern whose `match` ends in literal text already refuses: the test `a_prerelease_pin_fails_instead_of_half_rewriting` uses `"verctl@{version} today"`, and against `verctl@1.0.0-rc.1 today` the digits match but ` today` does not follow, so it fails at arity. Only a match that ends *at* the placeholder has no right-hand boundary, and that is the case that rewrites the head. The author-side answer shipped in #50 as `whole_line: true`, after the first attempt — spelling the closing `---` into the match — was rejected by Victor as a hack: it only worked because `version:` happened to be the last frontmatter key, so adding a key after it would have broken the release. A line-owning pattern supplies the boundary from the line, which is unambiguous. What is left is an inline pattern ending at the placeholder. Do not "fix" it by refusing when the next character continues the version: the discriminator is not local. `download/v{version}` against `download/v1.2.3-linux-x64.tar.gz` has `-` right after the match and is completely correct — the version is 1.2.3 and the rest is the filename. Refusing there would stop real releases, which is why this is a row and not a one-line guard. Either the engine grows a boundary an author can state (as `whole_line` does), or docs/served-files.md stops promising unconditionally and says which shapes are safe.
 
   - id: VER-033
     title: Publish follows the dependency graph, not the declaration order
@@ -292,14 +162,9 @@ queue:
       - The resolved order is printed, the way ci and assets print what they resolved.
       - A cycle fails the run naming the packages in it.
       - A single-package repo sees no change.
-    notes: >-
-      docs/adoption-report.md §2. `publish::plan` iterates
-      `config.packages` in declaration order (src/publish.rs), so a consumer
-      published before its dependency leaves a window where its pinned version
-      does not resolve. Their build tool derives the order from the real
-      dependency graph today, which is what they would be giving up. Their
-      request, verbatim: if it is inferred, print it — "a silent
-      topological sort is a thing nobody debugs until it is wrong".
+    notes:
+      - >-
+        docs/adoption-report.md §2. `publish::plan` iterates `config.packages` in declaration order (src/publish.rs), so a consumer published before its dependency leaves a window where its pinned version does not resolve. Their build tool derives the order from the real dependency graph today, which is what they would be giving up. Their request, verbatim: if it is inferred, print it — "a silent topological sort is a thing nobody debugs until it is wrong".
 
   - id: VER-034
     title: Publish declares its own before and after, the way prepare does
@@ -311,15 +176,9 @@ queue:
       - publish.after argv runs once, after every package published.
       - 'Both receive the resolved package set: name, version, manifest path, publisher.'
       - Neither key set is the same run as today.
-    notes: >-
-      docs/adoption-report.md §3, filed as one row because it is
-      one hook pair. They keep 247 lines they are not asking us to absorb: a
-      packed-artifact gate that proves the tarball rewrote every `workspace:`
-      and `catalog:` dep into a concrete version, and a post-publish smoke that
-      installs the published version from the registry and imports every
-      export. Both are stack-specific and should stay theirs. What they cannot
-      do is wire them, because `Prepare` has `after` (src/config.rs:519) and
-      publish has no equivalent. Closing that asymmetry is the whole ask.
+    notes:
+      - >-
+        docs/adoption-report.md §3, filed as one row because it is one hook pair. They keep 247 lines they are not asking us to absorb: a packed-artifact gate that proves the tarball rewrote every `workspace:` and `catalog:` dep into a concrete version, and a post-publish smoke that installs the published version from the registry and imports every export. Both are stack-specific and should stay theirs. What they cannot do is wire them, because `Prepare` has `after` (src/config.rs:519) and publish has no equivalent. Closing that asymmetry is the whole ask.
 
   - id: VER-035
     title: The commit a release publishes from is proved, and a waiver is said out loud
@@ -331,19 +190,9 @@ queue:
       - Workflow files at the release SHA do not differ from the default branch.
       - The first-parent branch carries exactly one version commit; two always refuse.
       - Each check has a named waiver, and a waived run prints which one was waived.
-    notes: >-
-      docs/adoption-report.md §4. `prove_version_commit`
-      (src/publish.rs:136) is `require_changelog_versions` plus
-      `require_on_default_history` — they keep both and want three more. The
-      workflow-drift one is the non-obvious one and it cost them a release:
-      retrying an old release SHA runs the workflow *at that SHA*, so if
-      permissions changed since, the run can publish to the registry and then
-      fail to tag — the registry is not revertible and the tags are the audit
-      trail. Their waivers are workflow_dispatch booleans and the run prints
-      `waived: …`. Their warning about building it: bind a dispatch input to a
-      step-level `env:` and quote it, never interpolate `${{ inputs.x }}` into
-      a `run:` string — inputs arrive as strings over REST and are not coerced
-      to booleans, in a job holding contents/packages/id-token write.
+    notes:
+      - >-
+        docs/adoption-report.md §4. `prove_version_commit` (src/publish.rs:136) is `require_changelog_versions` plus `require_on_default_history` — they keep both and want three more. The workflow-drift one is the non-obvious one and it cost them a release: retrying an old release SHA runs the workflow *at that SHA*, so if permissions changed since, the run can publish to the registry and then fail to tag — the registry is not revertible and the tags are the audit trail. Their waivers are workflow_dispatch booleans and the run prints `waived: …`. Their warning about building it: bind a dispatch input to a step-level `env:` and quote it, never interpolate `${{ inputs.x }}` into a `run:` string — inputs arrive as strings over REST and are not coerced to booleans, in a job holding contents/packages/id-token write.
 
   - id: VER-036
     title: A check that cannot run says so instead of passing
@@ -354,16 +203,8 @@ queue:
       - expand fails on an unresolved {placeholder} instead of dropping the argument.
       - prove_default_history prints which condition made it skip.
       - One test per site proves the silence is gone.
-    notes: >-
-      Two sites the consumer report raised separately; they are one law, so
-      they are one row. `publisher::expand` filters out any part containing
-      `{` (src/publisher.rs:151), so a typo'd `{registr}` in a custom argv
-      shortens the command line instead of failing, and the error surfaces
-      downstream wearing someone else's name. `prove_default_history` returns
-      `Ok(())` on four conditions — no repo, no head, unpeelable head, no
-      upstream (src/git.rs:95-104) — each defensible alone, but together the
-      check can pass by not running, in exactly the CI shapes where it matters
-      most. Its doc comment already calls two of them skips; the run does not.
+    notes:
+      - Two sites the consumer report raised separately; they are one law, so they are one row. `publisher::expand` filters out any part containing `{` (src/publisher.rs:151), so a typo'd `{registr}` in a custom argv shortens the command line instead of failing, and the error surfaces downstream wearing someone else's name. `prove_default_history` returns `Ok(())` on four conditions — no repo, no head, unpeelable head, no upstream (src/git.rs:95-104) — each defensible alone, but together the check can pass by not running, in exactly the CI shapes where it matters most. Its doc comment already calls two of them skips; the run does not.
 
   - id: VER-037
     title: The README answers the questions a first publish asks
@@ -375,16 +216,9 @@ queue:
       - What GITHUB_TOKEN means locally, where a gh session is not it.
       - 'That permission_denied: write_package is a package-settings problem, not a token problem.'
       - That the tool finalizing a release is the one the workflow pins, not the one at the release commit.
-    notes: >-
-      docs/adoption-report.md §6, folded into one row because
-      every item is a paragraph the README does not have. The finalizer one is
-      theirs and they call it ugly: their publish job checks out the release
-      commit, so the code that tags and releases *afterwards* also comes from
-      that checkout, and a fix to the tagging logic that landed since is not
-      present on a retry. They restore four files from origin/main between
-      publish and tag to work around it. verctl mostly dodges this by being one
-      pinned binary — but only if the version resolves from the workflow's
-      config rather than the release commit's, which is the sentence to write.
+    notes:
+      - >-
+        docs/adoption-report.md §6, folded into one row because every item is a paragraph the README does not have. The finalizer one is theirs and they call it ugly: their publish job checks out the release commit, so the code that tags and releases *afterwards* also comes from that checkout, and a fix to the tagging logic that landed since is not present on a retry. They restore four files from origin/main between publish and tag to work around it. verctl mostly dodges this by being one pinned binary — but only if the version resolves from the workflow's config rather than the release commit's, which is the sentence to write.
 
 horizon:
   - id: VER-038
@@ -652,29 +486,9 @@ archive:
     title: A release tags the commit it published
     scope: verctl
     outcome: The tag a release creates resolves to the commit that was built and published, not to whatever the default branch points at when the API call runs.
-    notes: >-
-      2026-08-20: found while checking the consumer report in
-      docs/adoption-report.md, which asked only that a pushed tag be verified
-      after the fact. It is worse than that.
-      `github::ensure_release` calls `releases.create(tag)` and never sets
-      `target_commitish`, so GitHub tags the default branch's HEAD at the
-      moment of the call — not the commit that was built and published. v0.1.3
-      is right only because main did not move: `git rev-parse v0.1.3^{}` and
-      `git rev-parse origin/main` are both 2fd33a6c5713. Anything merging to
-      main during the publish job puts the tag on a tree that was never built,
-      which is the served-files contract's one premise (docs/served-files.md:3
-      — "its version must be correct in the tree the tag names"). Nothing else
-      creates the tag: no `git tag` or `refs/tags` anywhere in src/, no tag
-      step in .github/workflows/publish.yml, and `git cat-file -t v0.1.3` says
-      `commit` — a lightweight tag, which is what the Releases API makes. The
-      retry path needs the same treatment for a different reason:
-      `ensure_release` returns early when `get_by_tag` succeeds
-      (src/github.rs:249-250) without looking at where that tag points, and
-      `target_commitish` cannot correct a tag that already exists.
-      If VER-038 is taken, the first acceptance line here is superseded rather
-      than also done: a tag created git-side already exists by the time a
-      Release is made, and the API documents `target_commitish` as unused in
-      that case. The re-read lines stand either way.
+    notes:
+      - >-
+        2026-08-20: found while checking the consumer report in docs/adoption-report.md, which asked only that a pushed tag be verified after the fact. It is worse than that. `github::ensure_release` calls `releases.create(tag)` and never sets `target_commitish`, so GitHub tags the default branch's HEAD at the moment of the call — not the commit that was built and published. v0.1.3 is right only because main did not move: `git rev-parse v0.1.3^{}` and `git rev-parse origin/main` are both 2fd33a6c5713. Anything merging to main during the publish job puts the tag on a tree that was never built, which is the served-files contract's one premise (docs/served-files.md:3 — "its version must be correct in the tree the tag names"). Nothing else creates the tag: no `git tag` or `refs/tags` anywhere in src/, no tag step in .github/workflows/publish.yml, and `git cat-file -t v0.1.3` says `commit` — a lightweight tag, which is what the Releases API makes. The retry path needs the same treatment for a different reason: `ensure_release` returns early when `get_by_tag` succeeds (src/github.rs:249-250) without looking at where that tag points, and `target_commitish` cannot correct a tag that already exists. If VER-038 is taken, the first acceptance line here is superseded rather than also done: a tag created git-side already exists by the time a Release is made, and the API documents `target_commitish` as unused in that case. The re-read lines stand either way.
     completed: 2026-08-22T13:59:28
     evidence:
       - ensure_release sets target_commitish to HEAD SHA.
@@ -686,32 +500,13 @@ archive:
     title: A release declares what its tags are named
     scope: verctl
     outcome: A repo says the shape of its release tags in one line with a sane default, and a release that cannot name what it shipped refuses instead of guessing.
-    notes: >-
-      The shape, so the live defect is not waiting on discovery. The consumer's
-      strawman is a `tags.template` plus a `releases: per-package | aggregate`
-      enum; the enum is redundant, because **the arity falls out of the
-      template**. A template with no `{name}` can only name one tag; one with
-      `{name}` can only mean one per package. Two fields that cannot disagree
-      should be one field, and the one that survives is the one a reader can
-      look at and know what they get. So: one optional line, defaulting to
-      `v{version}`, in the placeholder vocabulary `patterns.match` already
-      uses — a single-package repo writes nothing and a monorepo writes
-      `template: "{name}@{version}"`.
-      .
-      What this kills: `tag_for` (src/publish.rs:158) dedups the versions and,
-      when more than one survives, tags with the *first declared* package's
-      version — a value with no relationship to the release, chosen silently.
-      With a template there is always an answer: either the shape names every
-      package, or it cannot name this release and says so.
-      .
-      Deliberately not here, because it is where the design risk actually is:
-      splitting the changelog so each Release carries only its own package's
-      section, and creating a tag set all-or-nothing. Atomicity is not reachable
-      through the Releases API — they get it from `git push --atomic` on
-      locally created tags, which is a different tagging path, so it stays with
-      VER-038. Idempotent retry is the weaker property that is reachable now and
-      is what the acceptance asks for. VER-032 is orthogonal: it fixes which
-      commit a tag names, whatever the tag is called.
+    notes:
+      - >-
+        The shape, so the live defect is not waiting on discovery. The consumer's strawman is a `tags.template` plus a `releases: per-package | aggregate` enum; the enum is redundant, because **the arity falls out of the template**. A template with no `{name}` can only name one tag; one with `{name}` can only mean one per package. Two fields that cannot disagree should be one field, and the one that survives is the one a reader can look at and know what they get. So: one optional line, defaulting to `v{version}`, in the placeholder vocabulary `patterns.match` already uses — a single-package repo writes nothing and a monorepo writes `template: "{name}@{version}"`.
+      - >-
+        What this kills: `tag_for` (src/publish.rs:158) dedups the versions and, when more than one survives, tags with the *first declared* package's version — a value with no relationship to the release, chosen silently. With a template there is always an answer: either the shape names every package, or it cannot name this release and says so.
+      - >-
+        Deliberately not here, because it is where the design risk actually is: splitting the changelog so each Release carries only its own package's section, and creating a tag set all-or-nothing. Atomicity is not reachable through the Releases API — they get it from `git push --atomic` on locally created tags, which is a different tagging path, so it stays with VER-038. Idempotent retry is the weaker property that is reachable now and is what the acceptance asks for. VER-032 is orthogonal: it fixes which commit a tag names, whatever the tag is called.
     completed: 2026-08-22T13:04:12
     evidence:
       - 'feat/039-declare-the-tag-shape: tags.template + per-package Release bodies'
@@ -723,18 +518,9 @@ archive:
     outcome: >-
       `mise run ver` runs the version `tasks/ver/ver` pins, not whichever
       verctl the machine happens to hold.
-    notes: >-
-      2026-08-19, measured in qctl: `mise where <tool>` resolves a version
-      from the surrounding config, so a task-scoped `#MISE tools` pin
-      guarantees the install and never the selection. With 0.0.1, 0.1.0 and
-      0.1.1 installed and one task pinned to 0.0.1, `exec qctl "$@"` ran
-      0.0.1 and `exec "$(mise where …)/qctl" "$@"` ran 0.1.1 — mise already
-      puts the task's pinned tool first on PATH. Found by running `mise run q
-      -- status` in this repo, whose include is pinned to qctl v0.0.1 and
-      which still got the schema-3 complaint that only 0.1.1 can produce.
-      `tasks/fork/fork` in forkctl carries the same line and the same bug.
-      That repo has no ledger, so this row is where it is written down until
-      it does.
+    notes:
+      - >-
+        2026-08-19, measured in qctl: `mise where <tool>` resolves a version from the surrounding config, so a task-scoped `#MISE tools` pin guarantees the install and never the selection. With 0.0.1, 0.1.0 and 0.1.1 installed and one task pinned to 0.0.1, `exec qctl "$@"` ran 0.0.1 and `exec "$(mise where …)/qctl" "$@"` ran 0.1.1 — mise already puts the task's pinned tool first on PATH. Found by running `mise run q -- status` in this repo, whose include is pinned to qctl v0.0.1 and which still got the schema-3 complaint that only 0.1.1 can produce. `tasks/fork/fork` in forkctl carries the same line and the same bug. That repo has no ledger, so this row is where it is written down until it does.
     completed: 2026-08-20T10:38:13
     evidence:
       - verctl#47 merged 8389b46, released v0.1.1. tasks/ver/ver is served from .ctl/templates/ver.jinja and execs verctl from PATH; git show v0.1.1:tasks/ver/ver pins 0.1.1, mode 100755.
@@ -751,20 +537,9 @@ archive:
       A template a repo committed to nothing renders nothing and says so.
       Adding a served file and getting silence is not a state a release
       passes through.
-    notes: >-
-      2026-08-19, found in qctl while adopting served files: `prepare
-      --dry-run` listed the one `[[pins]]` file and neither of the two
-      templates, with no diagnostic, because they were written but not yet
-      staged. Diagnosed by reading `templates::sources`, which filters
-      `git::tracked` — and the current test pins that silence as intended,
-      asserting an empty plan and an unchanged served file.
-      Refusing to render is right: `prepare` auto-stages rendered outputs, so
-      a template git does not carry would put a served file on the tag whose
-      source is not in the tree, and `check` would have nothing to compare on
-      a fresh clone. What is wrong is what happens next — the release
-      continues and serves the stale hand-authored file, which is the exact
-      failure served files exist to end. It fails open, once per repo, at the
-      moment somebody is learning the feature.
+    notes:
+      - >-
+        2026-08-19, found in qctl while adopting served files: `prepare --dry-run` listed the one `[[pins]]` file and neither of the two templates, with no diagnostic, because they were written but not yet staged. Diagnosed by reading `templates::sources`, which filters `git::tracked` — and the current test pins that silence as intended, asserting an empty plan and an unchanged served file. Refusing to render is right: `prepare` auto-stages rendered outputs, so a template git does not carry would put a served file on the tag whose source is not in the tree, and `check` would have nothing to compare on a fresh clone. What is wrong is what happens next — the release continues and serves the stale hand-authored file, which is the exact failure served files exist to end. It fails open, once per repo, at the moment somebody is learning the feature.
     completed: 2026-08-20T10:38:13
     evidence:
       - 'verctl#47 merged 8389b46, released v0.1.1. A template in the source tree the repo neither tracks nor ignores fails the run naming the file; proven live on this repo with a fragment present: exit 1, and the target file was not created.'
@@ -781,14 +556,9 @@ archive:
     outcome: >-
       A config key that no longer exists is not still half-parsed. The
       migration message has done its job and goes with it.
-    notes: >-
-      2026-08-18: written down because it was not. The shim exists only so a
-      repo still on `targets = [...]` reads the migration instead of a serde
-      type error, and its own doc comment says "remove once qctl and ctl-core
-      have bumped their verctl pin" — a removal condition with no row to
-      enforce it, which is how compatibility code becomes permanent. Verify
-      the condition rather than assume it: grep both consumers for the key
-      and read their pins.
+    notes:
+      - >-
+        2026-08-18: written down because it was not. The shim exists only so a repo still on `targets = [...]` reads the migration instead of a serde type error, and its own doc comment says "remove once qctl and ctl-core have bumped their verctl pin" — a removal condition with no row to enforce it, which is how compatibility code becomes permanent. Verify the condition rather than assume it: grep both consumers for the key and read their pins.
     completed: 2026-08-19T23:57:38
     evidence:
       - 'Removed in verctl#44 with the migration that was its stated removal condition: Assets::retired_targets, the bail in assets.rs, and the test asserting the message are all gone.'
@@ -803,48 +573,11 @@ archive:
       A repo has one `.ctl` directory that every ctl CLI shares, and verctl's
       declarations are one YAML file inside it. `verctl.toml` is gone, not
       tolerated.
-    notes: >-
-      2026-08-18, decided by Victor and recorded late — this row exists
-      because the decision lived in a conversation instead of the repo, which
-      is the failure the cold-start rule is about. His words, twice: first
-      "keep the damn config in there, .verctl/config.toml etc etc … anything
-      more than that, then we should use a damn directory already", then, on
-      seeing this written up as an open question, "we should just fucking drop
-      fucking verctl.toml and keep shit under .verctl/{config, etc etc}.yaml".
-      The second supersedes the first on two points: the format is YAML, and
-      `verctl.toml` is dropped rather than still recognized. A per-concern
-      split, YAML only, with both consumers migrated, is what was agreed at
-      the time.
-      This is a break to a contract we own, so the rule applies: inventory
-      every producer and consumer, migrate them in the same slice, remove the
-      old path. VER-021 declares this its blocker rather than saying so in
-      prose, because a schema written against verctl.toml is written twice.
-      VER-024 is the smaller version of the same problem and can ride along.
-      2026-08-19, from qctl QCTL-019: this slice picks a name two tools have to
-      live with, so pick it on purpose. qctl will need project config of its own
-      — a registry naming the ledgers a repo reads — and if this lands `.verctl/`
-      while that invents `.qctl/`, two tools that ship together have two
-      conventions and nothing written down about why.
-      Decided by Victor the same day, and it supersedes this row's original
-      shape: one `.ctl/` directory, one file per tool, and the file name drops
-      the ctl — `.ctl/ver.yaml`, `.ctl/q.yaml`, `.ctl/fork.yaml`. The names match
-      the tasks a consumer already runs (`mise run ver`, `mise run q`,
-      `mise run fork`), so a file is named after the verb the operator types
-      rather than after the crate that reads it, and ctl-core has one place to
-      look when it becomes the shared layer. `.verctl/` is not the target.
-      What is superseded, explicitly: one YAML file per concern. The sections
-      are already named inside the document, so a directory of ten files split
-      what a reader opens without splitting what they have to understand. If it
-      ever does grow, the loader can accept a directory beside the file without
-      a second migration — that is a follow-up, not this slice. Templates keep a
-      directory of their own at `.ctl/templates/`, shared rather than
-      namespaced, because a template already declares its own target and nothing
-      in one is verctl's except who renders it.
-      One constraint from that side, so the shape is not chosen blind: a
-      committed file can only carry what is true on every machine. qctl's
-      registry splits accordingly — prefixes in the repo, paths on the machine —
-      and any `.ctl/` convention should expect the same split rather than assume
-      everything a tool declares is committable.
+    notes:
+      - >-
+        2026-08-18, decided by Victor and recorded late — this row exists because the decision lived in a conversation instead of the repo, which is the failure the cold-start rule is about. His words, twice: first "keep the damn config in there, .verctl/config.toml etc etc … anything more than that, then we should use a damn directory already", then, on seeing this written up as an open question, "we should just fucking drop fucking verctl.toml and keep shit under .verctl/{config, etc etc}.yaml". The second supersedes the first on two points: the format is YAML, and `verctl.toml` is dropped rather than still recognized. A per-concern split, YAML only, with both consumers migrated, is what was agreed at the time. This is a break to a contract we own, so the rule applies: inventory every producer and consumer, migrate them in the same slice, remove the old path. VER-021 declares this its blocker rather than saying so in prose, because a schema written against verctl.toml is written twice. VER-024 is the smaller version of the same problem and can ride along.
+      - >-
+        2026-08-19, from qctl QCTL-019: this slice picks a name two tools have to live with, so pick it on purpose. qctl will need project config of its own — a registry naming the ledgers a repo reads — and if this lands `.verctl/` while that invents `.qctl/`, two tools that ship together have two conventions and nothing written down about why. Decided by Victor the same day, and it supersedes this row's original shape: one `.ctl/` directory, one file per tool, and the file name drops the ctl — `.ctl/ver.yaml`, `.ctl/q.yaml`, `.ctl/fork.yaml`. The names match the tasks a consumer already runs (`mise run ver`, `mise run q`, `mise run fork`), so a file is named after the verb the operator types rather than after the crate that reads it, and ctl-core has one place to look when it becomes the shared layer. `.verctl/` is not the target. What is superseded, explicitly: one YAML file per concern. The sections are already named inside the document, so a directory of ten files split what a reader opens without splitting what they have to understand. If it ever does grow, the loader can accept a directory beside the file without a second migration — that is a follow-up, not this slice. Templates keep a directory of their own at `.ctl/templates/`, shared rather than namespaced, because a template already declares its own target and nothing in one is verctl's except who renders it. One constraint from that side, so the shape is not chosen blind: a committed file can only carry what is true on every machine. qctl's registry splits accordingly — prefixes in the repo, paths on the machine — and any `.ctl/` convention should expect the same split rather than assume everything a tool declares is committable.
     completed: 2026-08-19T23:57:38
     evidence:
       - 'verctl#44 merged f3553c0: .ctl/ver.yaml holds every section verctl.toml held, templates moved to .ctl/templates/, verctl.toml is not read at all.'
