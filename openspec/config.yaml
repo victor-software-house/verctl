@@ -1,0 +1,31 @@
+schema: spec-driven
+
+context: |
+  verctl is the stack-agnostic Version PR CLI. It reads Changesets-format
+  fragments, writes versions and changelogs, opens the Version PR, and ships
+  the version-pr, publish, and asset actions. It renders through ctl-core.
+  Contracts: AGENTS.md, `verctl instructions`, skills/verctl/SKILL.md, and
+  docs/served-files.md.
+  Work queue: tasks.yaml (VER-###). One openspec change maps to one queue row.
+  Writing style: plain English, short sentences, numbered lists, no em-dashes,
+  no emojis. This repository is public: no local paths, machine names, or
+  private repository names in any artifact.
+
+rules:
+  proposal:
+    - State the measured problem, with numbers where they exist.
+    - Name the queue row the change belongs to.
+  specs:
+    - Every requirement uses SHALL and has at least one WHEN/THEN scenario.
+    - Scenarios use concrete commands, flags, files, and environment values.
+  design:
+    - Each decision names the alternative considered and why it lost.
+    - Every automatic behaviour names its public override and its disable path.
+  tasks:
+    - Each task names the command or observation that proves it is done.
+    - Compile, format, lint, and test tasks run on the build host, not the authoring workstation.
+
+operations:
+  archive:
+    guidance:
+      - Update AGENTS.md, docs/served-files.md, the instructions, and the operator skill where the change made them true or false.
