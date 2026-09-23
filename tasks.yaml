@@ -35,9 +35,9 @@ queue:
     outcome: 'verctl output uses the shared default look: borderless records, the id role for package names, pretty JSON, and an 80-column fallback in piped captures.'
     blocked_by: []
     acceptance:
-      - Cargo.toml pins ctl-core =0.6.2.
       - Package names render through the id role; targets and checks stay tokens.
       - '`mise run verify` passes.'
+      - Cargo.toml pins ctl-core =0.6.3.
     links:
       - https://github.com/victor-software-house/ctl-core/tree/main/openspec/changes/choose-visual-identity
 

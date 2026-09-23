@@ -412,6 +412,27 @@ mod tests {
         assert!(pretty.text().contains("nothing written"));
     }
 
+    /// A release URL is copied out of CI logs, so the fallback width must not
+    /// break it across lines.
+    #[test]
+    fn release_urls_stay_whole_at_the_fallback_width() {
+        let url = "https://github.com/victor-software-house/example-repository/releases/tag/example-package@12.34.56";
+        let report = Report::Publish(PublishReport {
+            packages: Vec::new(),
+            releases: vec![url.into()],
+            dry_run: false,
+        });
+        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+            .width(80)
+            .capture(&report)
+            .expect("publish report");
+        assert!(
+            pretty.text().lines().any(|line| line.contains(url)),
+            "{}",
+            pretty.text()
+        );
+    }
+
     #[test]
     fn releases_without_packages_have_no_empty_table() {
         let report = Report::Publish(PublishReport {
