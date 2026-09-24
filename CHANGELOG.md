@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.3.3
+
+- Let the environment pick each style the binary leaves open: `CTL_CORE_RECORD_STYLE`, `CTL_CORE_LIST_STYLE`, `CTL_CORE_ROW_SEPARATION`, and `CTL_CORE_JSON_LAYOUT`. An unaccepted value is ignored with a warning that names the accepted values.
+
 ## verctl 0.3.2
 
 - Adopt ctl-core 0.6.3: borderless records, bold package names, indented JSON, and an 80-column fallback width in piped output.
