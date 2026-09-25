@@ -254,7 +254,10 @@ mod tests {
         )
         .expect_err("failure");
         let message = format!("{error:#}");
-        assert!(message.contains("already exists on crates.io index"), "{message}");
+        assert!(
+            message.contains("already exists on crates.io index"),
+            "{message}"
+        );
     }
 
     #[test]
