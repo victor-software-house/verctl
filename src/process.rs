@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail, ensure};
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
@@ -22,35 +22,72 @@ pub fn run_limited(argv: &[String], env: &[(&str, &str)], timeout: Duration) -> 
     filter_limited(argv, "", env, timeout, DEFAULT_OUTPUT_LIMIT)
 }
 
-/// Inherit stdout/stderr so Actions stream cargo/bun instead of buffering.
+/// The most stderr [`run_inherit`] keeps for its error message.
+const STDERR_TAIL: usize = 64 * 1024;
+
+/// Inherit stdout and stream stderr so Actions show cargo/bun as they run.
+/// The last [`STDERR_TAIL`] bytes of stderr also go into the error, so a
+/// caller such as `publish` can tell an already-published version apart.
 pub fn run_inherit(argv: &[String], timeout: Duration) -> Result<()> {
     ensure!(!argv.is_empty(), "driver argv is empty");
+    let (stderr_r, stderr_w) = os_pipe::pipe().context("command stderr pipe")?;
     let handle = duct::cmd(&argv[0], &argv[1..])
+        .stderr_file(stderr_w)
         .unchecked()
         .start()
         .context("spawn command")?;
+    let tail = thread::spawn(move || stream_tail(stderr_r));
     let waited = match handle.wait_timeout(timeout) {
         Ok(output) => output.is_some(),
         Err(error) => {
             let _ = handle.kill();
             let _ = handle.wait();
+            let _ = tail.join();
             return Err(error).context("command");
         }
     };
     if !waited {
         let _ = handle.kill();
         let _ = handle.wait();
+        let _ = tail.join();
         bail!("command timed out after {timeout:?}");
     }
+    let stderr = tail
+        .join()
+        .map_err(|_| anyhow::anyhow!("stderr reader panicked"))?;
     let status = handle
         .try_wait()
         .context("command")?
         .context("command exited without a status")?
         .status;
     if !status.success() {
-        bail!("command failed: {}", argv.join(" "));
+        bail!(
+            "command failed: {}: {}",
+            argv.join(" "),
+            String::from_utf8_lossy(&stderr).trim()
+        );
     }
     Ok(())
+}
+
+/// Copies `reader` to this process's stderr and returns its last
+/// [`STDERR_TAIL`] bytes.
+fn stream_tail(mut reader: impl Read) -> Vec<u8> {
+    let mut tail = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    let mut stderr = io::stderr();
+    loop {
+        match reader.read(&mut chunk) {
+            Ok(0) | Err(_) => return tail,
+            Ok(read) => {
+                let _ = stderr.write_all(&chunk[..read]);
+                tail.extend_from_slice(&chunk[..read]);
+                if tail.len() > STDERR_TAIL {
+                    tail.drain(..tail.len() - STDERR_TAIL);
+                }
+            }
+        }
+    }
 }
 
 /// `["cargo", "publish"]` without a `.into()` on every word.
@@ -201,9 +238,27 @@ fn take_capped(handle: JoinHandle<io::Result<CapRead>>) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{filter, filter_limited};
+    use super::{filter, filter_limited, run_inherit};
     use indoc::indoc;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn a_failed_command_reports_its_stderr() {
+        let error = run_inherit(
+            &[
+                "sh".into(),
+                "-c".into(),
+                "echo 'crate x@0.0.1 already exists on crates.io index' >&2; exit 1".into(),
+            ],
+            Duration::from_secs(5),
+        )
+        .expect_err("failure");
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("already exists on crates.io index"),
+            "{message}"
+        );
+    }
 
     #[test]
     fn filter_returns_stdout() {
