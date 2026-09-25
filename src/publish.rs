@@ -112,6 +112,11 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
     let sha = git::head_sha(root)?;
     let mut releases = Vec::new();
     for tag in &planned.tags {
+        let shipped = tag.packages.iter().any(|entry| {
+            packages
+                .iter()
+                .any(|line| line.name == entry.name && line.note.is_none())
+        });
         let notes = release::notes_for(
             config,
             root,
@@ -119,7 +124,8 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
                 .iter()
                 .map(|entry| (entry.name.as_str(), entry.version.as_str())),
         );
-        let url = github::ensure_release(&token, &repo, &tag.tag, &tag.title, &notes, &sha)?;
+        let url =
+            github::ensure_release(&token, &repo, &tag.tag, &tag.title, &notes, &sha, shipped)?;
         releases.push(url);
     }
     Ok(PublishOutcome { packages, releases })
