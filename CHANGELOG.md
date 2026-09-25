@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.3.4
+
+- `publish` recognises a version that is already on the registry again: commands that stream their output now keep the end of stderr for the error, which the already-published check reads.
+
 ## verctl 0.3.3
 
 - Let the environment pick each style the binary leaves open: `CTL_CORE_RECORD_STYLE`, `CTL_CORE_LIST_STYLE`, `CTL_CORE_ROW_SEPARATION`, and `CTL_CORE_JSON_LAYOUT`. An unaccepted value is ignored with a warning that names the accepted values.
