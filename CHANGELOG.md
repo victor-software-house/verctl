@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.3.5
+
+- Publish keeps an existing release whose packages were all published by an earlier run, even when its tag names that earlier commit.
+
 ## verctl 0.3.4
 
 - `publish` recognises a version that is already on the registry again: commands that stream their output now keep the end of stderr for the error, which the already-published check reads.
