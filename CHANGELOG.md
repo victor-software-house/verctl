@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.3.7
+
+- Adopt ctl-core 0.6.7: a config or fragment parse problem no longer repeats a position counted from the frontmatter instead of the file.
+
 ## verctl 0.3.6
 
 - Read `.ctl/ver.yaml` and fragment frontmatter through ctl-core's declared input, so a problem in either names its file and line.
