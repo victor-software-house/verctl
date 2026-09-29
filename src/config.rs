@@ -604,7 +604,8 @@ impl<'de> serde::de::Visitor<'de> for OccurrencesVisitor {
     ) -> Result<Occurrences, A::Error> {
         use serde::de::Error;
         let wrong = || A::Error::custom(format!("must be {ARITY}"));
-        let (key, count) = bound.next_entry::<String, usize>()?.ok_or_else(wrong)?;
+        let key: String = bound.next_key()?.ok_or_else(wrong)?;
+        let count: usize = bound.next_value().map_err(|_| wrong())?;
         if bound.next_key::<serde::de::IgnoredAny>()?.is_some() {
             return Err(wrong());
         }
@@ -850,6 +851,28 @@ mod tests {
         "#})
         .expect_err("at_leats is not a key");
         assert!(format!("{error:#}").contains(ARITY), "{error:#}");
+    }
+
+    /// A count that is not a whole number is the same mistake as a wrong
+    /// key, and says so in the same words rather than serde's.
+    #[test]
+    fn a_bound_with_a_bad_count_names_the_arity() {
+        for count in ["-1", "many"] {
+            let error = load(&formatdoc! {r#"
+                {PACKAGE}
+                patterns:
+                  wrong:
+                    match: "a@{{version}}"
+                    occurrences: {{exactly: {count}}}
+
+                pins:
+                  - file: README.md
+                    package: demo
+                    patterns: [wrong]
+            "#})
+            .expect_err("the count is not a whole number");
+            assert!(format!("{error:#}").contains(ARITY), "{count}: {error:#}");
+        }
     }
 
     #[test]
