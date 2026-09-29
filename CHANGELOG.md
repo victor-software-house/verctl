@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.3.9
+
+- Read config and changeset fragments through ctl-core 0.6.9. A parse error in a value reached through an alias names where that value is defined, counted from the file.
+
 ## verctl 0.3.8
 
 - A pattern's `occurrences` bound with a count that is not a whole number, such as `{exactly: -1}`, names the accepted arities again instead of repeating the parser's wording.
