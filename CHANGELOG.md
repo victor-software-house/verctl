@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.3.8
+
+- A pattern's `occurrences` bound with a count that is not a whole number, such as `{exactly: -1}`, names the accepted arities again instead of repeating the parser's wording.
+
 ## verctl 0.3.7
 
 - Adopt ctl-core 0.6.7: a config or fragment parse problem no longer repeats a position counted from the frontmatter instead of the file.
