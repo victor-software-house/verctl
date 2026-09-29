@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.3.6
+
+- Read `.ctl/ver.yaml` and fragment frontmatter through ctl-core's declared input, so a problem in either names its file and line.
+
 ## verctl 0.3.5
 
 - Publish keeps an existing release whose packages were all published by an earlier run, even when its tag names that earlier commit.
