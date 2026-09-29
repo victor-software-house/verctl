@@ -132,7 +132,9 @@ mod tests {
     /// Shape only. The rules below are the ones `declared` owns, so a fixture
     /// that breaks one must reach it rather than stopping at the boundary.
     fn raw(yaml: &str) -> Config {
-        yaml_serde::from_str(yaml).expect("parse")
+        ctl_core::input::Input::new(".ctl/ver.yaml", yaml)
+            .parse()
+            .expect("parse")
     }
 
     const REGISTRY: &str = indoc::indoc! {"
@@ -315,7 +317,10 @@ mod tests {
               linux: [ubuntu-latest]
         "})
         .unwrap_err();
-        assert!(format!("{err:#}").contains("invalid type"), "{err:#}");
+        assert!(
+            format!("{err:#}").contains(".ctl/ver.yaml:5:10: expected mapping"),
+            "{err:#}"
+        );
     }
 
     #[test]

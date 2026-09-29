@@ -1,7 +1,5 @@
 use anyhow::{Context, Result, bail, ensure};
-use gray_matter::Matter;
-use gray_matter::engine::YAML;
-use serde::Deserialize;
+use ctl_core::input::Input;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -60,20 +58,16 @@ impl Fragment {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct FrontMatter(BTreeMap<String, String>);
-
 pub fn parse_str(raw: &str, path: impl Into<PathBuf>) -> Result<Fragment> {
     let path = path.into();
-    let normalized = raw.strip_prefix('\u{feff}').unwrap_or(raw);
-    let mut matter = Matter::<YAML>::new();
-    // gray_matter treats --- as an excerpt closer unless we disable it.
-    matter.excerpt_delimiter = Some("\u{0000}".into());
-    let parsed = matter
-        .parse::<FrontMatter>(normalized)
-        .with_context(|| format!("front matter in {}", path.display()))?;
-    let Some(FrontMatter(mapping)) = parsed.data else {
+    let input = Input::new(path.display().to_string(), raw);
+    let Some((matter, body)) = input.frontmatter() else {
         bail!("{} changeset must start with ---", path.display());
+    };
+    let mapping: BTreeMap<String, String> = if matter.text().trim().is_empty() {
+        BTreeMap::new()
+    } else {
+        matter.parse()?
     };
     ensure!(
         !mapping.is_empty(),
@@ -90,7 +84,7 @@ pub fn parse_str(raw: &str, path: impl Into<PathBuf>) -> Result<Fragment> {
     Ok(Fragment {
         path,
         packages,
-        summary: parsed.content.trim().to_owned(),
+        summary: body.trim().to_owned(),
     })
 }
 

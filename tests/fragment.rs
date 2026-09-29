@@ -134,10 +134,7 @@ fn rejects_numeric_bump() {
         "},
         "num.md",
     ));
-    assert!(
-        error.contains("must be a string") || error.contains("expected: string"),
-        "{error}"
-    );
+    assert!(error.contains("unknown bump type \"1\""), "{error}");
 }
 
 #[test]
@@ -152,10 +149,7 @@ fn rejects_sequence_front_matter() {
         "},
         "list.md",
     ));
-    assert!(
-        error.contains("must be a mapping") || error.contains("expected: hash map"),
-        "{error}"
-    );
+    assert!(error.contains("list.md:2:1: expected mapping"), "{error}");
 }
 
 #[test]
