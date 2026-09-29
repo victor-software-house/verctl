@@ -99,6 +99,8 @@ queue:
     notes:
       - >-
         2026-08-18: src/schema.rs is already shared between verctl's TOML config and its Jinja template declarations, which is the proof it is not verctl-shaped. ctl-core carries the matching row, CTC-008, merged 2026-08-18 as ctl-core#7, so the destination is agreed before anything moves.
+      - >-
+        2026-09-28: the validators and config loading moved. ctl-core 0.6.5 ships `validate` and `input`; verctl reads `.ctl/ver.yaml` and fragment frontmatter through `Input`, drops src/schema.rs, gray_matter, and yaml_serde. The template renderer is the part still here.
 
   - id: VER-028
     title: Decide who owns a template in the shared .ctl/templates

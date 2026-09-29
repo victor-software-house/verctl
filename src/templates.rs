@@ -24,8 +24,8 @@
 use crate::cli::Cli;
 use crate::config::Templates;
 use crate::git;
-use crate::schema::{inside_the_repo, one_file_name};
 use anyhow::{Context, Result, bail};
+use ctl_core::validate::{inside_the_repo, one_file_name};
 use ctl_core::{Surface, surface::add_fragments};
 use garde::Validate;
 use minijinja::value::Value;

@@ -1,13 +1,13 @@
 use crate::driver::{CommandSpec, Driver, Format};
 use crate::publisher::PublisherSpec;
-use crate::schema::{at_least_one, cannot_be_empty, inside_the_repo};
 use anyhow::{Context, Result, bail, ensure};
+use ctl_core::input::Input;
+use ctl_core::validate::{at_least_one, cannot_be_empty, inside_the_repo};
 use garde::Validate;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fmt;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -576,26 +576,41 @@ const ARITY: &str = "once, many, never, {exactly: N}, or {at_least: N}";
 
 impl<'de> Deserialize<'de> for Occurrences {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        use serde::de::Error;
-        let declared = yaml_serde::Value::deserialize(deserializer)?;
-        let wrong = || D::Error::custom(format!("must be {ARITY}"));
-        if let Some(word) = declared.as_str() {
-            return match word {
-                "once" => Ok(Self::Once),
-                "many" => Ok(Self::Many),
-                "never" => Ok(Self::Never),
-                _ => Err(wrong()),
-            };
+        deserializer.deserialize_any(OccurrencesVisitor)
+    }
+}
+
+struct OccurrencesVisitor;
+
+impl<'de> serde::de::Visitor<'de> for OccurrencesVisitor {
+    type Value = Occurrences;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "{ARITY}")
+    }
+
+    fn visit_str<E: serde::de::Error>(self, word: &str) -> Result<Occurrences, E> {
+        match word {
+            "once" => Ok(Occurrences::Once),
+            "many" => Ok(Occurrences::Many),
+            "never" => Ok(Occurrences::Never),
+            _ => Err(E::custom(format!("must be {ARITY}"))),
         }
-        let bound = declared.as_mapping().ok_or_else(wrong)?;
-        let entries: Vec<_> = bound.iter().collect();
-        let [(key, count)] = &entries[..] else {
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(
+        self,
+        mut bound: A,
+    ) -> Result<Occurrences, A::Error> {
+        use serde::de::Error;
+        let wrong = || A::Error::custom(format!("must be {ARITY}"));
+        let (key, count) = bound.next_entry::<String, usize>()?.ok_or_else(wrong)?;
+        if bound.next_key::<serde::de::IgnoredAny>()?.is_some() {
             return Err(wrong());
-        };
-        let count = usize::try_from(count.as_u64().ok_or_else(wrong)?).map_err(D::Error::custom)?;
+        }
         match key.as_str() {
-            Some("exactly") => Ok(Self::Exactly(count)),
-            Some("at_least") => Ok(Self::AtLeast(count)),
+            "exactly" => Ok(Occurrences::Exactly(count)),
+            "at_least" => Ok(Occurrences::AtLeast(count)),
             _ => Err(wrong()),
         }
     }
@@ -656,16 +671,20 @@ impl Prepare {
 
 impl Config {
     pub fn load(path: &Path) -> Result<Self> {
-        let raw = fs::read_to_string(path).with_context(|| path.display().to_string())?;
-        Self::parse(&raw).with_context(|| path.display().to_string())
+        Self::from_input(&Input::read(path)?)
     }
 
-    /// The one parse boundary. `load` adds the file name; everything else —
-    /// tests included — comes through here, so a document is read exactly one
-    /// way and a complaint is worded exactly once.
+    /// A config from text in memory, named as the file a repo writes.
     pub fn parse(raw: &str) -> Result<Self> {
-        let mut config: Self = yaml_serde::from_str(raw).context("parse")?;
-        config.validate_with(&config)?;
+        Self::from_input(&Input::new(".ctl/ver.yaml", raw))
+    }
+
+    /// The one parse boundary: ctl-core's declared input reads the shape and
+    /// validates it once against the whole document, placing each complaint
+    /// on its line, so a document is read exactly one way.
+    fn from_input(input: &Input) -> Result<Self> {
+        let mut config: Self = input.parse()?;
+        input.check(&config, &config)?;
         config.resolve_patterns();
         Ok(config)
     }

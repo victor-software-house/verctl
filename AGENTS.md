@@ -72,9 +72,12 @@ sites.
   `Declared::parse` for what a template exports — and nothing downstream
   re-checks. A rule that needs the rest of the document takes it as garde's
   context (`#[garde(context(Config as config))]`).
-- Rules live in `src/schema.rs` when more than one schema wants them, and they
-  say what a person has to change: "must declare at least one label", not
-  "length is lower than 1". Never ship a stock validator's wording.
+- YAML a repo writes (`.ctl/ver.yaml`, fragment frontmatter) is read through
+  ctl-core's `input` feature: `Input` parses it strictly and places each
+  problem on its line. Do not add another YAML parser here.
+- Rules shared across schemas come from `ctl_core::validate`, and they say what
+  a person has to change: "must declare at least one label", not "length is
+  lower than 1". Never ship a stock validator's wording.
 - Every field states what it means when unsaid, in its doc comment, and gets its
   default from `#[serde(default)]`. A default that cannot be written as an
   attribute (one derived from a file name) is seeded before parsing, so the field
