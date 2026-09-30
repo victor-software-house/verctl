@@ -585,7 +585,7 @@ struct OccurrencesVisitor;
 impl<'de> serde::de::Visitor<'de> for OccurrencesVisitor {
     type Value = Occurrences;
 
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "{ARITY}")
     }
 
@@ -737,7 +737,6 @@ pub(crate) fn stock_driver(name: &str) -> Result<Driver> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use indoc::{formatdoc, indoc};
@@ -932,7 +931,10 @@ mod tests {
 
     /// Every rule the schema declares, each naming what a repo has to fix.
     #[test]
-    #[allow(clippy::too_many_lines)] // one case per rule; a table, not logic
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one case per rule; a table, not logic"
+    )]
     fn a_config_that_breaks_a_rule_stops_the_load() {
         let cases = [
             (

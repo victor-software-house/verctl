@@ -28,7 +28,10 @@ struct ReleaseCase {
 }
 
 #[test]
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one case per template variation; a table, not logic"
+)]
 fn release_template_varies_by_data() {
     let cases = [
         ReleaseCase {

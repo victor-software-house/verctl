@@ -156,7 +156,6 @@ fn rewrite_own_refs(body: &str, tool: &str, version: &str) -> Result<String> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::config::Occurrences;
@@ -233,7 +232,10 @@ mod tests {
 
     /// One before, many pattern sets and versions, each asserted whole.
     #[test]
-    #[allow(clippy::too_many_lines)] // one case per scenario; a table, not logic
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one case per scenario; a table, not logic"
+    )]
     fn one_document_pins_every_release_exactly() {
         let tarball = "github:victor-software-house/verctl@{version}";
         let include = "verctl.git//tasks/ver?ref=v{version}";

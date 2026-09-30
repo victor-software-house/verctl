@@ -182,10 +182,10 @@ mod tests {
     #[test]
     fn check_versions_flag_parses() {
         let cli = Cli::try_parse_from(["verctl", "check", "--versions"]).expect("parse");
-        match cli.command {
-            Command::Check(args) => assert!(args.versions),
-            _ => panic!("expected check"),
-        }
+        let Command::Check(args) = cli.command else {
+            panic!("expected check");
+        };
+        assert!(args.versions);
     }
 
     #[test]

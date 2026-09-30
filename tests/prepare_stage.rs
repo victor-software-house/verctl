@@ -1,6 +1,9 @@
 //! What `prepare` is allowed to write: `prepare.after`, `pins`,
 //! and unexpected dirty paths.
-#![allow(missing_docs, clippy::unwrap_used)]
+#![allow(
+    clippy::unwrap_used,
+    reason = "fixture setup unwraps; a broken fixture fails the test"
+)]
 
 mod common;
 

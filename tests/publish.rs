@@ -1,5 +1,4 @@
 //! `publish --dry-run` prints the stock command plan and writes nothing.
-#![allow(missing_docs)]
 
 mod common;
 
@@ -7,7 +6,6 @@ use indoc::{formatdoc, indoc};
 use std::fs;
 use tempfile::TempDir;
 
-#[allow(clippy::unwrap_used)]
 fn publish_stdout(root: &std::path::Path) -> String {
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
         .current_dir(root)

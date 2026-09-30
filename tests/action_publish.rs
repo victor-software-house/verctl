@@ -1,7 +1,5 @@
 //! The publish action must not fetch. `verctl publish` owns that, with tests.
 
-#![allow(missing_docs)]
-
 const ACTION: &str = include_str!("../actions/publish/action.yml");
 
 #[test]

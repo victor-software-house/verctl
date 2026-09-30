@@ -14,7 +14,6 @@ fn example() -> PathBuf {
 
 /// The example declares manifests it does not ship. Give it the tree it
 /// describes so both planners can run against the file as written.
-#[allow(clippy::expect_used)]
 fn planted() -> TempDir {
     let root = TempDir::new().expect("tmp");
     let config = root.path().join(verctl::config::FILE);

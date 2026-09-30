@@ -35,7 +35,14 @@ impl Present for Report {
     fn message_kind(&self) -> MessageKind {
         match self {
             Self::VersionCheck(report) => report.message_kind(),
-            _ => MessageKind::Success,
+            Self::Instructions(_)
+            | Self::Check(_)
+            | Self::Status(_)
+            | Self::Prepare(_)
+            | Self::Publish(_)
+            | Self::Pin(_)
+            | Self::Assets(_)
+            | Self::Ci(_) => MessageKind::Success,
         }
     }
 }
