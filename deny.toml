@@ -6,7 +6,13 @@ all-features = true
 yanked = "deny"
 unmaintained = "all"
 # Each entry: the RUSTSEC id, a reason, and the condition for removing it.
-ignore = []
+ignore = [
+    # rsa timing side channel (Marvin), no fixed release. octocrab requires a
+    # JWT backend and the other one builds aws-lc with C and cmake. verctl
+    # authenticates with a token and never signs with RSA. Remove when rsa
+    # ships a fix or octocrab no longer requires it.
+    { id = "RUSTSEC-2023-0071", reason = "rsa code is linked but never run: verctl signs no JWT" },
+]
 
 [licenses]
 allow = [
