@@ -1,6 +1,9 @@
 //! Changesets-format fragments and changelog rendering.
 
-#![allow(clippy::missing_errors_doc)]
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "every public function returns anyhow::Result whose context names the failure"
+)]
 
 pub mod assets;
 pub mod bump;

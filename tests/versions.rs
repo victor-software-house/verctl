@@ -1,4 +1,8 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "fixture setup unwraps; a broken fixture fails the test"
+)]
 
 mod common;
 

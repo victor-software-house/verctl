@@ -131,7 +131,10 @@ compares each manifest to the merge-base of HEAD and the default
 branch. Exempt on `version-packages` locally, or when the GitHub
 event has the Version PR label (`verctl:version`). CI does not skip.
 mise: `mise.toml` is shared settings only. `mise.dev.toml` is rust
-and `cargo run`. `mise.release.toml` is the published tarball.
+(through mr-boxington, whose store CI restores with its action),
+cargo-deny, and `cargo run`. `verify` composes toolchain pins,
+format, clippy, workflow policy, tests, cargo-deny, and the version
+guard with `depends`. `mise.release.toml` is the published tarball.
 `.miserc.toml` defaults local `MISE_ENV` to `dev`. `prepare`
 rewrites `pins` onto the Version PR commit, because the tag names
 that commit and publish pushes nothing but the tag. This repo's own

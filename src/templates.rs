@@ -140,7 +140,7 @@ impl Declared {
     /// Read the whole schema out of an evaluated template at once, over a
     /// seeded `name`. Types and shapes are the schema's business: `path = 5`
     /// and `name = "a/b"` fail here, not at write time.
-    fn parse(template: &Path, config: &Templates, state: &State) -> Result<Self> {
+    fn parse(template: &Path, config: &Templates, state: &State<'_, '_>) -> Result<Self> {
         let mut exports: BTreeMap<&str, Value> = state
             .exports()
             .into_iter()
@@ -277,7 +277,6 @@ fn ensure_inside(root: &Path, target: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use git2::Repository;

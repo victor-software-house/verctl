@@ -3,17 +3,27 @@
 # version-pr.yml), so this repo prepares its own release with the verctl it is
 # about to publish, not the tarball of the last one.
 
+# mr_boxington on the rust entry needs mise 2026.9.2 or newer.
+min_version = "2026.9.2"
+
 [tools]
 committed = "1.1.11"
 conftest = "0.69.0"
 lefthook = "2.1.10"
-rust = { version = "nightly-2026-08-16", components = "rustfmt,clippy" }
+rust = { version = "nightly-2026-09-29", components = "rustfmt,clippy", mr_boxington = true }
+mr-boxington = "1.20.0"
+"github:EmbarkStudios/cargo-deny" = "0.20.2"
 
 [deps.cargo]
 auto = true
 description = "Fetch crates when Cargo.lock changes"
 run = "cargo fetch --locked"
 sources = ["Cargo.toml", "Cargo.lock"]
+
+# mise sets RUSTUP_TOOLCHAIN; without it, rustc resolves rust-toolchain.toml.
+[tasks."check:toolchain"]
+description = "Fail if mise.dev.toml and rust-toolchain.toml pin different toolchains"
+run = '[ "$(rustc -V)" = "$(env -u RUSTUP_TOOLCHAIN RUSTUP_AUTO_INSTALL=0 rustc -V)" ] || { echo "✘ mise.dev.toml and rust-toolchain.toml pin different toolchains"; exit 1; }'
 
 [tasks.format]
 description = "rustfmt check"
@@ -22,6 +32,21 @@ run = "cargo fmt --all -- --check"
 [tasks.lint]
 description = "clippy -D warnings"
 run = "cargo clippy --all-targets --all-features -- -D warnings"
+
+[tasks.test]
+description = "Unit, integration, and doc-tests"
+run = "cargo test --all-features"
+# Stops a hung test run instead of holding the gate. The limit also counts
+# compile time and waits on the target/ lock, so it sits far above a cold build.
+timeout = "30m"
+
+[tasks.deny]
+description = "License, ban, and source policy (offline)"
+run = "cargo deny check licenses bans sources"
+
+[tasks."deny:advisories"]
+description = "RustSec advisories and yanked crates (network)"
+run = "cargo deny check advisories"
 
 [tasks.commit-msg]
 description = "Lint the git commit-msg file with committed"
@@ -42,9 +67,8 @@ description = "Conftest on GitHub workflows"
 run = "conftest test --policy policy .github/workflows"
 
 [tasks.verify]
-description = "Format, lint, policy, test, and version guard"
-depends = ["format", "lint", "policy"]
-run = "cargo test --all-features && cargo run -- check --versions"
+description = "Toolchain pins, format, lint, policy, tests, deny, and version guard"
+depends = ["check:toolchain", "format", "lint", "policy", "test", "deny", "versions"]
 
 [tasks.build]
 description = "Build the release binary"
