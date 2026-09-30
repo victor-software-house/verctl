@@ -6,7 +6,6 @@ rust-version = "1.97.1"
 description = "Stack-agnostic version PRs from Changesets-format fragments"
 license = "MIT"
 repository = "https://github.com/victor-software-house/verctl"
-homepage = "https://github.com/victor-software-house/verctl"
 readme = "README.md"
 keywords = ["version", "changelog", "mise", "changeset", "release"]
 categories = ["command-line-utilities", "development-tools"]
@@ -49,6 +48,10 @@ garde = { version = "0.23.0", features = ["derive"] }
 indoc = "2.0.7"
 tempfile = "3.23.0"
 wiremock = "0.6"
+
+# Line tables keep backtraces readable at a fraction of full debug info.
+[profile.dev]
+debug = "line-tables-only"
 
 [profile.release]
 codegen-units = 1
