@@ -456,22 +456,9 @@ fn argv_driver_reads_and_writes_without_a_shell() {
 
 #[test]
 fn argv_write_driver_does_not_deadlock_on_large_stdin() {
-    let stream = indoc! {"
-        import sys
-        while True:
-            chunk = sys.stdin.buffer.read(1024)
-            if not chunk:
-                break
-            sys.stdout.buffer.write(chunk)
-            sys.stdout.buffer.flush()
-    "};
     let driver = Driver::Command {
         read: verctl::driver::CommandSpec::Argv(vec!["tr".into(), "-d".into(), "\n".into()]),
-        write: verctl::driver::CommandSpec::Argv(vec![
-            "python3".into(),
-            "-c".into(),
-            stream.into(),
-        ]),
+        write: verctl::driver::CommandSpec::Argv(vec!["cat".into()]),
         after: None,
     };
     let payload = format!("{}\n", "x".repeat(200_000));

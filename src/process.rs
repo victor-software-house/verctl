@@ -239,7 +239,6 @@ fn take_capped(handle: JoinHandle<io::Result<CapRead>>) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::{filter, filter_limited, run_inherit};
-    use indoc::indoc;
     use std::time::{Duration, Instant};
 
     #[test]
@@ -288,15 +287,13 @@ mod tests {
 
     #[test]
     fn filter_rejects_oversized_stdout_without_buffering_it() {
-        let script = indoc! {"
-            import sys
-            while True:
-                sys.stdout.buffer.write(b'x' * 65536)
-                sys.stdout.buffer.flush()
-        "};
         let start = Instant::now();
         let error = filter_limited(
-            &["python3".into(), "-c".into(), script.into()],
+            &[
+                "sh".into(),
+                "-c".into(),
+                format!("while :; do echo {}; done", "x".repeat(64)),
+            ],
             "",
             &[],
             Duration::from_secs(10),
