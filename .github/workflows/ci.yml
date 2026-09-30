@@ -77,3 +77,5 @@ jobs:
         uses: jdx/mr-boxington-action@9df1d4b18b2147788a7ee7a2c7b84ecf62fd89d3 # v1.5.0
       - name: Verify
         run: mise run verify
+      - name: Advisories
+        run: mise run deny:advisories
