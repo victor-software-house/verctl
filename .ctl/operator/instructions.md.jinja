@@ -20,11 +20,16 @@ Until a tagged GitHub Release exists, use a local or
 ```md
 ---
 forkctl: patch
-"@scope/pkg": minor
+"@scope/pkg": patch
 ---
 
 What changed.
 ```
+
+A new package starts at `0.0.0`. Its first fragment is a `patch`, so
+its first release is `0.0.1`: `0.0.x` is the initial line. Moving to
+`0.1.0`, where a package claims a usable API, or to `1.0.0` is a
+separate operator decision, never the first fragment's bump.
 
 Write the fragment on the same PR that ships the behavior. Do not
 save them up for a release dump.
@@ -173,5 +178,5 @@ machines per tarball is wrong.
 ## Stop conditions
 
 Stop and ask when a fragment is not valid YAML, when a package name is
-unknown to the declarations, or when a `major` fragment lands on a
-0.x package.
+unknown to the declarations, when a `major` fragment lands on a
+0.x package, or when a `minor` fragment lands on a `0.0.0` package.
