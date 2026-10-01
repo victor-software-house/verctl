@@ -484,6 +484,15 @@ horizon:
       ctl-core plus a list of what to change here, not a rewrite.
 
 archive:
+  - id: VER-042
+    title: A new package releases 0.0.1 first
+    scope: verctl
+    outcome: prepare and check refuse a minor or major bump on a package at exactly 0.0.0 unless the package opts in, so a first release is 0.0.1.
+    completed: 2026-10-01T12:40:05
+    evidence:
+      - 'prepare and check refuse a minor or major fragment on a package at 0.0.0; first_minor opens at 0.1.0 (PR #101).'
+    disposition: completed
+
   - id: VER-041
     title: Prove the label trigger on a real Version PR, then archive adopt-ctl-core-0-6
     scope: ci

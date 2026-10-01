@@ -69,7 +69,9 @@ Allowed bumps: `major`, `minor`, `patch`, `none`.
 
 A new package starts at `0.0.0`, and its first fragment is a `patch`, so its
 first release is `0.0.1`. Moving to `0.1.0` or `1.0.0` is a separate operator
-decision.
+decision. `prepare` and `check` refuse a `minor` or `major` fragment on a
+package at exactly `0.0.0`; to open at `0.1.0` on purpose, set
+`first_minor: true` on the package in `.ctl/ver.yaml`.
 
 ## Changelog
 

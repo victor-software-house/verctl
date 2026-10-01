@@ -327,3 +327,66 @@ fn check_ok_when_dir_missing() {
     assert!(stdout.contains("ok"), "{stdout}");
     assert!(stdout.contains("0 fragment(s)"), "{stdout}");
 }
+
+#[test]
+fn check_refuses_what_prepare_refuses() {
+    let root = TempDir::new().expect("tmp");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "0.0.0"
+        "#},
+    )
+    .expect("cargo");
+    let changes = root.path().join(".changeset");
+    fs::create_dir_all(&changes).expect("dir");
+    let check = || {
+        Command::new(env!("CARGO_BIN_EXE_verctl"))
+            .current_dir(root.path())
+            .args(["check", "--color", "never"])
+            .output()
+            .expect("spawn")
+    };
+    fs::write(
+        changes.join("first.md"),
+        indoc! {"
+            ---
+            demo: minor
+            ---
+
+            First.
+        "},
+    )
+    .expect("frag");
+    let refused = check();
+    assert!(!refused.status.success());
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(stderr.contains("first_minor"), "{stderr}");
+    fs::write(
+        changes.join("first.md"),
+        indoc! {"
+            ---
+            demo: patch
+            ---
+
+            First.
+        "},
+    )
+    .expect("frag");
+    let passed = check();
+    assert!(
+        passed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&passed.stderr)
+    );
+}

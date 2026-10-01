@@ -62,13 +62,17 @@ run = 'committed "${usage_commits}"'
 description = "Fail if manifest versions differ from the default branch"
 run = "cargo run -- check --versions"
 
+[tasks.fragments]
+description = "Fail on a pending fragment prepare would refuse"
+run = "cargo run -- check"
+
 [tasks.policy]
 description = "Conftest on GitHub workflows"
 run = "conftest test --policy policy .github/workflows"
 
 [tasks.verify]
-description = "Toolchain pins, format, lint, policy, tests, deny, and version guard"
-depends = ["check:toolchain", "format", "lint", "policy", "test", "deny", "versions"]
+description = "Toolchain pins, format, lint, policy, tests, deny, version guard, and fragments"
+depends = ["check:toolchain", "format", "lint", "policy", "test", "deny", "versions", "fragments"]
 
 [tasks.build]
 description = "Build the release binary"

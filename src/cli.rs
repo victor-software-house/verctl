@@ -94,7 +94,7 @@ pub struct CheckArgs {
     /// Directory of fragments. Defaults to .changeset.
     #[arg(short = 'd', long, default_value = ".changeset", value_hint = clap::ValueHint::DirPath)]
     pub dir: PathBuf,
-    /// Package map. Used with `--versions`.
+    /// Package map. The fragments are planned against it as `prepare` would.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
     pub config: PathBuf,
     /// Fail when a declared manifest version differs from the default branch.

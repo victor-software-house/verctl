@@ -11,34 +11,43 @@ use verctl::prepare;
 
 #[test]
 fn patch_and_minor() {
-    assert_eq!(apply("1.2.3", Bump::Patch).expect("p"), "1.2.4");
-    assert_eq!(apply("1.2.3", Bump::Minor).expect("m"), "1.3.0");
-    assert_eq!(apply("0.0.22", Bump::Patch).expect("0p"), "0.0.23");
-    assert_eq!(apply("0.1.4", Bump::Minor).expect("0m"), "0.2.0");
+    assert_eq!(apply("1.2.3", Bump::Patch, false).expect("p"), "1.2.4");
+    assert_eq!(apply("1.2.3", Bump::Minor, false).expect("m"), "1.3.0");
+    assert_eq!(apply("0.0.22", Bump::Patch, false).expect("0p"), "0.0.23");
+    assert_eq!(apply("0.1.4", Bump::Minor, false).expect("0m"), "0.2.0");
 }
 
 #[test]
 fn rejects_major_on_0x() {
-    let error = apply("0.0.22", Bump::Major).expect_err("major");
+    let error = apply("0.0.22", Bump::Major, false).expect_err("major");
     assert!(format!("{error:#}").contains("0.x"), "{error:#}");
 }
 
 #[test]
 fn major_on_1x() {
-    assert_eq!(apply("1.4.2", Bump::Major).expect("1"), "2.0.0");
+    assert_eq!(apply("1.4.2", Bump::Major, false).expect("1"), "2.0.0");
 }
 
 #[test]
 fn release_bump_clears_prerelease_and_build() {
-    assert_eq!(apply("1.2.3-rc.1+build5", Bump::Patch).expect("p"), "1.2.4");
-    assert_eq!(apply("1.2.3-rc.1+build5", Bump::Minor).expect("m"), "1.3.0");
-    assert_eq!(apply("1.4.2-beta.2+exp", Bump::Major).expect("M"), "2.0.0");
+    assert_eq!(
+        apply("1.2.3-rc.1+build5", Bump::Patch, false).expect("p"),
+        "1.2.4"
+    );
+    assert_eq!(
+        apply("1.2.3-rc.1+build5", Bump::Minor, false).expect("m"),
+        "1.3.0"
+    );
+    assert_eq!(
+        apply("1.4.2-beta.2+exp", Bump::Major, false).expect("M"),
+        "2.0.0"
+    );
 }
 
 #[test]
 fn none_keeps_prerelease_and_build() {
     assert_eq!(
-        apply("1.2.3-rc.1+build5", Bump::None).expect("none"),
+        apply("1.2.3-rc.1+build5", Bump::None, false).expect("none"),
         "1.2.3-rc.1+build5"
     );
 }
@@ -464,4 +473,91 @@ fn argv_write_driver_does_not_deadlock_on_large_stdin() {
     let payload = format!("{}\n", "x".repeat(200_000));
     let out = driver.write(&payload, "9.9.9").expect("write");
     assert_eq!(out, payload);
+}
+
+#[test]
+fn a_new_package_takes_a_patch() {
+    assert_eq!(apply("0.0.0", Bump::Patch, false).expect("p"), "0.0.1");
+}
+
+#[test]
+fn a_new_package_refuses_minor_and_major() {
+    for bump in [Bump::Minor, Bump::Major] {
+        let error = apply("0.0.0", bump, false).expect_err("refused");
+        let message = format!("{error:#}");
+        assert!(message.contains("0.0.0 refuses"), "{message}");
+        assert!(message.contains("first_minor"), "{message}");
+    }
+}
+
+#[test]
+fn a_pre_release_of_0_0_0_is_still_new() {
+    let error = apply("0.0.0-alpha.1", Bump::Minor, false).expect_err("refused");
+    assert!(format!("{error:#}").contains("first_minor"), "{error:#}");
+}
+
+#[test]
+fn first_minor_opens_a_new_package_at_0_1_0() {
+    assert_eq!(apply("0.0.0", Bump::Minor, true).expect("m"), "0.1.0");
+    let error = apply("0.0.0", Bump::Major, true).expect_err("major");
+    assert!(format!("{error:#}").contains("0.x"), "{error:#}");
+}
+
+#[test]
+fn none_leaves_a_new_package_alone() {
+    assert_eq!(apply("0.0.0", Bump::None, false).expect("none"), "0.0.0");
+}
+
+#[test]
+fn the_first_release_rule_ends_at_0_0_1() {
+    assert_eq!(apply("0.0.1", Bump::Minor, false).expect("m"), "0.1.0");
+}
+
+#[test]
+fn prepare_reads_first_minor_from_the_package() {
+    let root = TempDir::new().expect("tmp");
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "0.0.0"
+        "#},
+    )
+    .expect("cargo");
+    let minor = parse_str(
+        indoc! {"
+            ---
+            demo: minor
+            ---
+
+            First.
+        "},
+        "first.md",
+    )
+    .expect("m");
+    let path = common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    let config = Config::load(&path).expect("load");
+    let error =
+        prepare::plan(&config, std::slice::from_ref(&minor), root.path()).expect_err("refused");
+    assert!(format!("{error:#}").contains("package demo"), "{error:#}");
+    let path = common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                first_minor: true
+        "},
+    );
+    let config = Config::load(&path).expect("load");
+    let plan = prepare::plan(&config, &[minor], root.path()).expect("plan");
+    assert_eq!(plan[0].to, "0.1.0");
 }

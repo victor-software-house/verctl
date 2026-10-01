@@ -36,7 +36,8 @@ pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<
         let path = root.join(&spec.path);
         let raw = std::fs::read_to_string(&path).with_context(|| path.display().to_string())?;
         let from = driver.read(&raw)?.trim().to_owned();
-        let to = bump::apply(&from, bump)?;
+        let to = bump::apply(&from, bump, spec.first_minor)
+            .with_context(|| format!("package {name}"))?;
         plan.push(PlanEntry {
             name: name.to_owned(),
             from,
