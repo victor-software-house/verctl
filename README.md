@@ -59,13 +59,17 @@ Same file shape as Changesets. YAML fence. Quoted or unquoted keys.
 ```md
 ---
 forkctl: patch
-"@scope/pkg": minor
+"@scope/pkg": patch
 ---
 
 Restore mise.toml when later patches unapply.
 ```
 
 Allowed bumps: `major`, `minor`, `patch`, `none`.
+
+A new package starts at `0.0.0`, and its first fragment is a `patch`, so its
+first release is `0.0.1`. Moving to `0.1.0` or `1.0.0` is a separate operator
+decision.
 
 ## Changelog
 
