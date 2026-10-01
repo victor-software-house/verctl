@@ -222,6 +222,18 @@ queue:
       - >-
         docs/adoption-report.md §6, folded into one row because every item is a paragraph the README does not have. The finalizer one is theirs and they call it ugly: their publish job checks out the release commit, so the code that tags and releases *afterwards* also comes from that checkout, and a fix to the tagging logic that landed since is not present on a retry. They restore four files from origin/main between publish and tag to work around it. verctl mostly dodges this by being one pinned binary — but only if the version resolves from the workflow's config rather than the release commit's, which is the sentence to write.
 
+  - id: VER-042
+    title: A new package releases 0.0.1 first
+    scope: verctl
+    outcome: prepare and check refuse a minor or major bump on a package at exactly 0.0.0 unless the package opts in, so a first release is 0.0.1.
+    blocked_by: []
+    acceptance:
+      - prepare refuses a minor or major fragment on a package at 0.0.0 and names the package, the rule, and first_minor.
+      - check fails on the same fragments, planned against .ctl/ver.yaml.
+      - 'first_minor: true on a package lets its first release be 0.1.0.'
+      - A patch or none fragment on a 0.0.0 package is unaffected.
+      - The instructions, the operator skill, and the README document the rule and first_minor.
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all

@@ -48,6 +48,14 @@ its first release is `0.0.1`: `0.0.x` is the initial line. Moving to
 `0.1.0`, where a package claims a usable API, or to `1.0.0` is a
 separate operator decision, never the first fragment's bump.
 
+`prepare` and `check` refuse a `minor` or `major` fragment on a package
+at exactly `0.0.0`, naming the package. To open at `0.1.0` on purpose,
+the operator sets `first_minor: true` on that package in `.ctl/ver.yaml`;
+the key does nothing once the package has released. `check` plans the
+pending fragments against `.ctl/ver.yaml` the way `prepare` does, so a
+repo that runs it in its verify task fails the pull request that adds
+such a fragment.
+
 Write the fragment on the same PR that ships the behavior. Do not
 save them up for a release dump.
 
@@ -196,4 +204,5 @@ machines per tarball is wrong.
 
 Stop and ask when a fragment is not valid YAML, when a package name is
 unknown to the declarations, when a `major` fragment lands on a
-0.x package, or when a `minor` fragment lands on a `0.0.0` package.
+0.x package, or when verctl refuses a `0.0.0` package's bump:
+`first_minor` is the operator's to set.

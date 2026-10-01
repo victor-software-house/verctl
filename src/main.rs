@@ -37,16 +37,24 @@ fn execute(cli: Cli) -> Result<Report> {
         Command::Instructions => Ok(Report::Instructions(InstructionsReport::new(INSTRUCTIONS))),
         Command::Status(args) => status_report(&args).map(Report::Status),
         Command::Check(args) if args.versions => versions_report(&args).map(Report::VersionCheck),
-        Command::Check(args) => {
-            let ok = fragment::load_dir(&args.dir)?.len();
-            Ok(Report::Check(CheckReport { ok }))
-        }
+        Command::Check(args) => check_report(&args).map(Report::Check),
         Command::Prepare(args) => prepare_report(&args).map(Report::Prepare),
         Command::Publish(args) => publish_report(&args).map(Report::Publish),
         Command::Pin(args) => pin_report(&args).map(Report::Pin),
         Command::Assets(args) => assets_report(&args).map(Report::Assets),
         Command::Ci(args) => ci_report(&args).map(Report::Ci),
     }
+}
+
+/// Fragments that parse and that `prepare` would accept: every package they
+/// name is declared, and no bump they ask for is refused.
+fn check_report(args: &CheckArgs) -> Result<CheckReport> {
+    let fragments = fragment::load_dir(&args.dir)?;
+    let config = Config::load(&args.config)?;
+    prepare::plan(&config, &fragments, &config::root_of(&args.config))?;
+    Ok(CheckReport {
+        ok: fragments.len(),
+    })
 }
 
 fn versions_report(args: &CheckArgs) -> Result<VersionCheckReport> {

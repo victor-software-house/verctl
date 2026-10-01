@@ -50,7 +50,9 @@ Do not assemble changelog strings in ad-hoc Rust. Do not add a Node adapter.
 
 A new package starts at `0.0.0`. Its first fragment is a `patch`, so its
 first release is `0.0.1`. Moving to `0.1.0` or `1.0.0` is a separate operator
-decision, never the first fragment's bump.
+decision, never the first fragment's bump. `prepare` and `check` refuse a
+`minor` or `major` fragment on a `0.0.0` package; `first_minor: true` on the
+package in `.ctl/ver.yaml` opens it at `0.1.0`, and only the operator sets it.
 
 A repo declares everything in `.ctl/ver.yaml`, the one file verctl reads;
 `.ctl/` is shared with the other ctl CLIs and templates live in
@@ -82,8 +84,8 @@ fixed job runs. `plan`, `crate`, and `prepare` are always one job
 each, so their `runs-on` is a literal in the consumer's workflow — not a
 config key. Do not add one, and do not add a `release` runner section.
 
-Stop when a 0.x package gets `major`, when a `0.0.0` package gets `minor`,
-or when a fragment names a package that is not in `packages`.
+Stop when a 0.x package gets `major`, when verctl refuses a `0.0.0`
+package's bump, or when a fragment names a package that is not in `packages`.
 
 `tags.template` (default `v{version}`) names release tags. `{name}` makes
 one tag and one Release per package; without it, differing versions refuse.

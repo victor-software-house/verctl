@@ -42,6 +42,7 @@ packages:
     publisher: bun
     registry: github
     # changelog: docs/PKG.md  # defaults to CHANGELOG.md beside the manifest
+    # first_minor: true       # at 0.0.0, release 0.1.0 first instead of 0.0.1
 
   # A file name that implies nothing, so both the driver and the publisher are
   # named. This is what the `plain` driver and `publishers.twine` above are

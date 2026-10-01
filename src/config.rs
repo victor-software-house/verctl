@@ -114,6 +114,11 @@ pub struct PackageSpec {
     pub registry: Option<String>,
     /// Package CHANGELOG.md. Defaults to next to the manifest.
     pub changelog: Option<PathBuf>,
+    /// Lets this package leave `0.0.0` with a `minor` fragment, so its first
+    /// release is `0.1.0`. Unsaid, a package at `0.0.0` takes only `patch` and
+    /// first releases `0.0.1`. Inert once the package has released.
+    #[serde(default)]
+    pub first_minor: bool,
     #[serde(flatten)]
     pub spec: DriverSpec,
 }
