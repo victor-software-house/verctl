@@ -82,8 +82,8 @@ fixed job runs. `plan`, `crate`, and `prepare` are always one job
 each, so their `runs-on` is a literal in the consumer's workflow — not a
 config key. Do not add one, and do not add a `release` runner section.
 
-Stop when a 0.x package gets `major`, when a `0.0.0` package gets anything
-but `patch`, or when a fragment names a package that is not in `packages`.
+Stop when a 0.x package gets `major`, when a `0.0.0` package gets `minor`,
+or when a fragment names a package that is not in `packages`.
 
 `tags.template` (default `v{version}`) names release tags. `{name}` makes
 one tag and one Release per package; without it, differing versions refuse.
