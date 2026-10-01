@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.3.11
+
+- `prepare` and `check` refuse a `minor` or `major` fragment on a package at exactly `0.0.0`, so a new package releases `0.0.1` first. Setting `first_minor: true` on a package in `.ctl/ver.yaml` lets the operator open it at `0.1.0`. `check` now plans the pending fragments against `.ctl/ver.yaml`, so it also fails on a package the declarations do not name.
+
 ## verctl 0.3.10
 
 - State that a new package starts at `0.0.0` and its first fragment is a `patch`, so its first release is `0.0.1`; moving to `0.1.0` or `1.0.0` is a separate operator decision. The example fragments show `patch`, and a `minor` fragment on a `0.0.0` package is a stop condition.
