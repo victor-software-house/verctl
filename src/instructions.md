@@ -49,7 +49,8 @@ its first release is `0.0.1`: `0.0.x` is the initial line. Moving to
 separate operator decision, never the first fragment's bump.
 
 `prepare` and `check` refuse a `minor` or `major` fragment on a package
-at exactly `0.0.0`, naming the package. To open at `0.1.0` on purpose,
+at `0.0.0`, including its pre-releases and builds, naming the package.
+To open at `0.1.0` on purpose,
 the operator sets `first_minor: true` on that package in `.ctl/ver.yaml`;
 the key does nothing once the package has released. `check` plans the
 pending fragments against `.ctl/ver.yaml` the way `prepare` does, so a
