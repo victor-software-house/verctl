@@ -491,6 +491,12 @@ fn a_new_package_refuses_minor_and_major() {
 }
 
 #[test]
+fn a_pre_release_of_0_0_0_is_still_new() {
+    let error = apply("0.0.0-alpha.1", Bump::Minor, false).expect_err("refused");
+    assert!(format!("{error:#}").contains("first_minor"), "{error:#}");
+}
+
+#[test]
 fn first_minor_opens_a_new_package_at_0_1_0() {
     assert_eq!(apply("0.0.0", Bump::Minor, true).expect("m"), "0.1.0");
     let error = apply("0.0.0", Bump::Major, true).expect_err("major");

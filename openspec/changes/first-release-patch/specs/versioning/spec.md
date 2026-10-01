@@ -5,7 +5,7 @@
 ### Requirement: A new package releases 0.0.1 first
 
 verctl SHALL refuse a `minor` or `major` bump on a package whose current version
-is exactly `0.0.0`, unless the package declares `first_minor: true`, and the
+is `0.0.0`, with or without a pre-release or build suffix, unless the package declares `first_minor: true`, and the
 refusal SHALL name the package and the `first_minor` key.
 
 #### Scenario: A patch fragment on a new package
@@ -32,7 +32,13 @@ refusal SHALL name the package and the `first_minor` key.
 ### Requirement: check refuses what prepare refuses
 
 `verctl check` SHALL plan the pending fragments against `.ctl/ver.yaml` and the
-manifests it names, and SHALL fail on any bump `prepare` would refuse.
+manifests it names when any fragment is pending, and SHALL fail on any bump
+`prepare` would refuse.
+
+#### Scenario: A package with no pending fragments
+
+- **WHEN** `.changeset/` holds no fragments and no `.ctl/ver.yaml` exists
+- **THEN** `verctl check` exits zero without reading the declarations
 
 #### Scenario: A minor fragment on a new package fails check
 

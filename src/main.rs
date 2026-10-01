@@ -47,9 +47,13 @@ fn execute(cli: Cli) -> Result<Report> {
 }
 
 /// Fragments that parse and that `prepare` would accept: every package they
-/// name is declared, and no bump they ask for is refused.
+/// name is declared, and no bump they ask for is refused. With no fragments
+/// there is nothing to plan, so the declarations are not read.
 fn check_report(args: &CheckArgs) -> Result<CheckReport> {
     let fragments = fragment::load_dir(&args.dir)?;
+    if fragments.is_empty() {
+        return Ok(CheckReport { ok: 0 });
+    }
     let config = Config::load(&args.config)?;
     prepare::plan(&config, &fragments, &config::root_of(&args.config))?;
     Ok(CheckReport {

@@ -13,9 +13,9 @@ Queue row: VER-042.
 ## What changes
 
 1. `prepare` refuses a `minor` or `major` bump on a package whose version is
-   exactly `0.0.0`. The error names the package, the rule, and the override.
-2. `check` loads `.ctl/ver.yaml` and plans the pending fragments the way
-   `prepare` does. A refused bump, or a fragment naming an undeclared package,
+   `0.0.0`, with or without a pre-release or build suffix. The error names the package, the rule, and the override.
+2. When fragments are pending, `check` loads `.ctl/ver.yaml` and plans them
+   the way `prepare` does. A refused bump, or a fragment naming an undeclared package,
    fails `check` on the pull request that adds it.
 3. A package declares `first_minor: true` to open at `0.1.0` on purpose. The
    key does nothing once the package has released.
@@ -39,7 +39,8 @@ Alternatives considered:
 
 ## Impact
 
-1. `check` now needs `.ctl/ver.yaml` and the manifests it names. It already
+1. With fragments pending, `check` now needs `.ctl/ver.yaml` and the
+   manifests it names. It already
    failed on a bad fragment; it now also fails on an undeclared package, which
    `prepare` already refused.
 2. A repository that wants this on its pull requests runs `check` in its verify
