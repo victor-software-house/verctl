@@ -170,8 +170,9 @@ pub fn filter_limited(
         .status;
     if !status.success() {
         bail!(
-            "driver command failed: {}",
-            String::from_utf8_lossy(&stderr)
+            "driver command failed: {}: {status}: {}",
+            argv.join(" "),
+            String::from_utf8_lossy(&stderr).trim()
         );
     }
     String::from_utf8(stdout).context("driver stdout is not UTF-8")
@@ -313,6 +314,9 @@ mod tests {
     fn filter_reports_nonzero_status() {
         let error = filter(&["false".into()], "", &[]).expect_err("fail");
         let message = format!("{error:#}");
-        assert!(message.contains("failed"), "{message}");
+        assert!(
+            message.contains("driver command failed: false: exit status: 1"),
+            "{message}"
+        );
     }
 }
