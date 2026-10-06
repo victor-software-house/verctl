@@ -169,10 +169,13 @@ pub fn filter_limited(
         .context("driver exited without a status")?
         .status;
     if !status.success() {
-        bail!(
-            "driver command failed: {}",
-            String::from_utf8_lossy(&stderr)
-        );
+        let command = argv.join(" ");
+        let stderr = String::from_utf8_lossy(&stderr);
+        let stderr = stderr.trim();
+        if stderr.is_empty() {
+            bail!("driver command failed: {command}: {status}");
+        }
+        bail!("driver command failed: {command}: {status}: {stderr}");
     }
     String::from_utf8(stdout).context("driver stdout is not UTF-8")
 }
@@ -312,7 +315,23 @@ mod tests {
     #[test]
     fn filter_reports_nonzero_status() {
         let error = filter(&["false".into()], "", &[]).expect_err("fail");
-        let message = format!("{error:#}");
-        assert!(message.contains("failed"), "{message}");
+        assert_eq!(
+            format!("{error:#}"),
+            "driver command failed: false: exit status: 1"
+        );
+    }
+
+    #[test]
+    fn filter_reports_the_stderr_of_a_failed_command() {
+        let error = filter(
+            &["sh".into(), "-c".into(), "echo boom >&2; exit 3".into()],
+            "",
+            &[],
+        )
+        .expect_err("fail");
+        assert_eq!(
+            format!("{error:#}"),
+            "driver command failed: sh -c echo boom >&2; exit 3: exit status: 3: boom"
+        );
     }
 }
