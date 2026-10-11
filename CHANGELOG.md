@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.3.12
+
+- A failed driver command now names its argv and exit status, for example `driver command failed: false: exit status: 1`, so a command killed by a signal can be told apart from one that exited non-zero.
+
 ## verctl 0.3.11
 
 - `prepare` and `check` refuse a `minor` or `major` fragment on a package at `0.0.0`, including its pre-releases and builds, so a new package releases `0.0.1` first. Setting `first_minor: true` on a package in `.ctl/ver.yaml` lets the operator open it at `0.1.0`. `check` now plans the pending fragments against `.ctl/ver.yaml`, so it also fails on a package the declarations do not name.
