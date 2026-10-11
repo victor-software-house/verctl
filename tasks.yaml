@@ -222,6 +222,34 @@ queue:
       - >-
         docs/adoption-report.md §6, folded into one row because every item is a paragraph the README does not have. The finalizer one is theirs and they call it ugly: their publish job checks out the release commit, so the code that tags and releases *afterwards* also comes from that checkout, and a fix to the tagging logic that landed since is not present on a retry. They restore four files from origin/main between publish and tag to work around it. verctl mostly dodges this by being one pinned binary — but only if the version resolves from the workflow's config rather than the release commit's, which is the sentence to write.
 
+  - id: VER-043
+    title: Move the GitHub Actions into dedicated repositories
+    scope: verctl
+    outcome: The version-pr, publish, and asset actions each live in a repository of their own, versioned and released on their own, so a consumer pins an action without pinning the CLI repository.
+    blocked_by:
+      - VER-011
+    acceptance:
+      - Each action that the release state machine keeps has its own public repository with a root action.yml and a floating major tag.
+      - This repository no longer holds actions/, and its workflows and every ctl consumer reference the dedicated repositories.
+      - Each action repository releases through verctl.
+    notes:
+      - Follows the VER-011 state machine design, which decides which actions remain and what their inputs are.
+      - Satisfies the open condition of horizon row VER-014, which needs a first-party Action outside this repository.
+
+  - id: VER-044
+    title: Evaluate a dedicated GitHub App for verctl
+    scope: verctl
+    outcome: One decision states whether verctl runs as a dedicated GitHub App, and with which permissions, instead of borrowing a Version PR App token and github.token.
+    blocked_by: []
+    acceptance:
+      - A decision record names the permissions the App would hold, the repositories it would be installed on, and each token it would replace.
+      - The decision states which release-state transitions need an identity other than github.token, for example opening a Version PR that triggers CI and applying its label in the same call.
+      - An adopted App has a follow-up row for its rollout; a rejected App has its reason recorded on this row.
+    notes:
+      - Today the Version PR workflow mints a token from CHANGESET_VERSION_APP_CLIENT_ID and CHANGESET_VERSION_APP_PRIVATE_KEY, and publish tags and releases with github.token.
+      - >2-
+        Related: VER-029, the Version PR label race.
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
