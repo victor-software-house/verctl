@@ -80,7 +80,7 @@ The next release, for fragments not yet applied:
 ```text
 none ──fragment lands──▶ pending ──propose──▶ proposed ──merge──▶ (current axis: merged)
                                     proposed ──main moves──▶ stale ──propose──▶ proposed
-                                    proposed ──plan empties──▶ stale ──propose──▶ none (PR closed)
+                                    proposed ──no fragment left──▶ stale ──propose──▶ none (PR closed)
 ```
 
 A tag that peels to a commit other than `R(p, v)` is the `conflict` stage. It
@@ -90,8 +90,8 @@ stops every transition for that package until an operator resolves it.
 
 | Transition | Guard | Effect | Postcondition, checked after |
 |:--|:--|:--|:--|
-| `propose` | no package's current release is short of `released`; the plan is not empty | apply the plan to a tree at the default branch tip, commit it on the proposal branch, open or update the Version PR | the proposal branch passes `check` |
-| `propose` (close) | the plan is empty and a Version PR is open | close it with a comment naming why | no Version PR is open |
+| `propose` | no package's current release is short of `released`; a fragment is pending | apply the plan to a tree at the default branch tip, commit it on the proposal branch, open or update the Version PR | the proposal branch passes `check` |
+| `propose` (close) | no fragment is pending and a Version PR is open | close it with a comment naming why | no Version PR is open |
 | `publish` | HEAD is `R(p, v)`; every workspace dependency of `p` is published; the registry does not list `p@v` | the ecosystem publishes `p` | the registry lists `p@v` |
 | `tag` | every package the tag names is published | create the tags at `R(p, v)` and push all ready tags in one atomic push | each remote tag peels to `R(p, v)` |
 | `release` | the tag exists | create the GitHub Release as a draft when assets are declared, otherwise published; if one exists, update its body | the Release exists with the CHANGELOG section as its body |
@@ -309,7 +309,7 @@ Each decision names the alternative that lost.
 | W5 | the label race and the `labeled`/`unlabeled` CI trigger (VER-029) | content verification (1.4); the trigger types go |
 | W6 | the guard exemption on the `version-packages` branch | content verification (1.4) |
 | W7 | `head.ref == 'version-packages'` in every publish workflow | push-to-main release (5) |
-| W8 | a Version PR never closes; `none`-only fragments are never consumed | `propose` closes; consumed means present at base and absent at HEAD, whatever the bump |
+| W8 | a Version PR never closes; a fragment stays on disk when no pending fragment gives any of its packages a real bump | `propose` closes; the version step consumes every pending fragment, whatever its bumps |
 | W9 | `VERCTL_DEFAULT_BRANCH`, the default-branch fetch, five default-branch inputs | the `branch` key; the release commit is derived, not proved |
 | W10 | a rerun can tag a commit that was never published | release commit from history (1.1); tag after publish (1.3) |
 | W11 | "already published" from error text; `--tolerate-republish` reported as a fresh publish | registry query before publish (decision 7) |

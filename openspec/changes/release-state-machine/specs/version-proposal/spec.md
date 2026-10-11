@@ -15,10 +15,10 @@ removal of every consumed fragment. It SHALL report the commands it ran under
 - **AND** `Cargo.toml` and `Cargo.lock` both record `demo` at `0.3.1`
 - **AND** the report's `after` lists `cargo update --workspace`
 
-#### Scenario: A none-only fragment is consumed
+#### Scenario: A fragment that bumps nothing is consumed
 
-- **WHEN** `.changeset/docs.md` holds only `demo: none` and another fragment holds `demo: patch`
-- **THEN** `verctl version` removes both fragments
+- **WHEN** `.changeset/docs.md` holds only `demo: none` and no other fragment is pending
+- **THEN** `verctl version` removes `.changeset/docs.md` and changes no manifest
 
 #### Scenario: A dependent requirement no longer admits the new version
 
@@ -30,14 +30,14 @@ removal of every consumed fragment. It SHALL report the commands it ran under
 
 `verctl propose` SHALL apply the version step to a tree at the tip of `branch`,
 commit it on `proposal.branch`, and open or update the Version PR titled
-`proposal.title`. It SHALL close an open Version PR when the plan is empty, and
-SHALL refuse to open or update one while any package's current release is short
-of `released`.
+`proposal.title`. It SHALL close an open Version PR when no fragment is
+pending, and SHALL refuse to open or update one while any package's current
+release is short of `released`.
 
-#### Scenario: The plan empties
+#### Scenario: No fragment is pending
 
 - **WHEN** a Version PR is open and every fragment it consumed has been removed from `main` by another pull request
-- **THEN** `verctl propose` closes the Version PR with a comment that says the plan is empty
+- **THEN** `verctl propose` closes the Version PR with a comment that says no fragment is pending
 
 #### Scenario: A merged release is incomplete
 
