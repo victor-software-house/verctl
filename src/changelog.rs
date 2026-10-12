@@ -56,10 +56,14 @@ pub fn summary_has_terminal(summary: &str) -> bool {
 }
 
 /// The summary a reference follows: one trailing period removed, so the entry
-/// ends `… ([#12](url)).` with a single period, never `…. ([#12](url)).`.
+/// ends `… ([#12](url)).` with a single period, never `…. ([#12](url)).`. An
+/// ellipsis (`...`) stays whole, since dropping one dot would leave `..`.
 #[must_use]
 pub fn summary_body(summary: &str) -> &str {
     let summary = summary.trim_end();
+    if summary.ends_with("..") {
+        return summary;
+    }
     summary.strip_suffix('.').unwrap_or(summary)
 }
 

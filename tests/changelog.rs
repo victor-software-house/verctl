@@ -154,6 +154,17 @@ fn release_template_varies_by_data() {
             expected: "- Restore mise.toml ([`96fb0bc`](https://github.com/org/repo/commit/96fb0bc)).",
         },
         ReleaseCase {
+            name: "pr after an ellipsis keeps the ellipsis",
+            input: ReleaseInput {
+                summary: "Wait for it...".into(),
+                continuations: vec![],
+                pull_request: Some(pr(false)),
+                commit: None,
+            },
+            authors: &[],
+            expected: "- Wait for it... ([#12](https://github.com/org/repo/pull/12)).",
+        },
+        ReleaseCase {
             name: "pr after a question keeps the question mark",
             input: ReleaseInput {
                 summary: "Ship it?".into(),
