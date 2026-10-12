@@ -159,13 +159,20 @@ environment.
 3. `mise.lock` records, per platform, the asset URL and checksum, and
    `provenance = "github-attestations"` when the release has attestations.
    `mise lock <tool>@<version>` rewrites the pin and the lock without
-   installing. It refuses a version that has no release yet, and on a tool with
-   no earlier entry it can exit 0 with only the version recorded, so
-   `mise install --locked` is the completeness check.
+   installing. For a version that has no release yet it exits 1, but in the
+   default mode it has already rewritten `mise.toml`; with
+   `MISE_LOCKFILE_MODE=generate`, documented as a trial, it changes neither
+   file. On a tool with no earlier entry, and for a platform with no asset, it
+   exits 0 with that entry incomplete, and `mise install --locked` checks only
+   the current platform. Confirmed on 2026.10.3, the version these
+   repositories pin.
 4. `[deps.*]` providers are experimental and have no cargo provider.
 5. The `github:` backend picks an asset by os and arch tokens in its name,
    verifies the GitHub asset digest or a checksum file, and checks GitHub
-   artifact attestations by default on public GitHub.
+   artifact attestations by default on public GitHub. An attestation that
+   fails to verify is a hard error. Once `mise.lock` records
+   `provenance = "github-attestations"`, an install without it is refused as a
+   downgrade; a lock with a checksum and no provenance skips the check.
 6. mise has no versioning, changelog, or release pull request model.
 
 ## 8. What verctl adopts

@@ -307,14 +307,23 @@ what it owns and keeps out of what it does not.
 | Install and verify verctl | mise `github:` backend | asset chosen by os and arch tokens in its name; checksum from the GitHub asset digest; GitHub artifact attestations checked by default on public GitHub |
 | Run an extension step | mise | `mise run --raw <task>`; the task's `#MISE tools` install first; the exit status is the outcome; `--raw` keeps stdout clean when a config sets redactions |
 | Order work inside a step | mise | a step's task may `depends` on other tasks; verctl never builds a task graph |
-| `mise.lock` | mise | verctl never edits it; a pin moves with `mise lock <tool>@<version>`, and `mise install --locked` proves the lock is complete, because `mise lock` can exit 0 with platforms missing |
-| A repository's own tool pin | mise, through a `released` step | after `finalize`, `mise lock <tool>@<version>` runs for the version that now exists; mise refuses a version with no release, so the step never runs earlier |
+| `mise.lock` | mise | verctl never edits it; only `mise lock` writes it |
+| A repository's own tool pin | the built-in `mise-pin` step, listed under `released` | after `finalize`, it runs `mise lock <tool>@<version>` with `MISE_LOCKFILE_MODE=generate`, so a version with no release changes neither file (the default mode rewrites `mise.toml` before it fails); then verctl reads `mise.lock` and requires a URL and checksum for every platform the lock lists, because `mise lock` skips a platform with no asset and still exits 0, and `mise install --locked` checks only the runner's platform |
 | Package lockfiles | the package manager, called by verctl | `[deps]` is experimental and has no cargo provider, so verctl runs `cargo` and `bun` from PATH, where mise put them |
 | Versions, changelogs, the Version PR, publishing | verctl | mise has no model for them |
 
-What a release must therefore carry for mise to install it: asset names with
-os and arch tokens, the GitHub asset digest (GitHub computes it), and GitHub
-artifact attestations, which the asset job creates.
+What a release must therefore carry for mise to install and verify it: asset
+names with os and arch tokens, the GitHub asset digest (GitHub computes it),
+and GitHub artifact attestations, which the asset job creates. mise records
+`provenance = "github-attestations"` in `mise.lock` only when a release has
+them, and from then on refuses an install that lacks them. Today's verctl
+releases have none, so consumers' locks carry a checksum and no provenance.
+
+Two mise facts bound the design. `MISE_LOCKFILE_MODE=generate` is documented
+as a trial mode; if it changes, the `mise-pin` step keeps its read-back check
+and stops on a partial write instead of committing it. And from mise
+2026.10.8, a task granted secrets ignores `--raw` unless the task itself is
+raw or interactive, so a step that needs secrets declares `raw = true`.
 
 ## 5. Configuration
 
@@ -507,7 +516,7 @@ a release, and every block of a stack verctl does not ship.
 | W10 | a rerun can tag a commit that was never published | release commit from history (1.1); tag after publish (1.3) |
 | W11 | "already published" from error text; `--tolerate-republish` reported as a fresh publish | registry query before publish (decision 9) |
 | W12 | publish order by declaration order | dependency graph (3.4, 3.5) |
-| W13 | `mise.release.toml` hand-bumped bootstrap pin; consumers pin verctl twice | this repository deletes the file, which no lane loads; a repository that pins its own tool moves it with a `released` step running `mise lock` (4); consumers pin one action ref once VER-043 releases the action with the verctl it runs |
+| W13 | `mise.release.toml` hand-bumped bootstrap pin; consumers pin verctl twice | this repository deletes the file, which no lane loads; a repository that pins its own tool moves it with the built-in `mise-pin` step (4); consumers pin one action ref once VER-043 releases the action with the verctl it runs |
 | W14 | pins and templates for one concern | templates only |
 | W15 | `?ref=v` hard-coded in the pin regex and a template | the `tags` map in the template context |
 | W16 | operator docs rendered on a second, test-only path | `ctl_core::served` renders every served file; `render` updates them and `check` compares them |
@@ -571,8 +580,8 @@ their previous config from git.
 4. [verctl maintains an npm registry client] → It follows the documented wire
    format that npm, pnpm 12, and Bun all send, and it ships behind `auth` and
    `provenance` values that patches add.
-5. [`mise lock` can exit 0 with platforms missing] → A `released` step that
-   moves a pin also runs `mise install --locked`.
+5. [`mise lock` can exit 0 with platforms missing] → The `mise-pin` step reads
+   `mise.lock` back and requires a URL and checksum for every listed platform.
 6. [A pull request that adds and applies a fragment in one diff now fails] →
    Intended: fragments land with the change that needs them, and the Version
    PR applies what is on the release branch.

@@ -111,14 +111,20 @@ with `"private": true` SHALL never be published.
 
 ### Requirement: A repository's own tool pin moves after its release exists
 
-When a `released` step moves a mise pin to the version just released, it SHALL
-do so with `mise lock <tool>@<version>` and then `mise install --locked`, and
-verctl SHALL NOT run it before `finalize`.
+The built-in `mise-pin` step SHALL run only after `finalize`, SHALL move the pin
+with `mise lock <tool>@<version>` under `MISE_LOCKFILE_MODE=generate`, and
+SHALL then read `mise.lock` and fail unless every platform the lock lists has a
+URL and a checksum for the new version.
 
 #### Scenario: The pin moves after finalize
 
-- **WHEN** `at.released` lists step `adopt` with `run: [mise, lock, "github:victor-software-house/verctl@0.4.1"]` and `check: [mise, install, --locked]`
-- **THEN** `verctl release` runs `adopt` only after the `v0.4.1` Release is published
+- **WHEN** `at.released` lists `mise-pin` for tool `github:victor-software-house/verctl` and `v0.4.1` has just been finalized
+- **THEN** `verctl release` runs `mise lock github:victor-software-house/verctl@0.4.1` with `MISE_LOCKFILE_MODE=generate` after the Release is published
+
+#### Scenario: A platform has no asset
+
+- **WHEN** `mise.lock` lists `linux-x64` and `macos-arm64`, and the `v0.4.1` Release has no `macos-arm64` asset
+- **THEN** `mise-pin` exits non-zero and names `macos-arm64`, though `mise lock` exited 0
 
 ### Requirement: verctl performs the OIDC exchange when asked
 

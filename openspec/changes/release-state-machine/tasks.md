@@ -37,7 +37,7 @@ Section 6 is patches after it.
 
 ## 5. Release 0.4.0
 
-- [ ] 5.1 `release.yml` replaces `version-pr.yml` and `publish.yml` in this repository; proof: the merge of `next` into `main` passes CI
+- [ ] 5.1 `release.yml` replaces `version-pr.yml` and `publish.yml` in this repository, and the asset jobs attest each archive; proof: the merge of `next` into `main` passes CI, and `gh attestation verify` passes for each 0.4.0 asset
 - [ ] 5.2 One pull request merges `next` into `main` with one `minor` fragment; proof: the 0.4.0 Version PR passes `check` on its first run, and the release goes from merge to a published Release with both assets; a rerun reports every step `already`
 - [ ] 5.3 qctl, forkctl, ctl-core, unixd, and yamled move to 0.4.0: delete `prepare`, adopt the two workflows; qctl and forkctl move four pinned files to templates; proof: each repository's next Version PR commits its lockfile and passes `check`
 
@@ -46,6 +46,7 @@ Section 6 is patches after it.
 - [ ] 6.1 `auth: oidc` for crates.io and npm; proof: the building-blocks OIDC scenarios pass, and one real crates.io release runs with no `CARGO_REGISTRY_TOKEN` secret
 - [ ] 6.2 `provenance: true`, staged publish, and `release bootstrap` in the bun registry client; proof: one real bun-release version publishes with provenance through `verctl release`, and bun-release is archived
 - [ ] 6.3 The `bootstrap` stage stops a first publication under OIDC; proof: the release-state bootstrap scenario passes
+- [ ] 6.4 The built-in `mise-pin` step; proof: the building-blocks pin scenarios pass, and a consumer's lock regenerated after 0.4.x records `provenance = "github-attestations"`
 
 ## 7. Close
 
