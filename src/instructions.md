@@ -80,8 +80,8 @@ Context: `summary`, `pull_request`, `commit`, `continuations`,
 ## Version PR
 
 Happy path is GitHub Actions: `victor-software-house/verctl/actions/version-pr`,
-not `changesets/action`, not a GitHub App. The workflow already has
-`git`, `gh`, and `${{ github.token }}`. No PAT. No App install.
+not `changesets/action`. The workflow already has
+`git`, `gh`, and `${{ github.token }}`. No PAT. Only `auto-merge` needs an App token.
 
 Do not hand-edit versions. `verctl check --versions` compares each
 declared manifest to the merge-base of HEAD and the default branch.
@@ -90,6 +90,14 @@ branch locally, or when the GitHub event carries the Version PR
 label (`verctl:version` by default, `prepare.version_label`).
 `prepare --pr` applies that label. Not `GITHUB_HEAD_REF`. CI
 does not skip. A fragment-only commit does not change versions.
+
+`auto-merge: true` on `actions/version-pr` enables GitHub auto-merge on the
+Version PR, as a squash titled `<title> (#<number>)` with the PR description
+as body. GitHub merges once the base branch's required checks pass. The action
+fails when no ruleset on the base branch requires a status check, because GitHub would
+merge at once, and when `token` is `GITHUB_TOKEN`, because a merge made with
+it starts no publish workflow. Pass a GitHub App token. Cancel one Version
+PR's auto-merge with `gh pr merge --disable-auto <number>`.
 
 This repo splits mise envs: `dev` compiles this checkout, `release`
 is the published tarball. Local default is `dev` (`.miserc.toml`).

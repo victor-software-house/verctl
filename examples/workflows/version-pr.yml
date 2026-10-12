@@ -27,4 +27,17 @@ jobs:
           version: 2026.8.2
           cache: true
       - run: mise install --locked
+      # A GitHub App token, so the Version PR starts CI and its merge starts
+      # publish; neither happens for an event made with GITHUB_TOKEN.
+      - id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.VERSION_APP_CLIENT_ID }}
+          private-key: ${{ secrets.VERSION_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
       - uses: victor-software-house/verctl/actions/version-pr@main
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          # Needs a required status check on main.
+          auto-merge: "true"

@@ -250,6 +250,10 @@ not the `git`/`gh` CLIs. There is no local token setup.
 
 Example consumer workflow: [`examples/workflows/version-pr.yml`](examples/workflows/version-pr.yml).
 
+`actions/version-pr` takes `auto-merge: true` to merge the Version PR once the
+base branch's required checks pass. It needs a ruleset that requires a status check
+on that branch, and a GitHub App token in `token`.
+
 Mise owns tools. Publish uses Actions OIDC, not a PAT.
 
 ## Operator documents
