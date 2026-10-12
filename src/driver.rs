@@ -1,8 +1,9 @@
-use crate::process;
 use anyhow::{Context, Result, bail};
 use jsonc_parser::ParseOptions;
 use jsonc_parser::cst::{CstInputValue, CstObject, CstRootNode};
 use toml_edit::{DocumentMut, Item, value};
+
+use crate::process;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
@@ -26,7 +27,8 @@ pub enum Driver {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandSpec {
-    /// `mise run <task>` — stdin is the file, stdout is the version or new file.
+    /// `mise run <task>` — stdin is the file, stdout is the version or new
+    /// file.
     Mise(String),
     /// Execvp. No shell.
     Argv(Vec<String>),

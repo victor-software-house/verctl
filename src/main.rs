@@ -1,20 +1,13 @@
+use std::path::Path;
+
 use anyhow::{Context, Result};
 use ctl_core::prelude::*;
-use std::path::Path;
-use verctl::assets;
-use verctl::ci;
 use verctl::cli::{CheckArgs, Cli, Command, PrepareArgs, PublishArgs, StatusArgs};
 use verctl::config::{self, Config};
 use verctl::fragment::{self, Bump};
-use verctl::git;
-use verctl::github;
-use verctl::pins;
-use verctl::prepare;
-use verctl::process;
-use verctl::publish;
-use verctl::release;
-use verctl::templates;
-use verctl::versions;
+use verctl::{
+    assets, ci, git, github, pins, prepare, process, publish, release, templates, versions,
+};
 
 mod presentation;
 

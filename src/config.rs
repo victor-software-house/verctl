@@ -1,14 +1,16 @@
-use crate::driver::{CommandSpec, Driver, Format};
-use crate::publisher::PublisherSpec;
+use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsStr;
+use std::fmt;
+use std::path::{Path, PathBuf};
+
 use anyhow::{Context, Result, bail, ensure};
 use ctl_core::input::Input;
 use ctl_core::validate::{at_least_one, cannot_be_empty, inside_the_repo};
 use garde::Validate;
 use serde::Deserialize;
-use std::collections::{BTreeMap, BTreeSet};
-use std::ffi::OsStr;
-use std::fmt;
-use std::path::{Path, PathBuf};
+
+use crate::driver::{CommandSpec, Driver, Format};
+use crate::publisher::PublisherSpec;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
@@ -743,8 +745,9 @@ pub(crate) fn stock_driver(name: &str) -> Result<Driver> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use indoc::{formatdoc, indoc};
+
+    use super::*;
 
     /// A whole config, so what is under test is what a repo actually writes.
     fn load(body: &str) -> Result<Config> {

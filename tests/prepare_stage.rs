@@ -7,10 +7,11 @@
 
 mod common;
 
-use git2::{Repository, Signature};
-use indoc::indoc;
 use std::fs;
 use std::path::Path;
+
+use git2::{Repository, Signature};
+use indoc::indoc;
 use tempfile::TempDir;
 
 fn init_repo(root: &Path) {

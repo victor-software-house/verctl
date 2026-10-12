@@ -9,16 +9,16 @@
 //! and `binary` when the stock rust recipe is the wrong stack. PR CI never
 //! reads this list.
 
-use crate::config::Config;
-use crate::github;
-use crate::process;
-use crate::runners;
-use anyhow::{Context, Result, bail};
-use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+use anyhow::{Context, Result, bail};
+use serde::Serialize;
+
+use crate::config::Config;
+use crate::{github, process, runners};
 
 pub const BUILD_TIMEOUT: Duration = Duration::from_mins(15);
 
@@ -321,9 +321,10 @@ fn expand_one(part: &str, ctx: &BTreeMap<&str, String>) -> String {
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Result;
+
     use super::plan;
     use crate::config::Config;
-    use anyhow::Result;
 
     fn load(yaml: &str) -> Result<Config> {
         Config::parse(yaml)

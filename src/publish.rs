@@ -4,18 +4,16 @@
 //! bun are stock recipes, not the only stacks. How tags are named comes
 //! from `[tags].template` — see [`tags_for`].
 
-use crate::config::{Config, NAME_PLACEHOLDER};
-use crate::git;
-use crate::github;
-use crate::process;
-use crate::publisher;
-use crate::release;
-use anyhow::{Context, Result, bail, ensure};
-use ctl_core::formatdoc;
-use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
+
+use anyhow::{Context, Result, bail, ensure};
+use ctl_core::formatdoc;
+use serde::Serialize;
+
+use crate::config::{Config, NAME_PLACEHOLDER};
+use crate::{git, github, process, publisher, release};
 
 pub const PUBLISH_TIMEOUT: Duration = Duration::from_mins(10);
 
@@ -247,9 +245,10 @@ fn per_package_tags(config: &Config, packages: &[PublishEntry]) -> Result<Vec<Ta
 
 #[cfg(test)]
 mod tests {
+    use indoc::indoc;
+
     use super::{PublishEntry, already_published, tags_for};
     use crate::config::Config;
-    use indoc::indoc;
 
     fn entry(name: &str, version: &str) -> PublishEntry {
         PublishEntry {

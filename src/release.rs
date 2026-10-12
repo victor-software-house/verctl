@@ -1,15 +1,15 @@
+use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
+use std::{env, fs};
+
+use anyhow::{Context, Result, ensure};
+use ctl_core::{formatdoc, writedoc};
+
 use crate::changelog::{self, ReleaseInput};
 use crate::config::Config;
 use crate::fragment::Fragment;
-use crate::git;
-use crate::github;
 use crate::prepare::PlanEntry;
-use anyhow::{Context, Result, ensure};
-use ctl_core::{formatdoc, writedoc};
-use std::env;
-use std::fmt::Write as _;
-use std::fs;
-use std::path::{Path, PathBuf};
+use crate::{git, github};
 
 pub const VERSION_BRANCH: &str = "version-packages";
 
@@ -306,8 +306,9 @@ pub fn pr_body(changelog: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use indoc::indoc;
+
+    use super::*;
 
     /// A release that bumps one of two packages still has to render a served
     /// file that mentions both, so the version map covers every package —

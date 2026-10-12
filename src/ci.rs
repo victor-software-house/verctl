@@ -8,11 +8,13 @@
 //! machine from verctl. A small `plan` job emits this matrix and the real jobs
 //! consume it — the same bootstrap the publish lane uses for assets.
 
-use crate::config::Config;
-use crate::runners;
+use std::path::Path;
+
 use anyhow::{Context, Result};
 use serde::Serialize;
-use std::path::Path;
+
+use crate::config::Config;
+use crate::runners;
 
 const DEFAULT_JOB: &str = "verify";
 const DEFAULT_MACHINE: &str = "ubuntu-latest";

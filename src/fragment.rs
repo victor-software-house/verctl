@@ -1,8 +1,9 @@
-use anyhow::{Context, Result, bail, ensure};
-use ctl_core::input::Input;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use anyhow::{Context, Result, bail, ensure};
+use ctl_core::input::Input;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Bump {

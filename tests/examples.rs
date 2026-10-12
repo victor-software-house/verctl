@@ -1,9 +1,10 @@
 //! `examples/ver.yaml` is documentation that has to keep parsing. It is a
 //! real config, not a commented one, so the schema is what validates it.
 
-use indoc::indoc;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use indoc::indoc;
 use tempfile::TempDir;
 use verctl::config::Config;
 use verctl::{assets, ci, pins};

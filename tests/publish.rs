@@ -2,8 +2,9 @@
 
 mod common;
 
-use indoc::{formatdoc, indoc};
 use std::fs;
+
+use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
 
 fn publish_stdout(root: &std::path::Path) -> String {

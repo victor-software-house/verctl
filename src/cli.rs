@@ -1,6 +1,7 @@
+use std::path::PathBuf;
+
 use clap::{Args, Parser, Subcommand};
 use ctl_core::{ColorLong, DryRunArgs, FormatArgs};
-use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
@@ -61,7 +62,8 @@ pub struct AssetsArgs {
     /// Package map. Defaults to .ctl/ver.yaml in the current directory.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
     pub config: PathBuf,
-    /// Build this target id (`darwin-arm64`, `linux-x64`). Plan only when omitted.
+    /// Build this target id (`darwin-arm64`, `linux-x64`). Plan only when
+    /// omitted.
     #[arg(long)]
     pub build: Option<String>,
     /// Upload the built tarball to the GitHub Release for `--tag`.
@@ -112,7 +114,8 @@ pub struct PrepareArgs {
     pub config: PathBuf,
     #[command(flatten)]
     pub dry: DryRunArgs,
-    /// Open or update the Version PR. Uses `GITHUB_TOKEN` / `GH_TOKEN` (not `gh`).
+    /// Open or update the Version PR. Uses `GITHUB_TOKEN` / `GH_TOKEN` (not
+    /// `gh`).
     #[arg(long, overrides_with = "no_pr")]
     pub pr: bool,
     /// Write files only. This is the default. Opposite of --pr.
@@ -135,8 +138,9 @@ impl PrepareArgs {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Command};
     use clap::Parser;
+
+    use super::{Cli, Command};
 
     fn prepare_from(args: &[&str]) -> super::PrepareArgs {
         let mut words = vec!["verctl", "prepare"];

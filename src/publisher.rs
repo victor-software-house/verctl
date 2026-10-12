@@ -3,10 +3,11 @@
 //! Override a `publishers` entry or set `publisher` + `argv` on a
 //! package. Placeholders: `{path}` `{dir}` `{registry}` `{config}`.
 
-use anyhow::{Context, Result, bail};
-use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+
+use anyhow::{Context, Result, bail};
+use serde::Deserialize;
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct PublisherSpec {
@@ -220,8 +221,9 @@ fn stock_publisher_for_file(file_name: &str) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::PublisherSpec;
     use std::path::Path;
+
+    use super::PublisherSpec;
 
     #[test]
     fn stock_cargo_and_bun_are_recipes() {

@@ -1,8 +1,9 @@
 //! Infer a lockfile follow-up from the tree. Same signals mise/corepack use.
 
-use crate::git;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use crate::git;
 
 #[must_use]
 pub fn follow_up(manifest: &Path) -> Option<String> {
@@ -88,11 +89,13 @@ fn install_command(manager: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::follow_up;
-    use git2::Repository;
     use std::fs;
     use std::path::Path;
+
+    use git2::Repository;
     use tempfile::TempDir;
+
+    use super::follow_up;
 
     /// `files` are workspace-relative; parents are created.
     fn tree(files: &[&str]) -> TempDir {

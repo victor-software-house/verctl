@@ -1,11 +1,13 @@
 //! Rewrite collocated tool pins when a package version changes.
 
-use crate::config::{Config, PLACEHOLDER, Pin, PinPattern};
-use anyhow::{Context, Result, bail};
-use regex::{NoExpand, Regex, escape};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+
+use anyhow::{Context, Result, bail};
+use regex::{NoExpand, Regex, escape};
 use toml_edit::{DocumentMut, Item, value};
+
+use crate::config::{Config, PLACEHOLDER, Pin, PinPattern};
 
 /// A version, as every pin site spells one.
 const VERSION: &str = r"[0-9]+(?:\.[0-9]+)*";
@@ -157,10 +159,11 @@ fn rewrite_own_refs(body: &str, tool: &str, version: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::config::Occurrences;
     use indoc::indoc;
     use tempfile::TempDir;
+
+    use super::*;
+    use crate::config::Occurrences;
 
     const VERCTL: &str = "github:victor-software-house/verctl";
     const DOC: &str = "README.md";
