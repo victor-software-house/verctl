@@ -290,6 +290,22 @@ queue:
     notes:
       - >2-
         release::changelog_sections passes pull_request: None and commit: None, and ChangelogInput::with_author_filter is defined but never called, so internalAuthors is documented and has no effect (main at 9596fb7, verctl 0.3.14). Reported by a consumer adopting verctl that wants a short (#N) per entry and no author credit.
+      - >2-
+        Decision (operator, 2026-10-12): render the reference as a short (#N) and credit no maintainer by default; credit outside contributors only. OpenSpec change changelog-references.
+
+  - id: VER-052
+    title: Group changelog entries under Added, Fixed, and Changed
+    scope: fragment frontmatter, src/release.rs changelog_sections, the changelog template
+    outcome: A fragment can name its group, and CHANGELOG.md and the Release body list entries under one heading per group below the version heading.
+    notes:
+      - >2-
+        Options: (a) an optional verctl-only frontmatter key such as kind: added|fixed|changed, which verctl validates and stock Changesets tooling rejects; (b) a summary prefix such as Added: that verctl strips; (c) a fragment file-name convention. Recommendation: (a), since verctl already owns fragment validation. Requested by a consumer adopting verctl.
+      - >2-
+        Decision (operator, 2026-10-12): option (a), an optional verctl-only frontmatter key, with a missing key falling to a default group. Starts after VER-051.
+    blocked_by: [VER-051]
+    acceptance:
+      - A fragment may carry an optional verctl-only frontmatter key naming its group; verctl validates it, and a fragment without it falls in a default group.
+      - CHANGELOG.md and the Release body list one heading per group below the version heading.
 
 horizon:
   - id: VER-038
@@ -567,16 +583,6 @@ horizon:
         2026-10-12 (UTC): agreed with the ctl-core side: verctl owns the served `.github/workflows/ci.yml`, and the baseline renders no workflow. The Rust steps it carries are those of ctl-core ci.yml at 02941ff (https://github.com/victor-software-house/ctl-core/blob/02941ff7bd0d1d7adf9fb07db59599ecf3da66f0/.github/workflows/ci.yml): env `MISE_ENV: dev,ci` and `CARGO_TERM_COLOR: always`; checkout with `persist-credentials: false`; `jdx/mise-action` at the pinned mise with `cache: true`, before `jdx/mr-boxington-action`, because the mbx cache key hashes the rustc on PATH; then `mise run verify` and `mise run deny:advisories`; and, for a published library only, `mise run semver` and `mise x -- cargo package --locked --all-features`. The repository kind and published flag come from `.ctl/rust.yaml`.
       - >2-
         2026-10-12 (UTC): ctl-core 0.6.12 shipped the `baseline` feature (crates.io, rust-version 1.99.0; https://github.com/victor-software-house/ctl-core/releases/tag/v0.6.12). API at fd6c61f (https://github.com/victor-software-house/ctl-core/blob/fd6c61f5b1967888090052b996c22370325b0b31/src/baseline.rs): `baseline::load(root)` reads `.ctl/rust.yaml`; `baseline::render(root, &config)` returns `Rendered { served, owned }`, where `served` holds whole files (rust-toolchain.toml, rustfmt.toml, clippy.toml, deny.toml, lefthook.yml, and Cargo.toml and mise.dev.toml with only their marked block replaced) for `render` and `check` to treat like any other served file, and `owned` lists files the repository keeps, each with a reason, reported as owned rather than drift; `BaselineError` names the file, such as a missing marker. `Config` is serializable, so the served ci.yml template can read `published` and `layout`. Adopting it requires rust-version 1.99.0, `.ctl/rust.yaml`, and the two marker pairs; ctl-core is the worked example (`.ctl/rust.yaml` and `tests/baseline.rs` at fd6c61f).
-
-  - id: VER-052
-    title: Group changelog entries under Added, Fixed, and Changed
-    scope: fragment frontmatter, src/release.rs changelog_sections, the changelog template
-    outcome: A fragment can name its group, and CHANGELOG.md and the Release body list entries under one heading per group below the version heading.
-    kind: evaluation
-    open: 'The operator has not chosen how a fragment names its group: Changesets frontmatter maps only package to bump, so this changes a stored format.'
-    notes:
-      - >2-
-        Options: (a) an optional verctl-only frontmatter key such as kind: added|fixed|changed, which verctl validates and stock Changesets tooling rejects; (b) a summary prefix such as Added: that verctl strips; (c) a fragment file-name convention. Recommendation: (a), since verctl already owns fragment validation. Requested by a consumer adopting verctl.
 
   - id: VER-053
     title: Read and write a version in YAML through yamled

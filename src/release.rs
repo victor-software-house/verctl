@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::{env, fs};
@@ -5,7 +6,7 @@ use std::{env, fs};
 use anyhow::{Context, Result, ensure};
 use ctl_core::{formatdoc, writedoc};
 
-use crate::changelog::{self, ReleaseInput};
+use crate::changelog::{self, Commit, PullRequest, ReleaseInput};
 use crate::config::Config;
 use crate::fragment::Fragment;
 use crate::prepare::PlanEntry;
@@ -101,7 +102,87 @@ where
     Ok(())
 }
 
+/// Where each fragment came from: the pull request that merged it, or the
+/// commit that added it. Empty unless `origin` is a GitHub remote: the links
+/// name the repository the fragments were committed to, and a checkout
+/// without that remote renders the same bare entries everywhere.
+#[derive(Debug, Clone, Default)]
+pub struct Origins {
+    by_path: BTreeMap<PathBuf, Origin>,
+}
+
+#[derive(Debug, Clone)]
+enum Origin {
+    PullRequest(PullRequest),
+    Commit(Commit),
+}
+
+/// Resolve each committed fragment to the commit that added it, and that
+/// commit to the pull request its subject names (`… (#12)`, GitHub's squash
+/// subject). With a token, the pull request author is credited when GitHub
+/// calls them an outside contributor and a person; a failed lookup credits no
+/// one, so a maintainer is never named by accident.
+pub fn origins(root: &Path, token: Option<&str>, fragments: &[Fragment]) -> Result<Origins> {
+    let Ok(repo) = git::origin_url(root).and_then(|url| github::parse_remote(&url)) else {
+        return Ok(Origins::default());
+    };
+    let base = format!("https://github.com/{}/{}", repo.owner, repo.name);
+    let mut authors: BTreeMap<u64, Option<github::PullAuthor>> = BTreeMap::new();
+    let mut by_path = BTreeMap::new();
+    for fragment in fragments {
+        let Some(added) = git::added_by(root, &fragment.path)? else {
+            continue;
+        };
+        let origin = if let Some(number) = pull_request_number(&added.subject) {
+            let author = authors
+                .entry(number)
+                .or_insert_with(|| {
+                    token
+                        .and_then(|token| github::pull_author(token, &repo, number).ok())
+                        .filter(github::PullAuthor::credited)
+                })
+                .clone();
+            Origin::PullRequest(PullRequest {
+                number,
+                url: format!("{base}/pull/{number}"),
+                user_url: author
+                    .as_ref()
+                    .map(|author| format!("https://github.com/{}", author.login)),
+                external_author: author.is_some(),
+                user: author.map(|author| author.login),
+            })
+        } else {
+            Origin::Commit(Commit {
+                short: added.sha.get(..7).unwrap_or(&added.sha).to_owned(),
+                url: format!("{base}/commit/{}", added.sha),
+            })
+        };
+        by_path.insert(fragment.path.clone(), origin);
+    }
+    Ok(Origins { by_path })
+}
+
+/// The pull request a squash-merge subject names: a trailing `(#12)`.
+fn pull_request_number(subject: &str) -> Option<u64> {
+    let (_, digits) = subject.trim_end().strip_suffix(')')?.rsplit_once("(#")?;
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok()
+}
+
+/// [`changelog_sections_with`] with no references.
 pub fn changelog_sections(plan: &[PlanEntry], fragments: &[Fragment]) -> Result<String> {
+    changelog_sections_with(plan, fragments, &Origins::default())
+}
+
+/// One `## name version` section per plan entry, each fragment a bullet that
+/// links where it came from when `origins` knows.
+pub fn changelog_sections_with(
+    plan: &[PlanEntry],
+    fragments: &[Fragment],
+    origins: &Origins,
+) -> Result<String> {
     let mut sections = String::new();
     for entry in plan {
         let mut bullets = String::new();
@@ -113,11 +194,18 @@ pub fn changelog_sections(plan: &[PlanEntry], fragments: &[Fragment]) -> Result<
             {
                 continue;
             }
+            let origin = origins.by_path.get(&fragment.path);
             let line = changelog::render_release(&ReleaseInput {
                 summary: fragment.summary.clone(),
                 continuations: Vec::new(),
-                pull_request: None,
-                commit: None,
+                pull_request: match origin {
+                    Some(Origin::PullRequest(pull_request)) => Some(pull_request.clone()),
+                    Some(Origin::Commit(_)) | None => None,
+                },
+                commit: match origin {
+                    Some(Origin::Commit(commit)) => Some(commit.clone()),
+                    Some(Origin::PullRequest(_)) | None => None,
+                },
             })?;
             bullets.push_str(&line);
             if !line.ends_with('\n') {
@@ -143,17 +231,29 @@ pub fn changelog_sections(plan: &[PlanEntry], fragments: &[Fragment]) -> Result<
     Ok(sections)
 }
 
+/// [`write_changelogs_with`] with no references.
 pub fn write_changelogs(
     config: &crate::config::Config,
     root: &Path,
     plan: &[PlanEntry],
     fragments: &[Fragment],
 ) -> Result<Vec<PathBuf>> {
+    write_changelogs_with(config, root, plan, fragments, &Origins::default())
+}
+
+/// Prepend each plan entry's section to its package CHANGELOG.md.
+pub fn write_changelogs_with(
+    config: &crate::config::Config,
+    root: &Path,
+    plan: &[PlanEntry],
+    fragments: &[Fragment],
+    origins: &Origins,
+) -> Result<Vec<PathBuf>> {
     let mut written = Vec::new();
     for entry in plan {
         let spec = config.find(&entry.name)?;
         let path = spec.changelog_path(root);
-        let section = changelog_section(entry, fragments)?;
+        let section = changelog_sections_with(std::slice::from_ref(entry), fragments, origins)?;
         if section.is_empty() {
             continue;
         }
@@ -161,10 +261,6 @@ pub fn write_changelogs(
         written.push(path);
     }
     Ok(written)
-}
-
-fn changelog_section(entry: &PlanEntry, fragments: &[Fragment]) -> Result<String> {
-    changelog_sections(std::slice::from_ref(entry), fragments)
 }
 
 /// First `## name version` or `## version` section from a changelog body.
@@ -309,6 +405,16 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
+
+    #[test]
+    fn a_squash_subject_names_its_pull_request() {
+        assert_eq!(pull_request_number("fix: the parser (#12)"), Some(12));
+        assert_eq!(pull_request_number("fix: the parser (#12)  "), Some(12));
+        assert_eq!(pull_request_number("fix: the parser"), None);
+        assert_eq!(pull_request_number("fix: (#12) in the middle"), None);
+        assert_eq!(pull_request_number("fix: the parser (#)"), None);
+        assert_eq!(pull_request_number("fix: the parser (#+12)"), None);
+    }
 
     /// A release that bumps one of two packages still has to render a served
     /// file that mentions both, so the version map covers every package —

@@ -86,6 +86,54 @@ pub fn origin_url(root: &Path) -> Result<String> {
         .map(ToOwned::to_owned)
 }
 
+/// The commit that added a file, as the changelog names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AddedBy {
+    pub sha: String,
+    pub subject: String,
+}
+
+/// The first-parent commit that added `path`: the newest commit on HEAD's
+/// first-parent history whose tree has the file and whose first parent's tree
+/// does not. A squash merge is that commit, and its subject carries the pull
+/// request number.
+///
+/// No repository, and a file HEAD does not track, is `None`: a fixture outside
+/// git, or a fragment not committed yet, has no commit to name.
+pub fn added_by(root: &Path, path: &Path) -> Result<Option<AddedBy>> {
+    let Ok(repo) = Repository::discover(root) else {
+        return Ok(None);
+    };
+    let Some(rel) = git_path(root, path, repo.workdir()) else {
+        return Ok(None);
+    };
+    let Ok(head) = repo.head().and_then(|head| head.peel_to_commit()) else {
+        return Ok(None);
+    };
+    if head.tree()?.get_path(&rel).is_err() {
+        return Ok(None);
+    }
+    let mut walk = repo.revwalk().context("walk history")?;
+    walk.push(head.id()).context("walk history")?;
+    walk.simplify_first_parent().context("walk history")?;
+    for oid in walk {
+        let commit = repo.find_commit(oid.context("walk history")?)?;
+        let in_parent = commit
+            .parent(0)
+            .ok()
+            .and_then(|parent| parent.tree().ok())
+            .is_some_and(|tree| tree.get_path(&rel).is_ok());
+        if !in_parent {
+            return Ok(Some(AddedBy {
+                sha: commit.id().to_string(),
+                subject: String::from_utf8_lossy(commit.summary_bytes().unwrap_or_default())
+                    .into_owned(),
+            }));
+        }
+    }
+    Ok(None)
+}
+
 #[must_use]
 pub fn upstream_default_branch(root: &Path) -> Option<String> {
     let repo = Repository::discover(root).ok()?;
