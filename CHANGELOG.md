@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.3.16
+
+- A changelog entry whose summary ends with a period now puts its pull request or commit reference before a single closing period, `- Summary ([#12](…)).`, instead of `- Summary. ([#12](…)).` ([#120](https://github.com/victor-software-house/verctl/pull/120)).
+
 ## verctl 0.3.15
 
 - Each changelog entry now links the pull request that merged its fragment, read from the trailing `(#N)` of the squash commit that added it, or that commit when the subject names none. No entry carries an author byline. ([#117](https://github.com/victor-software-house/verctl/pull/117)).
