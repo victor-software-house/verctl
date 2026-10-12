@@ -256,23 +256,12 @@ queue:
       - >2-
         2026-10-12 (UTC): the decision also covers whether verctl should verify the ruleset that limits pushes on the proposal branch `verctl/release/<base>` to the release identity, in `check` or a separate command. The release-state-machine design documents that ruleset but does not verify it.
 
-  - id: VER-048
-    title: Take the shared Rust setup from the Copier template
-    scope: .copier-answers.yml at templates v0.0.5, the files the template renders, mise.toml, mise-tasks/, the workflows, and every mise lock
-    outcome: verctl renders its repository setup from the shared template, builds on the pinned stable 1.99.0, runs the shared task catalog, and arms its git hooks on mise install.
-    blocked_by: []
-    acceptance:
-      - .copier-answers.yml records v0.0.5, and the rendered files come from the template.
-      - mise.toml pins stable 1.99.0 with the formatting nightly; rust-version and rust-toolchain.toml match; src/ is formatted under the template rustfmt.toml in its own commit.
-      - verify runs the ctl-core catalog with check:features and check:repo, and check:repo runs workflow policy, the version guard, and pending fragments.
-      - On a fresh clone, mise install arms the hooks and leaves every lock unchanged; verify, semver, and pre-push pass.
-
   - id: VER-049
     title: Deny missing_docs and missing_debug_implementations
     scope: src/
     outcome: verctl takes the template full lint set; every public item has a doc and a Debug implementation.
     blocked_by:
-      - VER-048
+      []
     acceptance:
       - Cargo.toml drops the local edit that leaves missing_docs and missing_debug_implementations off.
       - mise run verify passes with both denied.
@@ -282,12 +271,25 @@ queue:
     scope: git2 call sites, Cargo.toml, deny.toml
     outcome: verctl builds with no OpenSSL, and deny.toml takes the template openssl and native-tls bans.
     blocked_by:
-      - VER-048
+      []
     acceptance:
       - Cargo.toml has no git2 dependency, and no crate in the graph depends on openssl or native-tls.
       - deny.toml drops the local edit, so the template bans apply and mise run verify passes.
     notes:
       - git2 builds with vendored OpenSSL (features https, vendored-libgit2, vendored-openssl), which needs Perl on every build machine. gix covers clone, fetch, commit, and push over HTTPS with rustls; the shared Rust guidance prefers it where it covers the operation.
+
+  - id: VER-051
+    title: Fill each changelog entry with its pull request and commit, and apply internalAuthors
+    scope: src/release.rs changelog_sections, src/changelog.rs
+    outcome: Every changelog entry and Release body links the pull request that added its fragment, and internalAuthors hides the byline it lists.
+    blocked_by: []
+    acceptance:
+      - changelog_sections resolves the commit that added each fragment and the pull request that merged it, and passes both to the template instead of None.
+      - with_author_filter is applied with the configured internalAuthors, so a listed login renders no byline.
+      - A test renders an entry with its pull request link and one with an internal author.
+    notes:
+      - >2-
+        release::changelog_sections passes pull_request: None and commit: None, and ChangelogInput::with_author_filter is defined but never called, so internalAuthors is documented and has no effect (main at 9596fb7, verctl 0.3.14). Reported by a consumer adopting verctl that wants a short (#N) per entry and no author credit.
 
 horizon:
   - id: VER-038
@@ -566,7 +568,35 @@ horizon:
       - >2-
         2026-10-12 (UTC): ctl-core 0.6.12 shipped the `baseline` feature (crates.io, rust-version 1.99.0; https://github.com/victor-software-house/ctl-core/releases/tag/v0.6.12). API at fd6c61f (https://github.com/victor-software-house/ctl-core/blob/fd6c61f5b1967888090052b996c22370325b0b31/src/baseline.rs): `baseline::load(root)` reads `.ctl/rust.yaml`; `baseline::render(root, &config)` returns `Rendered { served, owned }`, where `served` holds whole files (rust-toolchain.toml, rustfmt.toml, clippy.toml, deny.toml, lefthook.yml, and Cargo.toml and mise.dev.toml with only their marked block replaced) for `render` and `check` to treat like any other served file, and `owned` lists files the repository keeps, each with a reason, reported as owned rather than drift; `BaselineError` names the file, such as a missing marker. `Config` is serializable, so the served ci.yml template can read `published` and `layout`. Adopting it requires rust-version 1.99.0, `.ctl/rust.yaml`, and the two marker pairs; ctl-core is the worked example (`.ctl/rust.yaml` and `tests/baseline.rs` at fd6c61f).
 
+  - id: VER-052
+    title: Group changelog entries under Added, Fixed, and Changed
+    scope: fragment frontmatter, src/release.rs changelog_sections, the changelog template
+    outcome: A fragment can name its group, and CHANGELOG.md and the Release body list entries under one heading per group below the version heading.
+    kind: evaluation
+    open: 'The operator has not chosen how a fragment names its group: Changesets frontmatter maps only package to bump, so this changes a stored format.'
+    notes:
+      - >2-
+        Options: (a) an optional verctl-only frontmatter key such as kind: added|fixed|changed, which verctl validates and stock Changesets tooling rejects; (b) a summary prefix such as Added: that verctl strips; (c) a fragment file-name convention. Recommendation: (a), since verctl already owns fragment validation. Requested by a consumer adopting verctl.
+
+  - id: VER-053
+    title: Read and write a version in YAML through yamled
+    scope: src/driver.rs Format, src/config.rs
+    outcome: A package can declare format yaml with keys, and verctl edits that one value without rewriting the rest of the file.
+    kind: deferred
+    open: 'No second consumer needs it: the first one keeps its version in YAML and uses a command driver.'
+    notes:
+      - yamled already makes format-preserving YAML edits; verctl adds no other YAML parser. Drivers parse only toml and json today.
+
 archive:
+  - id: VER-048
+    title: Take the shared Rust setup from the Copier template
+    scope: .copier-answers.yml at templates v0.0.5, the files the template renders, mise.toml, mise-tasks/, the workflows, and every mise lock
+    outcome: verctl renders its repository setup from the shared template, builds on the pinned stable 1.99.0, runs the shared task catalog, and arms its git hooks on mise install.
+    completed: 2026-10-12T07:54:24
+    evidence:
+      - 'Shipped in #112. verctl renders its setup from the template at v0.0.5, builds on stable 1.99.0, runs the ctl-core catalog, and arms its hooks on mise install; CI passed Plan, verify, and Template, and 0.3.14 published from Version PR #113, which merged itself.'
+    disposition: completed
+
   - id: VER-047
     title: Merge the Version PR automatically once required checks pass
     scope: actions
