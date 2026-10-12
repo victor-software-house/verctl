@@ -41,11 +41,55 @@ pub struct PackageBump {
     pub bump: Bump,
 }
 
+/// The changelog heading a fragment's entry goes under, from the optional
+/// frontmatter key [`Group::KEY`]. Headings follow Keep a Changelog's order
+/// (<https://keepachangelog.com/en/1.1.0/>).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Group {
+    Added,
+    Changed,
+    Fixed,
+}
+
+impl Group {
+    /// The frontmatter key. A colon cannot appear in a Cargo or npm package
+    /// name, so the key never shadows a package.
+    pub const KEY: &'static str = "verctl:group";
+
+    /// Every group, in heading order.
+    pub const ALL: [Self; 3] = [Self::Added, Self::Changed, Self::Fixed];
+
+    pub fn parse(raw: &str) -> Result<Self> {
+        match raw {
+            "added" => Ok(Self::Added),
+            "changed" => Ok(Self::Changed),
+            "fixed" => Ok(Self::Fixed),
+            other => bail!(
+                "unknown {} {other:?} (expected added, changed, or fixed)",
+                Self::KEY
+            ),
+        }
+    }
+
+    #[must_use]
+    pub fn heading(self) -> &'static str {
+        match self {
+            Self::Added => "Added",
+            Self::Changed => "Changed",
+            Self::Fixed => "Fixed",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fragment {
     pub path: PathBuf,
     pub packages: Vec<PackageBump>,
     pub summary: String,
+    /// The heading this entry goes under. `None` is a fragment that names no
+    /// group: it lands under [`Group::Changed`] when another entry in the same
+    /// section names one, and a section where none does stays a flat list.
+    pub group: Option<Group>,
 }
 
 impl Fragment {
@@ -65,11 +109,16 @@ pub fn parse_str(raw: &str, path: impl Into<PathBuf>) -> Result<Fragment> {
     let Some((matter, body)) = input.frontmatter() else {
         bail!("{} changeset must start with ---", path.display());
     };
-    let mapping: BTreeMap<String, String> = if matter.text().trim().is_empty() {
+    let mut mapping: BTreeMap<String, String> = if matter.text().trim().is_empty() {
         BTreeMap::new()
     } else {
         matter.parse()?
     };
+    let group = mapping
+        .remove(Group::KEY)
+        .map(|raw| Group::parse(&raw))
+        .transpose()
+        .with_context(|| path.display().to_string())?;
     ensure!(
         !mapping.is_empty(),
         "{} front matter has no packages",
@@ -86,6 +135,7 @@ pub fn parse_str(raw: &str, path: impl Into<PathBuf>) -> Result<Fragment> {
         path,
         packages,
         summary: body.trim().to_owned(),
+        group,
     })
 }
 

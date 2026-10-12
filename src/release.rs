@@ -8,7 +8,7 @@ use ctl_core::{formatdoc, writedoc};
 
 use crate::changelog::{self, Commit, PullRequest, ReleaseInput};
 use crate::config::Config;
-use crate::fragment::Fragment;
+use crate::fragment::{Fragment, Group};
 use crate::prepare::PlanEntry;
 use crate::{git, github};
 
@@ -200,7 +200,7 @@ pub fn changelog_sections_with(
 ) -> Result<String> {
     let mut sections = String::new();
     for entry in plan {
-        let mut bullets = String::new();
+        let mut entries: Vec<(Option<Group>, String)> = Vec::new();
         for fragment in fragments {
             if !fragment
                 .packages
@@ -222,11 +222,13 @@ pub fn changelog_sections_with(
                     Some(Origin::PullRequest(_)) | None => None,
                 },
             })?;
-            bullets.push_str(&line);
+            let mut line = line;
             if !line.ends_with('\n') {
-                bullets.push('\n');
+                line.push('\n');
             }
+            entries.push((fragment.group, line));
         }
+        let bullets = group_entries(&entries);
         ensure!(
             !bullets.is_empty(),
             "no changelog body for package {}",
@@ -244,6 +246,28 @@ pub fn changelog_sections_with(
         )?;
     }
     Ok(sections)
+}
+
+/// Join one section's entries. A section where no fragment names a group stays
+/// the flat list it always was, so existing changelogs render unchanged. Once
+/// one does, every entry goes under a [`Group`] heading, and an ungrouped one
+/// lands under [`Group::Changed`].
+fn group_entries(entries: &[(Option<Group>, String)]) -> String {
+    if entries.iter().all(|(group, _)| group.is_none()) {
+        return entries.iter().map(|(_, line)| line.as_str()).collect();
+    }
+    Group::ALL
+        .into_iter()
+        .filter_map(|heading| {
+            let lines: String = entries
+                .iter()
+                .filter(|(group, _)| group.unwrap_or(Group::Changed) == heading)
+                .map(|(_, line)| line.as_str())
+                .collect();
+            (!lines.is_empty()).then(|| format!("### {}\n\n{lines}", heading.heading()))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// [`write_changelogs_with`] with no references.

@@ -67,6 +67,11 @@ Restore mise.toml when later patches unapply.
 
 Allowed bumps: `major`, `minor`, `patch`, `none`.
 
+An optional `verctl:group` key, `added`, `changed`, or `fixed`, files the
+entry under that heading. A section where no fragment names a group stays a
+flat list; once one does, the section gets `### Added`, `### Changed`, and
+`### Fixed` headings, and an ungrouped fragment goes under `### Changed`.
+
 A new package starts at `0.0.0`, and its first fragment is a `patch`, so its
 first release is `0.0.1`. Moving to `0.1.0` or `1.0.0` is a separate operator
 decision. `prepare` and `check` refuse a `minor` or `major` fragment on a
