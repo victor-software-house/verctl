@@ -59,7 +59,13 @@ verctl SHALL NOT write, patch, or rewrite any lockfile. `Cargo.lock` SHALL be
 written by `cargo update --workspace`, `bun.lock` by
 `bun install --lockfile-only`, `mise.lock` by `mise lock`, and any other
 lockfile by a declared step that lists it in `writes`. verctl SHALL read
-lockfiles only to check that they agree with the manifests.
+lockfiles only to check that they agree with the manifests, and SHALL compare
+a lockfile's parsed entries, never its bytes.
+
+#### Scenario: A lock written by another mise version
+
+- **WHEN** `mise.dev.lock` lists the same two `rust` entries as the lock `check` expects, in the opposite order
+- **THEN** `verctl check` reports no lockfile problem
 
 #### Scenario: A stale lockfile after a declared step
 

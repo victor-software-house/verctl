@@ -307,7 +307,7 @@ what it owns and keeps out of what it does not.
 | Install and verify verctl | mise `github:` backend | asset chosen by os and arch tokens in its name; checksum from the GitHub asset digest; GitHub artifact attestations checked by default on public GitHub |
 | Run an extension step | mise | `mise run --raw <task>`; the task's `#MISE tools` install first; the exit status is the outcome; `--raw` keeps stdout clean when a config sets redactions |
 | Order work inside a step | mise | a step's task may `depends` on other tasks; verctl never builds a task graph |
-| `mise.lock` | mise | verctl never edits it; only `mise lock` writes it |
+| `mise.lock` | mise | verctl never edits it; only `mise lock` writes it; verctl compares its parsed entries, never its bytes, because mise 2026.10.3 and 2026.10.7 write the same two `rust` entries in opposite order, and `min_version` can set only a floor, not one version for every machine |
 | A repository's own tool pin | the built-in `mise-pin` step, listed under `released` | after `finalize`, it runs `mise lock <tool>@<version>` with `MISE_LOCKFILE_MODE=generate`, so a version with no release changes neither file (the default mode rewrites `mise.toml` before it fails); then verctl reads `mise.lock` and requires a URL and checksum for every platform the lock lists, because `mise lock` skips a platform with no asset and still exits 0, and `mise install --locked` checks only the runner's platform |
 | Package lockfiles | the package manager, called by verctl | `[deps]` is experimental and has no cargo provider, so verctl runs `cargo` and `bun` from PATH, where mise put them |
 | Versions, changelogs, the Version PR, publishing | verctl | mise has no model for them |

@@ -178,7 +178,11 @@ environment.
    release with no attestations installed with exit 0, and failed only with
    `MISE_LOCKED_VERIFY_PROVENANCE=1`. A lock with a checksum and no provenance
    skips the check. Run on 2026.10.3 and 2026.10.7.
-6. mise has no versioning, changelog, or release pull request model.
+6. Entry order in `mise.lock` depends on the mise version. With the same two
+   `rust` entries in config, 2026.10.3 writes the nightly entry first and
+   2026.10.7 the stable entry first; the content is identical. Run locally on
+   both official binaries.
+7. mise has no versioning, changelog, or release pull request model.
 
 ## 8. What verctl adopts
 
