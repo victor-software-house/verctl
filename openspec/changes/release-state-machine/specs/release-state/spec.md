@@ -104,15 +104,17 @@ that is missing, and run no transition for it.
 - **THEN** `verctl release` exits non-zero before any side effect
 - **AND** its error names `demo`, `crates-io`, and the first publish that must happen with a token
 
-### Requirement: A package that never publishes completes without a registry
+### Requirement: A release that does not publish completes without a registry
 
-A package that never publishes (`publish = false`, `"private": true`, or a
-declared ecosystem with no publish block) SHALL have no publish transition.
-Without `assets`, verctl SHALL treat its current release as `released` once it
-is merged and SHALL create no tag and no Release for it. With `assets`, it SHALL
-be tagged and released like any other package. Whether a package publishes
-SHALL be read at its release commit, so a version merged while it did not
-publish stays `released` after it starts to publish.
+A package does not publish when it declares `publish = false` or
+`"private": true`, or uses a declared ecosystem with no publish block. verctl
+SHALL treat a package's current release as publishing only when the package
+publishes both on the release branch tip and at the release commit, each read
+from its manifest and `.ctl/ver.yaml` at that commit. A current release that
+does not publish SHALL have no publish transition. Without `assets`, verctl
+SHALL treat it as `released` once it is merged and SHALL create no tag and no
+Release for it. With `assets`, it SHALL be tagged and released like any other
+package.
 
 #### Scenario: A bumped tool crate
 
@@ -126,3 +128,9 @@ publish stays `released` after it starts to publish.
 - **WHEN** `xtask@0.1.1` was merged with `publish = false`, and a later commit removes `publish = false` without changing the version
 - **THEN** `verctl status` still reports `xtask@0.1.1` as `released`, and `verctl propose` is not blocked by it
 - **AND** the next version of `xtask` goes through `publish`, or `bootstrap` when the registry needs a first publish
+
+#### Scenario: A crate stops publishing before its version reached the registry
+
+- **WHEN** `demo@0.4.0` was merged while `demo` published, is not yet on crates.io, and a later commit adds `publish = false` without changing the version
+- **THEN** `verctl status` reports `demo@0.4.0` as `released`, and `verctl release` does not publish it
+- **AND** `verctl propose` is not blocked by `demo`

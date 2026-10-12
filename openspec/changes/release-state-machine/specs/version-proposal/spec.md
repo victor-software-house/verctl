@@ -43,7 +43,7 @@ payload.
 #### Scenario: The base was changed
 
 - **WHEN** the open pull request on `verctl/release/main` was retargeted to `next`
-- **THEN** `verctl propose` reports that pull request and opens no second one
+- **THEN** `verctl propose` exits non-zero before pushing to `verctl/release/main`, names that pull request to close, and opens no second one
 - **AND** `verctl check` on it exits non-zero and names the base
 
 #### Scenario: The title was edited

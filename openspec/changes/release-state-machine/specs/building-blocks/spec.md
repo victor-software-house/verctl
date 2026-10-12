@@ -75,7 +75,7 @@ a lockfile's parsed entries, never its bytes.
 ### Requirement: A package that publishes depends only on packages that publish
 
 verctl SHALL refuse to load a configuration in which a package that publishes
-depends on a workspace package that never publishes, and SHALL name both
+depends on a workspace package that does not publish, and SHALL name both
 packages. Dependencies match by package name, after renames, aliases, and
 workspace inheritance are resolved. For cargo, normal and build dependencies count,
 target-specific ones included, and so does a development dependency that
@@ -88,7 +88,8 @@ SHALL refuse to load a configuration in which such dependencies form a cycle,
 because cargo cannot publish crates with cyclic versioned development
 dependencies ([rust-lang/cargo#4242][cargo-4242]). For bun, a cycle SHALL NOT
 be refused, because the npm registry does not require a dependency to exist
-first; the members of a cycle publish in declaration order.
+first; the members of a cycle publish in the order `packages` lists them in
+`.ctl/ver.yaml`.
 
 #### Scenario: A published crate depends on a tool crate
 

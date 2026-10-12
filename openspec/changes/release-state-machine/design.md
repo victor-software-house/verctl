@@ -90,28 +90,33 @@ none ──fragment lands──▶ pending ──propose──▶ proposed ─�
 A tag that peels to a commit other than `R(p, v)` is the `conflict` stage. It
 stops every transition for that package until an operator resolves it.
 
-A package that never publishes (`publish = false`, `"private": true`, or a
-declared ecosystem with no publish block) has no `publish` transition. Without
-`assets`, its current release is complete at `merged`: it gets no tag and no
-Release, it counts as `released`, and verctl does not look up its release
-commit, because no transition needs one; a tag whose packages are all of this
-kind is never created. With `assets`, it goes
+A package does not publish when it declares `publish = false` or
+`"private": true`, or uses a declared ecosystem with no publish block. Its
+current release publishes only when the package publishes both on the release
+branch tip and at the release commit, each read from its manifest and from
+`.ctl/ver.yaml` at that commit. A current release that does not publish has no
+`publish` transition. Without `assets`, it is complete at `merged`: it gets no
+tag and no Release, and it counts as `released`; a tag whose packages are all
+of this kind is never created. With `assets`, it goes
 `merged ──tag──▶ tagged` and continues as above. Changesets likewise does not
 tag private packages by default ([config][cs-private]); verctl still versions
-them, because a fragment that names one is intent. Whether a package
-publishes is read at its release commit. So when such a package starts to
-publish, a version merged while it did not publish stays `released`, and its
+them, because a fragment that names one is intent.
+
+The two reads cover a change of setting without a bump. A package that does
+not publish at the tip needs no release commit, so verctl does not look one up.
+A package that starts to publish keeps the version merged before it as
+`released`, and one that stops publishing before its current version reached
+the registry leaves that version `released` with no publish. Either way the
 next version enters `bootstrap` if the registry needs a first publish and
-`merged ──publish──▶` otherwise; earlier versions are never published after
-the fact.
+`merged ──publish──▶` otherwise, and no version is published after the fact.
 
 ### 1.3 Transitions
 
 | Transition | Guard | Effect | Postcondition, checked after |
 |:--|:--|:--|:--|
-| `propose` | no package's current release is short of `released` (a package that never publishes and declares no assets is `released` at `merged`); a fragment is pending | run the version step on a tree at the release branch tip, commit it on the proposal branch, open or update the Version PR | the proposal branch passes `check` |
+| `propose` | no package's current release is short of `released` (a current release that does not publish and declares no assets is `released` at `merged`); a fragment is pending | run the version step on a tree at the release branch tip, commit it on the proposal branch, open or update the Version PR | the proposal branch passes `check` |
 | `propose` (close) | no fragment is pending and a Version PR is open | close it with a comment naming why | no Version PR is open |
-| `publish` | HEAD is `R(p, v)`; every workspace dependency that `p`'s published manifest keeps and that the publish order puts before `p` is published (the load refuses a publishing package that depends that way on a package that never publishes); the `verify` steps pass; the registry does not list `p@v` | the package's publish block runs | the registry lists `p@v` |
+| `publish` | HEAD is `R(p, v)`; every workspace dependency that `p`'s published manifest keeps and that the publish order puts before `p` is published (the load refuses a publishing package that depends that way on a package that does not publish); the `verify` steps pass; the registry does not list `p@v` | the package's publish block runs | the registry lists `p@v` |
 | `tag` | every publishing package the tag names is published | create the tags at `R(p, v)` and push all ready tags in one atomic push | each remote tag peels to `R(p, v)` |
 | `release` | the tag exists | create the GitHub Release as a draft when assets are declared, otherwise published; if one exists, update its body | the Release exists with the CHANGELOG section as its body |
 | `asset` | the Release is a draft; the asset is not uploaded | build at `R(p, v)` and upload | the asset is `uploaded` |
@@ -148,9 +153,11 @@ on the base read live on every run:
    branch, and is the `<base>` its head branch names.
 
 `propose` finds its open pull requests by head through the pull request list
-endpoint, filtered as `<owner>:verctl/release/<base>`, then reads each base. A
-pull request on the proposal branch whose base was changed is not a Version
-PR: `propose` reports every such match and opens no second one. `check` reads all three from the API when it runs, never from the event
+endpoint, filtered as `<owner>:verctl/release/<base>`, then confirms each
+match's head repository is this repository and reads its base. A pull request
+on the proposal branch whose base was changed is not a Version PR: `propose`
+exits non-zero before pushing to the proposal branch, names every such match
+to close, and opens no second one. `check` reads all three from the API when it runs, never from the event
 payload. Title, body, and labels are never read.
 
 ### 2.2 Identity and content are both required
@@ -619,7 +626,7 @@ their previous config from git.
    it reads the last tagged version. Any package with no tag yet
    (a first release, one awaiting `bootstrap`, or one that has just started to
    publish or to declare assets) stops where that file first appears. A
-   package that never publishes and has no assets needs no walk.
+   package that does not publish at the tip and has no assets needs no walk.
 3. [Bun below 1.4.1 leaves the lockfile stale] → The bun ecosystem refuses an
    older Bun by version.
 4. [verctl maintains an npm registry client] → It follows the documented wire
