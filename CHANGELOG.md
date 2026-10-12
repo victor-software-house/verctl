@@ -1,5 +1,11 @@
 # Changelog
 
+## verctl 0.4.1
+
+### Fixed
+
+- A changelog entry whose fragment reached the default branch through a merge commit now links the pull request that added it on the merged branch, not the merge. In 0.4.0 both entries linked the pull request that merged `next` ([#130](https://github.com/victor-software-house/verctl/pull/130)).
+
 ## verctl 0.4.0
 
 - A fragment may set `verctl:group` to `added`, `changed`, or `fixed`. Once one fragment in a release section names a group, the section lists its entries under `### Added`, `### Changed`, and `### Fixed` headings, and a fragment without the key goes under `### Changed`. A section where no fragment names a group renders as before. `Fragment` has a new public field, `group` ([#126](https://github.com/victor-software-house/verctl/pull/126)).
