@@ -524,6 +524,8 @@ horizon:
     notes:
       - >2-
         2026-10-12 (UTC): the operator decided verctl runs the shared Rust baseline through a `ver baseline write|check` subcommand that calls ctl-core baseline::render and baseline::drift and writes the served files. ctl-core owns the rendering. Default timing is a patch after 0.4.0, since the subcommand is additive; agree the timing with the ctl-core side before starting.
+      - >2-
+        2026-10-12 (UTC): agreed with the ctl-core side: verctl owns the served `.github/workflows/ci.yml`, and the baseline renders no workflow. The Rust steps it carries are those of ctl-core ci.yml at 02941ff (https://github.com/victor-software-house/ctl-core/blob/02941ff7bd0d1d7adf9fb07db59599ecf3da66f0/.github/workflows/ci.yml): env `MISE_ENV: dev,ci` and `CARGO_TERM_COLOR: always`; checkout with `persist-credentials: false`; `jdx/mise-action` at the pinned mise with `cache: true`, before `jdx/mr-boxington-action`, because the mbx cache key hashes the rustc on PATH; then `mise run verify` and `mise run deny:advisories`; and, for a published library only, `mise run semver` and `mise x -- cargo package --locked --all-features`. The repository kind and published flag come from `.ctl/rust.yaml`.
 
 archive:
   - id: VER-042
