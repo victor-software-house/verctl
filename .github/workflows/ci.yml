@@ -78,12 +78,12 @@ jobs:
       - name: Advisories
         run: mise run deny:advisories
       # next carries 0.4.0's breaking changes while Cargo.toml still says
-      # 0.3.x. cargo-semver-checks counts 0.3 -> 0.4 as a major release, so a
-      # pull request into next is checked as one.
+      # 0.3.x, and cargo-semver-checks allows any change in a major release,
+      # which 0.3 -> 0.4 is; it would check nothing there. The check resumes
+      # on main against 0.4.0.
       - name: Semver
-        env:
-          RELEASE_TYPE: ${{ github.base_ref == 'next' && '--release-type=major' || '' }}
-        run: mise run semver ${RELEASE_TYPE}
+        if: github.base_ref != 'next'
+        run: mise run semver
 
   template:
     name: Template

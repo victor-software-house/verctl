@@ -21,8 +21,7 @@ is a breaking library change.
    request comes from a fork.
 3. `Config` and every config struct become `#[non_exhaustive]`, so later
    keys are additive.
-4. Pull requests into `next` run cargo-semver-checks with
-   `--release-type=major`, its name for the 0.3 to 0.4 step.
+4. Pull requests into `next` skip the Semver step.
 
 ## Impact
 

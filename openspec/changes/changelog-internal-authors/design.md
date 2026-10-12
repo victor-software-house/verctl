@@ -19,12 +19,13 @@
    for cargo-semver-checks. Marking them once, in 0.4.0, makes later keys
    additive. Enums stay exhaustive: matching on every variant is the point.
    Alternative: private fields with accessors. Lost: every reader changes.
-5. **Pull requests into `next` allow a breaking release.** `next` carries
+5. **Pull requests into `next` skip the Semver step.** `next` carries
    0.4.0's breaking changes while `Cargo.toml` still says 0.3.x, so a plain
-   `cargo semver-checks` fails every one of them. The Semver step passes
-   `--release-type=major` when the base branch is `next`: cargo-semver-checks
-   follows Cargo's semver, where 0.3 to 0.4 is the major step, and
-   `--release-type=minor` still fails on these changes. Alternative: skip
+   `cargo semver-checks` fails every one of them. cargo-semver-checks follows
+   Cargo's semver, where 0.3 to 0.4 is the major step:
+   `--release-type=minor` still fails, and `--release-type=major` skips all
+   260 checks. Alternative: pass `--release-type=major`. Lost: it reads as a
+   check and checks nothing. The check resumes on main against 0.4.0. Alternative: skip
    semver on `next`. Lost: an unintended break would go unseen until 0.4.0.
 
 ## Override and disable
