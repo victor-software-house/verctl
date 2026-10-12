@@ -513,6 +513,16 @@ horizon:
       share it (VER-022). Deliverable is a short written standard in
       ctl-core plus a list of what to change here, not a rewrite.
 
+  - id: VER-045
+    title: Serve the shared Rust baseline through verctl
+    scope: verctl
+    outcome: verctl writes and checks the shared Rust baseline files that ctl-core renders, so each Rust repository gets them as served files.
+    kind: deferred
+    open: ctl-core has not shipped its baseline feature (baseline::render and baseline::drift).
+    notes:
+      - >2-
+        2026-10-12 (UTC): the operator decided verctl runs the shared Rust baseline through a `ver baseline write|check` subcommand that calls ctl-core baseline::render and baseline::drift and writes the served files. ctl-core owns the rendering. Default timing is a patch after 0.4.0, since the subcommand is additive; agree the timing with the ctl-core side before starting.
+
 archive:
   - id: VER-042
     title: A new package releases 0.0.1 first
