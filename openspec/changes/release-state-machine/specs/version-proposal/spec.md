@@ -67,8 +67,8 @@ new version to resolve.
 
 #### Scenario: A package in conflict
 
-- **WHEN** `app@0.2.0` is at stage `conflict` because its dependency `core@0.3.0` does not publish, and a fragment for `core` is on `main`
-- **THEN** `verctl propose` opens the Version PR that moves `core` to a publishing version
+- **WHEN** `core` publishes on `main`, `core@0.3.0` was merged while it did not, `app@0.2.0` is therefore at stage `conflict`, and a fragment for `core` is on `main`
+- **THEN** `verctl propose` opens the Version PR that moves `core` to a version whose release commit publishes
 
 #### Scenario: No fragment is pending
 

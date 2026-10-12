@@ -93,8 +93,11 @@ or when a dependency that `p`'s published manifest keeps has a current release
 that does not publish, so `publish` could never proceed. verctl never waits on
 a fact that cannot arrive. The fragment rule in 2.2 keeps the second case from
 arising through pull requests that pass `check`. A package in `conflict` does
-not block `propose`, so a Version PR that resolves it (a publishing version of
-the dependency, or a new version of `p`) can still be opened.
+not block `propose`, so a Version PR that resolves it can still be opened: a
+new version of the dependency, whose release commit publishes because the
+dependency publishes on the release branch (the load refuses the state
+otherwise), or a new version of `p` that drops the dependency or stops
+publishing.
 
 A package does not publish when it declares `publish = false` or
 `"private": true`, or uses a declared ecosystem with no publish block. Whether
