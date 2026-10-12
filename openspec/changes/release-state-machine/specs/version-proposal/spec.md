@@ -77,13 +77,17 @@ request that is not a Version PR SHALL fail when it changes a manifest version
 or adds a CHANGELOG section; it may add or remove fragments. A Version PR
 SHALL fail when it changes any path outside what the version step writes:
 manifests, lockfiles, CHANGELOGs, served files, consumed fragments, and the
-declared `writes` of `version` steps. It SHALL also fail unless every changed
-manifest version equals the plan of the fragments present at the merge-base
-and absent at HEAD, every planned bump is
+declared `writes` of `version` steps, with the write set read from the
+configuration at the merge-base. A manifest SHALL differ only in version
+fields and in the dependency requirements the plan rewrites. It SHALL also
+fail unless every changed manifest version equals the plan of the fragments
+present at the merge-base and absent at HEAD, every planned bump is
 applied, each changed package's CHANGELOG carries the new version's section,
-every lockfile agrees with its manifests, no parsed lockfile entry changes
-except those of the workspace packages the plan bumps, and every served file
-equals its template's render at the versions on HEAD.
+every lockfile agrees with its manifests, a lockfile's parsed entries and
+header differ from the merge-base only in the versions of the workspace
+packages the plan bumps and in references that name them, with no entry added
+or removed, and every served file equals its template's render at the versions
+on HEAD.
 
 #### Scenario: A hand-edited version on a feature branch
 
@@ -109,6 +113,16 @@ equals its template's render at the versions on HEAD.
 
 - **WHEN** the Version PR bumps `demo` and also changes the resolved version of `serde` in `Cargo.lock`
 - **THEN** `verctl check` exits non-zero and names `Cargo.lock` and `serde`
+
+#### Scenario: A Version PR that adds a dependency
+
+- **WHEN** the Version PR bumps `demo` in `Cargo.toml` and also adds a dependency there
+- **THEN** `verctl check` exits non-zero and names `Cargo.toml` and the added dependency
+
+#### Scenario: A Version PR that widens its own write set
+
+- **WHEN** the Version PR adds `src/lib.rs` to a `version` step's `writes` in `.ctl/ver.yaml` and changes `src/lib.rs`
+- **THEN** `verctl check` exits non-zero and names `src/lib.rs`, because the write set comes from the merge-base
 
 #### Scenario: A served file edited by hand
 

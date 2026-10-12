@@ -105,7 +105,7 @@ them, because a fragment that names one is intent.
 |:--|:--|:--|:--|
 | `propose` | no package's current release is short of `released` (a package that never publishes and declares no assets is `released` at `merged`); a fragment is pending | run the version step on a tree at the release branch tip, commit it on the proposal branch, open or update the Version PR | the proposal branch passes `check` |
 | `propose` (close) | no fragment is pending and a Version PR is open | close it with a comment naming why | no Version PR is open |
-| `publish` | HEAD is `R(p, v)`; every normal and build workspace dependency of `p` is published (the load refuses a publishing package with such a dependency on a package that never publishes); the `verify` steps pass; the registry does not list `p@v` | the package's publish block runs | the registry lists `p@v` |
+| `publish` | HEAD is `R(p, v)`; every workspace dependency that `p`'s published manifest keeps is published (the load refuses a publishing package that depends that way on a package that never publishes); the `verify` steps pass; the registry does not list `p@v` | the package's publish block runs | the registry lists `p@v` |
 | `tag` | every publishing package the tag names is published | create the tags at `R(p, v)` and push all ready tags in one atomic push | each remote tag peels to `R(p, v)` |
 | `release` | the tag exists | create the GitHub Release as a draft when assets are declared, otherwise published; if one exists, update its body | the Release exists with the CHANGELOG section as its body |
 | `asset` | the Release is a draft; the asset is not uploaded | build at `R(p, v)` and upload | the asset is `uploaded` |
@@ -157,11 +157,16 @@ payload. Title, body, and labels are never read.
 2. **Content.** A Version PR's diff must be the version step applied to its
    base and nothing else: it changes no path outside what the version step
    writes (manifests, lockfiles, CHANGELOGs, served files, consumed fragments,
-   and the declared `writes` of `version` steps); every changed version equals
-   the plan of the fragments present at the merge-base and absent at HEAD;
-   every lockfile agrees with its manifests, and no parsed lockfile entry
-   changes except those of the workspace packages the plan bumps; and every
-   served file equals its template's render.
+   and the declared `writes` of `version` steps, read from the configuration
+   at the merge-base); a manifest differs only in version fields and in the
+   dependency requirements the plan rewrites; every changed version equals the
+   plan of the fragments present at the merge-base and absent at HEAD; every
+   lockfile agrees with its manifests, and its parsed entries and header differ
+   from the merge-base only in the versions of the workspace packages the plan
+   bumps and in references that name them, with no entry added or removed; and
+   every served file equals its template's render. If an owner command
+   re-resolves more than the bump, `propose` fails its own postcondition, and
+   the release branch needs a lockfile refresh first.
 
 Identity alone trusts whoever pushes to the proposal branch. Content alone
 lets any branch carry a release. Together, a hand edit fails on any branch,
@@ -596,9 +601,11 @@ their previous config from git.
    prepared against the `next` build before 0.4.0 releases, and a removed key
    fails with its replacement.
 2. [The release commit walk reads history] → Workflows already fetch full
-   history; the walk stops at the last tagged version of each package, and a
-   package with no tag needs no walk, since it never publishes and has no
-   assets.
+   history. The walk reads only the first-parent commits that touch the
+   package's manifest, newest first, and stops at the last tagged version. A
+   package with no tag yet (a first release, one awaiting `bootstrap`, or one
+   that has just started to publish) stops at the commit that added its
+   manifest. A package that never publishes and has no assets needs no walk.
 3. [Bun below 1.4.1 leaves the lockfile stale] → The bun ecosystem refuses an
    older Bun by version.
 4. [verctl maintains an npm registry client] → It follows the documented wire

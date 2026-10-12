@@ -75,13 +75,22 @@ a lockfile's parsed entries, never its bytes.
 ### Requirement: A package that publishes depends only on packages that publish
 
 verctl SHALL refuse to load a configuration in which a package that publishes
-has a normal or build dependency on a workspace package that never publishes,
-and SHALL name both packages. A development dependency SHALL NOT count.
+depends on a workspace package that never publishes, and SHALL name both
+packages. For cargo, normal and build dependencies count, target-specific ones
+included, and so does a development dependency that declares a `version`,
+which `cargo publish` keeps. For bun, `dependencies`, `optionalDependencies`,
+and `peerDependencies` count. A path-only cargo development dependency and a
+bun `devDependencies` entry SHALL NOT count.
 
 #### Scenario: A published crate depends on a tool crate
 
 - **WHEN** crate `demo` publishes and has a normal dependency on workspace crate `xtask`, which declares `publish = false`
 - **THEN** `verctl status` exits non-zero and names `demo` and `xtask`
+
+#### Scenario: A published crate tests with a tool crate
+
+- **WHEN** crate `demo` publishes and has a path-only development dependency on `xtask`, which declares `publish = false`
+- **THEN** `verctl status` loads the configuration, and `demo`'s publish does not wait on `xtask`
 
 ### Requirement: Cargo is a built-in
 
