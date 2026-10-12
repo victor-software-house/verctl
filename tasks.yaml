@@ -17,14 +17,16 @@ queue:
       versions.
     blocked_by: []
     acceptance:
-      - prepare writes versions + per-package CHANGELOG and consumes fragments.
-      - Version PR is the only version-authority path (CI / --pr).
-      - "`[prepare].after` plus stage globs; unexpected dirty files fail."
-      - publish is overridable recipes; cargo and bun are stock examples.
-      - Lockfile is committed; cargo publish --locked works after bump.
-      - Pretty is ctl-core ColorMode tables; tests use --color never.
-      - Native assets only when [assets] is set; PR CI stays one runner.
-      - Asset jobs are named by target id; cargo/bun inherit stdio.
+      - '`verctl version` writes every manifest, dependent requirement, lockfile, CHANGELOG section, and served file a release changes, removes the consumed fragments, and reports the commands and steps it ran under `after`.'
+      - 'verctl writes no lockfile: `Cargo.lock`, `bun.lock`, and `mise.lock` change only through cargo, bun, and mise, and verctl only reads them to check agreement.'
+      - A Version PR is identified by its head repository, its head branch `verctl/release/<base>`, and its base; `check` also requires its diff to equal the version step applied to its base, and no label is read.
+      - Release state is derived from facts on every run, and a rerun of `verctl release` after a partial failure finishes the release and reports each completed transition as `already`.
+      - Publish precedes the tag, tags land on the release commit in one atomic push, and a Release with assets stays a draft until every asset is uploaded.
+      - Cargo and Bun are built-in providers; a package can replace one block with a step, and another stack can declare a whole ecosystem from steps.
+      - A step is a mise task or an argv that changes only its declared `writes`, and a step that runs after a release declares a `check`.
+      - 'Bun packages publish through `bun pm pack` and verctl''s own npm registry client, with `auth: oidc` and provenance available, and bun-release is archived.'
+      - '`.ctl/ver.yaml` declares each concern in one key, refuses unknown keys at every level, and names the replacement of each removed key.'
+      - Every breaking change shipped in 0.4.0, later work shipped as additive patches, and qctl, forkctl, ctl-core, unixd, and yamled release through 0.4.x.
     notes:
       - >2-
         Original product goal. Do not name the private release-skill in repo docs. Rust and bun are stock examples, not the architecture. Adopt ctl-core fixture trees (CTC-006) instead of more fs::write + indoc copies. 2026-08-17: status/check/prepare are ColorMode tables; publish proves changelog headings + default-branch history (no commit-subject sniff); GitHub notes come from each package CHANGELOG. Hand-edit guard shipped as VER-012 / PR #9. Still open for archive: lockfile-after-bump (VER-013).
