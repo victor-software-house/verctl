@@ -77,12 +77,13 @@ jobs:
         run: mise run verify
       - name: Advisories
         run: mise run deny:advisories
-      # next carries 0.4.0's breaking changes while Cargo.toml still says
-      # 0.3.x, and cargo-semver-checks allows any change in a major release,
-      # which 0.3 -> 0.4 is; it would check nothing there. The check resumes
-      # on main against 0.4.0.
+      # next carries the next minor release's breaking changes while
+      # Cargo.toml still names the last release, so the check would read them
+      # as a patch. It skips pull requests into next and the one that merges
+      # next into main; the Version PR that follows bumps the minor, and every
+      # later pull request into main checks against that release.
       - name: Semver
-        if: github.base_ref != 'next'
+        if: github.base_ref != 'next' && github.head_ref != 'next'
         run: mise run semver
 
   template:
