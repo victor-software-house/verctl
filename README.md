@@ -85,6 +85,7 @@ Default release line:
 
 ```text
 PR                - Summary ([#12](https://github.com/org/repo/pull/12)).
+Outside + PR      - Summary ([#12](https://github.com/org/repo/pull/12) by [@ext](https://github.com/ext)).
 Commit only       - Summary ([`96fb0bc`](https://github.com/org/repo/commit/96fb0bc)).
 No link           - Summary.
 ```
@@ -97,9 +98,11 @@ No extra thanks line. If a PR exists, the SHA is omitted.
 
 The pull request is the trailing `(#N)` in the subject of the commit
 that added the fragment, which GitHub's squash merge writes; without one
-the entry links that commit. No entry carries a byline yet: release
-notes credit no maintainer, and `changelog.internal_authors`, which
-names them, arrives in 0.4.0.
+the entry links that commit. Release notes credit no maintainer: list
+maintainers and the Apps that open pull requests in
+`changelog.internal_authors`. With a token, a byline needs a login
+outside that list, a person rather than a bot, and a pull request from a
+fork.
 
 ## Version files
 
