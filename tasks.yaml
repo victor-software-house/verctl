@@ -254,6 +254,19 @@ queue:
       - >2-
         Related: VER-029, the Version PR label race.
 
+  - id: VER-046
+    title: Declare the lock platforms so mise install leaves the locks unchanged
+    scope: mise
+    outcome: A `mise install` on a supported machine changes no tracked file, so hooks and CI stop rewriting mise.dev.lock.
+    blocked_by: []
+    acceptance:
+      - '`mise.toml` declares `[settings] lockfile_platforms` with the platforms the locks cover.'
+      - A `mise install` on linux-x64 and on macos-arm64 leaves `mise.lock` and `mise.dev.lock` unchanged.
+      - The locks change only through `mise lock`; no lock line is edited as text.
+    notes:
+      - >2-
+        2026-10-12 (UTC): on mise 2026.10.7 a fresh `mise install` on linux-x64 added cargo-deny 0.20.2 entries for linux-arm64, linux-arm64-musl, linux-x64-musl, macos-x64, and windows-x64 to `mise.dev.lock`, and every local commit hook rewrites the same file. Cause: `mise.dev.lock` records committed for all seven platforms but cargo-deny for only linux-x64 and macos-arm64, and with `lockfile_platforms` unset mise keeps every platform already recorded in the lockfile, so automatic locking fills cargo-deny up to the seven (https://github.com/jdx/mise/blob/4599c53b4286ff101de876f8122feec0797b48b2/settings.toml, the 2026.10.7 docs). Declare the setting, then regenerate each lock whole with `mise lock --platform …` so every tool records the same platforms.
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
