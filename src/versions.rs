@@ -1,12 +1,14 @@
 //! Compare declared manifest versions to the default branch.
 
+use std::fs;
+use std::path::Path;
+
+use anyhow::{Result, ensure};
+use serde::Serialize;
+
 use crate::config::Config;
 use crate::git;
 use crate::release::VERSION_BRANCH;
-use anyhow::{Result, ensure};
-use serde::Serialize;
-use std::fs;
-use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Skip {

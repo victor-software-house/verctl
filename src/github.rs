@@ -1,8 +1,9 @@
+use std::env;
+use std::path::Path;
+
 use anyhow::{Context, Result, bail, ensure};
 use octocrab::Octocrab;
 use octocrab::params::State;
-use std::env;
-use std::path::Path;
 
 /// Append to `$GITHUB_OUTPUT`. That file belongs to the whole step, so a
 /// writer that truncates would drop assignments another step already made.
@@ -394,9 +395,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{Octocrab, parse_remote, parse_slug};
     use wiremock::matchers::{body_partial_json, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::{Octocrab, parse_remote, parse_slug};
 
     #[test]
     fn slug_and_remotes() {

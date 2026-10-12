@@ -1,9 +1,10 @@
-use anyhow::{Context, Result, bail, ensure};
 use std::io::{self, Read, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
+
+use anyhow::{Context, Result, bail, ensure};
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_mins(1);
 pub const DEFAULT_OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
@@ -241,8 +242,9 @@ fn take_capped(handle: JoinHandle<io::Result<CapRead>>) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{filter, filter_limited, run_inherit};
     use std::time::{Duration, Instant};
+
+    use super::{filter, filter_limited, run_inherit};
 
     #[test]
     fn a_failed_command_reports_its_stderr() {

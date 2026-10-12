@@ -8,9 +8,11 @@
 //! A runner *name*, by contrast, resolves here or fails here. It never reaches
 //! GitHub — only its labels do.
 
-use crate::config::{Config, Runner};
-use anyhow::{Result, bail, ensure};
 use std::collections::{BTreeMap, BTreeSet};
+
+use anyhow::{Result, bail, ensure};
+
+use crate::config::{Config, Runner};
 
 /// A machine after resolution: the name it was declared under, and the labels
 /// that go straight into `runs-on:`.

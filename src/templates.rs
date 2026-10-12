@@ -21,20 +21,23 @@
 //! `Served`. Trim declarations with `{%- … -%}`: a shebang has to stay on line
 //! one.
 
-use crate::cli::Cli;
-use crate::config::Templates;
-use crate::git;
-use anyhow::{Context, Result, bail};
-use ctl_core::validate::{inside_the_repo, one_file_name};
-use ctl_core::{Surface, surface::add_fragments};
-use garde::Validate;
-use minijinja::value::Value;
-use minijinja::{Environment, State, UndefinedBehavior, context};
-use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
+
+use anyhow::{Context, Result, bail};
+use ctl_core::Surface;
+use ctl_core::surface::add_fragments;
+use ctl_core::validate::{inside_the_repo, one_file_name};
+use garde::Validate;
+use minijinja::value::Value;
+use minijinja::{Environment, State, UndefinedBehavior, context};
+use serde::Deserialize;
+
+use crate::cli::Cli;
+use crate::config::Templates;
+use crate::git;
 
 /// What a template declares about the file it serves, in Jinja's own syntax:
 /// top-level `{%- set … -%}` exports, read as one schema and checked at the
@@ -72,7 +75,8 @@ pub fn write(
 /// Whether this repo serves anything from a template at all.
 ///
 /// A repo that serves nothing must not pay for what rendering needs — reading
-/// every package's manifest to build the version map — so the caller asks first.
+/// every package's manifest to build the version map — so the caller asks
+/// first.
 pub fn any(root: &Path, config: &Templates) -> Result<bool> {
     Ok(!sources(root, config)?.is_empty())
 }
@@ -278,10 +282,11 @@ fn ensure_inside(root: &Path, target: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use git2::Repository;
     use indoc::indoc;
     use tempfile::TempDir;
+
+    use super::*;
 
     /// The one template every version case below renders.
     const TEMPLATE: &str = indoc! {r#"

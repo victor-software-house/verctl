@@ -2,8 +2,9 @@
 
 mod common;
 
-use indoc::{formatdoc, indoc};
 use std::fs;
+
+use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
 
 fn publish_stdout(root: &std::path::Path) -> String {
@@ -11,7 +12,7 @@ fn publish_stdout(root: &std::path::Path) -> String {
         .current_dir(root)
         .args(["publish", "--dry-run", "--color", "never"])
         .output()
-        .unwrap();
+        .unwrap_or_else(|error| panic!("spawn verctl: {error}"));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stderr}");
     String::from_utf8_lossy(&output.stdout).into_owned()

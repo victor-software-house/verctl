@@ -1,10 +1,12 @@
 //! Committed operator documents rendered from Clap and consumer-owned prose.
 
-use crate::cli::Cli;
-use minijinja::{Value, context};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
+
+use minijinja::{Value, context};
+
+use crate::cli::Cli;
 
 const SKILL_TEMPLATE: &str = ".ctl/templates/SKILL.md.jinja";
 const INSTRUCTIONS_TEMPLATE: &str = ".ctl/operator/instructions.md.jinja";

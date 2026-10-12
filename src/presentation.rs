@@ -1,6 +1,5 @@
 use ctl_core::prelude::{Document, Fields, MessageKind, Notice, NoticeLevel, Present, Table};
 use serde::Serialize;
-
 use verctl::{assets, ci, publish, versions};
 
 #[derive(Serialize)]

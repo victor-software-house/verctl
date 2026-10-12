@@ -1,9 +1,10 @@
 mod common;
 
-use common::demo_root;
-use indoc::indoc;
 use std::fs;
 use std::process::Command;
+
+use common::demo_root;
+use indoc::indoc;
 use tempfile::TempDir;
 
 #[test]

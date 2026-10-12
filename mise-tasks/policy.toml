@@ -1,0 +1,1 @@
+"policy" = { description = "Conftest on GitHub workflows", run = "conftest test --policy policy .github/workflows" }

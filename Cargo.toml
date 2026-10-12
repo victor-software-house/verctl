@@ -2,7 +2,7 @@
 name = "verctl"
 version = "0.3.13"
 edition = "2024"
-rust-version = "1.97.1"
+rust-version = "1.99.0"
 description = "Stack-agnostic version PRs from Changesets-format fragments"
 license = "MIT"
 repository = "https://github.com/victor-software-house/verctl"
@@ -12,11 +12,16 @@ categories = ["command-line-utilities", "development-tools"]
 
 [lints.rust]
 unsafe_code = "forbid"
+# Local edit: the template denies missing_docs and
+# missing_debug_implementations; VER-049 turns both on.
 unreachable_pub = "deny"
 rust_2018_idioms = { level = "deny", priority = -1 }
 
 [lints.rustdoc]
 broken_intra_doc_links = "deny"
+private_intra_doc_links = "deny"
+invalid_html_tags = "deny"
+invalid_codeblock_attributes = "deny"
 
 [lints.clippy]
 all = { level = "deny", priority = -1 }

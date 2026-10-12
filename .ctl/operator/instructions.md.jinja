@@ -82,11 +82,12 @@ merge at once, and when `token` is `GITHUB_TOKEN`, because a merge made with
 it starts no publish workflow. Pass a GitHub App token. Cancel one Version
 PR's auto-merge with `gh pr merge --disable-auto <number>`.
 
-This repo splits mise envs: `dev` compiles this checkout, `release`
-is the published tarball. Local default is `dev` (`.miserc.toml`).
-This repo's own lanes run `dev`: a lane that installed its own
-tarball could only ever run the previous release, which is exactly
-when new behaviour is needed. Consumers run `release`, because the
+This repo compiles itself: `mise.toml` holds the toolchain, and
+`mise run ver` runs this checkout. `release` is the published
+tarball. Local default is `dev` (`.miserc.toml`), which adds the hook
+tools; CI runs `ci`. This repo's own lanes build the verctl they run:
+a lane that installed its own tarball could only ever run the
+previous release, which is exactly when new behaviour is needed. Consumers run `release`, because the
 verctl they install is independent of the version they release.
 `verctl pin` rewrites collocated `github:…/verctl` entries (and
 `?ref=v…` includes) to the versions on HEAD; `prepare` calls it, so

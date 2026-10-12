@@ -1,10 +1,12 @@
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use anyhow::{Context, Result};
+
 use crate::bump;
 use crate::config::Config;
 use crate::driver::Driver;
 use crate::fragment::{Bump, Fragment};
-use anyhow::{Context, Result};
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlanEntry {

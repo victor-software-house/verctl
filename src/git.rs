@@ -1,10 +1,12 @@
-use crate::github::Repo;
+use std::env;
+use std::path::{Path, PathBuf};
+
 use anyhow::{Context, Result, bail, ensure};
 use git2::{
     Cred, FetchOptions, PushOptions, RemoteCallbacks, Repository, Signature, Status, StatusOptions,
 };
-use std::env;
-use std::path::{Path, PathBuf};
+
+use crate::github::Repo;
 
 #[must_use]
 pub fn current_branch(root: &Path) -> Option<String> {
@@ -484,7 +486,8 @@ pub fn assert_only_allowed(
     );
 }
 
-/// Commit `paths` onto `branch` without moving HEAD. `Empty` if the tree is unchanged.
+/// Commit `paths` onto `branch` without moving HEAD. `Empty` if the tree is
+/// unchanged.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum PushOutcome {
     /// No version files changed.
@@ -609,10 +612,12 @@ fn signature(repo: &Repository) -> Result<Signature<'static>> {
 
 #[cfg(test)]
 mod tests {
-    use super::origin_url;
+    use std::path::Path;
+
     use git2::{Repository, Signature};
     use indoc::indoc;
-    use std::path::Path;
+
+    use super::origin_url;
 
     #[test]
     fn origin_url_from_discovered_repo() {

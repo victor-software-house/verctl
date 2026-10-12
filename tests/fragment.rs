@@ -1,5 +1,6 @@
-use indoc::indoc;
 use std::fs;
+
+use indoc::indoc;
 use tempfile::TempDir;
 use verctl::fragment::{Bump, load_dir, parse_str};
 

@@ -1,13 +1,15 @@
-use crate::fragment::Bump;
 use anyhow::{Context, Result, bail};
 use semver::Version;
+
+use crate::fragment::Bump;
 
 /// The version `bump` moves `current` to.
 ///
 /// Two bumps are refused. A `major` on any 0.x package, because 1.0 is a
 /// decision rather than a fragment. A `minor` or `major` on a package at
-/// `0.0.0`, with or without a pre-release or build suffix, because a new package releases `0.0.1` first; opening at
-/// `0.1.0` is the operator's call, recorded as `first_minor` on the package.
+/// `0.0.0`, with or without a pre-release or build suffix, because a new
+/// package releases `0.0.1` first; opening at `0.1.0` is the operator's call,
+/// recorded as `first_minor` on the package.
 pub fn apply(current: &str, bump: Bump, first_minor: bool) -> Result<String> {
     if bump == Bump::None {
         return Ok(current.to_owned());

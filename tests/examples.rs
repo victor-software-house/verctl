@@ -1,9 +1,10 @@
 //! `examples/ver.yaml` is documentation that has to keep parsing. It is a
 //! real config, not a commented one, so the schema is what validates it.
 
-use indoc::indoc;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use indoc::indoc;
 use tempfile::TempDir;
 use verctl::config::Config;
 use verctl::{assets, ci, pins};
@@ -14,6 +15,10 @@ fn example() -> PathBuf {
 
 /// The example declares manifests it does not ship. Give it the tree it
 /// describes so both planners can run against the file as written.
+#[expect(
+    clippy::expect_used,
+    reason = "test setup outside a #[test]: a failed step should abort the test"
+)]
 fn planted() -> TempDir {
     let root = TempDir::new().expect("tmp");
     let config = root.path().join(verctl::config::FILE);

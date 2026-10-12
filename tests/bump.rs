@@ -1,7 +1,8 @@
 mod common;
 
-use indoc::indoc;
 use std::fs;
+
+use indoc::indoc;
 use tempfile::TempDir;
 use verctl::bump::apply;
 use verctl::config::Config;

@@ -4,9 +4,10 @@
     reason = "each test binary uses its own subset of these fixture helpers, which fail fast"
 )]
 
-use indoc::indoc;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use indoc::indoc;
 use tempfile::TempDir;
 
 /// Write a repo's declarations where verctl looks for them, and hand back the

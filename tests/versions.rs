@@ -6,11 +6,12 @@
 
 mod common;
 
-use git2::{Repository, Signature};
-use indoc::{formatdoc, indoc};
 use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
+
+use git2::{Repository, Signature};
+use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
 use verctl::config::Config;
 use verctl::versions::{self, Skip};
