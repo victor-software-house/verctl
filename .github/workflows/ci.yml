@@ -80,10 +80,16 @@ jobs:
       # next carries the next minor release's breaking changes while
       # Cargo.toml still names the last release, so the check would read them
       # as a patch. It skips pull requests into next and the one that merges
-      # next into main; the Version PR that follows bumps the minor, and every
-      # later pull request into main checks against that release.
+      # this repository's next into main; the Version PR that follows bumps the
+      # minor, and every later pull request into main checks against that
+      # release. Pushes skip it: every change reaches main through a pull
+      # request that already ran it, and the push of the next merge would fail.
       - name: Semver
-        if: github.base_ref != 'next' && github.head_ref != 'next'
+        if: >-
+          github.event_name == 'pull_request'
+          && github.base_ref != 'next'
+          && !(github.head_ref == 'next'
+          && github.event.pull_request.head.repo.full_name == github.repository)
         run: mise run semver
 
   template:
