@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.3.14
+
+- Raise `rust-version` to 1.99.0, the pinned stable the shared template builds, lints, and tests on. A build with an older compiler stays on the previous release.
+
 ## verctl 0.3.13
 
 - `actions/version-pr` takes `auto-merge: true` to merge the Version PR once the base branch's required checks pass. It refuses a base branch with no required status check and the default `GITHUB_TOKEN`.
