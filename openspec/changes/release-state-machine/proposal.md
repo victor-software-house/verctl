@@ -27,37 +27,47 @@ publishes Bun workspaces through npm, which ships `workspace:` ranges raw, and
 Bun's own lockfile, not package.json, decides the dependency versions it
 publishes.
 
-Queue row: VER-011. This change replaces the A/B/C plan held on
+Queue row: VER-011. This change replaces the plan held on
 `feat/011-refresh-lockfile` and folds in its two approved intents: the version
 step refreshes lockfiles itself, and the report field `next` becomes `after`.
 
 ## What Changes
 
 1. A release is derived from facts on every run: fragments, manifests, the
-   release commit in default-branch history, lockfile agreement, the registry,
-   the tag, the GitHub Release, and its assets. No state file, label, or event
-   payload.
+   release commit in branch history, lockfile agreement, the registry, the tag,
+   the GitHub Release, and its assets. No state file, label, or event payload.
 2. Every transition is guarded and repeatable: `propose`, `publish`, `tag`,
    `release`, `asset`, `finalize`. Publish precedes tag; tags land on the
    release commit in one atomic push; a release with assets is a draft until
    they are all uploaded.
-3. Cargo and Bun are native ecosystems: version, dependents, lockfile refresh
-   and check, publish order, registry query, publish, and OIDC auth. Anything
-   else uses an explicit `command` ecosystem.
-4. `check` verifies a Version PR by its content: version changes must equal the
-   plan of the fragments it consumes, lockfiles must agree, served files must
-   match their templates.
-5. **BREAKING:** commands become `status`, `check`, `version`, `propose`,
-   `release`, `release asset`, `render`, `ci`, and `instructions`. `prepare`,
-   `publish`, `pin`, `assets`, and `check --versions` go.
-6. **BREAKING:** `.ctl/ver.yaml` keeps one place per concern and refuses
+3. A Version PR is identified by its head repository, its head branch
+   `verctl/release/<base>`, and its base, which a pull request cannot change.
+   `check` also verifies its content. One Version PR per base.
+4. A release is built from blocks (Manifest, Lockfile, Artifact, Registry,
+   Forge, Served files, Binary asset, Step). Cargo and Bun are built-in
+   providers. Any package can replace a block with a step, and any stack can
+   declare a whole ecosystem from steps.
+5. A step is a mise task or an argv with declared `writes` and, after a
+   release, a `check`. Steps run at `version`, `verify`, `publish`, and
+   `released`. They replace `prepare.after` and its `stage` globs.
+6. mise installs and verifies verctl, runs every step, and owns `mise.lock`.
+   No lockfile is ever written by verctl; each is written by its owner and read
+   by verctl to check it.
+7. bun-release becomes Rust inside verctl: Bun packs, and verctl's own npm
+   registry client queries, publishes, exchanges OIDC tokens, and handles
+   staging, trust, and provenance.
+8. **BREAKING:** commands become `status`, `check`, `version`, `propose`,
+   `release`, `release asset`, `release bootstrap`, `render`, `ci`, and
+   `instructions`.
+9. **BREAKING:** `.ctl/ver.yaml` keeps one place per concern and refuses
    unknown keys at every level. `drivers`, `publishers`, `prepare`, `pins`,
    `patterns`, and the per-package driver and publisher keys go; `branch`,
-   `registries`, `proposal`, `tags`, and `packages[].assets` replace them.
-7. **BREAKING:** two workflows replace three. Release runs on push to the
-   default branch, then `propose`.
-8. Every workaround in design section 7 is removed, and 13 ledger rows close as
-   their cause goes.
+   `registries`, `ecosystems`, `steps`, `at`, `proposal`, `tags`, and
+   `packages[].assets` replace them.
+10. **BREAKING:** two workflows replace three, and the proposal branch becomes
+    `verctl/release/<base>`.
+11. All breaking changes ship in one minor, 0.4.0; later work ships as patches
+    that add without breaking.
 
 ## Capabilities
 
@@ -65,9 +75,10 @@ step refreshes lockfiles itself, and the report field `next` becomes `after`.
 
 - `release-state`: the facts, the release commit, the two stage axes, the
   transitions with their guards and postconditions, and how a rerun resumes.
-- `version-proposal`: what the version step writes, the Version PR lifecycle,
-  and content verification in `check`.
-- `ecosystems`: the cargo, bun, and command contracts per concern.
+- `version-proposal`: what the version step writes, Version PR identity, its
+  lifecycle, and `check`.
+- `building-blocks`: the blocks, the built-in cargo and bun providers, declared
+  ecosystems, steps, lockfile ownership, and mise's part.
 - `release-config`: one place per concern in `.ctl/ver.yaml`, refusal of
   unknown and removed keys, and the defaults.
 
@@ -78,38 +89,33 @@ rule.
 
 ## Decisions for the operator
 
-Each has a recommendation; design section 6 gives the alternative that lost.
+Agreed already: templates only (7), command renames (9). Each open decision
+has a recommendation; the design gives the alternatives and trade-offs.
 
 1. Derive state from facts on every run, with no state file or labels.
-   Recommended.
-2. Trigger release on push to the default branch, then propose, instead of on
-   the Version PR's `closed` event. Recommended.
-3. Verify the Version PR by content and drop the label and branch exemption.
-   Recommended.
-4. Make Cargo and Bun native and put every other stack behind an explicit
-   `command` ecosystem, removing `drivers` and `publishers`. Recommended.
-5. Let the package manager write lockfiles, and have `check` parse them.
-   Recommended over text edits.
-6. Have verctl perform the OIDC exchange for crates.io and npm. Recommended,
-   because Bun cannot.
-7. Make templates the only served-file mechanism and remove `pins`. qctl and
-   forkctl move four files. Recommended.
-8. Remove hooks (`prepare.after`, `stage`, `stage_ignored`) entirely.
-   Recommended.
-9. Rename the commands as in What Changes item 5, with no aliases. Recommended.
-10. Ship in five breaking minor releases, 0.4.0 to 0.8.0, updating the five
-    consumers in each, with no compatibility layer. Recommended.
+2. Release on push to the release branch, then propose.
+3. Identify the Version PR by head repository, head branch, and base, and
+   verify its content too (design 2.2).
+4. One Version PR per base on `verctl/release/<base>`; no per-package PRs and
+   no version in the branch name (design 2.3).
+5. Built-ins as providers of building blocks; extensions as steps run through
+   mise tasks or argv; declared ecosystems for other stacks (design 3).
+6. mise installs, verifies, runs steps, and owns `mise.lock`; verctl writes no
+   lockfile (design 4).
+7. bun-release in Rust as option (b): Bun packs, verctl owns the registry
+   protocol (design 3.5).
+8. Ship 0.4.0 from an integration branch `next`, then patches (design 11).
 
 ## Impact
 
-1. Code: most of `src/`. `templates.rs` moves onto `ctl_core::served` in the
-   served-files phase, agreed with the session that owns CTC-008.
+1. Code: most of `src/`. `templates.rs` moves onto `ctl_core::served`, agreed
+   with the session that owns CTC-008.
 2. Consumers: qctl, forkctl, ctl-core, unixd, and yamled change config and
-   workflows in each phase. bun-release's publish path folds into the bun
-   ecosystem in the auth phase.
+   workflows once, in the 0.4.0 window. bun-release retires once the bun
+   ecosystem publishes it.
 3. Actions: the three actions shrink to what the two workflows call. VER-043
    moves them to their own repositories.
 4. Identity: `propose` needs a token whose pull request events start CI without
    approval. VER-044 decides whether that is a dedicated GitHub App.
 5. Docs: README, the instructions, the operator skill, AGENTS.md, and
-   `docs/served-files.md` are rewritten per phase.
+   `docs/served-files.md` are rewritten for 0.4.0.

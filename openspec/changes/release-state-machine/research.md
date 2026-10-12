@@ -83,7 +83,92 @@ a run of an official release binary. Nothing here is inferred.
     REST API, and a release reports whether it is a draft and whether it is
     immutable. Read from this repository's v0.3.12 release.
 
-## 4. What verctl adopts
+## 4. Identifying a release pull request
+
+1. GitHub's update endpoint for a pull request accepts `title`, `body`,
+   `base`, `state`, and `maintainer_can_modify`, and nothing else
+   ([REST description][gh-openapi]). The head branch and head repository are
+   fixed for the pull request's life; the base is not.
+2. Changesets keeps one Version PR per base branch on `changeset-release/<base>`
+   ([run.ts][cs-branch]).
+3. release-please names its branch per base and per component,
+   `release-please--branches--<base>--components--<component>`, and
+   `separate-pull-requests` gives one pull request per component
+   ([branch-name.ts][rp-branch]).
+
+## 5. pnpm 12
+
+pnpm 12 is written in Rust. Read at [v12.12.1][pn], with its official binary
+run in a scratch workspace.
+
+1. **Native Changesets-compatible versioning.** `pnpm change` and
+   `pnpm version -r` read `.changeset/*.md`, plan direct bumps, dependents,
+   fixed groups, and per-package release lanes, and record consumed intents in
+   `.changeset/ledger.yaml` keyed by `package@version`
+   ([lib.rs][pn-versioning], [pnpm/rfcs#18][pn-rfc]). When changelogs are kept
+   in the registry instead of the repository, an intent file is deleted only
+   once the registry confirms the published version carries its section
+   ([apply.rs][pn-apply]).
+2. **Lockfile.** `pnpm-lock.yaml` records a workspace dependency as
+   `specifier: workspace:*` with `version: link:../a` and does not store a
+   workspace package's own version, so a `workspace:*` bump leaves the file
+   unchanged. An explicit range such as `workspace:^0.1.0` does change it;
+   `pnpm install --frozen-lockfile` then fails with "dependency is mismatched",
+   and `pnpm install --lockfile-only` rewrites that line. Every write goes
+   through the lockfile crate's serializer ([save_lockfile.rs][pn-lock]).
+3. **Publish.** pnpm resolves `workspace:` from the dependency's current
+   `package.json` and `catalog:` from `pnpm-workspace.yaml`, never from the
+   lockfile. It sends `PUT /<name>` with the version manifest and the tarball
+   under `_attachments`, performs the npm OIDC exchange per package, signs
+   provenance with sigstore when the repository and package are public, skips
+   versions the packument already lists, and waits until the registry serves
+   the new version.
+4. **Reuse.** The packing, publish, lockfile, and versioning crates are MIT but
+   declare `publish = false` ([publish/Cargo.toml][pn-publish-toml]); none is on
+   crates.io.
+
+## 6. npm registry publishing
+
+1. **Bun** packs with its own file rules, always includes a root CHANGELOG,
+   takes `workspace:` and `catalog:` versions from `bun.lock`, and sends
+   `PUT /<name>` with Bearer or Basic auth and an OTP retry. It has no OIDC, no
+   provenance, and text-only output ([publish_command.rs][bun-publish]).
+2. **npm** sends the same `PUT`, or `POST /-/stage/package/<name>` for a staged
+   publish; attaches a sigstore bundle as `<name>-<version>.sigstore` for
+   provenance, using Fulcio and Rekor; and exchanges a GitHub OIDC token at
+   `POST /-/npm/v1/oidc/token/exchange/package/<name>`
+   ([publish.js][npm-publish], [oidc.js][npm-oidc]).
+3. **aube**, an MIT Rust package manager on crates.io (2.7.0, 2026-10-07),
+   implements publish, the OIDC exchange, and provenance inside a CLI command
+   with private helpers ([publish.rs][aube-publish]). Its `aube-registry` crate
+   reads packuments and writes dist-tags and access, with no publish. Only its
+   provenance generator is a public function.
+4. **Rust crates** that are maintained: `sigstore-sign` 0.14.0, `tar`, `flate2`,
+   `ignore`, `reqwest`. No crate reproduces npm's file-selection rules.
+
+## 7. mise
+
+Read at jdx/mise [v2026.10.8][mise], with scratch runs of mise in an isolated
+environment.
+
+1. `mise run <task> [args]` returns the failed task's exit status and prints no
+   JSON. When a loaded config sets `redactions`, task output gains escape codes
+   and stdin is disconnected; `--raw` avoids both.
+2. A task's `#MISE tools` are installed before it runs, and `depends` and
+   structured `run` entries build the task graph.
+3. `mise.lock` records, per platform, the asset URL and checksum, and
+   `provenance = "github-attestations"` when the release has attestations.
+   `mise lock <tool>@<version>` rewrites the pin and the lock without
+   installing. It refuses a version that has no release yet, and on a tool with
+   no earlier entry it can exit 0 with only the version recorded, so
+   `mise install --locked` is the completeness check.
+4. `[deps.*]` providers are experimental and have no cargo provider.
+5. The `github:` backend picks an asset by os and arch tokens in its name,
+   verifies the GitHub asset digest or a checksum file, and checks GitHub
+   artifact attestations by default on public GitHub.
+6. mise has no versioning, changelog, or release pull request model.
+
+## 8. What verctl adopts
 
 1. Changesets fragments and bump arithmetic as the only source of version
    intent. Every tool that infers versions from commits or registry diffs
@@ -112,8 +197,19 @@ a run of an official release binary. Nothing here is inferred.
     `publish-plan`).
 12. "Do not open a new Version PR while a merged one is unreleased"
     (release-please).
+13. A Version PR identified by its head repository, head branch, and base,
+    the facts a pull request cannot change, with one Version PR per base
+    (Changesets).
+14. A registry client that sends the documented npm wire format: the `PUT`
+    with `_attachments`, staged publish, the per-package OIDC exchange, and a
+    sigstore provenance bundle (npm, pnpm 12, aube).
+15. Skip versions the packument lists, then wait until the registry serves the
+    new version (pnpm 12, bun-release).
+16. mise for installing and verifying release binaries, for running extension
+    tasks, and for `mise.lock`, moved only by `mise lock` after the release
+    exists and checked by `mise install --locked`.
 
-## 5. What verctl rejects
+## 9. What verctl rejects
 
 1. Labels, event payloads, or a versions manifest file as release state.
 2. Tagging before publish.
@@ -123,7 +219,21 @@ a run of an official release binary. Nothing here is inferred.
    exist". Both lose a release once another commit lands.
 6. `--frozen-lockfile` as proof that a Version PR is consistent.
 7. Commit-message version inference, registry tarball diffs, layered config
-   files, per-package hooks, blind publish retries, and fixed sleeps.
+   files, release-level actions forced to run once per package, blind publish
+   retries, and fixed sleeps.
+8. One Version PR per package: dependents span pull requests, and each one
+   rewrites the shared lockfile, so every merge conflicts the others.
+9. A release branch named after the version: the version changes while the
+   pull request is open, and its head branch cannot be renamed.
+10. Delegating Cargo or Bun lockfile sync to mise `[deps]`: experimental, and no
+    cargo provider.
+11. A committed ledger of consumed fragments (pnpm 12): in the Version PR the
+    fragment deletion is the record, `check` reads it from the diff, and the
+    committed CHANGELOG keeps the prose if a publish fails.
+12. Shelling out to `bun publish` (no provenance, staging, OIDC, or typed
+    results), and porting npm's file-selection rules (no maintained crate, and
+    rules that drift from Bun's).
+
 
 [cs]: https://github.com/changesets/changesets/tree/c73949ba7b3160a4aa5729223335c190de1528f8
 [ca]: https://github.com/changesets/action/tree/615034bb14e5d240e559f941ce9769beb5e14fb0
@@ -166,3 +276,17 @@ a run of an official release binary. Nothing here is inferred.
 [bun-41302]: https://github.com/oven-sh/bun/pull/41302
 [bun-22423]: https://github.com/oven-sh/bun/issues/22423
 [bun-15601]: https://github.com/oven-sh/bun/issues/15601
+[gh-openapi]: https://github.com/github/rest-api-description/blob/58b1e0c00b39b9e46c24dc4a0ba6a2669c90e9c1/descriptions/api.github.com/api.github.com.json
+[cs-branch]: https://github.com/changesets/action/blob/615034bb14e5d240e559f941ce9769beb5e14fb0/src/run.ts#L359
+[rp-branch]: https://github.com/googleapis/release-please/blob/fa67225b42d8133331a1b48e89640b60e9ca6a23/src/util/branch-name.ts#L79
+[pn]: https://github.com/pnpm/pnpm/tree/65f29a55286fafa57dbf2770e8d2304df0091cfd
+[pn-versioning]: https://github.com/pnpm/pnpm/blob/65f29a55286fafa57dbf2770e8d2304df0091cfd/pnpm/crates/versioning/src/lib.rs#L1-L12
+[pn-rfc]: https://github.com/pnpm/rfcs/pull/18
+[pn-apply]: https://github.com/pnpm/pnpm/blob/65f29a55286fafa57dbf2770e8d2304df0091cfd/pnpm/crates/versioning/src/apply.rs#L33-L46
+[pn-lock]: https://github.com/pnpm/pnpm/blob/65f29a55286fafa57dbf2770e8d2304df0091cfd/pnpm/crates/lockfile/src/save_lockfile.rs#L92-L115
+[pn-publish-toml]: https://github.com/pnpm/pnpm/blob/65f29a55286fafa57dbf2770e8d2304df0091cfd/pnpm/crates/publish/Cargo.toml#L5
+[bun-publish]: https://github.com/oven-sh/bun/blob/c6da4a4d3010e5553438c60f6bd76d981976867c/src/runtime/cli/publish_command.rs#L842-L865
+[npm-publish]: https://github.com/npm/cli/blob/c276cadf785c1018d82dd287fe7742567055efb9/workspaces/libnpmpublish/lib/publish.js
+[npm-oidc]: https://github.com/npm/cli/blob/c276cadf785c1018d82dd287fe7742567055efb9/lib/utils/oidc.js
+[aube-publish]: https://github.com/aubepkg/aube/blob/1443128fdb279a63dd3b57a79e20930efa94db4d/crates/aube/src/commands/publish.rs
+[mise]: https://github.com/jdx/mise/tree/b671d356aaf33b87e48e7469a77abb40c3553c68

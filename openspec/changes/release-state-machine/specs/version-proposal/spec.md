@@ -4,9 +4,9 @@
 
 `verctl version` SHALL apply the plan of the pending fragments to the working
 tree: each manifest, each dependent whose requirement no longer admits the new
-version, each lockfile, each package CHANGELOG, each served file, and the
-removal of every consumed fragment. It SHALL report the commands it ran under
-`after`.
+version, each lockfile through its owner, each `version` step, each package
+CHANGELOG, each served file, and the removal of every consumed fragment. It
+SHALL report the commands and steps it ran under `after`.
 
 #### Scenario: A cargo package with a tracked Cargo.lock
 
@@ -26,11 +26,28 @@ removal of every consumed fragment. It SHALL report the commands it ran under
 - **THEN** `verctl version` sets `core` to `0.4.0`, rewrites `app`'s requirement to `0.4`, and bumps `app` by `patch`
 - **AND** `app`'s CHANGELOG section names the dependency update
 
+### Requirement: A Version PR is identified by facts that cannot change
+
+verctl SHALL identify a Version PR as a pull request whose head repository is
+the repository itself, whose head branch is `verctl/release/<base>`, and whose
+base is the branch named by `branch`. It SHALL NOT read a pull request's title,
+body, or labels to identify it.
+
+#### Scenario: A fork uses the same branch name
+
+- **WHEN** a pull request from a fork has head branch `verctl/release/main` and changes `Cargo.toml` from `0.3.0` to `0.3.1` with a consumed fragment
+- **THEN** `verctl check` exits non-zero and names the head repository
+
+#### Scenario: The title was edited
+
+- **WHEN** the Version PR's title was changed to `wip`
+- **THEN** `verctl propose` still finds and updates it
+
 ### Requirement: The Version PR follows the plan
 
-`verctl propose` SHALL apply the version step to a tree at the tip of `branch`,
-commit it on `proposal.branch`, and open or update the Version PR titled
-`proposal.title`. It SHALL close an open Version PR when no fragment is
+`verctl propose` SHALL run the version step on a tree at the tip of `branch`,
+commit it on `verctl/release/<branch>`, and open or update the Version PR
+titled `proposal.title`. It SHALL close an open Version PR when no fragment is
 pending, and SHALL refuse to open or update one while any package's current
 release is short of `released`.
 
@@ -45,19 +62,21 @@ release is short of `released`.
 - **THEN** `verctl propose` exits zero without opening a Version PR
 - **AND** its report names `demo@0.4.0` and the transition it waits on
 
-### Requirement: check verifies a Version PR by its content
+### Requirement: check requires identity and content
 
-`verctl check` SHALL compare HEAD with its merge-base on `branch` and SHALL
-fail unless every changed manifest version equals the plan of the fragments
-present at the merge-base and absent at HEAD, every planned bump is applied,
-each changed package's CHANGELOG carries the new version's section, every
-lockfile agrees with its manifests, and every served file equals its template's
-render at the versions on HEAD.
+`verctl check` SHALL compare HEAD with its merge-base on `branch`. A pull
+request that is not a Version PR SHALL fail when it changes a manifest version
+or adds a CHANGELOG section; it may add or remove fragments. A Version PR
+SHALL fail unless every changed manifest version equals the plan of the
+fragments present at the merge-base and absent at HEAD, every planned bump is
+applied, each changed package's CHANGELOG carries the new version's section,
+every lockfile agrees with its manifests, and every served file equals its
+template's render at the versions on HEAD.
 
-#### Scenario: A hand-edited version
+#### Scenario: A hand-edited version on a feature branch
 
-- **WHEN** a pull request changes `Cargo.toml` from `0.3.0` to `0.3.1` and removes no fragment
-- **THEN** `verctl check` exits non-zero and its error names `demo 0.3.0 -> 0.3.1` and the missing fragment
+- **WHEN** a pull request from branch `fix/typo` changes `Cargo.toml` from `0.3.0` to `0.3.1`
+- **THEN** `verctl check` exits non-zero and its error names `demo 0.3.0 -> 0.3.1` and the branch
 
 #### Scenario: The Version PR on its first CI run
 
@@ -66,7 +85,7 @@ render at the versions on HEAD.
 
 #### Scenario: A stale lockfile
 
-- **WHEN** a pull request bumps `package.json` for workspace package `a` to `1.1.0` with its fragment, and `bun.lock` still records `"version": "1.0.0"` for `packages/a`
+- **WHEN** the Version PR bumps `package.json` for workspace package `a` to `1.1.0`, and `bun.lock` still records `"version": "1.0.0"` for `packages/a`
 - **THEN** `verctl check` exits non-zero and names `bun.lock` and `packages/a`
 
 #### Scenario: A served file edited by hand
