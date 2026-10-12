@@ -60,7 +60,7 @@ derives everything else from them.
 |:--|:--|
 | Intent | fragments under `.changeset/` on the commit being read |
 | Declared version | each package's manifest at a commit |
-| Release commit `R(p, v)` | the first-parent history of the release branch: the commit where package `p`'s manifest version became `v` |
+| Release commit `R(p, v)` | the first-parent history of the release branch: the newest commit where package `p`'s resolved version became `v`, resolved at each commit from its manifest and, when inherited, the workspace root manifest |
 | Lockfile agreement | the lockfile's entry for each workspace package equals its manifest version, read by verctl's parser |
 | Published | the registry: the crates.io sparse index, the npm packument, or an extension's `published` check |
 | Tagged | the remote tag for `p@v`, peeled to a commit |
@@ -98,10 +98,12 @@ commit, because no transition needs one; a tag whose packages are all of this
 kind is never created. With `assets`, it goes
 `merged ──tag──▶ tagged` and continues as above. Changesets likewise does not
 tag private packages by default ([config][cs-private]); verctl still versions
-them, because a fragment that names one is intent. When such a package starts
-to publish, its next version enters `bootstrap` if the registry needs a first
-publish and `merged ──publish──▶` otherwise; earlier versions are never
-published after the fact.
+them, because a fragment that names one is intent. Whether a package
+publishes is read at its release commit. So when such a package starts to
+publish, a version merged while it did not publish stays `released`, and its
+next version enters `bootstrap` if the registry needs a first publish and
+`merged ──publish──▶` otherwise; earlier versions are never published after
+the fact.
 
 ### 1.3 Transitions
 
@@ -109,7 +111,7 @@ published after the fact.
 |:--|:--|:--|:--|
 | `propose` | no package's current release is short of `released` (a package that never publishes and declares no assets is `released` at `merged`); a fragment is pending | run the version step on a tree at the release branch tip, commit it on the proposal branch, open or update the Version PR | the proposal branch passes `check` |
 | `propose` (close) | no fragment is pending and a Version PR is open | close it with a comment naming why | no Version PR is open |
-| `publish` | HEAD is `R(p, v)`; every workspace dependency that `p`'s published manifest keeps is published (the load refuses a publishing package that depends that way on a package that never publishes); the `verify` steps pass; the registry does not list `p@v` | the package's publish block runs | the registry lists `p@v` |
+| `publish` | HEAD is `R(p, v)`; every workspace dependency that `p`'s published manifest keeps and that the publish order puts before `p` is published (the load refuses a publishing package that depends that way on a package that never publishes); the `verify` steps pass; the registry does not list `p@v` | the package's publish block runs | the registry lists `p@v` |
 | `tag` | every publishing package the tag names is published | create the tags at `R(p, v)` and push all ready tags in one atomic push | each remote tag peels to `R(p, v)` |
 | `release` | the tag exists | create the GitHub Release as a draft when assets are declared, otherwise published; if one exists, update its body | the Release exists with the CHANGELOG section as its body |
 | `asset` | the Release is a draft; the asset is not uploaded | build at `R(p, v)` and upload | the asset is `uploaded` |
@@ -145,10 +147,10 @@ on the base read live on every run:
 3. its current base, read from the pull request at run time, is the release
    branch, and is the `<base>` its head branch names.
 
-`propose` finds its open pull request by head through the pull request list
-endpoint, then reads its base. A pull request on the proposal branch whose
-base was changed is not a Version PR: `propose` reports it and opens no second
-one. `check` reads all three from the API when it runs, never from the event
+`propose` finds its open pull requests by head through the pull request list
+endpoint, filtered as `<owner>:verctl/release/<base>`, then reads each base. A
+pull request on the proposal branch whose base was changed is not a Version
+PR: `propose` reports every such match and opens no second one. `check` reads all three from the API when it runs, never from the event
 payload. Title, body, and labels are never read.
 
 ### 2.2 Identity and content are both required
@@ -167,7 +169,8 @@ payload. Title, body, and labels are never read.
    plan of the fragments present at the merge-base and absent at HEAD; every
    lockfile agrees with its manifests, and its parsed entries and header differ
    from the merge-base only in the versions of the workspace packages the plan
-   bumps and in references that name them, with no entry added or removed; and
+   bumps and in references that resolve to them, with no entry added or
+   removed; and
    every served file equals its template's render. A workspace entry is told
    from a registry entry of the same name by its source: no `source` in
    `Cargo.lock`, a workspace key in `bun.lock`. If an owner command
@@ -609,10 +612,11 @@ their previous config from git.
    prepared against the `next` build before 0.4.0 releases, and a removed key
    fails with its replacement.
 2. [The release commit walk reads history] → Workflows already fetch full
-   history. The walk reads only the first-parent commits that touch the file
-   holding the package's version (its manifest, or the workspace root manifest
-   when the version is inherited), newest first, following renames, and stops
-   once that file reads the last tagged version. Any package with no tag yet
+   history. The walk reads only the first-parent commits that touch the files
+   that can hold the package's version (its manifest and, when the version is
+   inherited at any point, the workspace root manifest), newest first,
+   following renames. It resolves the version at each commit and stops once
+   it reads the last tagged version. Any package with no tag yet
    (a first release, one awaiting `bootstrap`, or one that has just started to
    publish or to declare assets) stops where that file first appears. A
    package that never publishes and has no assets needs no walk.

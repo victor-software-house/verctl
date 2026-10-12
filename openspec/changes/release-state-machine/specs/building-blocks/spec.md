@@ -76,16 +76,19 @@ a lockfile's parsed entries, never its bytes.
 
 verctl SHALL refuse to load a configuration in which a package that publishes
 depends on a workspace package that never publishes, and SHALL name both
-packages. Dependencies match by package name, after renames and workspace
-inheritance are resolved. For cargo, normal and build dependencies count,
+packages. Dependencies match by package name, after renames, aliases, and
+workspace inheritance are resolved. For cargo, normal and build dependencies count,
 target-specific ones included, and so does a development dependency that
 declares a `version`, which `cargo publish` keeps. For bun, `dependencies`,
 `optionalDependencies`, and `peerDependencies` count. A path-only cargo
 development dependency and a bun `devDependencies` entry SHALL NOT count.
-Every dependency that counts SHALL also order publishes, and verctl SHALL
-refuse to load a configuration in which such dependencies form a cycle,
+Every dependency that counts SHALL also order publishes, and a package SHALL
+wait only on the dependencies that order puts before it. For cargo, verctl
+SHALL refuse to load a configuration in which such dependencies form a cycle,
 because cargo cannot publish crates with cyclic versioned development
-dependencies ([rust-lang/cargo#4242][cargo-4242]).
+dependencies ([rust-lang/cargo#4242][cargo-4242]). For bun, a cycle SHALL NOT
+be refused, because the npm registry does not require a dependency to exist
+first; the members of a cycle publish in declaration order.
 
 #### Scenario: A published crate depends on a tool crate
 
@@ -101,6 +104,11 @@ dependencies ([rust-lang/cargo#4242][cargo-4242]).
 
 - **WHEN** publishing crates `a` and `b` each have a versioned development dependency on the other
 - **THEN** `verctl status` exits non-zero, names the cycle `a -> b -> a`, and says that a path-only development dependency breaks it
+
+#### Scenario: Two bun packages that peer on each other
+
+- **WHEN** publishing bun packages `@demo/host` and `@demo/plugin`, declared in that order, each list the other in `peerDependencies`
+- **THEN** `verctl status` loads the configuration, and `verctl release` publishes `@demo/host` before `@demo/plugin`
 
 #### Scenario: A published crate tests with a tool crate
 

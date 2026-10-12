@@ -21,9 +21,11 @@ payload to decide a stage.
 
 ### Requirement: The release commit comes from first-parent history
 
-verctl SHALL take the release commit of `p@v` to be the commit on the first-parent
-history of the branch named by `branch` where package `p`'s manifest version
-became `v`. It SHALL NOT take HEAD as the release commit.
+verctl SHALL take the release commit of `p@v` to be the newest commit on the
+first-parent history of the branch named by `branch` where package `p`'s
+resolved version became `v`, resolving it at each commit from `p`'s manifest
+and, when the version is inherited, the workspace root manifest. It SHALL NOT
+take HEAD as the release commit.
 
 #### Scenario: HEAD has moved past the release
 
@@ -108,7 +110,9 @@ A package that never publishes (`publish = false`, `"private": true`, or a
 declared ecosystem with no publish block) SHALL have no publish transition.
 Without `assets`, verctl SHALL treat its current release as `released` once it
 is merged and SHALL create no tag and no Release for it. With `assets`, it SHALL
-be tagged and released like any other package.
+be tagged and released like any other package. Whether a package publishes
+SHALL be read at its release commit, so a version merged while it did not
+publish stays `released` after it starts to publish.
 
 #### Scenario: A bumped tool crate
 
@@ -116,3 +120,9 @@ be tagged and released like any other package.
 - **THEN** `verctl status` reports `xtask@0.1.1` as `released`
 - **AND** `verctl release` creates no tag and no Release for `xtask`
 - **AND** a later `verctl propose` is not blocked by `xtask`
+
+#### Scenario: A tool crate starts to publish without a bump
+
+- **WHEN** `xtask@0.1.1` was merged with `publish = false`, and a later commit removes `publish = false` without changing the version
+- **THEN** `verctl status` still reports `xtask@0.1.1` as `released`, and `verctl propose` is not blocked by it
+- **AND** the next version of `xtask` goes through `publish`, or `bootstrap` when the registry needs a first publish

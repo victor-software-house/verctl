@@ -90,9 +90,10 @@ present at the merge-base and absent at HEAD, every planned bump is
 applied, each changed package's CHANGELOG carries the new version's section,
 every lockfile agrees with its manifests, a lockfile's parsed entries and
 header differ from the merge-base only in the versions of the workspace
-packages the plan bumps and in references that name them, with no entry added
+packages the plan bumps and in references that resolve to them, with no entry added
 or removed, and every served file equals its template's render at the versions
-on HEAD.
+on HEAD. `check` SHALL constrain only which paths a `version` step's declared
+`writes` change, not their content, which the Version PR's review covers.
 
 #### Scenario: A hand-edited version on a feature branch
 
