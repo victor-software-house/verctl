@@ -30,13 +30,21 @@ SHALL report the commands and steps it ran under `after`.
 
 verctl SHALL identify a Version PR as a pull request whose head repository is
 the repository itself, whose head branch is `verctl/release/<base>`, and whose
-base is the branch named by `branch`. It SHALL NOT read a pull request's title,
-body, or labels to identify it.
+current base, read from the pull request when verctl runs, is the branch named
+by `branch` and equals `<base>`. It SHALL NOT read a pull request's title,
+body, or labels to identify it, and SHALL NOT take the base from an event
+payload.
 
 #### Scenario: A fork uses the same branch name
 
 - **WHEN** a pull request from a fork has head branch `verctl/release/main` and changes `Cargo.toml` from `0.3.0` to `0.3.1` with a consumed fragment
 - **THEN** `verctl check` exits non-zero and names the head repository
+
+#### Scenario: The base was changed
+
+- **WHEN** the open pull request on `verctl/release/main` was retargeted to `next`
+- **THEN** `verctl propose` reports that pull request and opens no second one
+- **AND** `verctl check` on it exits non-zero and names the base
 
 #### Scenario: The title was edited
 
@@ -67,8 +75,11 @@ release is short of `released`.
 `verctl check` SHALL compare HEAD with its merge-base on `branch`. A pull
 request that is not a Version PR SHALL fail when it changes a manifest version
 or adds a CHANGELOG section; it may add or remove fragments. A Version PR
-SHALL fail unless every changed manifest version equals the plan of the
-fragments present at the merge-base and absent at HEAD, every planned bump is
+SHALL fail when it changes any path outside what the version step writes:
+manifests, lockfiles, CHANGELOGs, served files, consumed fragments, and the
+declared `writes` of `version` steps. It SHALL also fail unless every changed
+manifest version equals the plan of the fragments present at the merge-base
+and absent at HEAD, every planned bump is
 applied, each changed package's CHANGELOG carries the new version's section,
 every lockfile agrees with its manifests, and every served file equals its
 template's render at the versions on HEAD.
@@ -77,6 +88,11 @@ template's render at the versions on HEAD.
 
 - **WHEN** a pull request from branch `fix/typo` changes `Cargo.toml` from `0.3.0` to `0.3.1`
 - **THEN** `verctl check` exits non-zero and its error names `demo 0.3.0 -> 0.3.1` and the branch
+
+#### Scenario: A Version PR that carries a source change
+
+- **WHEN** the Version PR also changes `src/main.rs`
+- **THEN** `verctl check` exits non-zero and names `src/main.rs`
 
 #### Scenario: The Version PR on its first CI run
 

@@ -55,7 +55,8 @@ the first failed transition without attempting anything that depends on it.
 
 ### Requirement: Publish precedes tag, and tags land on the release commit
 
-verctl SHALL create a tag only after every package the tag names is published,
+verctl SHALL create a tag only after every publishing package the tag names
+is published,
 SHALL create it at the release commit, SHALL push all ready tags of a run in one
 atomic push, and SHALL treat an existing tag that peels to another commit as a
 conflict that stops every transition for that package.
@@ -100,3 +101,18 @@ that is missing, and run no transition for it.
 - **WHEN** `demo` is not on crates.io and `registries.crates-io.auth` is `oidc`
 - **THEN** `verctl release` exits non-zero before any side effect
 - **AND** its error names `demo`, `crates-io`, and the first publish that must happen with a token
+
+### Requirement: A package that never publishes completes without a registry
+
+A package that never publishes (`publish = false`, `"private": true`, or a
+declared ecosystem with no publish block) SHALL have no publish transition.
+Without `assets`, verctl SHALL treat its current release as `released` once it
+is merged and SHALL create no tag and no Release for it. With `assets`, it SHALL
+be tagged and released like any other package.
+
+#### Scenario: A bumped tool crate
+
+- **WHEN** crate `xtask` declares `publish = false`, has no `assets`, and the Version PR that bumped it to `0.1.1` is merged
+- **THEN** `verctl status` reports `xtask@0.1.1` as `released`
+- **AND** `verctl release` creates no tag and no Release for `xtask`
+- **AND** a later `verctl propose` is not blocked by `xtask`

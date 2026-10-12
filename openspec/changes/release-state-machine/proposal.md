@@ -40,9 +40,10 @@ step refreshes lockfiles itself, and the report field `next` becomes `after`.
    `release`, `asset`, `finalize`. Publish precedes tag; tags land on the
    release commit in one atomic push; a release with assets is a draft until
    they are all uploaded.
-3. A Version PR is identified by its head repository, its head branch
-   `verctl/release/<base>`, and its base, which a pull request cannot change.
-   `check` also verifies its content. One Version PR per base.
+3. A Version PR is identified by its head repository and its head branch
+   `verctl/release/<base>`, which a pull request cannot change, and by its
+   base, read live on every run. `check` also verifies that its diff is the
+   version step and nothing else. One Version PR per base.
 4. A release is built from blocks (Manifest, Lockfile, Artifact, Registry,
    Forge, Served files, Binary asset, Step). Cargo and Bun are built-in
    providers. Any package can replace a block with a step, and any stack can
@@ -89,7 +90,8 @@ rule.
 
 ## Decisions for the operator
 
-Agreed already: templates only (7), command renames (9). Each open decision
+Agreed already: templates only (design decision 14) and command renames
+(design decision 15). Each open decision
 has a recommendation; the design gives the alternatives and trade-offs.
 
 1. Derive state from facts on every run, with no state file or labels.

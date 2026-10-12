@@ -90,14 +90,22 @@ none ──fragment lands──▶ pending ──propose──▶ proposed ─�
 A tag that peels to a commit other than `R(p, v)` is the `conflict` stage. It
 stops every transition for that package until an operator resolves it.
 
+A package that never publishes (`publish = false`, `"private": true`, or a
+declared ecosystem with no publish block) has no `publish` transition. Without
+`assets`, its current release is complete at `merged`: it gets no tag and no
+Release, and it counts as `released`. With `assets`, it goes
+`merged ──tag──▶ tagged` and continues as above. Changesets likewise does not
+tag private packages by default ([config][cs-private]); verctl still versions
+them, because a fragment that names one is intent.
+
 ### 1.3 Transitions
 
 | Transition | Guard | Effect | Postcondition, checked after |
 |:--|:--|:--|:--|
-| `propose` | no package's current release is short of `released`; a fragment is pending | run the version step on a tree at the release branch tip, commit it on the proposal branch, open or update the Version PR | the proposal branch passes `check` |
+| `propose` | no package's current release is short of `released` (a package that never publishes and declares no assets is `released` at `merged`); a fragment is pending | run the version step on a tree at the release branch tip, commit it on the proposal branch, open or update the Version PR | the proposal branch passes `check` |
 | `propose` (close) | no fragment is pending and a Version PR is open | close it with a comment naming why | no Version PR is open |
 | `publish` | HEAD is `R(p, v)`; every workspace dependency of `p` is published; the `verify` steps pass; the registry does not list `p@v` | the package's publish block runs | the registry lists `p@v` |
-| `tag` | every package the tag names is published | create the tags at `R(p, v)` and push all ready tags in one atomic push | each remote tag peels to `R(p, v)` |
+| `tag` | every publishing package the tag names is published | create the tags at `R(p, v)` and push all ready tags in one atomic push | each remote tag peels to `R(p, v)` |
 | `release` | the tag exists | create the GitHub Release as a draft when assets are declared, otherwise published; if one exists, update its body | the Release exists with the CHANGELOG section as its body |
 | `asset` | the Release is a draft; the asset is not uploaded | build at `R(p, v)` and upload | the asset is `uploaded` |
 | `finalize` | every declared asset is uploaded | publish the draft, then run the `released` steps | the Release is published and each `released` step's check passes |
@@ -124,15 +132,19 @@ opened, but not its head branch or head repository: the update endpoint takes
 no head ([GitHub REST][gh-pr-update]). Labels change too, and a label applied
 after creation is missing from the `opened` event, which is the VER-029 race.
 
-So the identity of a Version PR is three facts that cannot drift:
+So the identity of a Version PR rests on the two facts that cannot drift, and
+on the base read live on every run:
 
 1. its head repository is the repository itself, not a fork;
-2. its head branch is the proposal branch for its base;
-3. its base is the release branch.
+2. its head branch is `verctl/release/<base>`;
+3. its current base, read from the pull request at run time, is the release
+   branch, and is the `<base>` its head branch names.
 
-`propose` finds its pull request by those three facts through the pull request
-list endpoint, filtered by `head` and `base`. `check` reads them from the
-pull request under test. Title, body, and labels are never read.
+`propose` finds its pull request by head through the pull request list
+endpoint, then reads its base. A pull request on the proposal branch whose
+base was changed is not a Version PR: `propose` reports it and opens no second
+one. `check` reads all three from the API when it runs, never from the event
+payload. Title, body, and labels are never read.
 
 ### 2.2 Identity and content are both required
 
@@ -141,10 +153,13 @@ pull request under test. Title, body, and labels are never read.
 1. **Identity.** Only a pull request that is a Version PR by 2.1 may change a
    manifest version or add a CHANGELOG section. Any pull request may add or
    remove a fragment.
-2. **Content.** A Version PR's diff must be exactly the version step applied to
-   its base: every changed version equals the plan of the fragments present at
-   the merge-base and absent at HEAD, every lockfile agrees with its manifests,
-   and every served file equals its template's render.
+2. **Content.** A Version PR's diff must be the version step applied to its
+   base and nothing else: it changes no path outside what the version step
+   writes (manifests, lockfiles, CHANGELOGs, served files, consumed fragments,
+   and the declared `writes` of `version` steps); every changed version equals
+   the plan of the fragments present at the merge-base and absent at HEAD;
+   every lockfile agrees with its manifests; and every served file equals its
+   template's render.
 
 Identity alone trusts whoever pushes to the proposal branch. Content alone
 lets any branch carry a release. Together, a hand edit fails on any branch,
@@ -594,3 +609,4 @@ their previous config from git.
    PR applies what is on the release branch.
 
 [gh-pr-update]: https://docs.github.com/en/rest/pulls/pulls#update-a-pull-request
+[cs-private]: https://github.com/changesets/changesets/blob/c73949ba7b3160a4aa5729223335c190de1528f8/docs/config-file-options.md#privatepackages-object-or-boolean
