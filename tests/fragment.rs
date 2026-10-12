@@ -2,7 +2,7 @@ use std::fs;
 
 use indoc::indoc;
 use tempfile::TempDir;
-use verctl::fragment::{Bump, load_dir, parse_str};
+use verctl::fragment::{Bump, Group, load_dir, parse_str};
 
 fn err_text(result: anyhow::Result<impl std::fmt::Debug>) -> String {
     match result {
@@ -219,4 +219,58 @@ fn load_dir_fails_closed_on_one_bad_file() {
     fs::write(dir.join("bad.md"), "no fence\n").expect("bad");
     let error = err_text(load_dir(&dir).map(|_| ()));
     assert!(error.contains("must start with ---"), "{error}");
+}
+
+#[test]
+fn a_group_key_names_the_heading_and_no_package() {
+    let fragment = parse_str(
+        indoc! {r#"
+            ---
+            demo: patch
+            "verctl:group": fixed
+            ---
+
+            Fix the parser.
+        "#},
+        "grouped.md",
+    )
+    .expect("parse");
+    assert_eq!(fragment.group, Some(Group::Fixed));
+    assert_eq!(fragment.packages.len(), 1);
+    assert_eq!(fragment.packages[0].name, "demo");
+}
+
+#[test]
+fn a_fragment_without_a_group_key_is_ungrouped() {
+    let fragment = parse_str(
+        indoc! {"
+            ---
+            demo: patch
+            ---
+
+            Fix the parser.
+        "},
+        "plain.md",
+    )
+    .expect("parse");
+    assert_eq!(fragment.group, None);
+}
+
+#[test]
+fn an_unknown_group_fails() {
+    let text = err_text(parse_str(
+        indoc! {r#"
+            ---
+            demo: patch
+            "verctl:group": security
+            ---
+
+            Fix the parser.
+        "#},
+        "bad.md",
+    ));
+    assert!(
+        text.contains(r#"unknown verctl:group "security""#),
+        "{text}"
+    );
 }

@@ -27,7 +27,9 @@ without ANSI; JSON errors use stdout, while human errors use stderr. `--quiet`
 suppresses only successful human output.
 
 Fragments are `.changeset/*.md` with YAML fences (quoted or unquoted
-keys). Changelog Markdown is rendered with minijinja. Each entry links
+keys). An optional `verctl:group: added | changed | fixed` key files the
+entry under that heading; once one fragment in a section names a group, an
+ungrouped one goes under Changed. Changelog Markdown is rendered with minijinja. Each entry links
 the pull request or commit that added its fragment. List maintainers and
 Apps in `changelog.internal_authors`; only an unlisted person whose pull
 request comes from a fork gets a byline. Consumers use
