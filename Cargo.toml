@@ -1,6 +1,6 @@
 [package]
 name = "verctl"
-version = "0.3.14"
+version = "0.3.15"
 edition = "2024"
 rust-version = "1.99.0"
 description = "Stack-agnostic version PRs from Changesets-format fragments"
