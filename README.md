@@ -89,6 +89,10 @@ Commit only       - Summary ([`96fb0bc`](https://github.com/org/repo/commit/96fb
 No link           - Summary.
 ```
 
+An entry ends with a single period: a summary that already ends with one
+loses it before the reference, so `Summary.` with a pull request renders
+`- Summary ([#12](…)).`.
+
 No extra thanks line. If a PR exists, the SHA is omitted.
 
 The pull request is the trailing `(#N)` in the subject of the commit

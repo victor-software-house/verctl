@@ -55,6 +55,14 @@ pub fn summary_has_terminal(summary: &str) -> bool {
         .is_some_and(|ch| matches!(ch, '.' | '!' | '?'))
 }
 
+/// The summary a reference follows: one trailing period removed, so the entry
+/// ends `… ([#12](url)).` with a single period, never `…. ([#12](url)).`.
+#[must_use]
+pub fn summary_body(summary: &str) -> &str {
+    let summary = summary.trim_end();
+    summary.strip_suffix('.').unwrap_or(summary)
+}
+
 pub fn render_release(input: &ReleaseInput) -> Result<String> {
     render_release_template(RELEASE_TEMPLATE, input)
 }
@@ -70,6 +78,7 @@ pub fn render_release_template(template: &str, input: &ReleaseInput) -> Result<S
             continuations => input.continuations,
             pull_request => input.pull_request,
             commit => input.commit,
+            summary_body => summary_body(&input.summary),
             summary_has_terminal => summary_has_terminal(&input.summary),
         })
         .context("render changelog")?;
