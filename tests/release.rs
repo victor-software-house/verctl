@@ -4,7 +4,7 @@ use std::fs;
 
 use indoc::indoc;
 use tempfile::TempDir;
-use verctl::fragment::{self, Bump, Fragment, PackageBump};
+use verctl::fragment::{self, Bump, Fragment, Group, PackageBump};
 use verctl::prepare::PlanEntry;
 use verctl::release;
 
@@ -17,6 +17,7 @@ fn contributing_fragments_skip_unused() {
             bump: Bump::Patch,
         }],
         summary: "used".into(),
+        group: None,
     };
     let unused = Fragment {
         path: std::path::PathBuf::from("skip.md"),
@@ -25,6 +26,7 @@ fn contributing_fragments_skip_unused() {
             bump: Bump::Patch,
         }],
         summary: "skip".into(),
+        group: None,
     };
     let plan = [PlanEntry {
         name: "demo".into(),
@@ -56,6 +58,7 @@ fn consume_fragments_deletes_the_files() {
             bump: Bump::Patch,
         }],
         summary: "gone".into(),
+        group: None,
     };
     release::consume_fragments(&[fragment]).unwrap();
     assert!(!path.exists());
@@ -482,5 +485,75 @@ fn prepare_links_the_pull_request_or_commit_that_added_each_fragment() {
             "- Fix the reader ([`{short}`](https://github.com/acme/demo/commit/{direct}))."
         )),
         "{log}"
+    );
+}
+
+fn demo_plan() -> [PlanEntry; 1] {
+    [PlanEntry {
+        name: "demo".into(),
+        from: "1.0.0".into(),
+        to: "1.0.1".into(),
+        bump: Bump::Patch,
+        path: std::path::PathBuf::from("Cargo.toml"),
+        driver: verctl::driver::Driver::Path {
+            format: verctl::driver::Format::Toml,
+            keys: vec!["package.version".into()],
+            after: None,
+        },
+    }]
+}
+
+fn demo_fragment(summary: &str, group: Option<Group>) -> Fragment {
+    Fragment {
+        path: std::path::PathBuf::from(format!("{summary}.md")),
+        packages: vec![PackageBump {
+            name: "demo".into(),
+            bump: Bump::Patch,
+        }],
+        summary: summary.into(),
+        group,
+    }
+}
+
+#[test]
+fn a_section_with_no_group_stays_flat() {
+    let fragments = [demo_fragment("First", None), demo_fragment("Second", None)];
+    assert_eq!(
+        release::changelog_sections(&demo_plan(), &fragments).unwrap(),
+        indoc! {"
+            ## demo 1.0.1
+
+            - First.
+            - Second.
+
+        "}
+    );
+}
+
+#[test]
+fn an_ungrouped_fragment_lands_in_the_default_group() {
+    let fragments = [
+        demo_fragment("Fix the parser", Some(Group::Fixed)),
+        demo_fragment("Rename a flag", None),
+        demo_fragment("Add a verb", Some(Group::Added)),
+    ];
+    assert_eq!(
+        release::changelog_sections(&demo_plan(), &fragments).unwrap(),
+        indoc! {"
+            ## demo 1.0.1
+
+            ### Added
+
+            - Add a verb.
+
+            ### Changed
+
+            - Rename a flag.
+
+            ### Fixed
+
+            - Fix the parser.
+
+        "}
     );
 }

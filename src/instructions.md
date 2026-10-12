@@ -43,6 +43,13 @@ forkctl: patch
 What changed.
 ```
 
+An optional `verctl:group` key files the entry under a changelog
+heading: `added`, `changed`, or `fixed`. The colon keeps it from naming
+a package. A section where no fragment names a group stays a flat list.
+Once one does, the section gets `### Added`, `### Changed`, and
+`### Fixed` headings in that order, and a fragment without the key goes
+under `### Changed`.
+
 A new package starts at `0.0.0`. Its first fragment is a `patch`, so
 its first release is `0.0.1`: `0.0.x` is the initial line. Moving to
 `0.1.0`, where a package claims a usable API, or to `1.0.0` is a
@@ -73,9 +80,12 @@ in Rust beyond a typed context.
 Each entry links where its fragment came from: the pull request a
 trailing `(#N)` names in the subject of the first-parent commit that
 added the fragment, else that commit. Links use the `origin` remote; a
-checkout without a GitHub `origin` writes bare entries. No entry carries
-a byline: release notes credit no maintainer, and naming who is one
-needs `changelog.internal_authors`, which arrives in 0.4.0. GitHub's
+checkout without a GitHub `origin` writes bare entries. Release notes
+credit no maintainer: list maintainers and the Apps that open pull
+requests in `changelog.internal_authors` in `.ctl/ver.yaml`. With a
+token, an entry credits its pull request author only when the login is
+not listed, the author is a person (`type` `User`), and the pull request
+comes from a fork; without a token no one is credited. GitHub's
 `author_association` cannot decide it, because the App token behind a
 Version PR reads a private organization member as `CONTRIBUTOR`.
 

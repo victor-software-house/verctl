@@ -375,6 +375,63 @@ pub fn upload_release_asset(token: &str, repo: &Repo, tag: &str, tarball: &Path)
     })
 }
 
+/// Who opened a pull request, and where its head branch lives.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PullAuthor {
+    pub login: String,
+    /// GitHub's user `type`: `User` for a person, `Bot` for an app.
+    pub kind: String,
+    /// The head branch lives outside the repository: a fork, or one GitHub no
+    /// longer has. Maintainers push branches to the repository itself.
+    pub from_fork: bool,
+}
+
+/// The author of pull request `number`, from
+/// `GET /repos/{owner}/{repo}/pulls/{number}`
+/// (<https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request>).
+pub fn pull_author(token: &str, repo: &Repo, number: u64) -> Result<PullAuthor> {
+    block(async {
+        let crab = client(token)?;
+        pull_author_with(&crab, repo, number).await
+    })
+}
+
+async fn pull_author_with(crab: &Octocrab, repo: &Repo, number: u64) -> Result<PullAuthor> {
+    #[derive(serde::Deserialize)]
+    struct User {
+        login: String,
+        #[serde(rename = "type")]
+        kind: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct HeadRepo {
+        full_name: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct Head {
+        repo: Option<HeadRepo>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Pull {
+        user: User,
+        head: Head,
+    }
+    let route = format!("/repos/{}/{}/pulls/{number}", repo.owner, repo.name);
+    let pull: Pull = crab
+        .get(route, None::<&()>)
+        .await
+        .with_context(|| format!("read pull request #{number}"))?;
+    let own = format!("{}/{}", repo.owner, repo.name);
+    Ok(PullAuthor {
+        login: pull.user.login,
+        kind: pull.user.kind,
+        from_fork: pull
+            .head
+            .repo
+            .is_none_or(|head| !head.full_name.eq_ignore_ascii_case(&own)),
+    })
+}
+
 fn client(token: &str) -> Result<Octocrab> {
     Octocrab::builder()
         .personal_token(token.to_owned())
@@ -444,6 +501,46 @@ mod tests {
             super::labels_from_event(r#"{"issue":{"labels":[{"name":"verctl:version"}]}}"#),
             Vec::<String>::new()
         );
+    }
+
+    async fn pull_author_from(head: serde_json::Value) -> super::PullAuthor {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/pulls/12")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "number": 12,
+                "user": { "login": "octo", "type": "User" },
+                "head": head
+            })))
+            .mount(&server)
+            .await;
+        super::pull_author_with(&crab(&server.uri()), &repo(), 12)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_fork_head_is_a_fork() {
+        let author =
+            pull_author_from(serde_json::json!({ "repo": { "full_name": "octo/app" } })).await;
+        assert_eq!(author.login, "octo");
+        assert_eq!(author.kind, "User");
+        assert!(author.from_fork);
+    }
+
+    #[tokio::test]
+    async fn a_head_in_the_repository_is_not_a_fork() {
+        let author = pull_author_from(serde_json::json!({
+            "repo": { "full_name": format!("{OWNER}/{NAME}") }
+        }))
+        .await;
+        assert!(!author.from_fork);
+    }
+
+    #[tokio::test]
+    async fn a_deleted_fork_is_a_fork() {
+        let author = pull_author_from(serde_json::json!({ "repo": null })).await;
+        assert!(author.from_fork);
     }
 
     #[test]

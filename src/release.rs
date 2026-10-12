@@ -8,7 +8,7 @@ use ctl_core::{formatdoc, writedoc};
 
 use crate::changelog::{self, Commit, PullRequest, ReleaseInput};
 use crate::config::Config;
-use crate::fragment::Fragment;
+use crate::fragment::{Fragment, Group};
 use crate::prepare::PlanEntry;
 use crate::{git, github};
 
@@ -119,26 +119,43 @@ enum Origin {
 
 /// Resolve each committed fragment to the commit that added it, and that
 /// commit to the pull request its subject names (`… (#12)`, GitHub's squash
-/// subject). No entry carries a byline: release notes credit no maintainer,
-/// and telling one apart needs `changelog.internal_authors`, which waits for
-/// 0.4.0 because a new `Config` field is a breaking library change.
-pub fn origins(root: &Path, fragments: &[Fragment]) -> Result<Origins> {
+/// subject). With a token, the pull request author is credited when
+/// [`credits`] says so; a failed lookup credits no one, so a maintainer is
+/// never named by accident.
+pub fn origins(
+    root: &Path,
+    token: Option<&str>,
+    changelog: &crate::config::Changelog,
+    fragments: &[Fragment],
+) -> Result<Origins> {
     let Ok(repo) = git::origin_url(root).and_then(|url| github::parse_remote(&url)) else {
         return Ok(Origins::default());
     };
     let base = format!("https://github.com/{}/{}", repo.owner, repo.name);
+    let mut authors: BTreeMap<u64, Option<String>> = BTreeMap::new();
     let mut by_path = BTreeMap::new();
     for fragment in fragments {
         let Some(added) = git::added_by(root, &fragment.path)? else {
             continue;
         };
         let origin = if let Some(number) = pull_request_number(&added.subject) {
+            let credited = authors
+                .entry(number)
+                .or_insert_with(|| {
+                    token
+                        .and_then(|token| github::pull_author(token, &repo, number).ok())
+                        .filter(|author| credits(changelog, author))
+                        .map(|author| author.login)
+                })
+                .clone();
             Origin::PullRequest(PullRequest {
                 number,
                 url: format!("{base}/pull/{number}"),
-                user: None,
-                user_url: None,
-                external_author: false,
+                user_url: credited
+                    .as_ref()
+                    .map(|login| format!("https://github.com/{login}")),
+                external_author: credited.is_some(),
+                user: credited,
             })
         } else {
             Origin::Commit(Commit {
@@ -149,6 +166,15 @@ pub fn origins(root: &Path, fragments: &[Fragment]) -> Result<Origins> {
         by_path.insert(fragment.path.clone(), origin);
     }
     Ok(Origins { by_path })
+}
+
+/// Release notes credit no maintainer: a byline needs a login outside
+/// `changelog.internal_authors`, a person rather than a bot, and a pull request
+/// from a fork. The fork test only narrows the list; it never credits a listed
+/// login.
+#[must_use]
+pub fn credits(changelog: &crate::config::Changelog, author: &github::PullAuthor) -> bool {
+    author.kind == "User" && author.from_fork && !changelog.is_internal(&author.login)
 }
 
 /// The pull request a squash-merge subject names: a trailing `(#12)`.
@@ -174,7 +200,7 @@ pub fn changelog_sections_with(
 ) -> Result<String> {
     let mut sections = String::new();
     for entry in plan {
-        let mut bullets = String::new();
+        let mut entries: Vec<(Option<Group>, String)> = Vec::new();
         for fragment in fragments {
             if !fragment
                 .packages
@@ -196,11 +222,13 @@ pub fn changelog_sections_with(
                     Some(Origin::PullRequest(_)) | None => None,
                 },
             })?;
-            bullets.push_str(&line);
+            let mut line = line;
             if !line.ends_with('\n') {
-                bullets.push('\n');
+                line.push('\n');
             }
+            entries.push((fragment.group, line));
         }
+        let bullets = group_entries(&entries);
         ensure!(
             !bullets.is_empty(),
             "no changelog body for package {}",
@@ -218,6 +246,28 @@ pub fn changelog_sections_with(
         )?;
     }
     Ok(sections)
+}
+
+/// Join one section's entries. A section where no fragment names a group stays
+/// the flat list it always was, so existing changelogs render unchanged. Once
+/// one does, every entry goes under a [`Group`] heading, and an ungrouped one
+/// lands under [`Group::Changed`].
+fn group_entries(entries: &[(Option<Group>, String)]) -> String {
+    if entries.iter().all(|(group, _)| group.is_none()) {
+        return entries.iter().map(|(_, line)| line.as_str()).collect();
+    }
+    Group::ALL
+        .into_iter()
+        .filter_map(|heading| {
+            let lines: String = entries
+                .iter()
+                .filter(|(group, _)| group.unwrap_or(Group::Changed) == heading)
+                .map(|(_, line)| line.as_str())
+                .collect();
+            (!lines.is_empty()).then(|| format!("### {}\n\n{lines}", heading.heading()))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// [`write_changelogs_with`] with no references.
@@ -394,6 +444,53 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
+
+    fn author(login: &str, kind: &str, from_fork: bool) -> github::PullAuthor {
+        github::PullAuthor {
+            login: login.into(),
+            kind: kind.into(),
+            from_fork,
+        }
+    }
+
+    fn maintainers() -> crate::config::Changelog {
+        crate::config::Changelog {
+            internal_authors: vec!["any-victor".into()],
+        }
+    }
+
+    #[test]
+    fn a_listed_maintainer_on_an_in_repo_branch_is_not_credited() {
+        assert!(!credits(
+            &maintainers(),
+            &author("any-victor", "User", false)
+        ));
+    }
+
+    #[test]
+    fn a_listed_maintainer_from_a_fork_is_not_credited() {
+        assert!(!credits(
+            &maintainers(),
+            &author("any-victor", "User", true)
+        ));
+        assert!(!credits(
+            &maintainers(),
+            &author("Any-Victor", "User", true)
+        ));
+    }
+
+    #[test]
+    fn an_outside_contributor_from_a_fork_is_credited() {
+        assert!(credits(&maintainers(), &author("octo", "User", true)));
+    }
+
+    #[test]
+    fn a_bot_is_not_credited() {
+        assert!(!credits(
+            &maintainers(),
+            &author("renovate[bot]", "Bot", true)
+        ));
+    }
 
     #[test]
     fn a_squash_subject_names_its_pull_request() {

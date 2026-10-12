@@ -10,6 +10,7 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[non_exhaustive]
 pub struct PublisherSpec {
     pub noun: Option<String>,
     pub argv: Option<Vec<String>>,
