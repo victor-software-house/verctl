@@ -247,8 +247,8 @@ queue:
     blocked_by: []
     acceptance:
       - A decision record names the permissions the App would hold, the repositories it would be installed on, and each token it would replace.
-      - The decision states which release-state transitions need an identity other than github.token, for example opening a Version PR that triggers CI and applying its label in the same call.
       - An adopted App has a follow-up row for its rollout; a rejected App has its reason recorded on this row.
+      - The decision states which release-state transitions need an identity other than github.token, for example opening a Version PR whose events start CI without approval.
     notes:
       - Today the Version PR workflow mints a token from CHANGESET_VERSION_APP_CLIENT_ID and CHANGESET_VERSION_APP_PRIVATE_KEY, and publish tags and releases with github.token.
       - >2-
