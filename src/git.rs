@@ -86,6 +86,64 @@ pub fn origin_url(root: &Path) -> Result<String> {
         .map(ToOwned::to_owned)
 }
 
+/// The commit that added a file, as the changelog names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AddedBy {
+    pub sha: String,
+    pub subject: String,
+}
+
+/// The first-parent commit that added `path`: the newest commit on HEAD's
+/// first-parent history whose tree has the file and whose first parent's tree
+/// does not. A squash merge is that commit, and its subject carries the pull
+/// request number.
+///
+/// No repository, and a file HEAD does not track, is `None`: a fixture outside
+/// git, or a fragment not committed yet, has no commit to name. A shallow
+/// clone that ends before the adding commit is `None` too: libgit2 reads
+/// `.git/shallow` as grafts, so the boundary looks parentless, and naming it
+/// would link the wrong commit. A parent that exists but cannot be loaded is
+/// treated the same way.
+pub fn added_by(root: &Path, path: &Path) -> Result<Option<AddedBy>> {
+    let Ok(repo) = Repository::discover(root) else {
+        return Ok(None);
+    };
+    let Some(rel) = git_path(root, path, repo.workdir()) else {
+        return Ok(None);
+    };
+    let Ok(head) = repo.head().and_then(|head| head.peel_to_commit()) else {
+        return Ok(None);
+    };
+    if head.tree()?.get_path(&rel).is_err() {
+        return Ok(None);
+    }
+    let mut walk = repo.revwalk().context("walk history")?;
+    walk.push(head.id()).context("walk history")?;
+    walk.simplify_first_parent().context("walk history")?;
+    for oid in walk {
+        let commit = repo.find_commit(oid.context("walk history")?)?;
+        let in_parent = if commit.parent_count() == 0 {
+            if repo.is_shallow() {
+                return Ok(None);
+            }
+            false
+        } else {
+            let Ok(parent) = commit.parent(0) else {
+                return Ok(None);
+            };
+            parent.tree()?.get_path(&rel).is_ok()
+        };
+        if !in_parent {
+            return Ok(Some(AddedBy {
+                sha: commit.id().to_string(),
+                subject: String::from_utf8_lossy(commit.summary_bytes().unwrap_or_default())
+                    .into_owned(),
+            }));
+        }
+    }
+    Ok(None)
+}
+
 #[must_use]
 pub fn upstream_default_branch(root: &Path) -> Option<String> {
     let repo = Repository::discover(root).ok()?;
@@ -617,7 +675,59 @@ mod tests {
     use git2::{Repository, Signature};
     use indoc::indoc;
 
-    use super::origin_url;
+    use super::{AddedBy, added_by, origin_url};
+
+    fn commit_all(repo: &Repository, subject: &str) -> git2::Oid {
+        let sig = Signature::now("t", "t@example.com").unwrap();
+        let mut index = repo.index().unwrap();
+        index
+            .add_all(["."].iter(), git2::IndexAddOption::DEFAULT, None)
+            .unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let parent = repo.head().ok().and_then(|head| head.peel_to_commit().ok());
+        let parents: Vec<&git2::Commit<'_>> = parent.iter().collect();
+        repo.commit(Some("HEAD"), &sig, &sig, subject, &tree, &parents)
+            .unwrap()
+    }
+
+    #[test]
+    fn added_by_names_the_commit_that_added_the_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        std::fs::write(dir.path().join("README"), "start\n").unwrap();
+        commit_all(&repo, "chore: start");
+        std::fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
+        let added = commit_all(&repo, "fix: the parser (#12)");
+        std::fs::write(dir.path().join("README"), "later\n").unwrap();
+        commit_all(&repo, "docs: later");
+        assert_eq!(
+            added_by(dir.path(), &dir.path().join("fix.md")).unwrap(),
+            Some(AddedBy {
+                sha: added.to_string(),
+                subject: "fix: the parser (#12)".into(),
+            })
+        );
+    }
+
+    /// A shallow clone ends at a commit libgit2 reports as parentless. When the
+    /// adding commit lies beyond it, naming the boundary would be wrong.
+    #[test]
+    fn added_by_names_nothing_past_a_shallow_boundary() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        std::fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
+        commit_all(&repo, "fix: the parser (#12)");
+        std::fs::write(dir.path().join("README"), "later\n").unwrap();
+        let boundary = commit_all(&repo, "docs: later (#13)");
+        std::fs::write(repo.path().join("shallow"), format!("{boundary}\n")).unwrap();
+        let shallow = Repository::open(dir.path()).unwrap();
+        assert!(shallow.is_shallow());
+        assert_eq!(
+            added_by(dir.path(), &dir.path().join("fix.md")).unwrap(),
+            None
+        );
+    }
 
     #[test]
     fn origin_url_from_discovered_repo() {

@@ -375,6 +375,64 @@ pub fn upload_release_asset(token: &str, repo: &Repo, tag: &str, tarball: &Path)
     })
 }
 
+/// Who opened a pull request, and how GitHub relates them to the repository.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PullAuthor {
+    pub login: String,
+    /// GitHub's user `type`: `User` for a person, `Bot` for an app.
+    pub kind: String,
+    /// GitHub's `author_association`: `OWNER`, `MEMBER`, and `COLLABORATOR`
+    /// are maintainers; anything else is an outside contributor.
+    pub association: String,
+}
+
+impl PullAuthor {
+    /// Release notes credit outside contributors who are people, never a
+    /// maintainer and never a bot.
+    #[must_use]
+    pub fn credited(&self) -> bool {
+        self.kind == "User"
+            && !matches!(
+                self.association.as_str(),
+                "OWNER" | "MEMBER" | "COLLABORATOR"
+            )
+    }
+}
+
+/// The author of pull request `number`, from
+/// `GET /repos/{owner}/{repo}/pulls/{number}`
+/// (<https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request>).
+pub fn pull_author(token: &str, repo: &Repo, number: u64) -> Result<PullAuthor> {
+    block(async {
+        let crab = client(token)?;
+        pull_author_with(&crab, repo, number).await
+    })
+}
+
+async fn pull_author_with(crab: &Octocrab, repo: &Repo, number: u64) -> Result<PullAuthor> {
+    #[derive(serde::Deserialize)]
+    struct User {
+        login: String,
+        #[serde(rename = "type")]
+        kind: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct Pull {
+        user: User,
+        author_association: String,
+    }
+    let route = format!("/repos/{}/{}/pulls/{number}", repo.owner, repo.name);
+    let pull: Pull = crab
+        .get(route, None::<&()>)
+        .await
+        .with_context(|| format!("read pull request #{number}"))?;
+    Ok(PullAuthor {
+        login: pull.user.login,
+        kind: pull.user.kind,
+        association: pull.author_association,
+    })
+}
+
 fn client(token: &str) -> Result<Octocrab> {
     Octocrab::builder()
         .personal_token(token.to_owned())
@@ -444,6 +502,44 @@ mod tests {
             super::labels_from_event(r#"{"issue":{"labels":[{"name":"verctl:version"}]}}"#),
             Vec::<String>::new()
         );
+    }
+
+    #[tokio::test]
+    async fn pull_author_reads_login_and_association() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/pulls/12")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "number": 12,
+                "user": { "login": "octo", "type": "User" },
+                "author_association": "CONTRIBUTOR"
+            })))
+            .mount(&server)
+            .await;
+        let author = super::pull_author_with(&crab(&server.uri()), &repo(), 12)
+            .await
+            .unwrap();
+        assert_eq!(author.login, "octo");
+        assert!(author.credited());
+    }
+
+    fn author(kind: &str, association: &str) -> super::PullAuthor {
+        super::PullAuthor {
+            login: "someone".into(),
+            kind: kind.into(),
+            association: association.into(),
+        }
+    }
+
+    #[test]
+    fn credits_only_outside_people() {
+        for association in ["OWNER", "MEMBER", "COLLABORATOR"] {
+            assert!(!author("User", association).credited(), "{association}");
+        }
+        for association in ["CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", "NONE"] {
+            assert!(author("User", association).credited(), "{association}");
+            assert!(!author("Bot", association).credited(), "{association}");
+        }
     }
 
     #[test]

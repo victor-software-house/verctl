@@ -70,9 +70,15 @@ Render through minijinja (Jinja2) files. Defaults live in this crate
 Repos may override the paths. The adapter does not concatenate Markdown
 in Rust beyond a typed context.
 
-`internalAuthors` is adapter policy, not a template `if`. Match the
-GitHub login GitHub actually resolves from the commit author. Those
-logins omit the byline.
+Each entry links where its fragment came from: the pull request a
+trailing `(#N)` names in the subject of the first-parent commit that
+added the fragment, else that commit. Links use the `origin` remote; a
+checkout without a GitHub `origin` writes bare entries. Credit is
+adapter policy, not a template `if`: with a token, an entry credits its
+pull request author only when GitHub calls them an outside contributor
+(`author_association` not `OWNER`, `MEMBER`, or `COLLABORATOR`) and a
+person (`type` `User`). Maintainers and bots are never credited, and
+without a token no one is.
 
 Context: `summary`, `pull_request`, `commit`, `continuations`,
 `summary_has_terminal`, `dependencies`.

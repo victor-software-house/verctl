@@ -84,7 +84,7 @@ these defaults (override either path):
 Default release line:
 
 ```text
-Internal + PR     - Summary ([#12](https://github.com/org/repo/pull/12)).
+Maintainer + PR   - Summary ([#12](https://github.com/org/repo/pull/12)).
 External + PR     - Summary ([#12](https://github.com/org/repo/pull/12) by [@ext](https://github.com/ext)).
 Commit only       - Summary ([`96fb0bc`](https://github.com/org/repo/commit/96fb0bc)).
 No link           - Summary.
@@ -92,9 +92,12 @@ No link           - Summary.
 
 No extra thanks line. If a PR exists, the SHA is omitted.
 
-Author filtering is not a template `if`. Config `internalAuthors` is
-matched against the GitHub login for the commit. Those logins get no
-byline. Everyone else does.
+The pull request is the trailing `(#N)` in the subject of the commit
+that added the fragment, which GitHub's squash merge writes; without one
+the entry links that commit. Credit is not a template `if`: with a
+token, verctl credits the pull request author only when GitHub calls
+them an outside contributor and a person. Maintainers and bots get no
+byline, and without a token no one does.
 
 ## Version files
 

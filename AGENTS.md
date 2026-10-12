@@ -1,7 +1,8 @@
 # verctl
 
 Stack-agnostic Version PR CLI. Fragments are Changesets YAML.
-Changelogs are minijinja (Jinja2) with `internalAuthors` filtering.
+Changelogs are minijinja (Jinja2); entries link their pull request and credit
+only outside contributors.
 Ship `actions/version-pr`, `actions/publish`, and `actions/asset`.
 `changelog.ts` is not used.
 

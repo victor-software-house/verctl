@@ -386,3 +386,101 @@ fn local_prepare_writes_changelog_and_consumes() {
     assert!(log.contains("## demo 1.0.1"), "{log}");
     assert!(log.contains("Patch."), "{log}");
 }
+
+/// Commit everything in `root` on top of HEAD, with `subject`, and hand back
+/// the new commit's id.
+#[expect(
+    clippy::unwrap_used,
+    reason = "fixture setup outside a #[test]: a broken fixture fails the test"
+)]
+fn commit_all(repo: &git2::Repository, subject: &str) -> git2::Oid {
+    let sig = git2::Signature::now("t", "t@example.com").unwrap();
+    let mut index = repo.index().unwrap();
+    index
+        .add_all(["."].iter(), git2::IndexAddOption::DEFAULT, None)
+        .unwrap();
+    index.write().unwrap();
+    let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+    let parent = repo.head().ok().and_then(|head| head.peel_to_commit().ok());
+    let parents: Vec<&git2::Commit<'_>> = parent.iter().collect();
+    repo.commit(Some("HEAD"), &sig, &sig, subject, &tree, &parents)
+        .unwrap()
+}
+
+/// A squash-merged fragment links its pull request, and one pushed straight
+/// to the branch links its commit.
+#[test]
+fn prepare_links_the_pull_request_or_commit_that_added_each_fragment() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.0.0"
+        "#},
+    )
+    .unwrap();
+    let repo = git2::Repository::init(root.path()).unwrap();
+    repo.remote("origin", "https://github.com/acme/demo.git")
+        .unwrap();
+    commit_all(&repo, "chore: start");
+    let changes = root.path().join(".changeset");
+    fs::create_dir_all(&changes).unwrap();
+    fs::write(
+        changes.join("parser.md"),
+        indoc! {"
+            ---
+            demo: patch
+            ---
+
+            Fix the parser
+        "},
+    )
+    .unwrap();
+    commit_all(&repo, "fix: the parser (#12)");
+    fs::write(
+        changes.join("direct.md"),
+        indoc! {"
+            ---
+            demo: patch
+            ---
+
+            Fix the reader
+        "},
+    )
+    .unwrap();
+    let direct = commit_all(&repo, "fix: the reader").to_string();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+        .current_dir(root.path())
+        .env_remove("GITHUB_TOKEN")
+        .env_remove("GH_TOKEN")
+        .args(["prepare", "--no-pr"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let log = fs::read_to_string(root.path().join("CHANGELOG.md")).unwrap();
+    assert!(
+        log.contains("- Fix the parser ([#12](https://github.com/acme/demo/pull/12))."),
+        "{log}"
+    );
+    let short = &direct[..7];
+    assert!(
+        log.contains(&format!(
+            "- Fix the reader ([`{short}`](https://github.com/acme/demo/commit/{direct}))."
+        )),
+        "{log}"
+    );
+}
