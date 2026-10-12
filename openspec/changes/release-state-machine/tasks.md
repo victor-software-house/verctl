@@ -46,7 +46,7 @@ Section 6 is patches after it.
 - [ ] 6.1 `auth: oidc` for crates.io and npm; proof: the building-blocks OIDC scenarios pass, and one real crates.io release runs with no `CARGO_REGISTRY_TOKEN` secret
 - [ ] 6.2 `provenance: true`, staged publish, and `release bootstrap` in the bun registry client; proof: one real bun-release version publishes with provenance through `verctl release`, and bun-release is archived
 - [ ] 6.3 The `bootstrap` stage stops a first publication under OIDC; proof: the release-state bootstrap scenario passes
-- [ ] 6.4 The built-in `mise-pin` step; proof: the building-blocks pin scenarios pass, and a consumer's lock regenerated after 0.4.x records `provenance = "github-attestations"`
+- [ ] 6.4 The built-in `mise-pin` step, and `MISE_LOCKED_VERIFY_PROVENANCE=1` on `mise install --locked` in the served CI workflow; proof: the building-blocks pin scenarios pass, a consumer's lock regenerated after 0.4.x records `provenance = "github-attestations"`, and that consumer's CI install passes with the variable set
 
 ## 7. Close
 

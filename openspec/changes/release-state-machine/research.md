@@ -170,9 +170,14 @@ environment.
 5. The `github:` backend picks an asset by os and arch tokens in its name,
    verifies the GitHub asset digest or a checksum file, and checks GitHub
    artifact attestations by default on public GitHub. An attestation that
-   fails to verify is a hard error. Once `mise.lock` records
-   `provenance = "github-attestations"`, an install without it is refused as a
-   downgrade; a lock with a checksum and no provenance skips the check.
+   fails to verify is a hard error (read in source; no public release with a
+   mismatching attestation was found to run it). Once `mise.lock` records
+   `provenance = "github-attestations"`, an install with attestation checks
+   turned off is refused as a downgrade. By default the recorded provenance is
+   trusted and not verified again: a line added by hand to a lock for a
+   release with no attestations installed with exit 0, and failed only with
+   `MISE_LOCKED_VERIFY_PROVENANCE=1`. A lock with a checksum and no provenance
+   skips the check. Run on 2026.10.3 and 2026.10.7.
 6. mise has no versioning, changelog, or release pull request model.
 
 ## 8. What verctl adopts

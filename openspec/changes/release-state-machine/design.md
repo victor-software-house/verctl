@@ -316,8 +316,13 @@ What a release must therefore carry for mise to install and verify it: asset
 names with os and arch tokens, the GitHub asset digest (GitHub computes it),
 and GitHub artifact attestations, which the asset job creates. mise records
 `provenance = "github-attestations"` in `mise.lock` only when a release has
-them, and from then on refuses an install that lacks them. Today's verctl
-releases have none, so consumers' locks carry a checksum and no provenance.
+them. Today's verctl releases have none, so consumers' locks carry a checksum
+and no provenance. A recorded provenance is trusted as written by default: an
+install checks the checksum and does not verify the attestation again, so a
+hand edit to `mise.lock` can claim provenance that never existed. With
+`MISE_LOCKED_VERIFY_PROVENANCE=1`, mise verifies the attestation on every
+install and refuses a claim that does not verify, so the served CI workflow
+sets it on `mise install --locked`.
 
 Two mise facts bound the design. `MISE_LOCKFILE_MODE=generate` is documented
 as a trial mode; if it changes, the `mise-pin` step keeps its read-back check
