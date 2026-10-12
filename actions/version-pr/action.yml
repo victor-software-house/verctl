@@ -27,6 +27,15 @@ inputs:
     description: Preview only. Set to `true` to write nothing.
     required: false
     default: "false"
+  auto-merge:
+    description: >-
+      Set to `true` to enable GitHub auto-merge on the Version PR, as a squash
+      titled after the PR. Requires a required status check on the base
+      branch; without one the action fails, because GitHub would merge at once.
+      Requires `token` other than GITHUB_TOKEN, such as a GitHub App token: a
+      merge made with GITHUB_TOKEN starts no workflow, so publish would not run.
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -46,3 +55,17 @@ runs:
           extra+=(--dry-run)
         fi
         exec verctl prepare --pr -c "${VERCTL_CONFIG}" "${extra[@]}"
+    - name: Refuse auto-merge with GITHUB_TOKEN
+      if: inputs.auto-merge == 'true' && inputs.token == github.token
+      shell: bash
+      run: |
+        echo "::error::auto-merge needs a token other than GITHUB_TOKEN; a merge made with GITHUB_TOKEN starts no publish workflow"
+        exit 1
+    - name: Enable auto-merge
+      if: inputs.auto-merge == 'true' && inputs.dry-run != 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ github.repository }}
+        BASE: ${{ github.event.repository.default_branch }}
+      run: ${{ github.action_path }}/auto-merge.sh
