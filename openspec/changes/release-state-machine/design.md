@@ -371,7 +371,7 @@ Removed, each with what replaces it:
 
 Templates receive the versions map, a `tags` map from package name to its tag,
 and the verctl surface. They render through `ctl_core::served` (ctl-core
-0.6.10), so verctl and its tests use one renderer. verctl keeps discovery, the
+0.6.11 or later), so verctl and its tests use one renderer. verctl keeps discovery, the
 `templates` config, and the context.
 
 A repository like unixd, two crates with their own tags, writes:
