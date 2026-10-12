@@ -134,7 +134,7 @@ mise: the repository setup comes from the shared Copier template
 (kind `rust-crate`, layout `crate`); `.copier-answers.yml` records its
 tag and answers. Take a new tag with `copier update --defaults` and
 check `git diff --check` before committing; the CI job `Template`
-fails when a newer tag exists. Two local edits survive updates:
+fails when the newest tag would change a file. Two local edits survive updates:
 `Cargo.toml` leaves `missing_docs` and
 `missing_debug_implementations` off until VER-049, and `deny.toml`
 lifts the openssl and native-tls bans until VER-050 replaces git2.
