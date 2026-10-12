@@ -162,7 +162,9 @@ A breaking library change (one `cargo semver-checks` fails as a patch)
 targets the `next` branch, which carries the next minor release. After
 each release from `main`, merge `main` into `next` through a PR with a
 merge commit, so `next` drops the consumed fragments and builds on the
-released version.
+released version. Label that PR `verctl:version`: it carries a version
+`main` already released, which the version check would otherwise read as
+a hand edit against `next`.
 
 ## Git
 
