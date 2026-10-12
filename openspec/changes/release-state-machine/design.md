@@ -87,28 +87,29 @@ none ──fragment lands──▶ pending ──propose──▶ proposed ─�
                                     proposed ──no fragment left──▶ stale ──propose──▶ none (PR closed)
 ```
 
-A tag that peels to a commit other than `R(p, v)` is the `conflict` stage. It
-stops every transition for that package until an operator resolves it.
+The `conflict` stage stops every transition for a package until an operator
+resolves it. It is entered when a tag peels to a commit other than `R(p, v)`,
+or when a dependency that `p`'s published manifest keeps has a current release
+that does not publish, so `publish` could never proceed. verctl never waits on
+a fact that cannot arrive.
 
 A package does not publish when it declares `publish = false` or
-`"private": true`, or uses a declared ecosystem with no publish block. Its
-current release publishes only when the package publishes both on the release
-branch tip and at the release commit, each read from its manifest and from
-`.ctl/ver.yaml` at that commit. A current release that does not publish has no
-`publish` transition. Without `assets`, it is complete at `merged`: it gets no
-tag and no Release, and it counts as `released`; a tag whose packages are all
-of this kind is never created. With `assets`, it goes
+`"private": true`, or uses a declared ecosystem with no publish block. Whether
+a release publishes is a fact of its release commit: it is read from the
+manifest and `.ctl/ver.yaml` at `R(p, v)`, and nowhere else. A release that
+does not publish has no `publish` transition. Without `assets`, it is complete
+at `merged`: it gets no tag and no Release, and it counts as `released`; a tag
+whose packages are all of this kind is never created. With `assets`, it goes
 `merged ──tag──▶ tagged` and continues as above. Changesets likewise does not
 tag private packages by default ([config][cs-private]); verctl still versions
 them, because a fragment that names one is intent.
 
-The two reads cover a change of setting without a bump. A package that does
-not publish at the tip needs no release commit, so verctl does not look one up.
-A package that starts to publish keeps the version merged before it as
-`released`, and one that stops publishing before its current version reached
-the registry leaves that version `released` with no publish. Either way the
-next version enters `bootstrap` if the registry needs a first publish and
-`merged ──publish──▶` otherwise, and no version is published after the fact.
+A change of that setting therefore applies from the next version. A version
+merged while its package did not publish is never published, and a version
+merged while it published is published even if the setting changes before the
+release runs. The next version after a package starts to publish enters
+`bootstrap` if the registry needs a first publish and `merged ──publish──▶`
+otherwise.
 
 ### 1.3 Transitions
 
@@ -625,8 +626,7 @@ their previous config from git.
    following renames. It resolves the version at each commit and stops once
    it reads the last tagged version. Any package with no tag yet
    (a first release, one awaiting `bootstrap`, or one that has just started to
-   publish or to declare assets) stops where that file first appears. A
-   package that does not publish at the tip and has no assets needs no walk.
+   publish or to declare assets) stops where that file first appears.
 3. [Bun below 1.4.1 leaves the lockfile stale] → The bun ecosystem refuses an
    older Bun by version.
 4. [verctl maintains an npm registry client] → It follows the documented wire

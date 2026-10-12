@@ -108,10 +108,9 @@ that is missing, and run no transition for it.
 
 A package does not publish when it declares `publish = false` or
 `"private": true`, or uses a declared ecosystem with no publish block. verctl
-SHALL treat a package's current release as publishing only when the package
-publishes both on the release branch tip and at the release commit, each read
-from its manifest and `.ctl/ver.yaml` at that commit. A current release that
-does not publish SHALL have no publish transition. Without `assets`, verctl
+SHALL decide whether a release publishes from the package's manifest and
+`.ctl/ver.yaml` at its release commit only. A release that does not publish
+SHALL have no publish transition. Without `assets`, verctl
 SHALL treat it as `released` once it is merged and SHALL create no tag and no
 Release for it. With `assets`, it SHALL be tagged and released like any other
 package.
@@ -129,8 +128,13 @@ package.
 - **THEN** `verctl status` still reports `xtask@0.1.1` as `released`, and `verctl propose` is not blocked by it
 - **AND** the next version of `xtask` goes through `publish`, or `bootstrap` when the registry needs a first publish
 
-#### Scenario: A crate stops publishing before its version reached the registry
+#### Scenario: A crate stops publishing before its release ran
 
 - **WHEN** `demo@0.4.0` was merged while `demo` published, is not yet on crates.io, and a later commit adds `publish = false` without changing the version
-- **THEN** `verctl status` reports `demo@0.4.0` as `released`, and `verctl release` does not publish it
-- **AND** `verctl propose` is not blocked by `demo`
+- **THEN** `verctl release` still publishes `demo@0.4.0`, because its release commit publishes
+- **AND** the next version of `demo` does not publish
+
+#### Scenario: A dependency whose release will never publish
+
+- **WHEN** `app@0.2.0` publishes at its release commit and keeps a dependency on `core`, and `core@0.3.0` was merged while `core` declared `publish = false`
+- **THEN** `verctl status` reports `app` at stage `conflict`, naming `app` and `core`, and `verctl release` does not wait on `core`
