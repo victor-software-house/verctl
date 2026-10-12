@@ -1,5 +1,10 @@
 # Changelog
 
+## verctl 0.4.0
+
+- A fragment may set `verctl:group` to `added`, `changed`, or `fixed`. Once one fragment in a release section names a group, the section lists its entries under `### Added`, `### Changed`, and `### Fixed` headings, and a fragment without the key goes under `### Changed`. A section where no fragment names a group renders as before. `Fragment` has a new public field, `group` ([#126](https://github.com/victor-software-house/verctl/pull/126)).
+- `.ctl/ver.yaml` accepts `changelog.internal_authors`, the maintainers and Apps a changelog never credits. With a token, an entry credits its pull request author only when that login is not listed, the author is a person, and the pull request comes from a fork. `Config` and every config struct are now `#[non_exhaustive]`, so later keys are additive ([#126](https://github.com/victor-software-house/verctl/pull/126)).
+
 ## verctl 0.3.16
 
 - A changelog entry whose summary ends with a period now puts its pull request or commit reference before a single closing period, `- Summary ([#12](…)).`, instead of `- Summary. ([#12](…)).` ([#120](https://github.com/victor-software-house/verctl/pull/120)).
