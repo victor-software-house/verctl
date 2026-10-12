@@ -72,6 +72,17 @@ a lockfile's parsed entries, never its bytes.
 - **WHEN** the Lockfile step of a declared ecosystem exits zero but `uv.lock` still names the old version
 - **THEN** `verctl version` exits non-zero and names `uv.lock`
 
+### Requirement: A package that publishes depends only on packages that publish
+
+verctl SHALL refuse to load a configuration in which a package that publishes
+has a normal or build dependency on a workspace package that never publishes,
+and SHALL name both packages. A development dependency SHALL NOT count.
+
+#### Scenario: A published crate depends on a tool crate
+
+- **WHEN** crate `demo` publishes and has a normal dependency on workspace crate `xtask`, which declares `publish = false`
+- **THEN** `verctl status` exits non-zero and names `demo` and `xtask`
+
 ### Requirement: Cargo is a built-in
 
 For a `cargo` package, verctl SHALL write `package.version` or

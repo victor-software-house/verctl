@@ -81,8 +81,9 @@ declared `writes` of `version` steps. It SHALL also fail unless every changed
 manifest version equals the plan of the fragments present at the merge-base
 and absent at HEAD, every planned bump is
 applied, each changed package's CHANGELOG carries the new version's section,
-every lockfile agrees with its manifests, and every served file equals its
-template's render at the versions on HEAD.
+every lockfile agrees with its manifests, no parsed lockfile entry changes
+except those of the workspace packages the plan bumps, and every served file
+equals its template's render at the versions on HEAD.
 
 #### Scenario: A hand-edited version on a feature branch
 
@@ -103,6 +104,11 @@ template's render at the versions on HEAD.
 
 - **WHEN** the Version PR bumps `package.json` for workspace package `a` to `1.1.0`, and `bun.lock` still records `"version": "1.0.0"` for `packages/a`
 - **THEN** `verctl check` exits non-zero and names `bun.lock` and `packages/a`
+
+#### Scenario: A Version PR that moves a third-party dependency
+
+- **WHEN** the Version PR bumps `demo` and also changes the resolved version of `serde` in `Cargo.lock`
+- **THEN** `verctl check` exits non-zero and names `Cargo.lock` and `serde`
 
 #### Scenario: A served file edited by hand
 
