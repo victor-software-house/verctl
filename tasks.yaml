@@ -535,8 +535,10 @@ horizon:
     scope: verctl
     outcome: 'The shared Rust baseline that ctl-core renders reaches each Rust repository through verctl''s Served files block: `verctl render` writes it and `verctl check` reports its drift.'
     kind: deferred
-    open: verctl 0.4.0 has not released; the baseline adds a source to the Served files block that 0.4.0 ships.
+    open: 'Paused by the operator: rendering files outside versioning is outside verctl''s scope unless a more general shared mechanism exists. Waits on the ctl-core side''s discovery of such a mechanism (a templating tool, a mise plugin, or a crates monorepo).'
     notes:
+      - >2-
+        2026-10-12 (UTC): the operator paused this row. verctl does not render the Rust baseline files for now, because writing templates outside versioning is outside verctl's scope unless a more general shared mechanism exists. The ctl-core side is writing a discovery document first, and the standard Rust mise tasks ship separately as a mise remote task include from ctl-core. ctl-core's `baseline` feature stays in 0.6.12 meanwhile. Do not start this row until that discovery names a mechanism and the operator resumes it.
       - >2-
         2026-10-12 (UTC): the operator decided the shared Rust baseline joins verctl's Served files block. There is no `ver baseline` subcommand: `verctl render` writes the baseline files and `verctl check` reports their drift, in the same report and JSON as other served files, with one non-zero exit and one line per drifted file. ctl-core's `baseline` feature returns plain `ctl_core::served::Served` values plus marked-block entries, read from `.ctl/rust.yaml`, whose schema ctl-core owns. A marked block in `Cargo.toml` holds only `[lints.*]` or `[workspace.lints.*]` tables, never the keys the version step writes. When the baseline changes the rust entries in a mise config, the lock for that environment is regenerated whole with `mise lock --platform …`, never edited as text; the ctl-core side reports that a per-tool `mise lock rust` left a stale entry when the entry changed shape, not yet reproduced here. Default timing is a patch after 0.4.0, since it adds a source to an existing block.
       - >2-
