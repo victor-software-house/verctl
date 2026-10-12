@@ -17,29 +17,12 @@ that commit when the subject names no pull request.
 - **WHEN** `.changeset/fix.md` was added by commit `abc1234` with subject `fix: the parser`, and `verctl prepare --dry-run` runs
 - **THEN** the entry ends with `` ([`abc1234`](https://github.com/acme/demo/commit/<sha>)) ``
 
-### Requirement: Only outside contributors are credited
+### Requirement: No entry credits an author
 
-verctl SHALL credit an entry's author only when GitHub reports the pull
-request author's `author_association` as other than `OWNER`, `MEMBER`, or
-`COLLABORATOR` and the author's `type` as `User`. Without a token it SHALL
-credit no one.
+verctl SHALL write no author byline on any changelog entry, so no
+maintainer is credited.
 
-#### Scenario: Maintainer pull request
+#### Scenario: Maintainer pull request read as a contributor
 
-- **WHEN** pull request #12 was opened by a login whose `author_association` is `OWNER`
-- **THEN** the entry carries no byline
-
-#### Scenario: Outside contributor
-
-- **WHEN** pull request #12 was opened by `octo`, a `User` with `author_association` `CONTRIBUTOR`
-- **THEN** the entry reads `([#12](https://github.com/acme/demo/pull/12) by [@octo](https://github.com/octo))`
-
-#### Scenario: Bot author
-
-- **WHEN** pull request #12 was opened by `renovate[bot]`, a `Bot` with `author_association` `NONE`
-- **THEN** the entry carries no byline
-
-#### Scenario: No token
-
-- **WHEN** `verctl prepare --dry-run` runs without `GITHUB_TOKEN`
-- **THEN** every entry keeps its reference and carries no byline
+- **WHEN** pull request #12 was opened from a branch in `acme/demo` by a member the App token reads as `CONTRIBUTOR`, and `verctl prepare --pr` runs
+- **THEN** the entry reads `([#12](https://github.com/acme/demo/pull/12))` with no byline

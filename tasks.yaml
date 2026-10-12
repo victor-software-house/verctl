@@ -292,6 +292,8 @@ queue:
         release::changelog_sections passes pull_request: None and commit: None, and ChangelogInput::with_author_filter is defined but never called, so internalAuthors is documented and has no effect (main at 9596fb7, verctl 0.3.14). Reported by a consumer adopting verctl that wants a short (#N) per entry and no author credit.
       - >2-
         Decision (operator, 2026-10-12): render the reference as a short (#N) and credit no maintainer by default; credit outside contributors only. OpenSpec change changelog-references.
+      - >2-
+        Follow-up (2026-10-12): the author lookup credited the owner on Version PR #118, so it is removed and no entry carries a byline; VER-054 adds the explicit list on next.
 
   - id: VER-052
     title: Group changelog entries under Added, Fixed, and Changed
@@ -306,6 +308,21 @@ queue:
     acceptance:
       - A fragment may carry an optional verctl-only frontmatter key naming its group; verctl validates it, and a fragment without it falls in a default group.
       - CHANGELOG.md and the Release body list one heading per group below the version heading.
+
+  - id: VER-054
+    title: List the maintainers a changelog never credits, in 0.4.0
+    scope: src/config.rs (Config and its nested structs), src/release.rs origins, src/github.rs, the operator docs; on next
+    outcome: A repository names its maintainers in changelog.internal_authors, and an entry credits its pull request author only when that author is not listed and not a bot.
+    blocked_by:
+      - VER-051
+    acceptance:
+      - 'Config and every nested config struct are #[non_exhaustive], so later keys stay additive.'
+      - .ctl/ver.yaml accepts changelog.internal_authors; an entry carries a byline only when the pull request author is not listed and is not a bot, and a fork check is at most an extra condition.
+      - Tests cover a listed maintainer on an in-repo branch, the same maintainer from a fork, an outside contributor, and a bot.
+      - The six ctl repositories list their maintainers and Apps in .ctl/ver.yaml.
+    notes:
+      - >2-
+        Decision (operator, 2026-10-12): an explicit list is the control for crediting no maintainer. author_association cannot decide it: verctl 0.3.15 Version PR #118 credited the owner because the App token read a private member as CONTRIBUTOR. Lands on next because a new Config field is a breaking library change for cargo-semver-checks; main ships no bylines meanwhile.
 
 horizon:
   - id: VER-038

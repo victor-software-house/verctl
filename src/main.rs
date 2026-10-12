@@ -135,7 +135,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     // commit, and staged from here — a repo never lists them in stage.
     pinned.extend(templates::write(root, &config.templates, &served)?);
     let consumed = release::contributing_fragments(&plan, &fragments);
-    let origins = release::origins(root, token.as_deref(), &fragments)?;
+    let origins = release::origins(root, &fragments)?;
     let changelog = release::changelog_sections_with(&plan, &fragments, &origins)?;
     let changelogs = release::write_changelogs_with(&config, root, &plan, &fragments, &origins)?;
     if let Some(after) = &config.prepare.after {
@@ -205,7 +205,7 @@ fn preview_report(
     pinned: Vec<std::path::PathBuf>,
     open_pr: bool,
 ) -> Result<PrepareReport> {
-    let origins = release::origins(root, None, fragments)?;
+    let origins = release::origins(root, fragments)?;
     let changelog = release::changelog_sections_with(plan, fragments, &origins)?;
     let consume = if open_pr {
         fragments
