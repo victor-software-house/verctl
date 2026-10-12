@@ -555,8 +555,10 @@ the one registry auth value in 0.4.0.
 
 **What patches add after it:** implementations behind those interfaces and new
 opt-in values. Examples: `auth: oidc`, `provenance: true`, staged publish,
-`release bootstrap`, and further built-in step providers. Adding an enum value
-or an optional key does not break a valid config.
+`release bootstrap`, further built-in step providers, and the shared Rust
+baseline from ctl-core as a second source of served files, written by `render`
+and checked by `check` (VER-045). Adding an enum value, an optional key, or a
+served-file source does not break a valid config.
 
 How the work lands without five releases:
 
