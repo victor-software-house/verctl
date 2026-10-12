@@ -265,6 +265,7 @@ queue:
       - '`actions/version-pr` has an `auto-merge` input, off by default, that enables GitHub auto-merge on the open Version PR with a squash whose subject is the PR title and number and whose body is the PR description.'
       - 'With `auto-merge: true`, the action fails before enabling anything when the base branch has no required status check.'
       - 'verctl, qctl, forkctl, ctl-core, unixd, and yamled require their CI checks on main and run the Version PR with `auto-merge: true`.'
+      - 'With `auto-merge: true`, the action fails before writing anything when `token` is the default `GITHUB_TOKEN`.'
     notes:
       - >2-
         2026-10-12 (UTC): 13 Version PRs were merged by hand across the six ctl repositories in the seven days before, each with one commit and green checks. All six allow auto-merge. None had a required status check on main, and the forkctl and unixd Version PRs ran no CI because they opened with the default token.

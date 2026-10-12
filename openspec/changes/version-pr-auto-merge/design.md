@@ -9,8 +9,12 @@
    enforce.
 2. **Refuse without a required check.** The action reads the base branch's
    rules through `gh api repos/<repo>/rules/branches/<base>` and stops unless
-   one is `required_status_checks`. Alternative: trust the repository
-   settings. Lost: with no required check, GitHub merges immediately, so a
+   one is `required_status_checks`. That endpoint reports rulesets only.
+   Classic branch protection is not read, because its API needs
+   administration access that the Version PR token does not have; a
+   repository requires its checks through a ruleset. The token guard runs
+   before `prepare`, so a refused token writes nothing. Alternative: trust the
+   repository settings. Lost: with no required check, GitHub merges immediately, so a
    red Version PR would ship.
 3. **Squash message from the PR.** Subject `<title> (#<number>)`, body the PR
    description, as this workspace merges every pull request. Alternative: the

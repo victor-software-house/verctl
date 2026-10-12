@@ -3,8 +3,8 @@
 ## Why
 
 In the seven days to 2026-10-12, 13 Version PRs were merged by hand across
-the six ctl repositories: ctl-core 6, forkctl 4, and verctl, qctl, and
-yamled 1 each.
+the six ctl repositories: ctl-core 6, forkctl 4, verctl, qctl, and
+yamled 1 each, and unixd 0.
 Each had one commit and green checks, so the merge added a wait and a click
 and no review.
 All six repositories already allow auto-merge.
@@ -33,6 +33,7 @@ Queue row: VER-047.
 
 1. `actions/version-pr/action.yml`, `.github/workflows/version-pr.yml`,
    `examples/workflows/version-pr.yml`, README, and the operator
-   instructions and skill.
+   instructions. The operator skill has no Version PR section, so it does not
+   change.
 2. Consumers opt in per repository with one input, after requiring their CI
    checks on the default branch.
