@@ -57,12 +57,18 @@ payload.
 commit it on `verctl/release/<branch>`, and open or update the Version PR
 titled `proposal.title`. It SHALL close an open Version PR when no fragment is
 pending, and SHALL refuse to open or update one while any package's current
-release is short of `released`.
+release is short of `released`, except a package in `conflict`, which needs a
+new version to resolve.
 
 #### Scenario: The owner command re-resolves more than the bump
 
 - **WHEN** `bun install --lockfile-only` on the release branch tip also moves an unrelated entry in `bun.lock`
 - **THEN** `verctl propose` exits non-zero without committing, names the moved entry, and says the release branch needs a lockfile refresh
+
+#### Scenario: A package in conflict
+
+- **WHEN** `app@0.2.0` is at stage `conflict` because its dependency `core@0.3.0` does not publish, and a fragment for `core` is on `main`
+- **THEN** `verctl propose` opens the Version PR that moves `core` to a publishing version
 
 #### Scenario: No fragment is pending
 

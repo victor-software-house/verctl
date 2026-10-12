@@ -92,7 +92,9 @@ resolves it. It is entered when a tag peels to a commit other than `R(p, v)`,
 or when a dependency that `p`'s published manifest keeps has a current release
 that does not publish, so `publish` could never proceed. verctl never waits on
 a fact that cannot arrive. The fragment rule in 2.2 keeps the second case from
-arising through pull requests that pass `check`.
+arising through pull requests that pass `check`. A package in `conflict` does
+not block `propose`, so a Version PR that resolves it (a publishing version of
+the dependency, or a new version of `p`) can still be opened.
 
 A package does not publish when it declares `publish = false` or
 `"private": true`, or uses a declared ecosystem with no publish block. Whether
@@ -116,7 +118,7 @@ otherwise.
 
 | Transition | Guard | Effect | Postcondition, checked after |
 |:--|:--|:--|:--|
-| `propose` | no open pull request on the proposal branch has a base other than `<base>`, checked before the version step runs; no package's current release is short of `released` (a current release that does not publish and declares no assets is `released` at `merged`); a fragment is pending | run the version step on a tree at the release branch tip, commit it on the proposal branch, open or update the Version PR | the proposal branch passes `check` |
+| `propose` | no open pull request on the proposal branch has a base other than `<base>`, checked before the version step runs; no package's current release is short of `released`, except one in `conflict` (a current release that does not publish and declares no assets is `released` at `merged`); a fragment is pending | run the version step on a tree at the release branch tip, commit it on the proposal branch, open or update the Version PR | the proposal branch passes `check` |
 | `propose` (close) | no fragment is pending and a Version PR is open; a retargeted pull request is reported, never closed | close it with a comment naming why | no Version PR is open |
 | `publish` | HEAD is `R(p, v)`; every workspace dependency that `p`'s published manifest keeps and that the publish order puts before `p` is published (the load refuses a publishing package that depends that way on a package that does not publish); the `verify` steps pass; the registry does not list `p@v` | the package's publish block runs | the registry lists `p@v` |
 | `tag` | every publishing package the tag names is published | create the tags at `R(p, v)` and push all ready tags in one atomic push | each remote tag peels to `R(p, v)` |
@@ -627,10 +629,10 @@ their previous config from git.
    history. The walk reads only the first-parent commits that touch the files
    that can hold the package's version (its manifest and, when the version is
    inherited at any point, the workspace root manifest), newest first,
-   following renames. It resolves the version at each commit and stops once
-   it reads the last tagged version. Any package with no tag yet
-   (a first release, one awaiting `bootstrap`, or one that has just started to
-   publish or to declare assets) stops where that file first appears.
+   following renames. It resolves the version at each commit and stops at
+   `R(p, v)` itself: the first commit whose first parent resolves a version
+   other than `v`, or has no such file. Its length is therefore the life of the
+   current version, for every package, tagged or not.
 3. [Bun below 1.4.1 leaves the lockfile stale] → The bun ecosystem refuses an
    older Bun by version.
 4. [verctl maintains an npm registry client] → It follows the documented wire
