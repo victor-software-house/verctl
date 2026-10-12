@@ -158,6 +158,12 @@ entry: it must name a tarball that already exists. Actions run
 Cargo and bun are stock recipes, not the architecture. Do not name
 private release skills in this repo.
 
+A breaking library change (one `cargo semver-checks` fails as a patch)
+targets the `next` branch, which carries the next minor release. After
+each release from `main`, merge `main` into `next` through a PR with a
+merge commit, so `next` drops the consumed fragments and builds on the
+released version.
+
 ## Git
 
 Conventional commits. lefthook. No `--no-verify`. Branch
