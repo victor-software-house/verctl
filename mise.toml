@@ -3,6 +3,10 @@ min_version = "2026.10.3"
 [settings]
 experimental = true
 lockfile = true
+# Only these platforms are locked. Unset, mise keeps every platform any tool
+# already records and fills the others up to it on each install.
+# https://github.com/jdx/mise/blob/4599c53b4286ff101de876f8122feec0797b48b2/settings.toml
+lockfile_platforms = ["linux-x64", "macos-arm64"]
 
 [task_config]
 includes = [
