@@ -9,6 +9,7 @@ use ctl_core::{formatdoc, writedoc};
 use crate::changelog::{self, Commit, PullRequest, ReleaseInput};
 use crate::config::Config;
 use crate::fragment::{Fragment, Group};
+use crate::git::pull_request_number;
 use crate::prepare::PlanEntry;
 use crate::{git, github};
 
@@ -175,15 +176,6 @@ pub fn origins(
 #[must_use]
 pub fn credits(changelog: &crate::config::Changelog, author: &github::PullAuthor) -> bool {
     author.kind == "User" && author.from_fork && !changelog.is_internal(&author.login)
-}
-
-/// The pull request a squash-merge subject names: a trailing `(#12)`.
-fn pull_request_number(subject: &str) -> Option<u64> {
-    let (_, digits) = subject.trim_end().strip_suffix(')')?.rsplit_once("(#")?;
-    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    digits.parse().ok()
 }
 
 /// [`changelog_sections_with`] with no references.

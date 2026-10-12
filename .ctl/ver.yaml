@@ -29,3 +29,10 @@ packages:
 assets:
   darwin-arm64: {}
   linux-x64: {}
+
+# Maintainers and Apps a changelog never credits (verctl 0.4.0).
+changelog:
+  internal_authors:
+    - any-victor
+    - "github-actions[bot]"
+    - "vsh-changeset-version[bot]"
