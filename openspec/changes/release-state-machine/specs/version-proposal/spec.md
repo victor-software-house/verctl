@@ -59,6 +59,11 @@ titled `proposal.title`. It SHALL close an open Version PR when no fragment is
 pending, and SHALL refuse to open or update one while any package's current
 release is short of `released`.
 
+#### Scenario: The owner command re-resolves more than the bump
+
+- **WHEN** `bun install --lockfile-only` on the release branch tip also moves an unrelated entry in `bun.lock`
+- **THEN** `verctl propose` exits non-zero without committing, names the moved entry, and says the release branch needs a lockfile refresh
+
 #### Scenario: No fragment is pending
 
 - **WHEN** a Version PR is open and every fragment it consumed has been removed from `main` by another pull request

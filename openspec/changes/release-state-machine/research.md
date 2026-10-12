@@ -199,8 +199,10 @@ environment.
 5. A release with assets starts as a draft and is published once every asset is
    present (goreleaser, knope), and an existing release is found by tag and
    updated, never duplicated.
-6. Publish order from the dependency graph over normal and build dependencies,
-   excluding dev dependencies (cargo-release, release-plz).
+6. Publish order from the dependency graph over normal and build dependencies
+   (cargo-release, release-plz, which exclude dev dependencies). verctl also
+   orders versioned dev dependencies, which `cargo publish` keeps, and refuses
+   a cycle among them, which cargo cannot publish ([cargo#4242][cargo-4242]).
 7. Dependents whose requirement no longer admits the new version get a patch
    bump, repeated until nothing changes (release-plz, Changesets).
 8. The package manager refreshes the lockfile on the Version PR: `cargo update
@@ -306,3 +308,4 @@ environment.
 [npm-oidc]: https://github.com/npm/cli/blob/c276cadf785c1018d82dd287fe7742567055efb9/lib/utils/oidc.js
 [aube-publish]: https://github.com/aubepkg/aube/blob/1443128fdb279a63dd3b57a79e20930efa94db4d/crates/aube/src/commands/publish.rs
 [mise]: https://github.com/jdx/mise/tree/b671d356aaf33b87e48e7469a77abb40c3553c68
+[cargo-4242]: https://github.com/rust-lang/cargo/issues/4242

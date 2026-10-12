@@ -76,16 +76,31 @@ a lockfile's parsed entries, never its bytes.
 
 verctl SHALL refuse to load a configuration in which a package that publishes
 depends on a workspace package that never publishes, and SHALL name both
-packages. For cargo, normal and build dependencies count, target-specific ones
-included, and so does a development dependency that declares a `version`,
-which `cargo publish` keeps. For bun, `dependencies`, `optionalDependencies`,
-and `peerDependencies` count. A path-only cargo development dependency and a
-bun `devDependencies` entry SHALL NOT count.
+packages. Dependencies match by package name, after renames and workspace
+inheritance are resolved. For cargo, normal and build dependencies count,
+target-specific ones included, and so does a development dependency that
+declares a `version`, which `cargo publish` keeps. For bun, `dependencies`,
+`optionalDependencies`, and `peerDependencies` count. A path-only cargo
+development dependency and a bun `devDependencies` entry SHALL NOT count.
+Every dependency that counts SHALL also order publishes, and verctl SHALL
+refuse to load a configuration in which such dependencies form a cycle,
+because cargo cannot publish crates with cyclic versioned development
+dependencies ([rust-lang/cargo#4242][cargo-4242]).
 
 #### Scenario: A published crate depends on a tool crate
 
 - **WHEN** crate `demo` publishes and has a normal dependency on workspace crate `xtask`, which declares `publish = false`
 - **THEN** `verctl status` exits non-zero and names `demo` and `xtask`
+
+#### Scenario: A versioned development dependency on a tool crate
+
+- **WHEN** crate `demo` publishes and has a development dependency on `xtask` that declares `version = "0.1"`, and `xtask` declares `publish = false`
+- **THEN** `verctl status` exits non-zero and names `demo` and `xtask`
+
+#### Scenario: Two crates test with each other
+
+- **WHEN** publishing crates `a` and `b` each have a versioned development dependency on the other
+- **THEN** `verctl status` exits non-zero, names the cycle `a -> b -> a`, and says that a path-only development dependency breaks it
 
 #### Scenario: A published crate tests with a tool crate
 
@@ -97,7 +112,7 @@ bun `devDependencies` entry SHALL NOT count.
 For a `cargo` package, verctl SHALL write `package.version` or
 `workspace.package.version`, find dependents through `cargo metadata --no-deps`,
 refresh a tracked `Cargo.lock` with `cargo update --workspace`, order publishes
-over normal and build dependencies, decide "published" from the registry's
+over the dependencies that count above, decide "published" from the registry's
 sparse index, and publish with `cargo publish --locked -p <name>` one package at
 a time. A package with `publish = false` SHALL never be published.
 
@@ -168,3 +183,5 @@ registry's documented environment variable.
 
 - **WHEN** `auth` is `oidc` and `ACTIONS_ID_TOKEN_REQUEST_URL` is unset
 - **THEN** `verctl release` exits non-zero before any side effect and names `id-token: write`
+
+[cargo-4242]: https://github.com/rust-lang/cargo/issues/4242
