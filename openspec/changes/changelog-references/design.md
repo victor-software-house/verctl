@@ -21,16 +21,16 @@
    one. Alternative: credit everyone outside a configured list of internal
    logins. Lost: every maintainer would have to be listed in every
    repository, and a missing name credits a maintainer.
-5. **No configuration key in this patch.** `Config` has only public fields
-   and is not `#[non_exhaustive]`, so cargo-semver-checks reports a new
-   field as a breaking change, which a patch cannot carry. Alternative: ship
-   the keys on `next` with 0.4.0. Lost: consumers wait for every reference
-   until 0.4.0 for a toggle no one has asked for.
 4. **Links point at the `origin` remote.** URLs use the repository
    `origin` names, which `actions/checkout` sets. A checkout without a GitHub
    `origin` gets no references. Alternative: `github::repo`, which prefers
    `GITHUB_REPOSITORY`. Lost: a fixture repository without a remote would
    render links in CI and none locally.
+5. **No configuration key in this patch.** `Config` has only public fields
+   and is not `#[non_exhaustive]`, so cargo-semver-checks reports a new
+   field as a breaking change, which a patch cannot carry. Alternative: ship
+   the keys on `next` with 0.4.0. Lost: consumers wait for every reference
+   until 0.4.0 for a toggle no one has asked for.
 
 ## Override and disable
 

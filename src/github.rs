@@ -376,7 +376,7 @@ pub fn upload_release_asset(token: &str, repo: &Repo, tag: &str, tarball: &Path)
 }
 
 /// Who opened a pull request, and how GitHub relates them to the repository.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PullAuthor {
     pub login: String,
     /// GitHub's user `type`: `User` for a person, `Bot` for an app.

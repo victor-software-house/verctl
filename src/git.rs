@@ -99,7 +99,10 @@ pub struct AddedBy {
 /// request number.
 ///
 /// No repository, and a file HEAD does not track, is `None`: a fixture outside
-/// git, or a fragment not committed yet, has no commit to name.
+/// git, or a fragment not committed yet, has no commit to name. A shallow
+/// clone that ends before the adding commit is `None` too: its boundary
+/// commit has a parent it cannot load, and naming the boundary would link the
+/// wrong commit.
 pub fn added_by(root: &Path, path: &Path) -> Result<Option<AddedBy>> {
     let Ok(repo) = Repository::discover(root) else {
         return Ok(None);
@@ -118,11 +121,14 @@ pub fn added_by(root: &Path, path: &Path) -> Result<Option<AddedBy>> {
     walk.simplify_first_parent().context("walk history")?;
     for oid in walk {
         let commit = repo.find_commit(oid.context("walk history")?)?;
-        let in_parent = commit
-            .parent(0)
-            .ok()
-            .and_then(|parent| parent.tree().ok())
-            .is_some_and(|tree| tree.get_path(&rel).is_ok());
+        let in_parent = if commit.parent_count() == 0 {
+            false
+        } else {
+            let Ok(parent) = commit.parent(0) else {
+                return Ok(None);
+            };
+            parent.tree()?.get_path(&rel).is_ok()
+        };
         if !in_parent {
             return Ok(Some(AddedBy {
                 sha: commit.id().to_string(),
