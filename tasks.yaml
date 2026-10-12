@@ -256,21 +256,6 @@ queue:
       - >2-
         2026-10-12 (UTC): the decision also covers whether verctl should verify the ruleset that limits pushes on the proposal branch `verctl/release/<base>` to the release identity, in `check` or a separate command. The release-state-machine design documents that ruleset but does not verify it.
 
-  - id: VER-046
-    title: Declare the lock platforms so mise install leaves the locks unchanged
-    scope: mise
-    outcome: A `mise install` on a supported machine changes no tracked file, so hooks and CI stop rewriting mise.dev.lock.
-    blocked_by: []
-    acceptance:
-      - '`mise.toml` declares `[settings] lockfile_platforms` with the platforms the locks cover.'
-      - The locks change only through `mise lock`; no lock line is edited as text.
-      - With the mise version CI pins, a `mise install` on linux-x64 and on macos-arm64 leaves `mise.lock` and `mise.dev.lock` unchanged.
-    notes:
-      - >2-
-        2026-10-12 (UTC): on mise 2026.10.7 a fresh `mise install` on linux-x64 added cargo-deny 0.20.2 entries for linux-arm64, linux-arm64-musl, linux-x64-musl, macos-x64, and windows-x64 to `mise.dev.lock`, and every local commit hook rewrites the same file. Cause: `mise.dev.lock` records committed for all seven platforms but cargo-deny for only linux-x64 and macos-arm64, and with `lockfile_platforms` unset mise keeps every platform already recorded in the lockfile, so automatic locking fills cargo-deny up to the seven (https://github.com/jdx/mise/blob/4599c53b4286ff101de876f8122feec0797b48b2/settings.toml, the 2026.10.7 docs). Declare the setting, then regenerate each lock whole with `mise lock --platform …` so every tool records the same platforms.
-      - >2-
-        2026-10-12 (UTC): entry order in a mise lock depends on the mise version: with the same two rust entries in config, mise 2026.10.3 writes the nightly entry first and 2026.10.7 the stable entry first, with identical content (run locally on both official binaries). `min_version` sets only a floor, so it cannot hold every machine to one version. Decision: verctl compares a lockfile's parsed entries, never its bytes (release-state-machine design, section 4), and byte-identical locks are expected only from the mise version CI pins.
-
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
@@ -549,6 +534,20 @@ horizon:
         2026-10-12 (UTC): ctl-core 0.6.12 shipped the `baseline` feature (crates.io, rust-version 1.99.0; https://github.com/victor-software-house/ctl-core/releases/tag/v0.6.12). API at fd6c61f (https://github.com/victor-software-house/ctl-core/blob/fd6c61f5b1967888090052b996c22370325b0b31/src/baseline.rs): `baseline::load(root)` reads `.ctl/rust.yaml`; `baseline::render(root, &config)` returns `Rendered { served, owned }`, where `served` holds whole files (rust-toolchain.toml, rustfmt.toml, clippy.toml, deny.toml, lefthook.yml, and Cargo.toml and mise.dev.toml with only their marked block replaced) for `render` and `check` to treat like any other served file, and `owned` lists files the repository keeps, each with a reason, reported as owned rather than drift; `BaselineError` names the file, such as a missing marker. `Config` is serializable, so the served ci.yml template can read `published` and `layout`. Adopting it requires rust-version 1.99.0, `.ctl/rust.yaml`, and the two marker pairs; ctl-core is the worked example (`.ctl/rust.yaml` and `tests/baseline.rs` at fd6c61f).
 
 archive:
+  - id: VER-046
+    title: Declare the lock platforms so mise install leaves the locks unchanged
+    scope: mise
+    outcome: A `mise install` on a supported machine changes no tracked file, so hooks and CI stop rewriting mise.dev.lock.
+    notes:
+      - >2-
+        2026-10-12 (UTC): on mise 2026.10.7 a fresh `mise install` on linux-x64 added cargo-deny 0.20.2 entries for linux-arm64, linux-arm64-musl, linux-x64-musl, macos-x64, and windows-x64 to `mise.dev.lock`, and every local commit hook rewrites the same file. Cause: `mise.dev.lock` records committed for all seven platforms but cargo-deny for only linux-x64 and macos-arm64, and with `lockfile_platforms` unset mise keeps every platform already recorded in the lockfile, so automatic locking fills cargo-deny up to the seven (https://github.com/jdx/mise/blob/4599c53b4286ff101de876f8122feec0797b48b2/settings.toml, the 2026.10.7 docs). Declare the setting, then regenerate each lock whole with `mise lock --platform …` so every tool records the same platforms.
+      - >2-
+        2026-10-12 (UTC): entry order in a mise lock depends on the mise version: with the same two rust entries in config, mise 2026.10.3 writes the nightly entry first and 2026.10.7 the stable entry first, with identical content (run locally on both official binaries). `min_version` sets only a floor, so it cannot hold every machine to one version. Decision: verctl compares a lockfile's parsed entries, never its bytes (release-state-machine design, section 4), and byte-identical locks are expected only from the mise version CI pins.
+    completed: 2026-10-12T04:50:29
+    evidence:
+      - 'https://github.com/victor-software-house/verctl/pull/109: mise.toml declares lockfile_platforms linux-x64 and macos-arm64, and the three locks were regenerated with mise lock on mise 2026.10.3; a fresh linux-x64 mise install left git status clean.'
+    disposition: completed
+
   - id: VER-042
     title: A new package releases 0.0.1 first
     scope: verctl
