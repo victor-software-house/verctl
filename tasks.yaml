@@ -17,17 +17,21 @@ queue:
       versions.
     blocked_by: []
     acceptance:
-      - prepare writes versions + per-package CHANGELOG and consumes fragments.
-      - Version PR is the only version-authority path (CI / --pr).
-      - "`[prepare].after` plus stage globs; unexpected dirty files fail."
-      - publish is overridable recipes; cargo and bun are stock examples.
-      - Lockfile is committed; cargo publish --locked works after bump.
-      - Pretty is ctl-core ColorMode tables; tests use --color never.
-      - Native assets only when [assets] is set; PR CI stays one runner.
-      - Asset jobs are named by target id; cargo/bun inherit stdio.
+      - '`verctl version` writes every manifest, dependent requirement, lockfile, CHANGELOG section, and served file a release changes, removes the consumed fragments, and reports the commands and steps it ran under `after`.'
+      - 'verctl writes no lockfile: `Cargo.lock`, `bun.lock`, and `mise.lock` change only through cargo, bun, and mise, and verctl only reads them to check agreement.'
+      - A Version PR is identified by its head repository, its head branch `verctl/release/<base>`, and its base; `check` also requires its diff to equal the version step applied to its base, and no label is read.
+      - Release state is derived from facts on every run, and a rerun of `verctl release` after a partial failure finishes the release and reports each completed transition as `already`.
+      - Publish precedes the tag, tags land on the release commit in one atomic push, and a Release with assets stays a draft until every asset is uploaded.
+      - Cargo and Bun are built-in providers; a package can replace one block with a step, and another stack can declare a whole ecosystem from steps.
+      - A step is a mise task or an argv that changes only its declared `writes`, and a step that runs after a release declares a `check`.
+      - 'Bun packages publish through `bun pm pack` and verctl''s own npm registry client, with `auth: oidc` and provenance available, and bun-release is archived.'
+      - '`.ctl/ver.yaml` declares each concern in one key, refuses unknown keys at every level, and names the replacement of each removed key.'
+      - Every breaking change shipped in 0.4.0, later work shipped as additive patches, and qctl, forkctl, ctl-core, unixd, and yamled release through 0.4.x.
     notes:
-      - >-
+      - >2-
         Original product goal. Do not name the private release-skill in repo docs. Rust and bun are stock examples, not the architecture. Adopt ctl-core fixture trees (CTC-006) instead of more fs::write + indoc copies. 2026-08-17: status/check/prepare are ColorMode tables; publish proves changelog headings + default-branch history (no commit-subject sniff); GitHub notes come from each package CHANGELOG. Hand-edit guard shipped as VER-012 / PR #9. Still open for archive: lockfile-after-bump (VER-013).
+      - >2-
+        2026-10-12 (UTC): the operator approved all eight decisions of the OpenSpec change release-state-machine as recommended: (1) derive release state from facts on every run, with no state file or labels; (2) release on push to the release branch, then propose; (3) identify the Version PR by head repository, head branch, and base, and verify its content; (4) one Version PR per base on verctl/release/<base>, with no per-package PRs and no version in the branch name; (5) built-in cargo and bun as providers of building blocks, extensions as steps run through mise tasks or argv, declared ecosystems for other stacks; (6) mise installs, verifies, runs steps, and owns mise.lock, and verctl writes no lockfile; (7) bun-release in Rust as option (b), Bun packs and verctl owns the registry protocol; (8) ship 0.4.0 from an integration branch next, then patches. The held plan on feat/011-refresh-lockfile is replaced by that change and deleted unpushed.
 
   - id: VER-015
     title: Asset runners are configuration, not a hardcoded map
@@ -221,6 +225,51 @@ queue:
     notes:
       - >-
         docs/adoption-report.md §6, folded into one row because every item is a paragraph the README does not have. The finalizer one is theirs and they call it ugly: their publish job checks out the release commit, so the code that tags and releases *afterwards* also comes from that checkout, and a fix to the tagging logic that landed since is not present on a retry. They restore four files from origin/main between publish and tag to work around it. verctl mostly dodges this by being one pinned binary — but only if the version resolves from the workflow's config rather than the release commit's, which is the sentence to write.
+
+  - id: VER-043
+    title: Move the GitHub Actions into dedicated repositories
+    scope: verctl
+    outcome: The version-pr, publish, and asset actions each live in a repository of their own, versioned and released on their own, so a consumer pins an action without pinning the CLI repository.
+    blocked_by:
+      - VER-011
+    acceptance:
+      - Each action that the release state machine keeps has its own public repository with a root action.yml and a floating major tag.
+      - This repository no longer holds actions/, and its workflows and every ctl consumer reference the dedicated repositories.
+      - Each action repository releases through verctl.
+    notes:
+      - Follows the VER-011 state machine design, which decides which actions remain and what their inputs are.
+      - Satisfies the open condition of horizon row VER-014, which needs a first-party Action outside this repository.
+
+  - id: VER-044
+    title: Evaluate a dedicated GitHub App for verctl
+    scope: verctl
+    outcome: One decision states whether verctl runs as a dedicated GitHub App, and with which permissions, instead of borrowing a Version PR App token and github.token.
+    blocked_by: []
+    acceptance:
+      - A decision record names the permissions the App would hold, the repositories it would be installed on, and each token it would replace.
+      - An adopted App has a follow-up row for its rollout; a rejected App has its reason recorded on this row.
+      - The decision states which release-state transitions need an identity other than github.token, for example opening a Version PR whose events start CI without approval.
+    notes:
+      - Today the Version PR workflow mints a token from CHANGESET_VERSION_APP_CLIENT_ID and CHANGESET_VERSION_APP_PRIVATE_KEY, and publish tags and releases with github.token.
+      - >2-
+        Related: VER-029, the Version PR label race.
+      - >2-
+        2026-10-12 (UTC): the decision also covers whether verctl should verify the ruleset that limits pushes on the proposal branch `verctl/release/<base>` to the release identity, in `check` or a separate command. The release-state-machine design documents that ruleset but does not verify it.
+
+  - id: VER-046
+    title: Declare the lock platforms so mise install leaves the locks unchanged
+    scope: mise
+    outcome: A `mise install` on a supported machine changes no tracked file, so hooks and CI stop rewriting mise.dev.lock.
+    blocked_by: []
+    acceptance:
+      - '`mise.toml` declares `[settings] lockfile_platforms` with the platforms the locks cover.'
+      - The locks change only through `mise lock`; no lock line is edited as text.
+      - With the mise version CI pins, a `mise install` on linux-x64 and on macos-arm64 leaves `mise.lock` and `mise.dev.lock` unchanged.
+    notes:
+      - >2-
+        2026-10-12 (UTC): on mise 2026.10.7 a fresh `mise install` on linux-x64 added cargo-deny 0.20.2 entries for linux-arm64, linux-arm64-musl, linux-x64-musl, macos-x64, and windows-x64 to `mise.dev.lock`, and every local commit hook rewrites the same file. Cause: `mise.dev.lock` records committed for all seven platforms but cargo-deny for only linux-x64 and macos-arm64, and with `lockfile_platforms` unset mise keeps every platform already recorded in the lockfile, so automatic locking fills cargo-deny up to the seven (https://github.com/jdx/mise/blob/4599c53b4286ff101de876f8122feec0797b48b2/settings.toml, the 2026.10.7 docs). Declare the setting, then regenerate each lock whole with `mise lock --platform …` so every tool records the same platforms.
+      - >2-
+        2026-10-12 (UTC): entry order in a mise lock depends on the mise version: with the same two rust entries in config, mise 2026.10.3 writes the nightly entry first and 2026.10.7 the stable entry first, with identical content (run locally on both official binaries). `min_version` sets only a floor, so it cannot hold every machine to one version. Decision: verctl compares a lockfile's parsed entries, never its bytes (release-state-machine design, section 4), and byte-identical locks are expected only from the mise version CI pins.
 
 horizon:
   - id: VER-038
@@ -482,6 +531,22 @@ horizon:
       and how much of the answer belongs in ctl-core so all three CLIs
       share it (VER-022). Deliverable is a short written standard in
       ctl-core plus a list of what to change here, not a rewrite.
+
+  - id: VER-045
+    title: Serve the shared Rust baseline through verctl
+    scope: verctl
+    outcome: 'The shared Rust baseline that ctl-core renders reaches each Rust repository through verctl''s Served files block: `verctl render` writes it and `verctl check` reports its drift.'
+    kind: deferred
+    open: 'Paused by the operator: rendering files outside versioning is outside verctl''s scope unless a more general shared mechanism exists. Waits on the ctl-core side''s discovery of such a mechanism (a templating tool, a mise plugin, or a crates monorepo).'
+    notes:
+      - >2-
+        2026-10-12 (UTC): the operator paused this row. verctl does not render the Rust baseline files for now, because writing templates outside versioning is outside verctl's scope unless a more general shared mechanism exists. The ctl-core side is writing a discovery document first, and the standard Rust mise tasks ship separately as a mise remote task include from ctl-core. ctl-core's `baseline` feature stays in 0.6.12 meanwhile. Do not start this row until that discovery names a mechanism and the operator resumes it.
+      - >2-
+        2026-10-12 (UTC): the operator decided the shared Rust baseline joins verctl's Served files block. There is no `ver baseline` subcommand: `verctl render` writes the baseline files and `verctl check` reports their drift, in the same report and JSON as other served files, with one non-zero exit and one line per drifted file. ctl-core's `baseline` feature returns plain `ctl_core::served::Served` values plus marked-block entries, read from `.ctl/rust.yaml`, whose schema ctl-core owns. A marked block in `Cargo.toml` holds only `[lints.*]` or `[workspace.lints.*]` tables, never the keys the version step writes. When the baseline changes the rust entries in a mise config, the lock for that environment is regenerated whole with `mise lock --platform …`, never edited as text; the ctl-core side reports that a per-tool `mise lock rust` left a stale entry when the entry changed shape, not yet reproduced here. Default timing is a patch after 0.4.0, since it adds a source to an existing block.
+      - >2-
+        2026-10-12 (UTC): agreed with the ctl-core side: verctl owns the served `.github/workflows/ci.yml`, and the baseline renders no workflow. The Rust steps it carries are those of ctl-core ci.yml at 02941ff (https://github.com/victor-software-house/ctl-core/blob/02941ff7bd0d1d7adf9fb07db59599ecf3da66f0/.github/workflows/ci.yml): env `MISE_ENV: dev,ci` and `CARGO_TERM_COLOR: always`; checkout with `persist-credentials: false`; `jdx/mise-action` at the pinned mise with `cache: true`, before `jdx/mr-boxington-action`, because the mbx cache key hashes the rustc on PATH; then `mise run verify` and `mise run deny:advisories`; and, for a published library only, `mise run semver` and `mise x -- cargo package --locked --all-features`. The repository kind and published flag come from `.ctl/rust.yaml`.
+      - >2-
+        2026-10-12 (UTC): ctl-core 0.6.12 shipped the `baseline` feature (crates.io, rust-version 1.99.0; https://github.com/victor-software-house/ctl-core/releases/tag/v0.6.12). API at fd6c61f (https://github.com/victor-software-house/ctl-core/blob/fd6c61f5b1967888090052b996c22370325b0b31/src/baseline.rs): `baseline::load(root)` reads `.ctl/rust.yaml`; `baseline::render(root, &config)` returns `Rendered { served, owned }`, where `served` holds whole files (rust-toolchain.toml, rustfmt.toml, clippy.toml, deny.toml, lefthook.yml, and Cargo.toml and mise.dev.toml with only their marked block replaced) for `render` and `check` to treat like any other served file, and `owned` lists files the repository keeps, each with a reason, reported as owned rather than drift; `BaselineError` names the file, such as a missing marker. `Config` is serializable, so the served ci.yml template can read `published` and `layout`. Adopting it requires rust-version 1.99.0, `.ctl/rust.yaml`, and the two marker pairs; ctl-core is the worked example (`.ctl/rust.yaml` and `tests/baseline.rs` at fd6c61f).
 
 archive:
   - id: VER-042
