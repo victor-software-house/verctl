@@ -26,8 +26,10 @@ queue:
       - Native assets only when [assets] is set; PR CI stays one runner.
       - Asset jobs are named by target id; cargo/bun inherit stdio.
     notes:
-      - >-
+      - >2-
         Original product goal. Do not name the private release-skill in repo docs. Rust and bun are stock examples, not the architecture. Adopt ctl-core fixture trees (CTC-006) instead of more fs::write + indoc copies. 2026-08-17: status/check/prepare are ColorMode tables; publish proves changelog headings + default-branch history (no commit-subject sniff); GitHub notes come from each package CHANGELOG. Hand-edit guard shipped as VER-012 / PR #9. Still open for archive: lockfile-after-bump (VER-013).
+      - >2-
+        2026-10-12 (UTC): the operator approved all eight decisions of the OpenSpec change release-state-machine as recommended: (1) derive release state from facts on every run, with no state file or labels; (2) release on push to the release branch, then propose; (3) identify the Version PR by head repository, head branch, and base, and verify its content; (4) one Version PR per base on verctl/release/<base>, with no per-package PRs and no version in the branch name; (5) built-in cargo and bun as providers of building blocks, extensions as steps run through mise tasks or argv, declared ecosystems for other stacks; (6) mise installs, verifies, runs steps, and owns mise.lock, and verctl writes no lockfile; (7) bun-release in Rust as option (b), Bun packs and verctl owns the registry protocol; (8) ship 0.4.0 from an integration branch next, then patches. The held plan on feat/011-refresh-lockfile is replaced by that change and deleted unpushed.
 
   - id: VER-015
     title: Asset runners are configuration, not a hardcoded map
