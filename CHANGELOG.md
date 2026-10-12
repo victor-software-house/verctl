@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.3.15
+
+- Each changelog entry now links the pull request that merged its fragment, read from the trailing `(#N)` of the squash commit that added it, or that commit when the subject names none. No entry carries an author byline. ([#117](https://github.com/victor-software-house/verctl/pull/117)).
+
 ## verctl 0.3.14
 
 - Raise `rust-version` to 1.99.0, the pinned stable the shared template builds, lints, and tests on. A build with an older compiler stays on the previous release.
