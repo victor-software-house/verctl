@@ -222,6 +222,21 @@ queue:
       - >-
         docs/adoption-report.md §6, folded into one row because every item is a paragraph the README does not have. The finalizer one is theirs and they call it ugly: their publish job checks out the release commit, so the code that tags and releases *afterwards* also comes from that checkout, and a fix to the tagging logic that landed since is not present on a retry. They restore four files from origin/main between publish and tag to work around it. verctl mostly dodges this by being one pinned binary — but only if the version resolves from the workflow's config rather than the release commit's, which is the sentence to write.
 
+  - id: VER-043
+    title: Drop the commit-hook warm-up for remote mise tasks
+    scope: lefthook
+    outcome: 'Commit hooks run remote mise tasks without a warm-up step again, because mise no longer lets git hook state reach the clone of a git:: include.'
+    blocked_by: []
+    acceptance:
+      - A mise release includes jdx/mise#14316.
+      - min_version in mise.toml and mise.dev.toml is at least that release.
+      - lefthook.yml has no warm-remote-tasks command and no TODO naming this row.
+    links:
+      - https://github.com/jdx/mise/pull/14316
+    notes:
+      - >2-
+        On mise 2026.10.7, the first fetch of a git:: task include inside pre-commit or commit-msg writes the include repository index into GIT_INDEX_FILE, and git status then fails with "unable to read <object>". The warm-up fetches the includes with GIT_INDEX_FILE unset before any other hook command.
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
