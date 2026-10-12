@@ -295,18 +295,6 @@ queue:
       - >2-
         Follow-up (2026-10-12): the author lookup credited the owner on Version PR #118, so it is removed and no entry carries a byline; VER-054 adds the explicit list on next.
 
-  - id: VER-055
-    title: Link the pull request that added a fragment, not the merge that brought it
-    scope: release
-    outcome: A changelog entry links the pull request that added its fragment, even when a merge commit brought it to the default branch.
-    blocked_by: []
-    acceptance:
-      - An entry whose fragment reached main through a merge commit links the pull request that added it on the merged branch.
-      - A squash-merged fragment still links its own pull request.
-    notes:
-      - >2-
-        In 0.4.0 both entries linked #126, the pull request that merged next into main, instead of #122 and #123: origins walks first-parent history, and the first commit that adds the file on that path is the merge.
-
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
@@ -593,7 +581,29 @@ horizon:
     notes:
       - yamled already makes format-preserving YAML edits; verctl adds no other YAML parser. Drivers parse only toml and json today.
 
+  - id: VER-056
+    title: Link pull requests from the default merge-commit subject
+    scope: release
+    outcome: A repository that merges with GitHub merge commits gets pull request links in its changelog.
+    kind: evaluation
+    open: 'No consumer merges with the default "Merge pull request #N from owner/branch" subject yet; every ctl repository squash-merges.'
+    notes:
+      - >2-
+        Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.
+
 archive:
+  - id: VER-055
+    title: Link the pull request that added a fragment, not the merge that brought it
+    scope: release
+    outcome: A changelog entry links the pull request that added its fragment, even when a merge commit brought it to the default branch.
+    notes:
+      - >2-
+        In 0.4.0 both entries linked #126, the pull request that merged next into main, instead of #122 and #123: origins walks first-parent history, and the first commit that adds the file on that path is the merge.
+    completed: 2026-10-12T14:47:14
+    evidence:
+      - 'Shipped in verctl 0.4.1 (#130, released by #131): an entry whose fragment arrived through a merge links the pull request that added it on the merged branch, and a merge titled with its pull request keeps that link when the branch commit names none.'
+    disposition: completed
+
   - id: VER-054
     title: List the maintainers a changelog never credits, in 0.4.0
     scope: src/config.rs (Config and its nested structs), src/release.rs origins, src/github.rs, the operator docs; on next
