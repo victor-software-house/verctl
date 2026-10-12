@@ -80,7 +80,8 @@ needs `changelog.internal_authors`, which arrives in 0.4.0. GitHub's
 Version PR reads a private organization member as `CONTRIBUTOR`.
 
 Context: `summary`, `pull_request`, `commit`, `continuations`,
-`summary_has_terminal`, `dependencies`.
+`summary_body` (the summary without one trailing period, for an entry
+that ends with a reference), `summary_has_terminal`, `dependencies`.
 
 ## Version PR
 
