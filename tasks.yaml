@@ -256,19 +256,38 @@ queue:
       - >2-
         2026-10-12 (UTC): the decision also covers whether verctl should verify the ruleset that limits pushes on the proposal branch `verctl/release/<base>` to the release identity, in `check` or a separate command. The release-state-machine design documents that ruleset but does not verify it.
 
-  - id: VER-047
-    title: Merge the Version PR automatically once required checks pass
-    scope: actions
-    outcome: A repository can opt in so its Version PR merges itself when the default branch's required checks pass, with no manual merge per release.
+  - id: VER-048
+    title: Take the shared Rust setup from the Copier template
+    scope: .copier-answers.yml at templates v0.0.5, the files the template renders, mise.toml, mise-tasks/, the workflows, and every mise lock
+    outcome: verctl renders its repository setup from the shared template, builds on the pinned stable 1.99.0, runs the shared task catalog, and arms its git hooks on mise install.
     blocked_by: []
     acceptance:
-      - '`actions/version-pr` has an `auto-merge` input, off by default, that enables GitHub auto-merge on the open Version PR with a squash whose subject is the PR title and number and whose body is the PR description.'
-      - 'With `auto-merge: true`, the action fails before enabling anything when the base branch has no required status check.'
-      - 'verctl, qctl, forkctl, ctl-core, unixd, and yamled require their CI checks on main and run the Version PR with `auto-merge: true`.'
-      - 'With `auto-merge: true`, the action fails before writing anything when `token` is the default `GITHUB_TOKEN`.'
+      - .copier-answers.yml records v0.0.5, and the rendered files come from the template.
+      - mise.toml pins stable 1.99.0 with the formatting nightly; rust-version and rust-toolchain.toml match; src/ is formatted under the template rustfmt.toml in its own commit.
+      - verify runs the ctl-core catalog with check:features and check:repo, and check:repo runs workflow policy, the version guard, and pending fragments.
+      - On a fresh clone, mise install arms the hooks and leaves every lock unchanged; verify, semver, and pre-push pass.
+
+  - id: VER-049
+    title: Deny missing_docs and missing_debug_implementations
+    scope: src/
+    outcome: verctl takes the template full lint set; every public item has a doc and a Debug implementation.
+    blocked_by:
+      - VER-048
+    acceptance:
+      - Cargo.toml drops the local edit that leaves missing_docs and missing_debug_implementations off.
+      - mise run verify passes with both denied.
+
+  - id: VER-050
+    title: Replace git2 with gix so the openssl ban applies
+    scope: git2 call sites, Cargo.toml, deny.toml
+    outcome: verctl builds with no OpenSSL, and deny.toml takes the template openssl and native-tls bans.
+    blocked_by:
+      - VER-048
+    acceptance:
+      - Cargo.toml has no git2 dependency, and no crate in the graph depends on openssl or native-tls.
+      - deny.toml drops the local edit, so the template bans apply and mise run verify passes.
     notes:
-      - >2-
-        2026-10-12 (UTC): 13 Version PRs were merged by hand across the six ctl repositories in the seven days before, each with one commit and green checks. All six allow auto-merge. None had a required status check on main, and the forkctl and unixd Version PRs ran no CI because they opened with the default token.
+      - git2 builds with vendored OpenSSL (features https, vendored-libgit2, vendored-openssl), which needs Perl on every build machine. gix covers clone, fetch, commit, and push over HTTPS with rustls; the shared Rust guidance prefers it where it covers the operation.
 
 horizon:
   - id: VER-038
@@ -548,6 +567,18 @@ horizon:
         2026-10-12 (UTC): ctl-core 0.6.12 shipped the `baseline` feature (crates.io, rust-version 1.99.0; https://github.com/victor-software-house/ctl-core/releases/tag/v0.6.12). API at fd6c61f (https://github.com/victor-software-house/ctl-core/blob/fd6c61f5b1967888090052b996c22370325b0b31/src/baseline.rs): `baseline::load(root)` reads `.ctl/rust.yaml`; `baseline::render(root, &config)` returns `Rendered { served, owned }`, where `served` holds whole files (rust-toolchain.toml, rustfmt.toml, clippy.toml, deny.toml, lefthook.yml, and Cargo.toml and mise.dev.toml with only their marked block replaced) for `render` and `check` to treat like any other served file, and `owned` lists files the repository keeps, each with a reason, reported as owned rather than drift; `BaselineError` names the file, such as a missing marker. `Config` is serializable, so the served ci.yml template can read `published` and `layout`. Adopting it requires rust-version 1.99.0, `.ctl/rust.yaml`, and the two marker pairs; ctl-core is the worked example (`.ctl/rust.yaml` and `tests/baseline.rs` at fd6c61f).
 
 archive:
+  - id: VER-047
+    title: Merge the Version PR automatically once required checks pass
+    scope: actions
+    outcome: A repository can opt in so its Version PR merges itself when the default branch's required checks pass, with no manual merge per release.
+    notes:
+      - >2-
+        2026-10-12 (UTC): 13 Version PRs were merged by hand across the six ctl repositories in the seven days before, each with one commit and green checks. All six allow auto-merge. None had a required status check on main, and the forkctl and unixd Version PRs ran no CI because they opened with the default token.
+    completed: 2026-10-12T06:04:02
+    evidence:
+      - 'Shipped in #110 (verctl 0.3.13). Version PR #111 had auto-merge enabled by the action and merged itself after Plan and verify passed, and publish released 0.3.13. Rulesets require CI on main in the six repos, and qctl #98, forkctl #91, ctl-core #106, unixd #28, and yamled #25 set auto-merge.'
+    disposition: completed
+
   - id: VER-046
     title: Declare the lock platforms so mise install leaves the locks unchanged
     scope: mise

@@ -130,12 +130,24 @@ CHANGELOG. `prepare --pr` is the Version PR. `verctl check --versions`
 compares each manifest to the merge-base of HEAD and the default
 branch. Exempt on `version-packages` locally, or when the GitHub
 event has the Version PR label (`verctl:version`). CI does not skip.
-mise: `mise.toml` is shared settings only. `mise.dev.toml` is rust
-(through mr-boxington, whose store CI restores with its action),
-cargo-deny, and `cargo run`. `verify` composes toolchain pins,
-format, clippy, workflow policy, tests, cargo-deny, and the version
-guard with `depends`. `mise.release.toml` is the published tarball.
-`.miserc.toml` defaults local `MISE_ENV` to `dev`. `prepare`
+mise: the repository setup comes from the shared Copier template
+(kind `rust-crate`, layout `crate`); `.copier-answers.yml` records its
+tag and answers. Take a new tag with `copier update --defaults` and
+check `git diff --check` before committing; the CI job `Template`
+fails when a newer tag exists. Two local edits survive updates:
+`Cargo.toml` leaves `missing_docs` and
+`missing_debug_implementations` off until VER-049, and `deny.toml`
+lifts the openssl and native-tls bans until VER-050 replaces git2.
+`mise.toml` pins stable 1.99.0 (through mr-boxington, whose store CI
+restores with its action) and the formatting nightly;
+`rust-toolchain.toml` and `rust-version` match. `verify` comes from
+ctl-core's `tasks/rust.toml`; `check:repo` adds workflow policy, the
+version guard, and pending fragments, and this repo's tasks live in
+`mise-tasks/`. CI adds `deny:advisories` and `semver`.
+`mise.dev.toml` holds only the hook tools and arms the git hooks on
+`mise install`. CI and the release lanes run `MISE_ENV=ci`.
+`mise.release.toml` is the published tarball. `.miserc.toml`
+defaults local `MISE_ENV` to `dev`. `prepare`
 rewrites `pins` onto the Version PR commit, because the tag names
 that commit and publish pushes nothing but the tag. This repo's own
 bootstrap pin in `mise.release.toml` is deliberately not a `pins`

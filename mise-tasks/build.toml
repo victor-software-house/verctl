@@ -1,0 +1,1 @@
+"build" = { description = "Build the release binary", run = "cargo build --release" }

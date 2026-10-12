@@ -1,0 +1,24 @@
+# Changes here will be overwritten by Copier; edit with `copier update --data`.
+_commit: v0.0.5
+_src_path: https://github.com/victor-software-house/templates.git
+clippy_disallowed_methods: []
+clippy_disallowed_types: []
+deny_bans: []
+deny_ignore:
+-   id: RUSTSEC-2023-0071
+    reason: 'rsa code is linked but never run: verctl signs no JWT. octocrab requires
+        a JWT backend, and the other one builds aws-lc with C and cmake. Remove when
+        rsa ships a fix or octocrab no longer requires it.'
+deny_licenses:
+-   license: BSD-3-Clause
+    reason: subtle, curve25519-dalek, ed25519-dalek (octocrab's JWT signing), encoding_rs,
+        and simple_asn1
+-   license: ISC
+    reason: ring, untrusted, and rustls-webpki (octocrab's TLS)
+deny_skip: []
+feature_sets: []
+kind: rust-crate
+layout: crate
+nightly_fmt: true
+published: true
+tokio: true
