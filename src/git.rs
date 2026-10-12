@@ -93,10 +93,13 @@ pub struct AddedBy {
     pub subject: String,
 }
 
-/// The first-parent commit that added `path`: the newest commit on HEAD's
-/// first-parent history whose tree has the file and whose first parent's tree
-/// does not. A squash merge is that commit, and its subject carries the pull
-/// request number.
+/// The commit that added `path`: the newest commit on HEAD's first-parent
+/// history whose tree has the file and whose first parent's tree does not. A
+/// squash merge is that commit, and its subject carries the pull request
+/// number. When that commit is a merge and another parent already has the
+/// file, the file arrived with the merged branch, so the walk continues down
+/// that parent's first-parent history: a fragment merged from `next` links the
+/// pull request that added it there, not the merge.
 ///
 /// No repository, and a file HEAD does not track, is `None`: a fixture outside
 /// git, or a fragment not committed yet, has no commit to name. A shallow
@@ -117,31 +120,30 @@ pub fn added_by(root: &Path, path: &Path) -> Result<Option<AddedBy>> {
     if head.tree()?.get_path(&rel).is_err() {
         return Ok(None);
     }
-    let mut walk = repo.revwalk().context("walk history")?;
-    walk.push(head.id()).context("walk history")?;
-    walk.simplify_first_parent().context("walk history")?;
-    for oid in walk {
-        let commit = repo.find_commit(oid.context("walk history")?)?;
-        let in_parent = if commit.parent_count() == 0 {
-            if repo.is_shallow() {
-                return Ok(None);
-            }
-            false
-        } else {
-            let Ok(parent) = commit.parent(0) else {
+    let mut commit = head;
+    loop {
+        if commit.parent_count() == 0 && repo.is_shallow() {
+            return Ok(None);
+        }
+        let mut holder = None;
+        for index in 0..commit.parent_count() {
+            let Ok(parent) = commit.parent(index) else {
                 return Ok(None);
             };
-            parent.tree()?.get_path(&rel).is_ok()
-        };
-        if !in_parent {
+            if parent.tree()?.get_path(&rel).is_ok() {
+                holder = Some(parent);
+                break;
+            }
+        }
+        let Some(parent) = holder else {
             return Ok(Some(AddedBy {
                 sha: commit.id().to_string(),
                 subject: String::from_utf8_lossy(commit.summary_bytes().unwrap_or_default())
                     .into_owned(),
             }));
-        }
+        };
+        commit = parent;
     }
-    Ok(None)
 }
 
 #[must_use]
@@ -705,6 +707,52 @@ mod tests {
             added_by(dir.path(), &dir.path().join("fix.md")).unwrap(),
             Some(AddedBy {
                 sha: added.to_string(),
+                subject: "fix: the parser (#12)".into(),
+            })
+        );
+    }
+
+    /// A fragment that reached HEAD through a merge commit names the commit
+    /// that added it on the merged branch, not the merge.
+    #[test]
+    fn added_by_follows_a_merge_to_the_commit_that_added_the_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        std::fs::write(dir.path().join("README"), "start\n").unwrap();
+        let base = commit_all(&repo, "chore: start");
+        std::fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
+        let side = commit_all(&repo, "fix: the parser (#12)");
+        repo.reset(
+            &repo.find_object(base, None).unwrap(),
+            git2::ResetType::Hard,
+            None,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("README"), "later\n").unwrap();
+        let main = commit_all(&repo, "docs: later (#13)");
+        std::fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index
+            .add_all(["."].iter(), git2::IndexAddOption::DEFAULT, None)
+            .unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let sig = Signature::now("t", "t@example.com").unwrap();
+        repo.commit(
+            Some("HEAD"),
+            &sig,
+            &sig,
+            "feat: release next (#14)",
+            &tree,
+            &[
+                &repo.find_commit(main).unwrap(),
+                &repo.find_commit(side).unwrap(),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            added_by(dir.path(), &dir.path().join("fix.md")).unwrap(),
+            Some(AddedBy {
+                sha: side.to_string(),
                 subject: "fix: the parser (#12)".into(),
             })
         );
