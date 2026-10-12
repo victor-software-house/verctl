@@ -119,26 +119,43 @@ enum Origin {
 
 /// Resolve each committed fragment to the commit that added it, and that
 /// commit to the pull request its subject names (`… (#12)`, GitHub's squash
-/// subject). No entry carries a byline: release notes credit no maintainer,
-/// and telling one apart needs `changelog.internal_authors`, which waits for
-/// 0.4.0 because a new `Config` field is a breaking library change.
-pub fn origins(root: &Path, fragments: &[Fragment]) -> Result<Origins> {
+/// subject). With a token, the pull request author is credited when
+/// [`credits`] says so; a failed lookup credits no one, so a maintainer is
+/// never named by accident.
+pub fn origins(
+    root: &Path,
+    token: Option<&str>,
+    changelog: &crate::config::Changelog,
+    fragments: &[Fragment],
+) -> Result<Origins> {
     let Ok(repo) = git::origin_url(root).and_then(|url| github::parse_remote(&url)) else {
         return Ok(Origins::default());
     };
     let base = format!("https://github.com/{}/{}", repo.owner, repo.name);
+    let mut authors: BTreeMap<u64, Option<String>> = BTreeMap::new();
     let mut by_path = BTreeMap::new();
     for fragment in fragments {
         let Some(added) = git::added_by(root, &fragment.path)? else {
             continue;
         };
         let origin = if let Some(number) = pull_request_number(&added.subject) {
+            let credited = authors
+                .entry(number)
+                .or_insert_with(|| {
+                    token
+                        .and_then(|token| github::pull_author(token, &repo, number).ok())
+                        .filter(|author| credits(changelog, author))
+                        .map(|author| author.login)
+                })
+                .clone();
             Origin::PullRequest(PullRequest {
                 number,
                 url: format!("{base}/pull/{number}"),
-                user: None,
-                user_url: None,
-                external_author: false,
+                user_url: credited
+                    .as_ref()
+                    .map(|login| format!("https://github.com/{login}")),
+                external_author: credited.is_some(),
+                user: credited,
             })
         } else {
             Origin::Commit(Commit {
@@ -149,6 +166,15 @@ pub fn origins(root: &Path, fragments: &[Fragment]) -> Result<Origins> {
         by_path.insert(fragment.path.clone(), origin);
     }
     Ok(Origins { by_path })
+}
+
+/// Release notes credit no maintainer: a byline needs a login outside
+/// `changelog.internal_authors`, a person rather than a bot, and a pull request
+/// from a fork. The fork test only narrows the list; it never credits a listed
+/// login.
+#[must_use]
+pub fn credits(changelog: &crate::config::Changelog, author: &github::PullAuthor) -> bool {
+    author.kind == "User" && author.from_fork && !changelog.is_internal(&author.login)
 }
 
 /// The pull request a squash-merge subject names: a trailing `(#12)`.
@@ -394,6 +420,53 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
+
+    fn author(login: &str, kind: &str, from_fork: bool) -> github::PullAuthor {
+        github::PullAuthor {
+            login: login.into(),
+            kind: kind.into(),
+            from_fork,
+        }
+    }
+
+    fn maintainers() -> crate::config::Changelog {
+        crate::config::Changelog {
+            internal_authors: vec!["any-victor".into()],
+        }
+    }
+
+    #[test]
+    fn a_listed_maintainer_on_an_in_repo_branch_is_not_credited() {
+        assert!(!credits(
+            &maintainers(),
+            &author("any-victor", "User", false)
+        ));
+    }
+
+    #[test]
+    fn a_listed_maintainer_from_a_fork_is_not_credited() {
+        assert!(!credits(
+            &maintainers(),
+            &author("any-victor", "User", true)
+        ));
+        assert!(!credits(
+            &maintainers(),
+            &author("Any-Victor", "User", true)
+        ));
+    }
+
+    #[test]
+    fn an_outside_contributor_from_a_fork_is_credited() {
+        assert!(credits(&maintainers(), &author("octo", "User", true)));
+    }
+
+    #[test]
+    fn a_bot_is_not_credited() {
+        assert!(!credits(
+            &maintainers(),
+            &author("renovate[bot]", "Bot", true)
+        ));
+    }
 
     #[test]
     fn a_squash_subject_names_its_pull_request() {

@@ -37,6 +37,7 @@ impl CommandField {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[non_exhaustive]
 pub struct DriverSpec {
     pub format: Option<String>,
     pub keys: Option<Vec<String>>,
@@ -102,6 +103,7 @@ impl DriverSpec {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[non_exhaustive]
 pub struct PackageSpec {
     pub name: String,
     pub path: PathBuf,
@@ -161,6 +163,7 @@ impl PackageSpec {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq, Validate)]
 #[serde(deny_unknown_fields)]
 #[garde(context(Config))]
+#[non_exhaustive]
 pub struct Runner {
     /// Every label at once. A machine with none cannot be found at all.
     #[garde(custom(at_least_one("label")))]
@@ -172,6 +175,7 @@ pub struct Runner {
 /// `triple`: validation runs a machine's checks, it does not cross-compile.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct Job {
     pub runners: Option<Vec<String>>,
 }
@@ -179,6 +183,7 @@ pub struct Job {
 /// Native GitHub Release tarballs, plus the recipe every target shares. Omit
 /// for libraries. Each named sub-mapping is one target.
 #[derive(Debug, Clone, Deserialize, Default)]
+#[non_exhaustive]
 pub struct Assets {
     pub bin: Option<String>,
     /// Ran once per target before `build`. Stock rust recipe uses rustup.
@@ -197,6 +202,7 @@ pub struct Assets {
 /// builds it. One tarball, one machine — so `runner` is not a list.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct AssetTarget {
     pub runner: Option<String>,
     pub os: Option<String>,
@@ -216,6 +222,7 @@ pub struct AssetTarget {
 #[serde(deny_unknown_fields)]
 #[garde(context(Self as config))]
 #[garde(allow_unvalidated)]
+#[non_exhaustive]
 pub struct Config {
     #[serde(default)]
     pub drivers: BTreeMap<String, DriverSpec>,
@@ -236,6 +243,9 @@ pub struct Config {
     pub ci: BTreeMap<String, Job>,
     #[serde(default)]
     pub prepare: Prepare,
+    /// Whose names changelog entries never credit. Omit to list no one.
+    #[serde(default)]
+    pub changelog: Changelog,
     /// Where served-file templates live. Omit for the convention.
     #[serde(default)]
     #[garde(dive)]
@@ -301,6 +311,7 @@ fn every_pattern_is_listed(
 #[derive(Debug, Clone, Deserialize, Validate)]
 #[garde(context(Config as config))]
 #[garde(allow_unvalidated)]
+#[non_exhaustive]
 pub struct Pin {
     #[garde(custom(inside_the_repo))]
     pub file: PathBuf,
@@ -393,6 +404,7 @@ pub const NAME_PLACEHOLDER: &str = "{name}";
 #[derive(Debug, Clone, Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
 #[garde(context(Config))]
+#[non_exhaustive]
 pub struct Tags {
     /// Literal text with `{version}` and optionally `{name}`. Defaults to
     /// `v{version}`, so a repo that writes nothing keeps today's behaviour.
@@ -496,6 +508,7 @@ fn tag_template_placeholders(template: &str, _: &Config) -> garde::Result {
 #[derive(Debug, Clone, Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
 #[garde(context(Config))]
+#[non_exhaustive]
 pub struct Templates {
     /// The directory every template lives in, flat. Each one declares its own
     /// target, so nothing sits beside the file it generates.
@@ -531,6 +544,7 @@ impl Default for Templates {
 
 /// One version spelling in a file, and how often the file may say it.
 #[derive(Debug, Clone, Deserialize)]
+#[non_exhaustive]
 pub struct PinPattern {
     /// The text around a version, `{version}` where the version is. Literal,
     /// not a regex, so nothing about the file's format is assumed. Exactly one
@@ -649,8 +663,33 @@ impl fmt::Display for Occurrences {
     }
 }
 
+/// Whose names changelog entries never credit. Release notes credit no
+/// maintainer, and only this list says who one is: GitHub's
+/// `author_association` reads a private organization member as `CONTRIBUTOR`
+/// through an App token.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[non_exhaustive]
+pub struct Changelog {
+    /// GitHub logins never credited: maintainers and the Apps that open pull
+    /// requests. Omit to list no one.
+    #[serde(default)]
+    pub internal_authors: Vec<String>,
+}
+
+impl Changelog {
+    /// Whether `login` is listed, ignoring case as GitHub logins do.
+    #[must_use]
+    pub fn is_internal(&self, login: &str) -> bool {
+        self.internal_authors
+            .iter()
+            .any(|listed| listed.eq_ignore_ascii_case(login))
+    }
+}
+
 /// Extra work after version bumps, committed on the Version PR.
 #[derive(Debug, Clone, Deserialize, Default)]
+#[non_exhaustive]
 pub struct Prepare {
     /// argv after all bumps (e.g. `["mise", "run", "version-sync"]`).
     pub after: Option<Vec<String>>,

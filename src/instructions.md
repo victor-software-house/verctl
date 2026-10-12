@@ -73,9 +73,12 @@ in Rust beyond a typed context.
 Each entry links where its fragment came from: the pull request a
 trailing `(#N)` names in the subject of the first-parent commit that
 added the fragment, else that commit. Links use the `origin` remote; a
-checkout without a GitHub `origin` writes bare entries. No entry carries
-a byline: release notes credit no maintainer, and naming who is one
-needs `changelog.internal_authors`, which arrives in 0.4.0. GitHub's
+checkout without a GitHub `origin` writes bare entries. Release notes
+credit no maintainer: list maintainers and the Apps that open pull
+requests in `changelog.internal_authors` in `.ctl/ver.yaml`. With a
+token, an entry credits its pull request author only when the login is
+not listed, the author is a person (`type` `User`), and the pull request
+comes from a fork; without a token no one is credited. GitHub's
 `author_association` cannot decide it, because the App token behind a
 Version PR reads a private organization member as `CONTRIBUTOR`.
 
