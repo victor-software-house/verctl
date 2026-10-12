@@ -253,6 +253,8 @@ queue:
       - Today the Version PR workflow mints a token from CHANGESET_VERSION_APP_CLIENT_ID and CHANGESET_VERSION_APP_PRIVATE_KEY, and publish tags and releases with github.token.
       - >2-
         Related: VER-029, the Version PR label race.
+      - >2-
+        2026-10-12 (UTC): the decision also covers whether verctl should verify the ruleset that limits pushes on the proposal branch `verctl/release/<base>` to the release identity, in `check` or a separate command. The release-state-machine design documents that ruleset but does not verify it.
 
   - id: VER-046
     title: Declare the lock platforms so mise install leaves the locks unchanged

@@ -88,8 +88,9 @@ SHALL refuse to load a configuration in which such dependencies form a cycle,
 because cargo cannot publish crates with cyclic versioned development
 dependencies ([rust-lang/cargo#4242][cargo-4242]). For bun, a cycle SHALL NOT
 be refused, because the npm registry does not require a dependency to exist
-first; the members of a cycle publish in the order `packages` lists them in
-`.ctl/ver.yaml`.
+first. Outside a cycle, publishes follow dependency order whatever order
+`packages` lists; among the members of a bun cycle, they follow the order
+`packages` lists them in `.ctl/ver.yaml`.
 
 #### Scenario: A published crate depends on a tool crate
 

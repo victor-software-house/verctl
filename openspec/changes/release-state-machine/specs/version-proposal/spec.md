@@ -79,7 +79,9 @@ release is short of `released`.
 
 `verctl check` SHALL compare HEAD with its merge-base on `branch`. A pull
 request that is not a Version PR SHALL fail when it changes a manifest version
-or adds a CHANGELOG section; it may add or remove fragments. A Version PR
+or adds a CHANGELOG section; it may add or remove fragments. Any pull request
+that changes whether a package publishes SHALL fail unless it adds a fragment
+for that package. A Version PR
 SHALL fail when it changes any path outside what the version step writes:
 manifests, lockfiles, CHANGELOGs, served files, consumed fragments, and the
 declared `writes` of `version` steps, with the write set read from the
@@ -104,6 +106,11 @@ on HEAD. `check` SHALL constrain only which paths a `version` step's declared
 
 - **WHEN** the Version PR also changes `src/main.rs`
 - **THEN** `verctl check` exits non-zero and names `src/main.rs`
+
+#### Scenario: Publishing turned on without a fragment
+
+- **WHEN** a pull request removes `publish = false` from crate `xtask` and adds no fragment for `xtask`
+- **THEN** `verctl check` exits non-zero and names `xtask` and the missing fragment
 
 #### Scenario: The Version PR on its first CI run
 

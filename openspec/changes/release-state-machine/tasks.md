@@ -33,7 +33,7 @@ Section 6 is patches after it.
 
 - [ ] 4.1 The final schema: every removed key refused with its replacement, every struct refusing unknown keys, every name resolved at load; proof: the release-config scenarios pass
 - [ ] 4.2 `templates.rs` renders through `ctl_core::served`, with the `tags` map and the mount line in the context, after telling the session that owns CTC-008; `render` replaces `pin`; operator docs and example workflows are served templates; proof: served bytes are identical before and after for every template in this repository and qctl, and `check` fails on a hand-edited served file
-- [ ] 4.3 AGENTS.md, README.md, `src/instructions.md`, the operator skill, and `docs/served-files.md` describe only 0.4.0; proof: `cargo test operator_docs` passes and no document names a removed key or command
+- [ ] 4.3 AGENTS.md, README.md, `src/instructions.md`, the operator skill, and `docs/served-files.md` describe only 0.4.0, and the instructions and the operator skill state that whether a release publishes is read at its release commit, so a later `publish = false` does not cancel a merged version; proof: `cargo test operator_docs` passes and no document names a removed key or command
 
 ## 5. Release 0.4.0
 

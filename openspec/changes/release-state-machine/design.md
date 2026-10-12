@@ -91,7 +91,8 @@ The `conflict` stage stops every transition for a package until an operator
 resolves it. It is entered when a tag peels to a commit other than `R(p, v)`,
 or when a dependency that `p`'s published manifest keeps has a current release
 that does not publish, so `publish` could never proceed. verctl never waits on
-a fact that cannot arrive.
+a fact that cannot arrive. The fragment rule in 2.2 keeps the second case from
+arising through pull requests that pass `check`.
 
 A package does not publish when it declares `publish = false` or
 `"private": true`, or uses a declared ecosystem with no publish block. Whether
@@ -115,8 +116,8 @@ otherwise.
 
 | Transition | Guard | Effect | Postcondition, checked after |
 |:--|:--|:--|:--|
-| `propose` | no package's current release is short of `released` (a current release that does not publish and declares no assets is `released` at `merged`); a fragment is pending | run the version step on a tree at the release branch tip, commit it on the proposal branch, open or update the Version PR | the proposal branch passes `check` |
-| `propose` (close) | no fragment is pending and a Version PR is open | close it with a comment naming why | no Version PR is open |
+| `propose` | no open pull request on the proposal branch has a base other than `<base>`, checked before the version step runs; no package's current release is short of `released` (a current release that does not publish and declares no assets is `released` at `merged`); a fragment is pending | run the version step on a tree at the release branch tip, commit it on the proposal branch, open or update the Version PR | the proposal branch passes `check` |
+| `propose` (close) | no fragment is pending and a Version PR is open; a retargeted pull request is reported, never closed | close it with a comment naming why | no Version PR is open |
 | `publish` | HEAD is `R(p, v)`; every workspace dependency that `p`'s published manifest keeps and that the publish order puts before `p` is published (the load refuses a publishing package that depends that way on a package that does not publish); the `verify` steps pass; the registry does not list `p@v` | the package's publish block runs | the registry lists `p@v` |
 | `tag` | every publishing package the tag names is published | create the tags at `R(p, v)` and push all ready tags in one atomic push | each remote tag peels to `R(p, v)` |
 | `release` | the tag exists | create the GitHub Release as a draft when assets are declared, otherwise published; if one exists, update its body | the Release exists with the CHANGELOG section as its body |
@@ -167,7 +168,9 @@ payload. Title, body, and labels are never read.
 
 1. **Identity.** Only a pull request that is a Version PR by 2.1 may change a
    manifest version or add a CHANGELOG section. Any pull request may add or
-   remove a fragment.
+   remove a fragment. A pull request that changes whether a package publishes
+   must also add a fragment for that package, so the next Version PR moves it,
+   together with its dependents, to a version that follows the new setting.
 2. **Content.** A Version PR's diff must be the version step applied to its
    base and nothing else: it changes no path outside what the version step
    writes (manifests, lockfiles, CHANGELOGs, served files, consumed fragments,
@@ -191,7 +194,8 @@ Identity alone trusts whoever pushes to the proposal branch. Content alone
 lets any branch carry a release. Together, a hand edit fails on any branch,
 and the Version PR passes on its first CI run with no label. A repository can
 also protect the proposal branch with a ruleset so only the release identity
-pushes to it.
+pushes to it; `check` does not verify that ruleset, and VER-044 decides that
+identity and whether verctl should.
 
 Alternatives considered:
 
