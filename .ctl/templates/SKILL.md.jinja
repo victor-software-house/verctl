@@ -28,8 +28,8 @@ suppresses only successful human output.
 
 Fragments are `.changeset/*.md` with YAML fences (quoted or unquoted
 keys). Changelog Markdown is rendered with minijinja. Each entry links
-the pull request or commit that added its fragment, and credits only an
-outside contributor who is a person, never in template branches. Consumers use
+the pull request or commit that added its fragment, with no author
+byline until `changelog.internal_authors` arrives in 0.4.0. Consumers use
 `victor-software-house/verctl/actions/version-pr`, not changesets/action.
 Do not assemble changelog strings in ad-hoc Rust. Do not add a Node adapter.
 

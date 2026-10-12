@@ -20,13 +20,12 @@ Queue row: VER-051.
 
 1. Each entry links the pull request that merged its fragment, written
    `([#N](url))`, or the commit that added it when no pull request is named.
-2. An entry credits its author only when GitHub reports the pull request
-   author as an outside contributor and a person, not a bot. Maintainers
-   are never credited.
+2. No entry carries an author byline, so no maintainer is credited.
 3. No configuration key yet. `Config` has only public fields, so a new
    field is a breaking library change for cargo-semver-checks, and this
-   ships as a patch. `changelog.references` and `changelog.internal_authors`
-   wait for 0.4.0, when `Config` becomes `#[non_exhaustive]`.
+   ships as a patch. `changelog.internal_authors`, which names the
+   maintainers, waits for 0.4.0, when `Config` becomes `#[non_exhaustive]`
+   (VER-054).
 
 ## Impact
 

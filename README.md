@@ -84,8 +84,7 @@ these defaults (override either path):
 Default release line:
 
 ```text
-Maintainer + PR   - Summary ([#12](https://github.com/org/repo/pull/12)).
-External + PR     - Summary ([#12](https://github.com/org/repo/pull/12) by [@ext](https://github.com/ext)).
+PR                - Summary ([#12](https://github.com/org/repo/pull/12)).
 Commit only       - Summary ([`96fb0bc`](https://github.com/org/repo/commit/96fb0bc)).
 No link           - Summary.
 ```
@@ -94,10 +93,9 @@ No extra thanks line. If a PR exists, the SHA is omitted.
 
 The pull request is the trailing `(#N)` in the subject of the commit
 that added the fragment, which GitHub's squash merge writes; without one
-the entry links that commit. Credit is not a template `if`: with a
-token, verctl credits the pull request author only when GitHub calls
-them an outside contributor and a person. Maintainers and bots get no
-byline, and without a token no one does.
+the entry links that commit. No entry carries a byline yet: release
+notes credit no maintainer, and `changelog.internal_authors`, which
+names them, arrives in 0.4.0.
 
 ## Version files
 

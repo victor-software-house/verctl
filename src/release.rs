@@ -119,37 +119,26 @@ enum Origin {
 
 /// Resolve each committed fragment to the commit that added it, and that
 /// commit to the pull request its subject names (`… (#12)`, GitHub's squash
-/// subject). With a token, the pull request author is credited when GitHub
-/// calls them an outside contributor and a person; a failed lookup credits no
-/// one, so a maintainer is never named by accident.
-pub fn origins(root: &Path, token: Option<&str>, fragments: &[Fragment]) -> Result<Origins> {
+/// subject). No entry carries a byline: release notes credit no maintainer,
+/// and telling one apart needs `changelog.internal_authors`, which waits for
+/// 0.4.0 because a new `Config` field is a breaking library change.
+pub fn origins(root: &Path, fragments: &[Fragment]) -> Result<Origins> {
     let Ok(repo) = git::origin_url(root).and_then(|url| github::parse_remote(&url)) else {
         return Ok(Origins::default());
     };
     let base = format!("https://github.com/{}/{}", repo.owner, repo.name);
-    let mut authors: BTreeMap<u64, Option<github::PullAuthor>> = BTreeMap::new();
     let mut by_path = BTreeMap::new();
     for fragment in fragments {
         let Some(added) = git::added_by(root, &fragment.path)? else {
             continue;
         };
         let origin = if let Some(number) = pull_request_number(&added.subject) {
-            let author = authors
-                .entry(number)
-                .or_insert_with(|| {
-                    token
-                        .and_then(|token| github::pull_author(token, &repo, number).ok())
-                        .filter(github::PullAuthor::credited)
-                })
-                .clone();
             Origin::PullRequest(PullRequest {
                 number,
                 url: format!("{base}/pull/{number}"),
-                user_url: author
-                    .as_ref()
-                    .map(|author| format!("https://github.com/{}", author.login)),
-                external_author: author.is_some(),
-                user: author.map(|author| author.login),
+                user: None,
+                user_url: None,
+                external_author: false,
             })
         } else {
             Origin::Commit(Commit {
