@@ -64,6 +64,7 @@ struct Declared {
     executable: bool,
 }
 
+/// Render every served template and return the files written.
 pub fn write(
     root: &Path,
     config: &Templates,

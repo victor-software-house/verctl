@@ -5,15 +5,21 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail, ensure};
 use ctl_core::input::Input;
 
+/// How far a fragment moves a package's version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Bump {
+    /// No version change.
     None,
+    /// Patch release.
     Patch,
+    /// Minor release.
     Minor,
+    /// Major release.
     Major,
 }
 
 impl Bump {
+    /// Read `major`, `minor`, `patch`, or `none`.
     pub fn parse(raw: &str) -> Result<Self> {
         match raw {
             "none" => Ok(Self::None),
@@ -24,6 +30,7 @@ impl Bump {
         }
     }
 
+    /// The lowercase name `parse` reads.
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
@@ -35,9 +42,12 @@ impl Bump {
     }
 }
 
+/// A package named in a fragment's frontmatter, with its bump.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageBump {
+    /// Package name.
     pub name: String,
+    /// Bump the fragment asks for.
     pub bump: Bump,
 }
 
@@ -46,8 +56,11 @@ pub struct PackageBump {
 /// (<https://keepachangelog.com/en/1.1.0/>).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Group {
+    /// New functionality.
     Added,
+    /// Changed behaviour.
     Changed,
+    /// Bug fix.
     Fixed,
 }
 
@@ -59,6 +72,7 @@ impl Group {
     /// Every group, in heading order.
     pub const ALL: [Self; 3] = [Self::Added, Self::Changed, Self::Fixed];
 
+    /// Read `added`, `changed`, or `fixed`.
     pub fn parse(raw: &str) -> Result<Self> {
         match raw {
             "added" => Ok(Self::Added),
@@ -71,6 +85,7 @@ impl Group {
         }
     }
 
+    /// The capitalised changelog heading.
     #[must_use]
     pub fn heading(self) -> &'static str {
         match self {
@@ -81,10 +96,14 @@ impl Group {
     }
 }
 
+/// One Changesets-format file under `.changeset/`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fragment {
+    /// The fragment file.
     pub path: PathBuf,
+    /// Packages the frontmatter bumps.
     pub packages: Vec<PackageBump>,
+    /// The body, trimmed. It becomes the changelog entry.
     pub summary: String,
     /// The heading this entry goes under. `None` is a fragment that names no
     /// group: it lands under [`Group::Changed`] when another entry in the same
@@ -93,6 +112,7 @@ pub struct Fragment {
 }
 
 impl Fragment {
+    /// The largest bump among the packages.
     #[must_use]
     pub fn max_bump(&self) -> Bump {
         self.packages
@@ -103,6 +123,7 @@ impl Fragment {
     }
 }
 
+/// Parse a fragment from its raw text. `path` names it in errors.
 pub fn parse_str(raw: &str, path: impl Into<PathBuf>) -> Result<Fragment> {
     let path = path.into();
     let input = Input::new(path.display().to_string(), raw);
@@ -139,6 +160,8 @@ pub fn parse_str(raw: &str, path: impl Into<PathBuf>) -> Result<Fragment> {
     })
 }
 
+/// Load every fragment in `dir`, sorted by path. A missing directory yields
+/// none.
 pub fn load_dir(dir: &Path) -> Result<Vec<Fragment>> {
     if !dir.is_dir() {
         return Ok(Vec::new());

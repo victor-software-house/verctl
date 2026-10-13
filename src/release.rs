@@ -13,6 +13,7 @@ use crate::git::pull_request_number;
 use crate::prepare::PlanEntry;
 use crate::{git, github};
 
+/// The branch the Version PR is pushed to.
 pub const VERSION_BRANCH: &str = "version-packages";
 
 /// Auth for `--pr`.
@@ -92,6 +93,7 @@ pub fn contributing_fragments<'a>(
         .collect()
 }
 
+/// Delete the fragment files once a Version PR has consumed them.
 pub fn consume_fragments<'a, I>(fragments: I) -> Result<()>
 where
     I: IntoIterator<Item = &'a Fragment>,
@@ -367,6 +369,7 @@ pub fn require_changelog_versions<'a>(
     Ok(())
 }
 
+/// Add a changelog section above the existing entries, keeping the title.
 pub fn prepend_changelog(path: &Path, section: &str) -> Result<()> {
     match fs::read_to_string(path) {
         Ok(existing) => {
@@ -395,6 +398,8 @@ pub fn prepend_changelog(path: &Path, section: &str) -> Result<()> {
     }
 }
 
+/// Push the Version PR branch and open the PR, or update the open one. `None`
+/// when nothing changed.
 pub fn open_or_update_pr(
     root: &Path,
     token: &str,
@@ -421,6 +426,7 @@ pub fn open_or_update_pr(
     Ok(Some(created.url))
 }
 
+/// The PR body: the changelog, trimmed, or a stock line when it is empty.
 #[must_use]
 pub fn pr_body(changelog: &str) -> String {
     let body = changelog.trim();

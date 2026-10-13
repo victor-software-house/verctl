@@ -8,16 +8,24 @@ use crate::config::Config;
 use crate::driver::Driver;
 use crate::fragment::{Bump, Fragment};
 
+/// One package's planned version change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlanEntry {
+    /// Package name.
     pub name: String,
+    /// Version now.
     pub from: String,
+    /// Version after the bump.
     pub to: String,
+    /// Largest bump among the fragments naming it.
     pub bump: Bump,
+    /// Manifest path.
     pub path: PathBuf,
+    /// Driver that reads and writes the manifest's version.
     pub driver: Driver,
 }
 
+/// Fold the fragments into one bump per package, leaving out `none`.
 pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<PlanEntry>> {
     let mut by_name: BTreeMap<&str, Bump> = BTreeMap::new();
     for fragment in fragments {
@@ -52,6 +60,8 @@ pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<
     Ok(plan)
 }
 
+/// Write each new version, returning the follow-up commands, sorted and
+/// deduplicated.
 pub fn apply_plan(entries: &[PlanEntry]) -> Result<Vec<String>> {
     let mut follow_up = Vec::new();
     for entry in entries {

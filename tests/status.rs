@@ -1,3 +1,6 @@
+//! The `status`, `check`, and `prepare` commands as run through the binary,
+//! including JSON output.
+
 mod common;
 
 use std::fs;

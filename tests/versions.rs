@@ -1,3 +1,6 @@
+//! The merge-base version guard: a manifest version must match the default
+//! branch unless exempt.
+
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,

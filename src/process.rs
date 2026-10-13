@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail, ensure};
 
+/// How long a driver command may run.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_mins(1);
+/// How many bytes a driver command may print before it is killed.
 pub const DEFAULT_OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
 
 /// Run an argv with stdin piped and stdout captured.
@@ -97,6 +99,7 @@ pub fn argv(parts: &[&str]) -> Vec<String> {
     parts.iter().map(|part| (*part).to_owned()).collect()
 }
 
+/// [`filter`] with an explicit timeout and output limit.
 pub fn filter_limited(
     argv: &[String],
     stdin: &str,

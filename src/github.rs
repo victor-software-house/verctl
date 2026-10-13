@@ -36,9 +36,12 @@ pub fn write_output(path: &Path, body: &str) -> Result<()> {
         .with_context(|| path.display().to_string())
 }
 
+/// A GitHub repository, as `owner/name`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Repo {
+    /// The user or organization that owns the repository.
     pub owner: String,
+    /// The repository name, without a `.git` suffix.
     pub name: String,
 }
 
@@ -53,6 +56,7 @@ pub fn repo(root: &Path) -> Result<Repo> {
     parse_remote(url.trim())
 }
 
+/// Parses an `owner/name` slug.
 pub fn parse_slug(slug: &str) -> Result<Repo> {
     let (owner, name) = slug
         .split_once('/')
@@ -67,6 +71,7 @@ pub fn parse_slug(slug: &str) -> Result<Repo> {
     })
 }
 
+/// Parses an ssh or https remote URL on github.com or a `*.github.com` host.
 pub fn parse_remote(url: &str) -> Result<Repo> {
     let url = url.trim();
     if let Some(rest) = url.strip_prefix("git@") {
@@ -92,6 +97,8 @@ pub fn parse_remote(url: &str) -> Result<Repo> {
     parse_slug(path)
 }
 
+/// The branch a Version PR targets: `GITHUB_REF_NAME`, else the upstream
+/// default, else `main`.
 #[must_use]
 pub fn base_branch(root: &Path) -> String {
     if let Ok(name) = env::var("GITHUB_REF_NAME")
@@ -102,12 +109,16 @@ pub fn base_branch(root: &Path) -> String {
     crate::git::upstream_default_branch(root).unwrap_or_else(|| "main".into())
 }
 
+/// An open pull request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExistingPr {
+    /// Link to the pull request.
     pub url: String,
+    /// The pull request number.
     pub number: u64,
 }
 
+/// The open pull request from `head` in this repository, if one exists.
 pub fn existing_pr(token: &str, repo: &Repo, head: &str) -> Result<Option<ExistingPr>> {
     block(async {
         let crab = client(token)?;
@@ -130,6 +141,7 @@ pub fn existing_pr(token: &str, repo: &Repo, head: &str) -> Result<Option<Existi
     })
 }
 
+/// Sets the title and body of pull request `number` and returns its URL.
 pub fn update_pr(token: &str, repo: &Repo, number: u64, title: &str, body: &str) -> Result<String> {
     block(async {
         let crab = client(token)?;
@@ -147,6 +159,7 @@ pub fn update_pr(token: &str, repo: &Repo, number: u64, title: &str, body: &str)
     })
 }
 
+/// Opens a pull request from `head` into `base`.
 pub fn create_pr(
     token: &str,
     repo: &Repo,
@@ -187,11 +200,14 @@ pub fn event_labels() -> Vec<String> {
     labels_from_event(&raw)
 }
 
+/// Whether the `pull_request` event carries the label `name`.
 #[must_use]
 pub fn event_has_label(name: &str) -> bool {
     event_labels().iter().any(|label| label == name)
 }
 
+/// Label names in a `pull_request` event payload; empty when it does not parse
+/// or has none.
 #[must_use]
 pub fn labels_from_event(raw: &str) -> Vec<String> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
@@ -378,6 +394,7 @@ pub fn upload_release_asset(token: &str, repo: &Repo, tag: &str, tarball: &Path)
 /// Who opened a pull request, and where its head branch lives.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PullAuthor {
+    /// The author's login.
     pub login: String,
     /// GitHub's user `type`: `User` for a person, `Bot` for an app.
     pub kind: String,

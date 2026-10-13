@@ -1,3 +1,6 @@
+//! Parsing and loading of Changesets-format fragments, including their front
+//! matter and groups.
+
 use std::fs;
 
 use indoc::indoc;

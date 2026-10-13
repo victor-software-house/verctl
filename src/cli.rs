@@ -3,22 +3,27 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand};
 use ctl_core::{ColorLong, DryRunArgs, FormatArgs};
 
-#[derive(Parser)]
+/// Stack-agnostic version PRs from Changesets-format fragments.
+#[derive(Debug, Parser)]
 #[command(
     version,
     about = "Stack-agnostic version PRs from Changesets-format fragments",
     arg_required_else_help = true
 )]
 pub struct Cli {
+    /// Output format selection shared by every command.
     #[command(flatten)]
     pub format: FormatArgs,
+    /// Color selection shared by every command.
     #[command(flatten)]
     pub color: ColorLong,
+    /// The command to run.
     #[command(subcommand)]
     pub command: Command,
 }
 
-#[derive(Subcommand)]
+/// The verctl commands.
+#[derive(Debug, Subcommand)]
 pub enum Command {
     /// Print the installed-version operator contract.
     Instructions,
@@ -38,7 +43,8 @@ pub enum Command {
     Ci(CiArgs),
 }
 
-#[derive(Args)]
+/// Arguments of `ci`.
+#[derive(Debug, Args)]
 pub struct CiArgs {
     /// Package map. Defaults to .ctl/ver.yaml in the current directory.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
@@ -48,16 +54,19 @@ pub struct CiArgs {
     pub github_output: Option<PathBuf>,
 }
 
-#[derive(Args)]
+/// Arguments of `publish` and `pin`.
+#[derive(Debug, Args)]
 pub struct PublishArgs {
     /// Package map. Defaults to .ctl/ver.yaml in the current directory.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
     pub config: PathBuf,
+    /// The shared `--dry-run` flag.
     #[command(flatten)]
     pub dry: DryRunArgs,
 }
 
-#[derive(Args)]
+/// Arguments of `assets`.
+#[derive(Debug, Args)]
 pub struct AssetsArgs {
     /// Package map. Defaults to .ctl/ver.yaml in the current directory.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
@@ -78,20 +87,23 @@ pub struct AssetsArgs {
 }
 
 impl PublishArgs {
+    /// Whether `--dry-run` was given.
     #[must_use]
     pub fn dry_run(&self) -> bool {
         self.dry.dry_run
     }
 }
 
-#[derive(Args)]
+/// Arguments of `status`.
+#[derive(Debug, Args)]
 pub struct StatusArgs {
     /// Directory of fragments. Defaults to .changeset.
     #[arg(short = 'd', long, default_value = ".changeset", value_hint = clap::ValueHint::DirPath)]
     pub dir: PathBuf,
 }
 
-#[derive(Args)]
+/// Arguments of `check`.
+#[derive(Debug, Args)]
 pub struct CheckArgs {
     /// Directory of fragments. Defaults to .changeset.
     #[arg(short = 'd', long, default_value = ".changeset", value_hint = clap::ValueHint::DirPath)]
@@ -104,7 +116,8 @@ pub struct CheckArgs {
     pub versions: bool,
 }
 
-#[derive(Args)]
+/// Arguments of `prepare`.
+#[derive(Debug, Args)]
 pub struct PrepareArgs {
     /// Directory of fragments. Defaults to .changeset.
     #[arg(short = 'd', long, default_value = ".changeset", value_hint = clap::ValueHint::DirPath)]
@@ -112,6 +125,7 @@ pub struct PrepareArgs {
     /// Package map. Defaults to .ctl/ver.yaml in the current directory.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
     pub config: PathBuf,
+    /// The shared `--dry-run` flag.
     #[command(flatten)]
     pub dry: DryRunArgs,
     /// Open or update the Version PR. Uses `GITHUB_TOKEN` / `GH_TOKEN` (not
@@ -130,6 +144,7 @@ impl PrepareArgs {
         self.pr
     }
 
+    /// Whether `--dry-run` was given.
     #[must_use]
     pub fn dry_run(&self) -> bool {
         self.dry.dry_run
