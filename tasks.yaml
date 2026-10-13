@@ -592,6 +592,15 @@ horizon:
         Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.
 
 archive:
+  - id: VER-059
+    title: Serve the ver task raw
+    scope: tasks
+    outcome: mise run ver output piped to jq is byte for byte what verctl wrote, whatever the colour environment says.
+    completed: 2026-10-13T07:40:13
+    evidence:
+      - ver.jinja carries mount_directives (raw=true); the_served_task_pipes_json_without_an_escape_byte passes on ctl-core 0.6.17.
+    disposition: completed
+
   - id: VER-058
     title: Keep JSON output plain under forced colour
     scope: output
