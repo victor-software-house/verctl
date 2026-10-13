@@ -442,9 +442,9 @@ dependencies = [
 
 [[package]]
 name = "ctl-core"
-version = "0.6.9"
+version = "0.6.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "074c86c05823327d38121a7993df08117986c8f91eeec33be0a6dcdb4161fca0"
+checksum = "3fa9486c7199fc454d3729668c6e6745afa8135d8136a86edfa79861eac8e8a6"
 dependencies = [
  "anstream",
  "anstyle",
@@ -2768,7 +2768,7 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "verctl"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "bytes",
