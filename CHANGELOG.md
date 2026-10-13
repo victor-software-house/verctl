@@ -1,5 +1,11 @@
 # Changelog
 
+## verctl 0.4.4
+
+### Fixed
+
+- The served `ver` mise task now runs `raw`. mise relayed its output and appended an SGR reset to every line whenever mise's own colour was on, as under `CLICOLOR_FORCE=1`, so `mise run ver status --format json | jq` received an ESC byte verctl never wrote ([#142](https://github.com/victor-software-house/verctl/pull/142)).
+
 ## verctl 0.4.3
 
 ### Fixed
