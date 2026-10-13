@@ -256,18 +256,6 @@ queue:
       - >2-
         2026-10-12 (UTC): the decision also covers whether verctl should verify the ruleset that limits pushes on the proposal branch `verctl/release/<base>` to the release identity, in `check` or a separate command. The release-state-machine design documents that ruleset but does not verify it.
 
-  - id: VER-050
-    title: Replace git2 with gix so the openssl ban applies
-    scope: git2 call sites, Cargo.toml, deny.toml
-    outcome: verctl builds with no OpenSSL, and deny.toml takes the template openssl and native-tls bans.
-    blocked_by:
-      []
-    acceptance:
-      - Cargo.toml has no git2 dependency, and no crate in the graph depends on openssl or native-tls.
-      - deny.toml drops the local edit, so the template bans apply and mise run verify passes.
-    notes:
-      - git2 builds with vendored OpenSSL (features https, vendored-libgit2, vendored-openssl), which needs Perl on every build machine. gix covers clone, fetch, commit, and push over HTTPS with rustls; the shared Rust guidance prefers it where it covers the operation.
-
   - id: VER-051
     title: Fill each changelog entry with its pull request and commit, and apply internalAuthors
     scope: src/release.rs changelog_sections, src/changelog.rs
@@ -582,6 +570,17 @@ horizon:
         Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.
 
 archive:
+  - id: VER-050
+    title: Replace git2 with gix so the openssl ban applies
+    scope: git2 call sites, Cargo.toml, deny.toml
+    outcome: verctl builds with no OpenSSL, and deny.toml takes the template openssl and native-tls bans.
+    notes:
+      - git2 builds with vendored OpenSSL (features https, vendored-libgit2, vendored-openssl), which needs Perl on every build machine. gix covers clone, fetch, commit, and push over HTTPS with rustls; the shared Rust guidance prefers it where it covers the operation.
+    completed: 2026-10-13T16:32:36
+    evidence:
+      - git2 is gone; gix 0.89 reads, fetches, and commits over rustls, git push carries the token through an env-reading credential helper, and deny.toml takes the openssl and native-tls bans.
+    disposition: completed
+
   - id: VER-049
     title: Deny missing_docs and missing_debug_implementations
     scope: src/

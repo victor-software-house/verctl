@@ -137,10 +137,9 @@ mise: the repository setup comes from the shared Copier template
 (kind `rust-crate`, layout `crate`); `.copier-answers.yml` records its
 tag and answers. Take a new tag with `copier update --defaults` and
 check `git diff --check` before committing; the CI job `Template`
-fails when the newest tag would change a file. Two local edits survive updates:
-`Cargo.toml` leaves `missing_docs` and
-`missing_debug_implementations` off until VER-049, and `deny.toml`
-lifts the openssl and native-tls bans until VER-050 replaces git2.
+fails when the newest tag would change a file. No local edit survives an
+update: `missing_docs`, `missing_debug_implementations`, and the openssl
+and native-tls bans all apply as the template ships them.
 `mise.toml` pins stable 1.99.0 (through mr-boxington, whose store CI
 restores with its action) and the formatting nightly;
 `rust-toolchain.toml` and `rust-version` match. `verify` comes from

@@ -19,6 +19,10 @@ allow = [
     "BSD-3-Clause",
     # ring, untrusted, and rustls-webpki (octocrab's TLS)
     "ISC",
+    # foldhash, through gix's object cache
+    "Zlib",
+    # webpki-root-certs, the CA roots gix's HTTPS transport verifies against
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.93
 
@@ -28,9 +32,10 @@ wildcards = "deny"
 # Path dependencies carry no version; wildcards stay denied for the rest.
 allow-wildcard-paths = true
 highlight = "all"
-# Local edit: the template bans openssl and native-tls. git2 builds with
-# vendored OpenSSL, so both stay allowed until verctl moves to gix (VER-050).
-deny = []
+deny = [
+    { crate = "openssl", reason = "TLS is rustls" },
+    { crate = "native-tls", reason = "TLS is rustls" },
+]
 
 # Declarations repeated outside [workspace.dependencies], and unused entries.
 [bans.workspace-dependencies]

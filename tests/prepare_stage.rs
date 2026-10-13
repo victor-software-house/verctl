@@ -10,22 +10,12 @@ mod common;
 use std::fs;
 use std::path::Path;
 
-use git2::{Repository, Signature};
 use indoc::indoc;
 use tempfile::TempDir;
 
 fn init_repo(root: &Path) {
-    let repo = Repository::init(root).unwrap();
-    let sig = Signature::now("t", "t@example.com").unwrap();
-    let mut index = repo.index().unwrap();
-    index
-        .add_all(["."].iter(), git2::IndexAddOption::DEFAULT, None)
-        .unwrap();
-    index.write().unwrap();
-    let tid = index.write_tree().unwrap();
-    let tree = repo.find_tree(tid).unwrap();
-    repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
-        .unwrap();
+    common::init(root);
+    common::commit_all(root, "init");
 }
 
 fn write_min(root: &Path, extra: &str) {
@@ -422,4 +412,75 @@ fn a_broken_pin_fails_before_any_manifest_moves() {
         root.path().join(".changeset/one.md").exists(),
         "the fragment must survive a failed prepare"
     );
+}
+
+/// What a pre-commit hook exports for its own git: `GIT_INDEX_FILE` names a
+/// temporary index relative to the repository root, beside `GIT_DIR` and
+/// `GIT_WORK_TREE`.
+const HOOK_ENV: [(&str, &str); 3] = [
+    ("GIT_INDEX_FILE", ".git/hook-index"),
+    ("GIT_DIR", ".git"),
+    ("GIT_WORK_TREE", "."),
+];
+
+fn verctl(root: &Path, args: &[&str], env: &[(&str, &str)]) -> std::process::Output {
+    std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+        .current_dir(root)
+        .args(args)
+        .envs(env.iter().copied())
+        .output()
+        .unwrap()
+}
+
+/// verctl reads the repository on disk and ignores the variables a hook
+/// exports. The hook's index here is empty, so honouring it would leave the
+/// committed template untracked and fail the run. The index keeps its bytes,
+/// whether verctl reads it through the template plan or through status, and
+/// the dry run leaves `git status` clean.
+#[test]
+fn prepare_ignores_hook_variables() {
+    let root = TempDir::new().unwrap();
+    write_min(root.path(), "");
+    fs::create_dir_all(root.path().join(".ctl/templates")).unwrap();
+    fs::write(
+        root.path().join(".ctl/templates/served.txt.jinja"),
+        indoc! {r#"
+            demo {{ versions["demo"] }}
+        "#},
+    )
+    .unwrap();
+    init_repo(root.path());
+    common::git(
+        root.path(),
+        &["read-tree", "--empty", "--index-output=.git/hook-index"],
+    );
+    let index = fs::read(root.path().join(".git/index")).unwrap();
+    let dry_run = ["prepare", "--no-pr", "--dry-run", "--color", "never"];
+    let plain = verctl(root.path(), &dry_run, &[]);
+    assert!(
+        plain.status.success(),
+        "{}",
+        String::from_utf8_lossy(&plain.stderr)
+    );
+    let hooked = verctl(root.path(), &dry_run, &HOOK_ENV);
+    assert!(
+        hooked.status.success(),
+        "{}",
+        String::from_utf8_lossy(&hooked.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&hooked.stdout),
+        String::from_utf8_lossy(&plain.stdout)
+    );
+    assert_eq!(fs::read(root.path().join(".git/index")).unwrap(), index);
+    assert_eq!(common::git(root.path(), &["status", "--porcelain"]), "");
+    let index = fs::read(root.path().join(".git/index")).unwrap();
+    let applied = verctl(root.path(), &["prepare", "--no-pr"], &HOOK_ENV);
+    assert!(
+        applied.status.success(),
+        "{}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+    assert_eq!(fs::read(root.path().join(".git/index")).unwrap(), index);
+    assert!(root.path().join("served.txt").exists());
 }

@@ -15,6 +15,10 @@ deny_licenses:
         and simple_asn1
 -   license: ISC
     reason: ring, untrusted, and rustls-webpki (octocrab's TLS)
+-   license: Zlib
+    reason: foldhash, through gix's object cache
+-   license: CDLA-Permissive-2.0
+    reason: webpki-root-certs, the CA roots gix's HTTPS transport verifies against
 deny_skip: []
 feature_sets: []
 kind: rust-crate
