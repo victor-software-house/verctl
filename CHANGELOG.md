@@ -1,5 +1,11 @@
 # Changelog
 
+## verctl 0.4.2
+
+### Added
+
+- `publisher: none` releases a package on GitHub only: `publish` creates its tag and Release, and `assets` its tarballs, with no registry upload. A private binary, such as a Cargo package with `publish = false`, no longer needs a stand-in publish command. A `registry` or `publish` on the same package fails the load ([#134](https://github.com/victor-software-house/verctl/pull/134)).
+
 ## verctl 0.4.1
 
 ### Fixed
