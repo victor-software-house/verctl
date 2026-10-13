@@ -6,7 +6,7 @@ description: >-
   .changeset fragments, or stack-agnostic changelog templates. Not
   @changesets/cli and not a forkctl verb.
 license: MIT
-version: 0.4.1
+version: 0.4.2
 ---
 
 # verctl
@@ -90,6 +90,9 @@ config key. Do not add one, and do not add a `release` runner section.
 
 Stop when a 0.x package gets `major`, when verctl refuses a `0.0.0`
 package's bump, or when a fragment names a package that is not in `packages`.
+
+`publisher: none` on a package releases it on GitHub only (tag, Release,
+assets), with no registry upload; use it for private binaries.
 
 `tags.template` (default `v{version}`) names release tags. `{name}` makes
 one tag and one Release per package; without it, differing versions refuse.

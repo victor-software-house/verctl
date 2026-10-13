@@ -269,6 +269,11 @@ on that branch, and a GitHub App token in `token`.
 
 Mise owns tools. Publish uses Actions OIDC, not a PAT.
 
+A package with `publisher: none` is released on GitHub only: `publish`
+creates its tag and Release, and `assets` its tarballs, with no registry
+upload. Use it for private binaries, such as a Cargo package with
+`publish = false`.
+
 ## Operator documents
 
 Clap remains the command grammar. ctl-core `Surface` renders the shared version,
