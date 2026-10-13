@@ -12,7 +12,9 @@ Operator contract: `verctl instructions` (installed with the binary) and
 [`tasks.yaml`](tasks.yaml) (`VER-###`). Do not put operator invocation in
 this file. There is no repo-local `.agents/skills/`.
 
-The `ver` task's `#USAGE mount` line is `ctl_core::mount_line("ver")`.
+The `ver` task carries `ctl_core::mount_directives("ver")`: `raw`,
+`raw_args`, and the `#USAGE mount` line, so piped output stays what verctl
+wrote.
 Put it in `.ctl/templates/ver.jinja`. Do not copy it onto `tasks/ver/ver`
 while that file still pins a release that lacks `--usage-spec`.
 

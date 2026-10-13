@@ -6,8 +6,9 @@
 # template, never this file.
 #MISE description="Run the verctl version-PR CLI"
 #MISE dir="{% raw %}{{cwd}}{% endraw %}"
-#MISE raw_args=true
 #MISE tools = { "github:victor-software-house/verctl" = "{{ versions["verctl"] }}" }
+#MISE raw=true
+#MISE raw_args=true
 #USAGE mount "mise run --quiet ver -- --usage-spec=ver"
 
 set -euo pipefail

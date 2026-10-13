@@ -33,16 +33,6 @@ queue:
       - >2-
         2026-10-12 (UTC): the operator approved all eight decisions of the OpenSpec change release-state-machine as recommended: (1) derive release state from facts on every run, with no state file or labels; (2) release on push to the release branch, then propose; (3) identify the Version PR by head repository, head branch, and base, and verify its content; (4) one Version PR per base on verctl/release/<base>, with no per-package PRs and no version in the branch name; (5) built-in cargo and bun as providers of building blocks, extensions as steps run through mise tasks or argv, declared ecosystems for other stacks; (6) mise installs, verifies, runs steps, and owns mise.lock, and verctl writes no lockfile; (7) bun-release in Rust as option (b), Bun packs and verctl owns the registry protocol; (8) ship 0.4.0 from an integration branch next, then patches. The held plan on feat/011-refresh-lockfile is replaced by that change and deleted unpushed.
 
-  - id: VER-058
-    title: Keep JSON output plain under forced colour
-    scope: output
-    outcome: A caller that pipes verctl JSON to jq never receives an ESC byte, whatever the colour environment says.
-    blocked_by: []
-    acceptance:
-      - With CLICOLOR_FORCE=1, FORCE_COLOR=3, and COLORTERM=truecolor, JSON output, a JSON error, and a parse error under --format json hold no ESC byte.
-    notes:
-      - The parse-error case needs the ctl-core release that reads a --format json after the bad argument.
-
   - id: VER-015
     title: Asset runners are configuration, not a hardcoded map
     scope: verctl
@@ -602,6 +592,26 @@ horizon:
         Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.
 
 archive:
+  - id: VER-059
+    title: Serve the ver task raw
+    scope: tasks
+    outcome: mise run ver output piped to jq is byte for byte what verctl wrote, whatever the colour environment says.
+    completed: 2026-10-13T07:40:13
+    evidence:
+      - ver.jinja carries mount_directives (raw=true); the_served_task_pipes_json_without_an_escape_byte passes on ctl-core 0.6.17.
+    disposition: completed
+
+  - id: VER-058
+    title: Keep JSON output plain under forced colour
+    scope: output
+    outcome: A caller that pipes verctl JSON to jq never receives an ESC byte, whatever the colour environment says.
+    notes:
+      - The parse-error case needs the ctl-core release that reads a --format json after the bad argument.
+    completed: 2026-10-13T06:48:21
+    evidence:
+      - 'Shipped in verctl 0.4.3 (#138, released by #139) on ctl-core 0.6.16: JSON output, JSON errors, and a parse error under --format json hold no ESC byte with CLICOLOR_FORCE=1, FORCE_COLOR=3, and COLORTERM=truecolor.'
+    disposition: completed
+
   - id: VER-057
     title: Release a package on GitHub only, with no registry upload
     scope: release
