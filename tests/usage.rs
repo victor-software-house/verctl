@@ -53,7 +53,8 @@ fn template_mount_is_ctl_core() {
     );
 }
 
-/// mise relays a task's output itself unless the task is `raw`, and appends an
+/// In prefix output mode, which mise uses for several tasks at once or when
+/// `MISE_TASK_OUTPUT=prefix` is set, mise relays a task's output itself unless the task is `raw`, and appends an
 /// SGR reset to every relayed line whenever its own colour is on, which
 /// `CLICOLOR_FORCE=1` turns on even into a pipe. The served task, rendered
 /// from its template, runs in a scrubbed environment with a stub `verctl` on
@@ -106,6 +107,7 @@ fn the_served_task_pipes_json_without_an_escape_byte() {
         .env("MISE_CONFIG_DIR", root.path().join("mise-config"))
         .env("MISE_TRUSTED_CONFIG_PATHS", root.path())
         .env("MISE_DISABLE_TOOLS", "github:victor-software-house/verctl")
+        .env("MISE_TASK_OUTPUT", "prefix")
         .env("CLICOLOR_FORCE", "1")
         .env("FORCE_COLOR", "3")
         .env("COLORTERM", "truecolor")
