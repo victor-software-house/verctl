@@ -94,10 +94,10 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use git2::Repository;
     use tempfile::TempDir;
 
     use super::follow_up;
+    use crate::test_git;
 
     /// `files` are workspace-relative; parents are created.
     fn tree(files: &[&str]) -> TempDir {
@@ -111,7 +111,7 @@ mod tests {
     }
 
     fn repo_at(dir: &Path) {
-        Repository::init(dir).unwrap();
+        test_git::init(dir);
     }
 
     #[test]

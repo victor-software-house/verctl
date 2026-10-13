@@ -39,3 +39,6 @@ pub mod versions;
 
 #[cfg(test)]
 mod operator_docs;
+/// Fixture repositories built with the `git` binary.
+#[cfg(test)]
+pub(crate) mod test_git;
