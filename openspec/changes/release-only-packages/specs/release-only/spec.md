@@ -23,3 +23,18 @@ The load SHALL fail when a package sets `publisher: none` together with `registr
 
 - **WHEN** a package sets `publisher: none` and `registry: crates-io`
 - **THEN** loading `.ctl/ver.yaml` fails with a message that names the package and says it has `publisher: none`
+
+### Requirement: Only none uploads nothing
+
+The load SHALL fail when `publishers` declares a `none` entry.
+Resolving any other publisher to an empty upload command SHALL fail and name the package.
+
+#### Scenario: Empty publish command
+
+- **WHEN** a package sets `publish: []`
+- **THEN** resolving its publisher fails with a message that says it renders an empty command and points at `publisher: none`
+
+#### Scenario: A publishers.none entry
+
+- **WHEN** `.ctl/ver.yaml` declares `publishers.none`
+- **THEN** loading it fails and says the name is reserved

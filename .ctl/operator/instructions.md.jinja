@@ -145,7 +145,8 @@ add another stack without a new verb. `publisher: none` releases a
 package on GitHub only: `publish` creates its tag and Release, and
 `assets` its tarballs, with no registry upload. Use it for a private
 binary, such as a Cargo package with `publish = false`. A `registry`
-or `publish` on the same package fails the load. GitHub Packages for bun uses a
+or `publish` on the same package fails the load, and so does a
+`publishers.none` entry. Every other publisher must render a command. GitHub Packages for bun uses a
 nearby `bunfig.toml` as `--config`. One typed report feeds ctl-core pretty,
 colorless, and JSON output; tests pass `--color never`.
 

@@ -235,6 +235,7 @@ pub struct Config {
     )]
     pub packages: Vec<PackageSpec>,
     #[serde(default)]
+    #[garde(custom(none_is_not_a_publisher))]
     pub publishers: BTreeMap<String, PublisherSpec>,
     /// Machines, declared once and named. Entirely repo-owned: verctl ships no
     /// built-in names.
@@ -340,6 +341,20 @@ pub struct Pin {
 }
 
 /// A name is only a name if something declares it.
+/// `none` names release-only packages, so a `publishers.none` recipe could
+/// never run: every package that names it uploads nothing.
+fn none_is_not_a_publisher(
+    publishers: &BTreeMap<String, PublisherSpec>,
+    _: &Config,
+) -> garde::Result {
+    if publishers.contains_key(crate::publisher::RELEASE_ONLY) {
+        return Err(garde::Error::new(
+            "publishers.none is reserved for release-only packages; rename that publisher",
+        ));
+    }
+    Ok(())
+}
+
 /// `publisher: none` uploads nothing, so a registry or an upload command on
 /// the same package would be a setting nothing reads.
 fn release_only_names_no_registry(packages: &[PackageSpec], _: &Config) -> garde::Result {
@@ -833,6 +848,17 @@ mod tests {
         "})
         .unwrap();
         assert_eq!(config.packages[0].publisher.as_deref(), Some("none"));
+        let error = load(&formatdoc! {r#"
+            {PACKAGE}
+            publishers:
+              none:
+                argv: ["true"]
+        "#})
+        .expect_err("publishers.none is reserved");
+        assert!(
+            format!("{error:#}").contains("publishers.none is reserved"),
+            "{error:#}"
+        );
         for extra in ["registry: crates-io", "publish: [cargo, publish]"] {
             let error = load(&formatdoc! {"
                 packages:
