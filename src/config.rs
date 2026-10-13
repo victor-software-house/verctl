@@ -108,7 +108,9 @@ pub struct PackageSpec {
     pub name: String,
     pub path: PathBuf,
     pub driver: Option<String>,
-    /// Stock `cargo` / `bun`, a `publishers` key, or omit to infer.
+    /// Stock `cargo` / `bun`, a `publishers` key, or omit to infer. `none`
+    /// releases the package on GitHub only: tag, Release, and assets, with no
+    /// registry upload.
     pub publisher: Option<String>,
     /// Pretty noun (`crate`, `package`, `wheel`). Defaults from the publisher.
     pub noun: Option<String>,
@@ -227,7 +229,10 @@ pub struct Config {
     #[serde(default)]
     pub drivers: BTreeMap<String, DriverSpec>,
     /// What this repo releases. A config that names none has nothing to do.
-    #[garde(custom(at_least_one("package")))]
+    #[garde(
+        custom(at_least_one("package")),
+        custom(release_only_names_no_registry)
+    )]
     pub packages: Vec<PackageSpec>,
     #[serde(default)]
     pub publishers: BTreeMap<String, PublisherSpec>,
@@ -335,6 +340,22 @@ pub struct Pin {
 }
 
 /// A name is only a name if something declares it.
+/// `publisher: none` uploads nothing, so a registry or an upload command on
+/// the same package would be a setting nothing reads.
+fn release_only_names_no_registry(packages: &[PackageSpec], _: &Config) -> garde::Result {
+    for package in packages {
+        if package.publisher.as_deref() == Some(crate::publisher::RELEASE_ONLY)
+            && (package.registry.is_some() || package.publish_argv.is_some())
+        {
+            return Err(garde::Error::new(format!(
+                "package {:?} has publisher: none, which uploads to no registry; remove its registry and publish",
+                package.name
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn each_id_is_declared(ids: &[String], config: &Config) -> garde::Result {
     for id in ids {
         if !config.patterns.contains_key(id) {
@@ -799,6 +820,34 @@ mod tests {
           - name: demo
             path: Cargo.toml
     "};
+
+    /// `publisher: none` uploads nothing, so a registry or an upload command
+    /// beside it fails the load instead of being silently ignored.
+    #[test]
+    fn a_release_only_package_names_no_registry() {
+        let config = load(indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publisher: none
+        "})
+        .unwrap();
+        assert_eq!(config.packages[0].publisher.as_deref(), Some("none"));
+        for extra in ["registry: crates-io", "publish: [cargo, publish]"] {
+            let error = load(&formatdoc! {"
+                packages:
+                  - name: demo
+                    path: Cargo.toml
+                    publisher: none
+                    {extra}
+            "})
+            .expect_err(extra);
+            assert!(
+                format!("{error:#}").contains("has publisher: none"),
+                "{extra}: {error:#}"
+            );
+        }
+    }
 
     /// A `path` is relative to the repository, not to the directory the
     /// declarations happen to sit in, so `.ctl` never lands in front of it.

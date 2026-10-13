@@ -2,6 +2,7 @@
 //!
 //! Override a `publishers` entry or set `publisher` + `argv` on a
 //! package. Placeholders: `{path}` `{dir}` `{registry}` `{config}`.
+//! [`RELEASE_ONLY`] publishes to no registry.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -168,11 +169,20 @@ fn find_config(manifest: &Path, file_name: &str) -> Option<PathBuf> {
     None
 }
 
+/// The publisher name for a package released only on GitHub: a tag and a
+/// Release, with assets when declared, and no registry step. Its argv is
+/// empty, which `publish` reads as "nothing to upload".
+pub const RELEASE_ONLY: &str = "none";
+
 pub fn resolve(
     config: &crate::config::Config,
     spec: &crate::config::PackageSpec,
     manifest: &Path,
 ) -> Result<(String, String, Vec<String>)> {
+    if spec.publisher.as_deref() == Some(RELEASE_ONLY) {
+        let noun = spec.noun.clone().unwrap_or_else(|| "package".into());
+        return Ok(("release only".into(), noun, Vec::new()));
+    }
     let inferred = spec
         .path
         .file_name()

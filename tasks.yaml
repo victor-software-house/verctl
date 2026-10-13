@@ -33,6 +33,19 @@ queue:
       - >2-
         2026-10-12 (UTC): the operator approved all eight decisions of the OpenSpec change release-state-machine as recommended: (1) derive release state from facts on every run, with no state file or labels; (2) release on push to the release branch, then propose; (3) identify the Version PR by head repository, head branch, and base, and verify its content; (4) one Version PR per base on verctl/release/<base>, with no per-package PRs and no version in the branch name; (5) built-in cargo and bun as providers of building blocks, extensions as steps run through mise tasks or argv, declared ecosystems for other stacks; (6) mise installs, verifies, runs steps, and owns mise.lock, and verctl writes no lockfile; (7) bun-release in Rust as option (b), Bun packs and verctl owns the registry protocol; (8) ship 0.4.0 from an integration branch next, then patches. The held plan on feat/011-refresh-lockfile is replaced by that change and deleted unpushed.
 
+  - id: VER-057
+    title: Release a package on GitHub only, with no registry upload
+    scope: release
+    outcome: A repository that ships private binaries releases them through verctl with no stand-in publish command.
+    blocked_by: []
+    acceptance:
+      - 'A package with publisher: none gets a Version PR, a tag, a GitHub Release, and its assets, and publish runs no upload command.'
+      - 'A registry or publish setting beside publisher: none fails the load and names the package.'
+    notes:
+      - Requested for a private-binary consumer whose crates all set publish = false; its publish command is a check that fails unless they do.
+      - >2-
+        Fits VER-011: in the release state machine a release-only package is one with no Registry block.
+
   - id: VER-015
     title: Asset runners are configuration, not a hardcoded map
     scope: verctl
