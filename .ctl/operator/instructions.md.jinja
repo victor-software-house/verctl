@@ -148,7 +148,10 @@ binary, such as a Cargo package with `publish = false`. A `registry`
 or `publish` on the same package fails the load, and so does a
 `publishers.none` entry. Every other publisher must render a command. GitHub Packages for bun uses a
 nearby `bunfig.toml` as `--config`. One typed report feeds ctl-core pretty,
-colorless, and JSON output; tests pass `--color never`.
+colorless, and JSON output; tests pass `--color never`. JSON is never
+coloured, whatever `CLICOLOR_FORCE` or `FORCE_COLOR` say, and a parse
+error under `--format json` is a JSON error even when the bad argument
+comes first.
 
 Tag names come from `tags.template` (default `v{version}`). The
 placeholders are `{version}` and `{name}` — the same vocabulary

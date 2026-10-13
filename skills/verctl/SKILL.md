@@ -39,8 +39,9 @@ completion bootstrap.
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
 
 Every command returns one typed report. Use `--format json` for the same data
-without ANSI; JSON errors use stdout, while human errors use stderr. `--quiet`
-suppresses only successful human output.
+without ANSI, whatever `CLICOLOR_FORCE` or `FORCE_COLOR` say; JSON errors use
+stdout, while human errors use stderr. `--quiet` suppresses only successful
+human output.
 
 Fragments are `.changeset/*.md` with YAML fences (quoted or unquoted
 keys). An optional `verctl:group: added | changed | fixed` key files the
