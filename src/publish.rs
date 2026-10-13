@@ -37,6 +37,9 @@ pub struct PublishEntry {
     pub version: String,
     pub noun: String,
     pub label: String,
+    /// The upload command. Empty for a `publisher: none` package, which only
+    /// gets its tag and Release. Such a package never counts as shipped: with
+    /// no registry to ask, an existing Release is the proof it was released.
     pub argv: Vec<String>,
 }
 
@@ -95,6 +98,10 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
     let token = release::resolve_token()?;
     let mut packages = Vec::new();
     for entry in &planned.packages {
+        if entry.argv.is_empty() {
+            packages.push(PublishLine::from(entry));
+            continue;
+        }
         let note = match publish_package(entry)? {
             status if status.ends_with(" (already)") => Some("already".into()),
             _ => None,
@@ -111,9 +118,10 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
     let mut releases = Vec::new();
     for tag in &planned.tags {
         let shipped = tag.packages.iter().any(|entry| {
-            packages
-                .iter()
-                .any(|line| line.name == entry.name && line.note.is_none())
+            !entry.argv.is_empty()
+                && packages
+                    .iter()
+                    .any(|line| line.name == entry.name && line.note.is_none())
         });
         let notes = release::notes_for(
             config,
