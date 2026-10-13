@@ -831,7 +831,9 @@ fn push(git_dir: &Path, url: &str, branch: &str, token: &str) -> Result<()> {
 /// Writes a commit of `parent`'s tree with `paths` taken from the working
 /// tree, and points `branch` at it. HEAD, the index, and the working tree are
 /// left alone: the tree is edited in memory. `None` when the tree is
-/// unchanged. A path that no longer exists is removed from the tree.
+/// unchanged. A path that no longer exists is removed from the tree. Each file
+/// passes through the `.gitattributes` clean filters first, as `git add` runs
+/// them, so `text` normalization and LFS pointers match what git would store.
 fn write_commit_on_branch(
     repo: &gix::Repository,
     workdir: &Path,
@@ -842,6 +844,9 @@ fn write_commit_on_branch(
 ) -> Result<Option<gix::ObjectId>> {
     let parent_tree = parent.tree_id().context("HEAD tree")?.detach();
     let mut editor = repo.edit_tree(parent_tree).context("edit HEAD tree")?;
+    let (mut filters, index) = repo
+        .filter_pipeline(None)
+        .context("load the .gitattributes filters")?;
     for path in paths {
         let rel = workdir_rel(workdir, path)?;
         let name = rel
@@ -850,7 +855,7 @@ fn write_commit_on_branch(
             .to_owned();
         let abs = workdir.join(&rel);
         if abs.exists() {
-            let (kind, data) = worktree_entry(&abs)?;
+            let (kind, data) = worktree_entry(&mut filters, &index, &abs, &rel)?;
             let blob = repo
                 .write_blob(data)
                 .with_context(|| format!("git add {name}"))?;
@@ -888,9 +893,15 @@ fn write_commit_on_branch(
     Ok(Some(id))
 }
 
-/// The tree entry kind and content for the file at `abs`: a symbolic link
-/// stores its target, and an executable file keeps its executable bit.
-fn worktree_entry(abs: &Path) -> Result<(EntryKind, Vec<u8>)> {
+/// The tree entry kind and content for the file at `abs`, which sits at `rel`
+/// in the working tree: a symbolic link stores its target, and a file stores
+/// what the clean `filters` make of it and keeps its executable bit.
+fn worktree_entry(
+    filters: &mut gix::filter::Pipeline<'_>,
+    index: &gix::index::State,
+    abs: &Path,
+    rel: &Path,
+) -> Result<(EntryKind, Vec<u8>)> {
     let meta = std::fs::symlink_metadata(abs).with_context(|| abs.display().to_string())?;
     if meta.file_type().is_symlink() {
         let target = std::fs::read_link(abs).with_context(|| abs.display().to_string())?;
@@ -899,7 +910,13 @@ fn worktree_entry(abs: &Path) -> Result<(EntryKind, Vec<u8>)> {
             .with_context(|| format!("link target is not UTF-8: {}", abs.display()))?;
         return Ok((EntryKind::Link, target.as_bytes().to_vec()));
     }
-    let data = std::fs::read(abs).with_context(|| abs.display().to_string())?;
+    let file = std::fs::File::open(abs).with_context(|| abs.display().to_string())?;
+    let mut clean = filters
+        .convert_to_git(file, rel, index)
+        .with_context(|| format!("filter {}", rel.display()))?;
+    let mut data = Vec::new();
+    std::io::Read::read_to_end(&mut clean, &mut data)
+        .with_context(|| format!("filter {}", rel.display()))?;
     Ok((file_kind(&meta), data))
 }
 
@@ -1468,6 +1485,60 @@ mod tests {
             }
         }
         out
+    }
+
+    /// A file under a `text` attribute is stored with LF endings, as `git add`
+    /// stores it, whatever the working tree holds.
+    #[test]
+    fn the_commit_applies_clean_filters() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        std::fs::write(dir.path().join(".gitattributes"), "*.md text\n").unwrap();
+        std::fs::write(dir.path().join("CHANGELOG.md"), "old\n").unwrap();
+        commit_all(dir.path(), "init");
+        std::fs::write(dir.path().join("CHANGELOG.md"), "a\r\nb\r\n").unwrap();
+        let oid = write_commit(dir.path(), &[dir.path().join("CHANGELOG.md")]).expect("commit");
+        let blob = format!("{oid}:CHANGELOG.md");
+        assert_eq!(git(dir.path(), &["cat-file", "-p", &blob]), "a\nb");
+    }
+
+    /// A configured `user.name` and `user.email` sign the Version PR commit
+    /// and its reflog entry; the fallback identity fills in only when git
+    /// config names none.
+    #[test]
+    fn a_configured_identity_wins_over_the_fallback() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        git(dir.path(), &["config", "user.name", "Configured Name"]);
+        git(
+            dir.path(),
+            &["config", "user.email", "configured@example.com"],
+        );
+        std::fs::write(dir.path().join("Cargo.toml"), "version = 1\n").unwrap();
+        commit_all(dir.path(), "init");
+        std::fs::write(dir.path().join("Cargo.toml"), "version = 2\n").unwrap();
+        let oid = write_commit(dir.path(), &[dir.path().join("Cargo.toml")]).expect("commit");
+        let configured = "Configured Name <configured@example.com>";
+        assert_eq!(
+            git(
+                dir.path(),
+                &["log", "-1", "--format=%an <%ae>|%cn <%ce>", &oid]
+            ),
+            format!("{configured}|{configured}")
+        );
+        assert_eq!(
+            git(
+                dir.path(),
+                &[
+                    "log",
+                    "-g",
+                    "-1",
+                    "--format=%gn <%ge>",
+                    "refs/heads/version-packages",
+                ],
+            ),
+            configured
+        );
     }
 
     /// Writes the Version PR commit of `paths` the way `commit_branch_and_push`
