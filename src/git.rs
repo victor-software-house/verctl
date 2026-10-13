@@ -8,6 +8,7 @@ use git2::{
 
 use crate::github::Repo;
 
+/// The checked-out branch, or `None` for a detached HEAD or no repository.
 #[must_use]
 pub fn current_branch(root: &Path) -> Option<String> {
     let repo = repo_covering(root)?;
@@ -77,6 +78,7 @@ fn blob_at(repo: &Repository, tree: &git2::Tree<'_>, rel: &Path) -> Option<Strin
     Some(String::from_utf8_lossy(blob.content()).into_owned())
 }
 
+/// The URL of the `origin` remote.
 pub fn origin_url(root: &Path) -> Result<String> {
     let repo = Repository::discover(root).context("open git repository")?;
     let remote = repo.find_remote("origin").context("git remote origin")?;
@@ -89,7 +91,9 @@ pub fn origin_url(root: &Path) -> Result<String> {
 /// The commit that added a file, as the changelog names it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AddedBy {
+    /// Full hex SHA of the commit.
     pub sha: String,
+    /// First line of the commit message.
     pub subject: String,
 }
 
@@ -169,6 +173,7 @@ pub(crate) fn pull_request_number(subject: &str) -> Option<u64> {
     digits.parse().ok()
 }
 
+/// The branch `origin/HEAD` points at, or `None` when that ref is unset.
 #[must_use]
 pub fn upstream_default_branch(root: &Path) -> Option<String> {
     let repo = Repository::discover(root).ok()?;
@@ -193,10 +198,32 @@ pub enum FetchDefault {
     /// `git fetch origin`.
     Origin,
     /// GitHub HTTPS. Credentials are the callback, never the URL.
-    GitHub { token: String, repository: String },
+    GitHub {
+        /// Access token for the fetch.
+        token: String,
+        /// The `owner/name` slug.
+        repository: String,
+    },
+}
+
+/// Prints the repository but never the token, so a logged value leaks no
+/// credential.
+impl std::fmt::Debug for FetchDefault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Origin => f.write_str("Origin"),
+            Self::GitHub { repository, .. } => f
+                .debug_struct("GitHub")
+                .field("token", &"<redacted>")
+                .field("repository", repository)
+                .finish(),
+        }
+    }
 }
 
 impl FetchDefault {
+    /// `GitHub` when `GITHUB_TOKEN` and `GITHUB_REPOSITORY` are both set and
+    /// non-empty, else `Origin`.
     #[must_use]
     pub fn from_env() -> Self {
         match (env::var("GITHUB_TOKEN"), env::var("GITHUB_REPOSITORY")) {
@@ -432,6 +459,8 @@ pub fn default_branch_candidates() -> Vec<String> {
     candidate_names(env_base_ref().as_deref())
 }
 
+/// Like `default_branch_candidates`, with the base ref passed in instead of
+/// read from the environment.
 #[must_use]
 pub fn default_branch_candidates_from(base_ref: Option<&str>) -> Vec<String> {
     candidate_names(base_ref)
@@ -569,8 +598,7 @@ pub fn assert_only_allowed(
     );
 }
 
-/// Commit `paths` onto `branch` without moving HEAD. `Empty` if the tree is
-/// unchanged.
+/// What [`commit_branch_and_push`] did: `Empty` when the tree was unchanged.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum PushOutcome {
     /// No version files changed.
@@ -579,6 +607,8 @@ pub enum PushOutcome {
     Pushed,
 }
 
+/// Commits `paths` onto `branch` without moving HEAD, then force-pushes
+/// `branch` to `github` over HTTPS with `token`.
 pub fn commit_branch_and_push(
     root: &Path,
     branch: &str,

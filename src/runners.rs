@@ -18,7 +18,9 @@ use crate::config::{Config, Runner};
 /// that go straight into `runs-on:`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Machine {
+    /// The name the machine was declared under.
     pub name: String,
+    /// Straight into `runs-on:`.
     pub labels: Vec<String>,
 }
 

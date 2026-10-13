@@ -1,3 +1,6 @@
+//! Fragment consumption, changelog writing, and Version PR notes, including
+//! pull request and commit links.
+
 mod common;
 
 use std::fs;

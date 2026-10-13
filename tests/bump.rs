@@ -1,3 +1,6 @@
+//! Version bumps and `prepare`: bump rules, per-driver edits, and lockfile
+//! follow-ups.
+
 mod common;
 
 use std::fs;

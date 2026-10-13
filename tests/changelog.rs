@@ -1,3 +1,6 @@
+//! Rendering of release entries and dependency lists from the stock and
+//! override templates.
+
 use indoc::indoc;
 use verctl::changelog::{
     Commit, Dependency, PullRequest, ReleaseInput, render_dependencies, render_release,

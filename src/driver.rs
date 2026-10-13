@@ -5,26 +5,39 @@ use toml_edit::{DocumentMut, Item, value};
 
 use crate::process;
 
+/// The file format a path driver edits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
+    /// A TOML file, edited with its comments and layout kept.
     Toml,
+    /// A JSON file; comments are accepted (JSONC).
     Json,
 }
 
+/// How a package's version is read and written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Driver {
+    /// The version is a string at a key path in a TOML or JSON file.
     Path {
+        /// The file format.
         format: Format,
+        /// Dotted key paths tried in order; the first that holds a string wins.
         keys: Vec<String>,
+        /// Follow-up command to run after the bump, such as a lockfile refresh.
         after: Option<String>,
     },
+    /// An external filter reads and writes the version.
     Command {
+        /// Prints the version from the file on stdin.
         read: CommandSpec,
+        /// Prints the new file from the file on stdin and `VERCTL_VERSION`.
         write: CommandSpec,
+        /// Follow-up command to run after the bump, such as a lockfile refresh.
         after: Option<String>,
     },
 }
 
+/// How a command driver's filter is invoked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandSpec {
     /// `mise run <task>` — stdin is the file, stdout is the version or new
@@ -35,14 +48,17 @@ pub enum CommandSpec {
 }
 
 impl Driver {
+    /// The stock driver for `Cargo.toml`.
     pub fn cargo() -> Result<Self> {
         crate::config::stock_driver("cargo")
     }
 
+    /// The stock driver for `package.json`.
     pub fn npm() -> Result<Self> {
         crate::config::stock_driver("npm")
     }
 
+    /// The follow-up command to run after the bump, if any.
     #[must_use]
     pub fn after(&self) -> Option<&str> {
         match self {
@@ -50,6 +66,7 @@ impl Driver {
         }
     }
 
+    /// The current version in `raw`.
     pub fn read(&self, raw: &str) -> Result<String> {
         match self {
             Self::Path { format, keys, .. } => match format {
@@ -60,6 +77,7 @@ impl Driver {
         }
     }
 
+    /// `raw` with the version replaced by `new_version`.
     pub fn write(&self, raw: &str, new_version: &str) -> Result<String> {
         match self {
             Self::Path { format, keys, .. } => match format {

@@ -12,8 +12,8 @@ categories = ["command-line-utilities", "development-tools"]
 
 [lints.rust]
 unsafe_code = "forbid"
-# Local edit: the template denies missing_docs and
-# missing_debug_implementations; VER-049 turns both on.
+missing_docs = "deny"
+missing_debug_implementations = "deny"
 unreachable_pub = "deny"
 rust_2018_idioms = { level = "deny", priority = -1 }
 

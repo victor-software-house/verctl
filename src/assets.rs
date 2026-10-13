@@ -20,32 +20,47 @@ use serde::Serialize;
 use crate::config::Config;
 use crate::{github, process, runners};
 
+/// Time limit for each build step of one target.
 pub const BUILD_TIMEOUT: Duration = Duration::from_mins(15);
 
 /// One row of a GitHub Actions `strategy.matrix`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MatrixTarget {
+    /// The target's name under `assets`, such as `linux-x64`.
     pub id: String,
     /// The machine as declared, for the grid. `runs-on:` gets `labels`.
     pub machine: String,
+    /// The `runs-on:` labels of the machine that builds this target.
     pub labels: Vec<String>,
+    /// Operating system the binary runs on.
     pub os: String,
+    /// CPU architecture the binary runs on.
     pub arch: String,
+    /// Rust target triple passed to the build.
     pub triple: String,
+    /// File name of the release tarball.
     pub asset: String,
 }
 
+/// The `strategy.matrix` of the build job.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Matrix {
+    /// One entry per target.
     pub include: Vec<MatrixTarget>,
 }
 
+/// What the assets job builds and uploads, resolved from the config.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AssetsPlan {
+    /// Name of the binary packed into each tarball.
     pub bin: String,
+    /// The first package's current version.
     pub version: String,
+    /// The release tag the tarballs are uploaded to.
     pub tag: String,
+    /// Whether any target is declared.
     pub has_assets: bool,
+    /// The build matrix.
     pub matrix: Matrix,
     #[serde(skip)]
     prepare: Vec<String>,
@@ -102,6 +117,8 @@ const STOCK_BUILD: &[&str] = &[
 ];
 const STOCK_BINARY: &str = "target/{triple}/release/{bin}";
 
+/// Resolves the declared targets, the first package's version, and its release
+/// tag.
 pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
     runners::declared(config)?;
     let package = config
@@ -158,6 +175,8 @@ struct GithubMatrix {
     include: Vec<GithubRow>,
 }
 
+/// Appends `has_assets`, `tag`, and the GitHub-facing matrix to the step output
+/// file `path`.
 pub fn write_github_output(plan: &AssetsPlan, path: &Path) -> Result<()> {
     let matrix = GithubMatrix {
         include: plan
@@ -188,6 +207,7 @@ fn formatdoc_output(plan: &AssetsPlan, matrix: &str) -> String {
     }
 }
 
+/// Builds the target `id` and packs its binary into a tarball under `root`.
 pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
     let target = plan
         .matrix
@@ -225,6 +245,7 @@ pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
     Ok(tarball)
 }
 
+/// Uploads `tarball` to the release `tag` and returns the asset's download URL.
 pub fn upload(root: &Path, tag: &str, tarball: &Path) -> Result<String> {
     let token = crate::release::resolve_token()?;
     let repo = github::repo(root)?;

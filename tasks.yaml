@@ -256,16 +256,6 @@ queue:
       - >2-
         2026-10-12 (UTC): the decision also covers whether verctl should verify the ruleset that limits pushes on the proposal branch `verctl/release/<base>` to the release identity, in `check` or a separate command. The release-state-machine design documents that ruleset but does not verify it.
 
-  - id: VER-049
-    title: Deny missing_docs and missing_debug_implementations
-    scope: src/
-    outcome: verctl takes the template full lint set; every public item has a doc and a Debug implementation.
-    blocked_by:
-      []
-    acceptance:
-      - Cargo.toml drops the local edit that leaves missing_docs and missing_debug_implementations off.
-      - mise run verify passes with both denied.
-
   - id: VER-050
     title: Replace git2 with gix so the openssl ban applies
     scope: git2 call sites, Cargo.toml, deny.toml
@@ -592,6 +582,15 @@ horizon:
         Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.
 
 archive:
+  - id: VER-049
+    title: Deny missing_docs and missing_debug_implementations
+    scope: src/
+    outcome: verctl takes the template full lint set; every public item has a doc and a Debug implementation.
+    completed: 2026-10-13T16:03:05
+    evidence:
+      - missing_docs and missing_debug_implementations are denied in Cargo.toml; every public item has a doc, and FetchDefault prints a redacted token.
+    disposition: completed
+
   - id: VER-059
     title: Serve the ver task raw
     scope: tasks

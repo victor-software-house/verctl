@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 
 use crate::git;
 
+/// The command that refreshes the lockfile after `manifest`'s version moves,
+/// when the tree has one.
 #[must_use]
 pub fn follow_up(manifest: &Path) -> Option<String> {
     let dir = manifest.parent().unwrap_or(manifest);

@@ -5,36 +5,57 @@ use serde::Serialize;
 const RELEASE_TEMPLATE: &str = include_str!("../templates/changelog.jinja");
 const DEPENDENCY_TEMPLATE: &str = include_str!("../templates/dependency-changelog.jinja");
 
+/// A pull request an entry links to.
 #[derive(Debug, Clone, Serialize)]
 pub struct PullRequest {
+    /// The pull request number.
     pub number: u64,
+    /// Link to the pull request.
     pub url: String,
+    /// The author's login.
     pub user: Option<String>,
+    /// Link to the author's profile.
     pub user_url: Option<String>,
+    /// The author is outside `internal_authors`, so the entry credits them by
+    /// name.
     pub external_author: bool,
 }
 
+/// A commit an entry links to when no pull request is known.
 #[derive(Debug, Clone, Serialize)]
 pub struct Commit {
+    /// Abbreviated commit SHA.
     pub short: String,
+    /// Link to the commit.
     pub url: String,
 }
 
+/// A dependency whose version changed.
 #[derive(Debug, Clone, Serialize)]
 pub struct Dependency {
+    /// The package name.
     pub name: String,
+    /// The version the dependency was bumped to.
     pub new_version: String,
 }
 
+/// The data one fragment contributes to a release entry.
 #[derive(Debug, Clone)]
 pub struct ReleaseInput {
+    /// The fragment's first line.
     pub summary: String,
+    /// Fragment body lines after the summary, indented under the entry.
     pub continuations: Vec<String>,
+    /// The pull request that added the fragment.
     pub pull_request: Option<PullRequest>,
+    /// The commit that added the fragment, linked when no pull request is
+    /// known.
     pub commit: Option<Commit>,
 }
 
 impl ReleaseInput {
+    /// Marks the pull request as externally authored unless its author is in
+    /// `internal_authors`.
     #[must_use]
     pub fn with_author_filter(mut self, internal_authors: &[String]) -> Self {
         if let Some(pr) = &mut self.pull_request {
@@ -46,6 +67,7 @@ impl ReleaseInput {
     }
 }
 
+/// Whether the summary already ends in `.`, `!`, or `?`.
 #[must_use]
 pub fn summary_has_terminal(summary: &str) -> bool {
     summary
@@ -67,10 +89,12 @@ pub fn summary_body(summary: &str) -> &str {
     summary.strip_suffix('.').unwrap_or(summary)
 }
 
+/// Renders `input` with the stock release template.
 pub fn render_release(input: &ReleaseInput) -> Result<String> {
     render_release_template(RELEASE_TEMPLATE, input)
 }
 
+/// Renders `input` with `template` in place of the stock release template.
 pub fn render_release_template(template: &str, input: &ReleaseInput) -> Result<String> {
     let mut env = Environment::new();
     env.add_template("changelog", template)
@@ -89,6 +113,7 @@ pub fn render_release_template(template: &str, input: &ReleaseInput) -> Result<S
     Ok(rendered)
 }
 
+/// Renders the `Updated dependencies:` entry for `dependencies`.
 pub fn render_dependencies(dependencies: &[Dependency]) -> Result<String> {
     let mut env = Environment::new();
     env.add_template("deps", DEPENDENCY_TEMPLATE)
