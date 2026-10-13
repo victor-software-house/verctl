@@ -112,6 +112,14 @@ signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/re
 repository_ids = { repository = "1340721957" }
 
 [[tools.rust]]
+version = "1.99.0"
+backend = "core:rust"
+specifiers = ["1.99.0"]
+
+[tools.rust.options]
+components = "clippy"
+
+[[tools.rust]]
 version = "nightly-2026-09-29"
 backend = "core:rust"
 specifiers = ["nightly-2026-09-29"]
@@ -119,11 +127,3 @@ specifiers = ["nightly-2026-09-29"]
 [tools.rust.options]
 components = "rustfmt"
 profile = "minimal"
-
-[[tools.rust]]
-version = "1.99.0"
-backend = "core:rust"
-specifiers = ["1.99.0"]
-
-[tools.rust.options]
-components = "clippy"
