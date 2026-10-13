@@ -50,7 +50,9 @@ cargo run -- status
 Every command returns one typed report. Pretty, `--color never`, and
 `--format json` render the same data. JSON and human errors share that report
 contract; JSON errors use stdout, while human errors use stderr. `--quiet`
-suppresses only successful human output.
+suppresses only successful human output. JSON is never coloured, whatever
+`CLICOLOR_FORCE` or `FORCE_COLOR` say, and a parse error under
+`--format json` is a JSON error even when the bad argument comes first.
 
 ## Fragments
 

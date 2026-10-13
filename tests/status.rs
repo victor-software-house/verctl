@@ -103,6 +103,46 @@ fn json_errors_use_stdout_and_one_envelope() {
     assert_eq!(value["error"]["bin"], "verctl");
 }
 
+/// Agent shells force colour through `CLICOLOR_FORCE`, `FORCE_COLOR`, and
+/// `COLORTERM`. JSON output, a JSON error, and a parse error under
+/// `--format json` stay plain whatever they say, so `jq` never sees an ESC.
+#[test]
+fn json_output_holds_no_escape_byte_under_forced_colour() {
+    let root = TempDir::new().expect("tempdir");
+    let good = root.path().join("good");
+    let bad = root.path().join("bad");
+    fs::create_dir_all(&good).expect("dir");
+    fs::create_dir_all(&bad).expect("dir");
+    fs::write(bad.join("bad.md"), "nope").expect("write");
+    let good = good.to_str().expect("UTF-8 path");
+    let bad = bad.to_str().expect("UTF-8 path");
+    let cases: [&[&str]; 4] = [
+        &["status", "--format", "json", "-d", good],
+        &["check", "--format", "json", "-d", bad],
+        &["prepare", "--bogus", "--format", "json"],
+        &["--format=json", "nosuchverb"],
+    ];
+    for args in cases {
+        let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+            .current_dir(root.path())
+            .args(args)
+            .env("CLICOLOR_FORCE", "1")
+            .env("FORCE_COLOR", "3")
+            .env("COLORTERM", "truecolor")
+            .env_remove("NO_COLOR")
+            .output()
+            .expect("spawn");
+        assert!(
+            !output.stdout.contains(&0x1b) && !output.stderr.contains(&0x1b),
+            "{args:?}: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&output.stdout)
+            .unwrap_or_else(|error| panic!("{args:?}: stdout is not JSON: {error}"));
+    }
+}
+
 #[test]
 fn instructions_preserve_the_installed_markdown() {
     let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
