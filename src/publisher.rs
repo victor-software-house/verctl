@@ -2,11 +2,12 @@
 //!
 //! Override a `publishers` entry or set `publisher` + `argv` on a
 //! package. Placeholders: `{path}` `{dir}` `{registry}` `{config}`.
+//! [`RELEASE_ONLY`] publishes to no registry.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -168,11 +169,21 @@ fn find_config(manifest: &Path, file_name: &str) -> Option<PathBuf> {
     None
 }
 
+/// The publisher name for a package released only on GitHub: a tag and a
+/// Release, with assets when declared, and no registry step. Its argv is
+/// empty, which `publish` reads as "nothing to upload"; every other publisher
+/// must render a command, so an empty one never passes for this mode.
+pub const RELEASE_ONLY: &str = "none";
+
 pub fn resolve(
     config: &crate::config::Config,
     spec: &crate::config::PackageSpec,
     manifest: &Path,
 ) -> Result<(String, String, Vec<String>)> {
+    if spec.publisher.as_deref() == Some(RELEASE_ONLY) {
+        let noun = spec.noun.clone().unwrap_or_else(|| "package".into());
+        return Ok(("release only".into(), noun, Vec::new()));
+    }
     let inferred = spec
         .path
         .file_name()
@@ -209,6 +220,11 @@ pub fn resolve(
         publisher.argv.clone_from(&spec.publish_argv);
     }
     let (noun, argv) = publisher.render(name, manifest, spec.registry.as_deref())?;
+    ensure!(
+        !argv.is_empty(),
+        "package {:?}: publisher {name:?} renders an empty command; set publisher: none to release without a registry",
+        spec.name
+    );
     Ok((name.to_owned(), noun, argv))
 }
 
@@ -224,7 +240,9 @@ fn stock_publisher_for_file(file_name: &str) -> Option<&'static str> {
 mod tests {
     use std::path::Path;
 
-    use super::PublisherSpec;
+    use indoc::indoc;
+
+    use super::{PublisherSpec, resolve};
 
     #[test]
     fn stock_cargo_and_bun_are_recipes() {
@@ -257,6 +275,31 @@ mod tests {
                 "--access",
                 "public",
             ]
+        );
+    }
+
+    /// An empty upload command means release-only, so only `publisher: none`
+    /// may produce one.
+    #[test]
+    fn only_none_renders_an_empty_command() {
+        let config = crate::config::Config::parse(indoc! {"
+            packages:
+              - name: quiet
+                path: Cargo.toml
+                publisher: none
+              - name: empty
+                path: Cargo.toml
+                publish: []
+        "})
+        .unwrap();
+        let manifest = Path::new("Cargo.toml");
+        let (label, _, argv) = resolve(&config, &config.packages[0], manifest).unwrap();
+        assert_eq!(label, "release only");
+        assert_eq!(argv, Vec::<String>::new());
+        let error = resolve(&config, &config.packages[1], manifest).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("renders an empty command"),
+            "{error:#}"
         );
     }
 

@@ -51,6 +51,42 @@ fn dry_run_lists_one_cargo_crate() {
     assert_eq!(publish_stdout(root.path()), expected);
 }
 
+/// A private binary with `publish = false` releases on GitHub only.
+#[test]
+fn dry_run_lists_a_release_only_package() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publisher: none
+        "},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "0.0.1"
+            publish = false
+        "#},
+    )
+    .unwrap();
+    let expected = formatdoc! {"
+        ┌──────┬─────────┬──────────────┐
+        │ name ┆ version ┆ via          │
+        ╞══════╪═════════╪══════════════╡
+        │ demo ┆ 0.0.1   ┆ release only │
+        └──────┴─────────┴──────────────┘
+
+        release  would create v0.0.1
+        dry-run  nothing published
+    "};
+    assert_eq!(publish_stdout(root.path()), expected);
+}
+
 #[test]
 fn dry_run_lists_many_packages() {
     let root = TempDir::new().unwrap();
