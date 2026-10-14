@@ -1,0 +1,8 @@
+# The repository's own checks. check:repo runs check:local after the shared
+# checks, so a repository replaces run, or adds depends, with its own checks.
+# A starter: the template writes this file once and never rewrites it.
+"check:local" = { description = "Workflow policy, the version guard, and pending fragments", depends = [
+  "policy",
+  "versions",
+  "fragments",
+] }

@@ -143,9 +143,14 @@ and native-tls bans all apply as the template ships them.
 `mise.toml` pins stable 1.99.0 (through mr-boxington, whose store CI
 restores with its action) and the formatting nightly;
 `rust-toolchain.toml` and `rust-version` match. `verify` comes from
-ctl-core's `tasks/rust.toml`; `check:repo` adds workflow policy, the
-version guard, and pending fragments, and this repo's tasks live in
-`mise-tasks/`. CI adds `deny:advisories` and `semver`.
+ctl-core's `tasks/rust.toml`. `check:repo` is the template's (TOML format,
+Markdown, spelling, workflows, OpenSpec) and ends with `check:local`, which
+`mise-tasks/local.toml` fills with workflow policy, the version guard, and
+pending fragments; never edit `check:repo`. This repo's other tasks live in
+`mise-tasks/`. CI adds `deny:advisories`, `semver`, and `cargo package`. Its
+`ci.yml` keeps the `plan` job and the `verify` matrix, so a public repo
+stays on hosted runners; `.rumdl.toml` and `.typos.toml` carry local
+exceptions.
 `mise.dev.toml` holds only the hook tools and arms the git hooks on
 `mise install`. CI and the release lanes run `MISE_ENV=ci`.
 `mise.release.toml` is the published tarball. `.miserc.toml`

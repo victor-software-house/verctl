@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  # The Version PR is opened, then labeled. The version check reads the
+  # label from the event, so adding or removing a label starts a run too.
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  GIT_CONFIG_COUNT: "1"
+  GIT_CONFIG_KEY_0: init.defaultBranch
+  GIT_CONFIG_VALUE_0: main
+  CARGO_TERM_COLOR: always
+  MISE_ENV: ci
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}-${{ github.event.pull_request.base.sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  # runs-on must be known before a job exists, so the machine cannot come
+  # from a tool running inside that job. This reads [ci] and hands
+  # the labels down, the same bootstrap the publish lane uses for assets.
+  #
+  # examples/workflows/ci.yml plans with the released tarball and needs no
+  # compiler. This one builds the verctl it plans with: `mise run ver` runs
+  # this checkout, so a new verb plans its own pull request.
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          version: 2026.10.9
+          cache: true
+      - run: mise install --locked
+      - name: Cache builds with mbx
+        uses: jdx/mr-boxington-action@47ce49b32025d93a7a2f4570815afaa2b7092240 # v1.7.2
+      - name: Plan validation jobs
+        id: plan
+        run: mise run ver ci --github-output "$GITHUB_OUTPUT"
+
+  verify:
+    name: ${{ matrix.name }}
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.labels }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Set up mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          version: 2026.10.9
+          cache: true
+      - run: mise install --locked
+      - name: Cache builds with mbx
+        uses: jdx/mr-boxington-action@47ce49b32025d93a7a2f4570815afaa2b7092240 # v1.7.2
+      - name: Verify
+        run: mise run verify
+      - name: Advisories
+        run: mise run deny:advisories
+      # next carries the next minor release's breaking changes while
+      # Cargo.toml still names the last release, so the check would read them
+      # as a patch. It skips pull requests into next and the one that merges
+      # this repository's next into main; the Version PR that follows bumps the
+      # minor, and every later pull request into main checks against that
+      # release. Pushes skip it: every change reaches main through a pull
+      # request that already ran it, and the push of the next merge would fail.
+      - name: Semver
+        if: >-
+          github.event_name == 'pull_request'
+          && github.base_ref != 'next'
+          && !(github.head_ref == 'next'
+          && github.event.pull_request.head.repo.full_name == github.repository)
+        run: mise run semver
+      # Builds the package crates.io would receive.
+      - name: Package
+        run: mise x -- cargo package --locked --all-features
+
+  template:
+    name: Template
+    # A pull request from a fork gets no secrets and cannot read the private
+    # template, so the check is skipped there instead of failing.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: nscloud-ubuntu-24.04-amd64-4x8
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Mints a token from the vsh-templates-reader App, installs only uv and
+      # python from mise.template.toml, and fails when the newest template tag
+      # would change the repository.
+      - name: Check the template version
+        uses: victor-software-house/ctl-core/.github/actions/copier-check@4c178e81817f4040de9c2e66ccc9aac3172cb1a9 # main, 2026-10-13
+        with:
+          client-id: ${{ secrets.TEMPLATES_APP_CLIENT_ID }}
+          private-key: ${{ secrets.TEMPLATES_APP_PRIVATE_KEY }}
