@@ -82,7 +82,6 @@ name it uses to build a line is not a declaration.
 
 Trim declarations with `{%- … -%}`: a shebang has to stay on line one.
 
-
 Committing one template adds a served file; deleting it retires it. Only a
 tracked template renders, because `prepare` stages what it writes: one git does
 not carry would put a served file on the tag with no source beside it, and

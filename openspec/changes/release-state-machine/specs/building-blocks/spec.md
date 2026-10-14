@@ -76,46 +76,56 @@ a lockfile's parsed entries, never its bytes.
 
 verctl SHALL refuse to load a configuration in which a package that publishes
 depends on a workspace package that does not publish, and SHALL name both
-packages. Dependencies match by package name, after renames, aliases, and
-workspace inheritance are resolved. For cargo, normal and build dependencies count,
-target-specific ones included, and so does a development dependency that
-declares a `version`, which `cargo publish` keeps. For bun, `dependencies`,
-`optionalDependencies`, and `peerDependencies` count. A path-only cargo
-development dependency and a bun `devDependencies` entry SHALL NOT count.
-Every dependency that counts SHALL also order publishes, and a package SHALL
-wait only on the dependencies that order puts before it. For cargo, verctl
-SHALL refuse to load a configuration in which such dependencies form a cycle,
-because cargo cannot publish crates with cyclic versioned development
-dependencies ([rust-lang/cargo#4242][cargo-4242]). For bun, a cycle SHALL NOT
-be refused, because the npm registry does not require a dependency to exist
-first. Outside a cycle, publishes follow dependency order whatever order
-`packages` lists; among the members of a bun cycle, they follow the order
-`packages` lists them in `.ctl/ver.yaml`.
+packages.
 
 #### Scenario: A published crate depends on a tool crate
 
 - **WHEN** crate `demo` publishes and has a normal dependency on workspace crate `xtask`, which declares `publish = false`
 - **THEN** `verctl status` exits non-zero and names `demo` and `xtask`
 
+### Requirement: Only some dependencies count toward publishing
+
+Dependencies match by package name, after renames, aliases, and workspace
+inheritance are resolved. For cargo, normal and build dependencies count,
+target-specific ones included, and so does a development dependency that
+declares a `version`, which `cargo publish` keeps. For bun, `dependencies`,
+`optionalDependencies`, and `peerDependencies` count. A path-only cargo
+development dependency and a bun `devDependencies` entry SHALL NOT count.
+
 #### Scenario: A versioned development dependency on a tool crate
 
 - **WHEN** crate `demo` publishes and has a development dependency on `xtask` that declares `version = "0.1"`, and `xtask` declares `publish = false`
 - **THEN** `verctl status` exits non-zero and names `demo` and `xtask`
+
+#### Scenario: A published crate tests with a tool crate
+
+- **WHEN** crate `demo` publishes and has a path-only development dependency on `xtask`, which declares `publish = false`
+- **THEN** `verctl status` loads the configuration, and `demo`'s publish does not wait on `xtask`
+
+### Requirement: A cargo dependency cycle is refused
+
+Every dependency that counts SHALL also order publishes, and a package SHALL
+wait only on the dependencies that order puts before it. For cargo, verctl
+SHALL refuse to load a configuration in which such dependencies form a cycle,
+because cargo cannot publish crates with cyclic versioned development
+dependencies ([rust-lang/cargo#4242][cargo-4242]).
 
 #### Scenario: Two crates test with each other
 
 - **WHEN** publishing crates `a` and `b` each have a versioned development dependency on the other
 - **THEN** `verctl status` exits non-zero, names the cycle `a -> b -> a`, and says that a path-only development dependency breaks it
 
+### Requirement: A bun dependency cycle is published in the listed order
+
+For bun, a cycle SHALL NOT be refused, because the npm registry does not
+require a dependency to exist first. Outside a cycle, publishes follow
+dependency order whatever order `packages` lists; among the members of a bun
+cycle, they follow the order `packages` lists them in `.ctl/ver.yaml`.
+
 #### Scenario: Two bun packages that peer on each other
 
 - **WHEN** publishing bun packages `@demo/host` and `@demo/plugin`, declared in that order, each list the other in `peerDependencies`
 - **THEN** `verctl status` loads the configuration, and `verctl release` publishes `@demo/host` before `@demo/plugin`
-
-#### Scenario: A published crate tests with a tool crate
-
-- **WHEN** crate `demo` publishes and has a path-only development dependency on `xtask`, which declares `publish = false`
-- **THEN** `verctl status` loads the configuration, and `demo`'s publish does not wait on `xtask`
 
 ### Requirement: Cargo is a built-in
 

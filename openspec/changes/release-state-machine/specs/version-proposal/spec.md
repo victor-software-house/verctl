@@ -87,41 +87,62 @@ new version to resolve.
 request that is not a Version PR SHALL fail when it changes a manifest version
 or adds a CHANGELOG section; it may add or remove fragments. Any pull request
 that changes whether a package publishes SHALL fail unless it adds a fragment
-for that package. A Version PR
-SHALL fail when it changes any path outside what the version step writes:
-manifests, lockfiles, CHANGELOGs, served files, consumed fragments, and the
-declared `writes` of `version` steps, with the write set read from the
-configuration at the merge-base. A manifest SHALL differ only in version
-fields and in the dependency requirements the plan rewrites. It SHALL also
-fail unless every changed manifest version equals the plan of the fragments
-present at the merge-base and absent at HEAD, every planned bump is
-applied, each changed package's CHANGELOG carries the new version's section,
-every lockfile agrees with its manifests, a lockfile's parsed entries and
-header differ from the merge-base only in the versions of the workspace
-packages the plan bumps and in references that resolve to them, with no entry added
-or removed, and every served file equals its template's render at the versions
-on HEAD. `check` SHALL constrain only which paths a `version` step's declared
-`writes` change, not their content, which the Version PR's review covers.
+for that package.
 
 #### Scenario: A hand-edited version on a feature branch
 
 - **WHEN** a pull request from branch `fix/typo` changes `Cargo.toml` from `0.3.0` to `0.3.1`
 - **THEN** `verctl check` exits non-zero and its error names `demo 0.3.0 -> 0.3.1` and the branch
 
-#### Scenario: A Version PR that carries a source change
-
-- **WHEN** the Version PR also changes `src/main.rs`
-- **THEN** `verctl check` exits non-zero and names `src/main.rs`
-
 #### Scenario: Publishing turned on without a fragment
 
 - **WHEN** a pull request removes `publish = false` from crate `xtask` and adds no fragment for `xtask`
 - **THEN** `verctl check` exits non-zero and names `xtask` and the missing fragment
 
+### Requirement: A Version PR changes only what the version step writes
+
+A Version PR SHALL fail when it changes any path outside what the version step
+writes: manifests, lockfiles, CHANGELOGs, served files, consumed fragments, and
+the declared `writes` of `version` steps, with the write set read from the
+configuration at the merge-base. `check` SHALL constrain only which paths a
+`version` step's declared `writes` change, not their content, which the Version
+PR's review covers.
+
+#### Scenario: A Version PR that carries a source change
+
+- **WHEN** the Version PR also changes `src/main.rs`
+- **THEN** `verctl check` exits non-zero and names `src/main.rs`
+
+#### Scenario: A Version PR that widens its own write set
+
+- **WHEN** the Version PR adds `src/lib.rs` to a `version` step's `writes` in `.ctl/ver.yaml` and changes `src/lib.rs`
+- **THEN** `verctl check` exits non-zero and names `src/lib.rs`, because the write set comes from the merge-base
+
+### Requirement: A Version PR applies the plan
+
+A Version PR SHALL fail unless every changed manifest version equals the plan
+of the fragments present at the merge-base and absent at HEAD, every planned
+bump is applied, and each changed package's CHANGELOG carries the new
+version's section. A manifest SHALL differ only in version fields and in the
+dependency requirements the plan rewrites.
+
 #### Scenario: The Version PR on its first CI run
 
 - **WHEN** the pull request was opened by `verctl propose` and carries no label
 - **THEN** `verctl check` exits zero
+
+#### Scenario: A Version PR that adds a dependency
+
+- **WHEN** the Version PR bumps `demo` in `Cargo.toml` and also adds a dependency there
+- **THEN** `verctl check` exits non-zero and names `Cargo.toml` and the added dependency
+
+### Requirement: A Version PR leaves lockfiles and served files as the plan implies
+
+A Version PR SHALL fail unless every lockfile agrees with its manifests, a
+lockfile's parsed entries and header differ from the merge-base only in the
+versions of the workspace packages the plan bumps and in references that
+resolve to them, with no entry added or removed, and every served file equals
+its template's render at the versions on HEAD.
 
 #### Scenario: A stale lockfile
 
@@ -132,16 +153,6 @@ on HEAD. `check` SHALL constrain only which paths a `version` step's declared
 
 - **WHEN** the Version PR bumps `demo` and also changes the resolved version of `serde` in `Cargo.lock`
 - **THEN** `verctl check` exits non-zero and names `Cargo.lock` and `serde`
-
-#### Scenario: A Version PR that adds a dependency
-
-- **WHEN** the Version PR bumps `demo` in `Cargo.toml` and also adds a dependency there
-- **THEN** `verctl check` exits non-zero and names `Cargo.toml` and the added dependency
-
-#### Scenario: A Version PR that widens its own write set
-
-- **WHEN** the Version PR adds `src/lib.rs` to a `version` step's `writes` in `.ctl/ver.yaml` and changes `src/lib.rs`
-- **THEN** `verctl check` exits non-zero and names `src/lib.rs`, because the write set comes from the merge-base
 
 #### Scenario: A served file edited by hand
 

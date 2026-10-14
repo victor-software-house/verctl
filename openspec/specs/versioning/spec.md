@@ -1,6 +1,7 @@
 # versioning Specification
 
 ## Purpose
+
 Which bumps verctl applies to a package's version: what a fragment may move, what `prepare` and `check` refuse, and the per-package keys that change that.
 
 ## Requirements
