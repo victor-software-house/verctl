@@ -44,6 +44,11 @@ timeout.
 - **WHEN** the checkout holds no tags and `origin` has `v0.4.6` naming HEAD, where `demo@0.4.6` is released
 - **THEN** `verctl docs` polls docs.rs for `demo@0.4.6`
 
+#### Scenario: An annotated tag
+
+- **WHEN** `origin` has an annotated tag `v0.4.6` whose tag object peels to HEAD, where `demo@0.4.6` is released
+- **THEN** `verctl docs` polls docs.rs for `demo@0.4.6`
+
 #### Scenario: A release whose publish failed
 
 - **WHEN** `demo@0.4.6` is the version at HEAD and tag `v0.4.6` does not exist

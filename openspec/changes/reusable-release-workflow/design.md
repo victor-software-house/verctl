@@ -221,9 +221,13 @@ crates.io (section 2.1) and that have a library target as Cargo resolves it
 crate). It checks each such package only when the tag `tags.template` names
 for that package's version at HEAD exists on `origin` and names HEAD: the
 shared `v{version}` tag, or the package's own tag when the template has
-`{name}`. verctl reads it with `git ls-remote --tags origin <tag>`, never
-from local refs: the `docs` job's checkout fetched no tags, and the
-`publish` job pushed the tag from another runner. `verctl publish`
+`{name}`. verctl reads it with `git ls-remote --tags origin
+refs/tags/<tag> 'refs/tags/<tag>^{}'`, never from local refs: the `docs`
+job's checkout fetched no tags, and the `publish` job pushed the tag from
+another runner. It matches the full ref name, because ls-remote matches a
+pattern against the tail of a ref, and compares HEAD with the peeled
+`^{}` commit when the tag is annotated, because the plain ref of an
+annotated tag names the tag object. `verctl publish`
 creates tags only after the registry lists every version (section 2.1), so
 the tag is the record that the publish happened, and no read of a lagging
 index decides it. A crate that reached crates.io while another package
