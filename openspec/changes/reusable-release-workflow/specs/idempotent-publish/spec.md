@@ -1,0 +1,55 @@
+## ADDED Requirements
+
+### Requirement: The registry decides whether a version is published
+
+Before it runs a package's publisher, `verctl publish` SHALL run the recipe's
+`query` and treat the package as published when the query exits zero and
+prints the version. It SHALL then not run the publisher, and SHALL report the
+package as `already`. After running a publisher it SHALL run the query again
+and fail unless the registry lists the version. A recipe whose `query` is
+`[]` SHALL keep the stderr match for "already published".
+
+#### Scenario: A rerun after the tag push failed
+
+- **WHEN** crates.io lists `demo` `0.4.6` and tag `v0.4.6` is missing
+- **THEN** `verctl publish` at the version commit does not run `cargo publish`, creates `v0.4.6`, and reports `demo` as `already`
+
+#### Scenario: A publisher that exits zero without publishing
+
+- **WHEN** the publisher exits zero and `query` still does not print `0.4.6`
+- **THEN** `verctl publish` exits non-zero, names `demo@0.4.6`, and creates no tag
+
+### Requirement: verctl publishes only at a version commit
+
+`verctl publish` SHALL run only when HEAD is the version commit of at least one
+package whose release is incomplete: the newest commit on the default
+branch's first-parent history where that package's version became its version
+at HEAD. On any other commit with an incomplete release it SHALL exit non-zero
+before any side effect and name the version commit.
+
+#### Scenario: HEAD has moved past the release
+
+- **WHEN** commit `A` set `demo` to `0.4.6`, commit `B` followed without touching `Cargo.toml`, crates.io lacks `0.4.6`, and `verctl publish` runs at `B`
+- **THEN** it exits non-zero before any publish and names commit `A`
+
+#### Scenario: The plan finds the commit
+
+- **WHEN** the same history, and `verctl publish --plan` runs at `B`
+- **THEN** it writes `commit=<A>` and `pending=true` to `$GITHUB_OUTPUT`
+
+### Requirement: A complete release is nothing to release
+
+When every package's registry entry, tag, Release, and declared assets exist
+for its version at HEAD, `verctl publish` and `verctl publish --plan` SHALL
+report `nothing to release`, run no publisher, create nothing, and exit zero.
+The JSON report SHALL carry `"outcome": "nothing-to-release"`.
+
+#### Scenario: A push after a finished release
+
+- **WHEN** `demo@0.4.6` is on crates.io, tag `v0.4.6` and its Release exist with both declared assets, and `verctl publish --format json` runs
+- **THEN** it exits zero with `"outcome": "nothing-to-release"`
+
+#### Scenario: Only an asset is missing
+
+- **WHEN** the release of `demo@0.4.6` lacks only its `darwin-arm64` asset
+- **THEN** `verctl publish --plan` reports the version commit as pending, `verctl assets` plans only `darwin-arm64`, and `verctl publish` at that commit reports the publish, tag, and Release as `already`
