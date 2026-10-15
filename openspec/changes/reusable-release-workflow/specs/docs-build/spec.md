@@ -2,9 +2,10 @@
 
 ### Requirement: verctl checks the docs.rs build of a released crate
 
-`verctl docs` SHALL poll docs.rs for each package released at HEAD whose
-publish target is crates.io, until docs.rs reports the version built, with a
-bounded backoff. It SHALL exit non-zero, naming the crate, when docs.rs
+`verctl docs` SHALL poll docs.rs, with a bounded backoff, for each package
+released at HEAD whose publish target is crates.io, whose manifest has a
+library target, and whose version crates.io lists, until docs.rs reports the
+version built. It SHALL exit non-zero, naming the crate, when docs.rs
 reports `doc_status` false, or when the crate is still unbuilt after the
 timeout.
 
@@ -23,6 +24,16 @@ timeout.
 - **WHEN** docs.rs still answers 404 for `demo@0.4.6` when `VERCTL_TIMEOUT=1` runs out
 - **THEN** `verctl docs` exits non-zero and names `demo@0.4.6` as unbuilt
 
+#### Scenario: A binary-only crate
+
+- **WHEN** the only package released at HEAD is a crates.io crate with no library target
+- **THEN** `verctl docs` asks docs.rs nothing and exits zero
+
+#### Scenario: A version crates.io does not list
+
+- **WHEN** `demo@0.4.6` is released at HEAD and crates.io does not list `0.4.6`
+- **THEN** `verctl docs` asks docs.rs nothing for `demo` and exits zero
+
 #### Scenario: A crate on another registry
 
 - **WHEN** the only package released at HEAD publishes to a registry other than crates.io
@@ -30,9 +41,14 @@ timeout.
 
 ### Requirement: The docs.rs build is not part of a complete release
 
-The `docs` job SHALL run after `publish`, and SHALL NOT delay `propose` or
-the next version commit's publish. A failed docs.rs build SHALL NOT make a
+The `docs` job SHALL run after `publish` finishes, whether a leg failed or
+not, and SHALL NOT delay `propose` or the next version commit's publish. A failed docs.rs build SHALL NOT make a
 release incomplete.
+
+#### Scenario: A later version commit failed to publish
+
+- **WHEN** one run publishes version commit `A`, then the `publish` leg for later commit `C` fails
+- **THEN** the `docs` leg at `A` checks the docs.rs build of `A`'s crates
 
 #### Scenario: A rerun after a failed docs build
 
