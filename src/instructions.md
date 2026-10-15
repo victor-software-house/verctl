@@ -134,7 +134,11 @@ manifest), and consumes fragments (same as `changeset version`).
 `prepare.after` is one argv run after bumps; `prepare.stage`
 lists extra globs that command may write. Any other dirty path
 fails. `--pr` also opens or force-updates `version-packages` (body is the
-changelog).
+changelog). The PR targets `GITHUB_REF_NAME`, else `VERCTL_DEFAULT_BRANCH`,
+else the branch `origin/HEAD` names; with none of them, `--pr` fails
+rather than guess `main`. Title and commit message default to
+`chore(release): version packages`; `VERCTL_PR_TITLE` and
+`VERCTL_COMMIT_MESSAGE` override them, and an empty value is unset.
 Auth is `GITHUB_TOKEN` / `GH_TOKEN` only. Push uses that token over
 HTTPS, not the machine git/ssh account: `--pr` runs `git push`, so it
 needs `git` on PATH, with a credential helper that reads the token from

@@ -478,6 +478,43 @@ fn prepare_links_the_pull_request_or_commit_that_added_each_fragment() {
     );
 }
 
+/// With no `GITHUB_REF_NAME`, no `VERCTL_DEFAULT_BRANCH`, and no
+/// `origin/HEAD`, `prepare --pr` fails before it writes anything instead of
+/// opening the Version PR against `main`.
+#[test]
+fn prepare_pr_without_a_known_base_fails_before_writing() {
+    let root = common::demo_root();
+    common::init(root.path());
+    common::git(
+        root.path(),
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/acme/demo.git",
+        ],
+    );
+    common::commit_all(root.path(), "chore: start");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+        .current_dir(root.path())
+        .env("GITHUB_TOKEN", "unused")
+        .env_remove("GH_TOKEN")
+        .env_remove("GITHUB_REF_NAME")
+        .env_remove("VERCTL_DEFAULT_BRANCH")
+        .args(["prepare", "--pr"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("cannot tell which branch"), "{stderr}");
+    assert!(
+        root.path().join(".changeset/bump.md").exists(),
+        "the fragment stays"
+    );
+    let manifest = fs::read_to_string(root.path().join("Cargo.toml")).unwrap();
+    assert!(manifest.contains(r#"version = "1.0.0""#), "{manifest}");
+}
+
 fn demo_plan() -> [PlanEntry; 1] {
     [PlanEntry {
         name: "demo".into(),

@@ -97,16 +97,23 @@ pub fn parse_remote(url: &str) -> Result<Repo> {
     parse_slug(path)
 }
 
-/// The branch a Version PR targets: `GITHUB_REF_NAME`, else the upstream
-/// default, else `main`.
-#[must_use]
-pub fn base_branch(root: &Path) -> String {
+/// The branch a Version PR targets: `GITHUB_REF_NAME`, else
+/// `VERCTL_DEFAULT_BRANCH`, else the branch `origin/HEAD` names.
+///
+/// None of them set is an error, not a guess: a repository whose default is
+/// not `main` would get a Version PR against a branch it does not release
+/// from.
+pub fn base_branch(root: &Path) -> Result<String> {
     if let Ok(name) = env::var("GITHUB_REF_NAME")
         && !name.is_empty()
     {
-        return name;
+        return Ok(name);
     }
-    crate::git::upstream_default_branch(root).unwrap_or_else(|| "main".into())
+    crate::git::configured_default_branch()
+        .or_else(|| crate::git::upstream_default_branch(root))
+        .context(
+            "cannot tell which branch the Version PR targets: set VERCTL_DEFAULT_BRANCH, or run `git remote set-head origin --auto`",
+        )
 }
 
 /// An open pull request.

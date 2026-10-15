@@ -33,8 +33,8 @@ jobs:
       - id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          client-id: ${{ secrets.VERSION_APP_CLIENT_ID }}
-          private-key: ${{ secrets.VERSION_APP_PRIVATE_KEY }}
+          client-id: ${{ secrets.CHANGESET_VERSION_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CHANGESET_VERSION_APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
       - uses: victor-software-house/verctl/actions/version-pr@ffc0a3b4bf03cbc81b2677aea2bd080e98d6c43b # v0.4.5

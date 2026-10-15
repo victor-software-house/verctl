@@ -100,11 +100,15 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
             dry_run,
         });
     }
-    let token = if args.open_pr() && !dry_run {
-        Some(release::resolve_token()?)
+    let target = if args.open_pr() && !dry_run {
+        Some((
+            release::resolve_token()?,
+            release::VersionPr::from_env(root)?,
+        ))
     } else {
         None
     };
+    let token = target.as_ref().map(|(token, _)| token.as_str());
     let bumps: Vec<PrepareBump> = plan
         .iter()
         .map(|entry| PrepareBump {
@@ -137,7 +141,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     // commit, and staged from here — a repo never lists them in stage.
     pinned.extend(templates::write(root, &config.templates, &served)?);
     let consumed = release::contributing_fragments(&plan, &fragments);
-    let origins = release::origins(root, token.as_deref(), &config.changelog, &fragments)?;
+    let origins = release::origins(root, token, &config.changelog, &fragments)?;
     let changelog = release::changelog_sections_with(&plan, &fragments, &origins)?;
     let changelogs = release::write_changelogs_with(&config, root, &plan, &fragments, &origins)?;
     if let Some(after) = &config.prepare.after {
@@ -167,15 +171,11 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     paths.extend(staged);
     release::consume_fragments(consumed)?;
     let mut pr = None;
-    if let Some(token) = token {
-        let title = std::env::var("VERCTL_PR_TITLE")
-            .unwrap_or_else(|_| "chore(release): version packages".into());
-        let message = std::env::var("VERCTL_COMMIT_MESSAGE").unwrap_or_else(|_| title.clone());
+    if let Some((token, version_pr)) = &target {
         pr = release::open_or_update_pr(
             root,
-            &token,
-            &title,
-            &message,
+            token,
+            version_pr,
             &paths,
             &changelog,
             config.prepare.version_label(),

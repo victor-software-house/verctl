@@ -16,13 +16,13 @@ inputs:
     required: false
     default: .ctl/ver.yaml
   title:
-    description: Version PR title.
+    description: Version PR title. Empty means verctl's default, `chore(release): version packages`.
     required: false
-    default: "chore(release): version packages"
+    default: ""
   commit-message:
-    description: Commit message on the Version PR.
+    description: Commit message on the Version PR. Empty means the title.
     required: false
-    default: "chore(release): version packages"
+    default: ""
   dry-run:
     description: Preview only. Set to `true` to write nothing.
     required: false

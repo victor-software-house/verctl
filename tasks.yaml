@@ -570,6 +570,15 @@ horizon:
         Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.
 
 archive:
+  - id: VER-064
+    title: Derive Version PR defaults instead of hardcoding them
+    scope: release
+    outcome: Every default a caller does not set comes from verctl, and an unknown base branch fails instead of becoming main.
+    completed: 2026-10-15T01:39:32
+    evidence:
+      - prepare --pr resolves the Version PR base before writing and fails when GITHUB_REF_NAME, VERCTL_DEFAULT_BRANCH, and origin/HEAD are all absent; the version-pr action defaults title and commit-message to empty; the publish and Version PR workflows drop init.defaultBranch; the example names the CHANGESET_VERSION_APP secrets.
+    disposition: completed
+
   - id: VER-063
     title: Clear the zizmor findings in the publish workflows
     scope: .github/workflows/publish.yml, examples/workflows/
