@@ -760,10 +760,7 @@ pub fn commit_branch_and_push(
     paths: &[PathBuf],
 ) -> Result<PushOutcome> {
     let repo = discover(root).context("open git repository")?;
-    let workdir = repo
-        .workdir()
-        .context("repository has no workdir")?
-        .to_path_buf();
+    let workdir = absolute_workdir(&repo)?;
     let parent = repo.head_commit().context("HEAD commit")?;
     let Some(_) = write_commit_on_branch(&repo, &workdir, &parent, branch, message, paths)? else {
         return Ok(PushOutcome::Empty);
@@ -771,6 +768,15 @@ pub fn commit_branch_and_push(
     let url = format!("https://github.com/{}/{}.git", github.owner, github.name);
     push(repo.git_dir(), &url, branch, token)?;
     Ok(PushOutcome::Pushed)
+}
+
+/// The working tree as an absolute path. gix reports it as it was discovered,
+/// so a repository found from `.` has `.` for a workdir, and no path would
+/// strip that prefix.
+fn absolute_workdir(repo: &gix::Repository) -> Result<PathBuf> {
+    let workdir = repo.workdir().context("repository has no workdir")?;
+    std::path::absolute(workdir)
+        .with_context(|| format!("resolve the workdir {}", workdir.display()))
 }
 
 /// The token reaches `git push` through this variable, which only the push's
@@ -1541,11 +1547,26 @@ mod tests {
         );
     }
 
+    /// `prepare --pr` runs from the repository root and finds it as `.`, and
+    /// gix then reports `.` as the workdir, which no path strips. The commit
+    /// resolves the workdir absolute first. The test binary runs in this
+    /// crate's checkout, which is that root.
+    #[test]
+    fn a_workdir_found_from_dot_resolves_paths() {
+        let repo = super::discover(Path::new(".")).unwrap();
+        let workdir = super::absolute_workdir(&repo).unwrap();
+        assert!(workdir.is_absolute(), "{}", workdir.display());
+        assert_eq!(
+            super::workdir_rel(&workdir, Path::new("./Cargo.toml")).unwrap(),
+            Path::new("Cargo.toml")
+        );
+    }
+
     /// Writes the Version PR commit of `paths` the way `commit_branch_and_push`
     /// does, and returns its SHA.
     fn write_commit(dir: &Path, paths: &[std::path::PathBuf]) -> Option<String> {
         let repo = super::discover(dir).unwrap();
-        let workdir = repo.workdir().unwrap().to_path_buf();
+        let workdir = super::absolute_workdir(&repo).unwrap();
         let parent = repo.head_commit().unwrap();
         super::write_commit_on_branch(&repo, &workdir, &parent, "version-packages", "chore", paths)
             .unwrap()
