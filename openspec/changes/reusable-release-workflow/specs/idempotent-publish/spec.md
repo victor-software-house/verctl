@@ -15,6 +15,11 @@ version within that bound. A recipe whose `query` is
 - **WHEN** crates.io lists `demo` `0.4.6` and tag `v0.4.6` is missing
 - **THEN** `verctl publish` at the version commit does not run `cargo publish`, creates `v0.4.6`, and reports `demo` as `already`
 
+#### Scenario: A workspace member is not the registry
+
+- **WHEN** crate `demo` is a member of the workspace at `0.4.6` and the registry index lacks `0.4.6`
+- **THEN** the stock cargo `query` runs outside the workspace, does not print `0.4.6`, and `verctl publish` runs `cargo publish`
+
 #### Scenario: A publisher that exits zero without publishing
 
 - **WHEN** the publisher exits zero and `query` still does not print `0.4.6` when the backoff ends
@@ -30,13 +35,20 @@ version within that bound. A recipe whose `query` is
 `verctl publish` SHALL run only when HEAD is the version commit of at least one
 package whose release is incomplete: the newest commit on the default
 branch's first-parent history where that package's version became its version
-at HEAD. On any other commit with an incomplete release it SHALL exit non-zero
-before any side effect and name the version commit.
+at HEAD. It SHALL publish, tag, and release only the packages whose version
+commit is HEAD, and SHALL leave every other incomplete package untouched and
+name it in the report. On any other commit with an incomplete release it
+SHALL exit non-zero before any side effect and name the version commit.
 
 #### Scenario: HEAD has moved past the release
 
 - **WHEN** commit `A` set `demo` to `0.4.6`, commit `B` followed without touching `Cargo.toml`, crates.io lacks `0.4.6`, and `verctl publish` runs at `B`
 - **THEN** it exits non-zero before any publish and names commit `A`
+
+#### Scenario: Another package is pending at an older commit
+
+- **WHEN** commit `A` set `core` to `0.3.1`, later commit `C` set `app` to `0.2.1`, neither is published, and `verctl publish` runs at `C`
+- **THEN** it publishes, tags, and releases only `app@0.2.1`, creates no tag for `core`, and its report names `core@0.3.1` and commit `A`
 
 #### Scenario: The plan finds the commit
 

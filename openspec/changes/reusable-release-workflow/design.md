@@ -84,8 +84,9 @@ workflow declares, which is why they are inputs to nothing else.
    commit, oldest first, as a JSON list), `pending`, and `assets` (a matrix
    of each version commit and target whose asset its Release lacks).
 2. `publish` runs when `inputs.publish` and `pending` are true, as a matrix
-   over `commits` with `max-parallel: 1`, so one run releases every pending
-   version commit in history order. Each leg checks out its commit and runs
+   over `commits` with `max-parallel: 1` and `fail-fast: true`, so one run
+   releases every pending version commit in history order and stops at the
+   first that fails. Each leg checks out its commit and runs
    `verctl publish`. Concurrency group `verctl-publish`, never cancelled.
 3. `assets` runs after `publish` when `inputs.assets` is true and the matrix
    is not empty, one job per commit and target, each at its commit.
@@ -113,7 +114,7 @@ registry has it. The stock recipes:
 
 | Publisher | `query` |
 |:--|:--|
-| `cargo` | `cargo info {name}@{version}` with `--registry {registry}` when one is set |
+| `cargo` | `cargo info {name}@{version}` with `--registry {registry}` when one is set, run from a temporary directory outside the workspace |
 | `bun` | `bun pm view {name}@{version} version` |
 | `none` | none; the package publishes to no registry |
 
@@ -122,6 +123,11 @@ verctl runs `query` first. When it prints the version, the package is
 then `query` again with a bounded backoff (registry metadata can lag a
 publish by a short while), and fails unless the registry lists the version
 within that bound. The bound is a constant with its reason on it.
+
+verctl runs every `query` from a temporary directory outside the
+repository. Inside a Cargo workspace, `cargo info` can answer for a workspace
+member from its local manifest, which would report an unpublished crate as
+`already`; outside it, the query can only read the registry.
 
 The recipe is data, so the exact commands are checked against each tool's
 documentation when they are written, and the reference goes in the doc
@@ -150,8 +156,11 @@ new run would start until an unrelated push. The `publish` matrix therefore
 covers every pending commit in one run.
 
 `verctl publish` refuses to run unless HEAD is a version commit of at least
-one package whose release is incomplete. The tag it creates is at HEAD, which
-is then that version commit. So a run on a later commit can no longer tag a
+one package whose release is incomplete, and it publishes, tags, and
+releases only the packages whose version commit is HEAD. Every other
+incomplete package is left for the run at its own version commit, and the
+report names it. The tag it creates is at HEAD, which is then that
+package's version commit. So a run on a later commit can no longer tag a
 commit that was never published.
 
 Alternative: dispatch with a `commit` input to resume. Lost: a missed run, for

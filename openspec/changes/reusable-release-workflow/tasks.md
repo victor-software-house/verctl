@@ -10,7 +10,7 @@ change.
 
 ## 1. Idempotent publish
 
-- [ ] 1.1 `query` on publisher recipes, stock `cargo` and `bun` queries, and the pre- and post-publish checks; proof: the idempotent-publish registry scenarios pass as tests with a fake publisher and query
+- [ ] 1.1 `query` on publisher recipes, stock `cargo` and `bun` queries, and the pre- and post-publish checks; proof: the idempotent-publish registry scenarios pass as tests with a fake publisher and query, including a fake registry that lacks the version of a workspace member
 - [ ] 1.2 The version commit from first-parent history, and `publish --plan` with `$GITHUB_OUTPUT`; proof: the version-commit scenarios pass against a local repository
 - [ ] 1.3 `nothing to release` and the `outcome` field; proof: the nothing-to-release scenarios pass with mocked GitHub responses
 
