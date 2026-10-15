@@ -20,6 +20,16 @@ version within that bound. A recipe whose `query` is
 - **WHEN** crate `demo` is a member of the workspace at `0.4.6` and the registry index lacks `0.4.6`
 - **THEN** the stock cargo `query` runs outside the workspace, does not print `0.4.6`, and `verctl publish` runs `cargo publish`
 
+#### Scenario: A registry declared in the repository's Cargo config
+
+- **WHEN** `.cargo/config.toml` at the repository root declares registry `internal`, and package `demo` sets `registry: internal`
+- **THEN** the cargo `query` runs outside the workspace with `--config` naming that file and `--registry internal`, and reads `internal`'s index
+
+#### Scenario: A scoped npm registry
+
+- **WHEN** `.npmrc` in a bun package's directory maps its scope to a private registry
+- **THEN** the bun `query` runs in that directory and asks the private registry, not the public one
+
 #### Scenario: A publisher that exits zero without publishing
 
 - **WHEN** the publisher exits zero and `query` still does not print `0.4.6` when the backoff ends
@@ -35,15 +45,19 @@ version within that bound. A recipe whose `query` is
 `verctl publish` SHALL run only when HEAD is the version commit of at least one
 package whose release is incomplete: the newest commit on the default
 branch's first-parent history where that package's version became its version
-at HEAD. It SHALL publish, tag, and release only the packages whose version
-commit is HEAD, and SHALL leave every other incomplete package untouched and
-name it in the report. On any other commit with an incomplete release it
-SHALL exit non-zero before any side effect and name the version commit.
+at HEAD. On any other commit with an incomplete release it SHALL exit non-zero
+before any side effect and name the version commit.
 
 #### Scenario: HEAD has moved past the release
 
 - **WHEN** commit `A` set `demo` to `0.4.6`, commit `B` followed without touching `Cargo.toml`, crates.io lacks `0.4.6`, and `verctl publish` runs at `B`
 - **THEN** it exits non-zero before any publish and names commit `A`
+
+### Requirement: A publish acts only on the packages released at HEAD
+
+`verctl publish` SHALL publish, tag, and release only the packages whose
+version commit is HEAD. It SHALL leave every other incomplete package
+untouched and name it in the report.
 
 #### Scenario: Another package is pending at an older commit
 

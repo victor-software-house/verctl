@@ -114,7 +114,7 @@ registry has it. The stock recipes:
 
 | Publisher | `query` |
 |:--|:--|
-| `cargo` | `cargo info {name}@{version}` with `--registry {registry}` when one is set, run from a temporary directory outside the workspace |
+| `cargo` | `cargo info {name}@{version}` with `--registry {registry}` when one is set, run outside the workspace with the repository's Cargo config passed in |
 | `bun` | `bun pm view {name}@{version} version` |
 | `none` | none; the package publishes to no registry |
 
@@ -124,10 +124,15 @@ then `query` again with a bounded backoff (registry metadata can lag a
 publish by a short while), and fails unless the registry lists the version
 within that bound. The bound is a constant with its reason on it.
 
-verctl runs every `query` from a temporary directory outside the
-repository. Inside a Cargo workspace, `cargo info` can answer for a workspace
-member from its local manifest, which would report an unpublished crate as
-`already`; outside it, the query can only read the registry.
+Inside a Cargo workspace, `cargo info` can answer for a workspace member from
+its local manifest, which would report an unpublished crate as `already`. So
+verctl runs the cargo query from a temporary directory outside the
+workspace, and passes `--config <path>` for each Cargo config file the
+repository's directory chain would have loaded (`.cargo/config.toml` at the
+repository root and above it inside the checkout). Registry names and
+credentials then resolve as they do for `cargo publish`, while the local
+manifest cannot answer. Every other query runs in the package's directory,
+as its publisher does, so `bunfig.toml` and `.npmrc` stay in effect.
 
 The recipe is data, so the exact commands are checked against each tool's
 documentation when they are written, and the reference goes in the doc
