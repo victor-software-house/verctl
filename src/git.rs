@@ -941,6 +941,13 @@ fn file_kind(_meta: &std::fs::Metadata) -> EntryKind {
     EntryKind::Blob
 }
 
+/// `path` relative to the working tree. A relative `path` is taken from the
+/// workdir. An absolute one may spell the workdir as given or canonical:
+/// the dirty-path check returns canonical paths, while the plan keeps the
+/// spelling verctl was started with, and a checkout behind a symlink spells
+/// them differently. Both spellings of the workdir are tried against `path`
+/// as given and against `path` with its parent canonicalized, which still
+/// works for a file that was deleted.
 fn workdir_rel(workdir: &Path, path: &Path) -> Result<PathBuf> {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
@@ -951,10 +958,24 @@ fn workdir_rel(workdir: &Path, path: &Path) -> Result<PathBuf> {
         .components()
         .filter(|component| !matches!(component, std::path::Component::CurDir))
         .collect();
-    normalized
-        .strip_prefix(workdir)
-        .with_context(|| format!("path outside workdir: {}", normalized.display()))
+    let workdirs = [Some(workdir.to_path_buf()), workdir.canonicalize().ok()];
+    let through_parent = normalized
+        .parent()
+        .and_then(|parent| parent.canonicalize().ok())
+        .zip(normalized.file_name())
+        .map(|(parent, name)| parent.join(name));
+    let paths = [Some(normalized.clone()), through_parent];
+    paths
+        .iter()
+        .flatten()
+        .find_map(|path| {
+            workdirs
+                .iter()
+                .flatten()
+                .find_map(|workdir| path.strip_prefix(workdir).ok())
+        })
         .map(Path::to_path_buf)
+        .with_context(|| format!("path outside workdir: {}", normalized.display()))
 }
 
 /// Who the Version PR commit is by: `user.name` and `user.email` when the
@@ -1558,6 +1579,31 @@ mod tests {
         assert!(workdir.is_absolute(), "{}", workdir.display());
         assert_eq!(
             super::workdir_rel(&workdir, Path::new("./Cargo.toml")).unwrap(),
+            Path::new("Cargo.toml")
+        );
+    }
+
+    /// A checkout reached through a symlink has a workdir spelled through the
+    /// link, while the dirty-path check returns canonical paths; both resolve.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_workdir_takes_canonical_paths() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        std::fs::write(dir.path().join("Cargo.toml"), "version = 1\n").unwrap();
+        commit_all(dir.path(), "init");
+        std::fs::write(dir.path().join("Cargo.toml"), "version = 2\n").unwrap();
+        let links = tempfile::TempDir::new().unwrap();
+        let link = links.path().join("checkout");
+        std::os::unix::fs::symlink(dir.path(), &link).unwrap();
+        let canonical = dir.path().canonicalize().unwrap().join("Cargo.toml");
+        let workdir = super::absolute_workdir(&super::discover(&link).unwrap()).unwrap();
+        assert_eq!(
+            super::workdir_rel(&workdir, &canonical).unwrap(),
+            Path::new("Cargo.toml")
+        );
+        assert_eq!(
+            super::workdir_rel(&workdir, &link.join("Cargo.toml")).unwrap(),
             Path::new("Cargo.toml")
         );
     }
