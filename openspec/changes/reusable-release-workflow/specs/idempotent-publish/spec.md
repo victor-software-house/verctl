@@ -2,33 +2,35 @@
 
 ### Requirement: The registry decides whether a version is published
 
-Before it runs a package's publisher, `verctl publish` SHALL run the recipe's
-`query` and treat the package as published when the query exits zero and
-prints the version. It SHALL then not run the publisher, and SHALL report the
-package as `already`. After running a publisher it SHALL run the query again,
-retrying with a bounded backoff, and fail unless the registry lists the
-version within that bound. A recipe whose `query` is
-`[]` SHALL keep the stderr match for "already published".
+Before it runs a package's publisher, `verctl publish` SHALL ask the
+registry, and SHALL report the package as `already` and not run the
+publisher when the registry has the version. After running a publisher it
+SHALL ask again, retrying with a bounded backoff, and fail unless the
+registry lists the version within that bound.
 
 #### Scenario: A rerun after the tag push failed
 
 - **WHEN** crates.io lists `demo` `0.4.6` and tag `v0.4.6` is missing
 - **THEN** `verctl publish` at the version commit does not run `cargo publish`, creates `v0.4.6`, and reports `demo` as `already`
 
+### Requirement: How verctl asks the registry
+
+For a cargo package on crates.io with no `query`, verctl SHALL read the
+crate's crates.io sparse index file and find the version there. For any
+other package it SHALL run the recipe's `query` in the package's directory
+and treat exit zero with the version printed as published. A package with
+`query: []`, or a cargo package on another registry with no `query`, SHALL
+keep the stderr match for "already published".
+
 #### Scenario: A workspace member is not the registry
 
-- **WHEN** crate `demo` is a member of the workspace at `0.4.6` and the registry index lacks `0.4.6`
-- **THEN** the stock cargo `query` runs outside the workspace, does not print `0.4.6`, and `verctl publish` runs `cargo publish`
+- **WHEN** crate `demo` is a member of the workspace at `0.4.6` and the crates.io index file for `demo` has no `0.4.6` line
+- **THEN** `verctl publish` runs `cargo publish`
 
-#### Scenario: A registry declared in the repository's Cargo config
+#### Scenario: A crate on another registry
 
-- **WHEN** `.cargo/config.toml` at the repository root declares registry `internal`, and package `demo` sets `registry: internal`
-- **THEN** the cargo `query` runs outside the workspace under a copy of that file with `--registry internal`, and reads `internal`'s index
-
-#### Scenario: A package-level Cargo config and an environment override
-
-- **WHEN** `crates/demo/.cargo/config.toml` declares registry `internal`, the root config declares it with another index, and CI sets `CARGO_REGISTRIES_INTERNAL_INDEX`
-- **THEN** the cargo `query` for `demo` reads the index from `CARGO_REGISTRIES_INTERNAL_INDEX`, and without that variable the one from `crates/demo/.cargo/config.toml`
+- **WHEN** crate `demo` sets `registry: internal` and declares no `query`
+- **THEN** verctl reads no index, runs `cargo publish`, and treats an "already exists" error as `already`
 
 #### Scenario: A scoped npm registry
 

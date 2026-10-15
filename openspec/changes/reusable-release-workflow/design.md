@@ -110,44 +110,43 @@ push that changes no version, `plan` reports nothing pending, `publish` and
 
 A publisher recipe gains `query`: an argv, with the same placeholders plus
 `{name}` and `{version}`, that exits zero and prints the version when the
-registry has it. The stock recipes:
+registry has it. It runs in the package's directory, as the publisher does,
+so the registry config the publisher reads (`bunfig.toml`, `.npmrc`) is in
+effect. The stock recipes:
 
-| Publisher | `query` |
+| Publisher | How "published" is decided |
 |:--|:--|
-| `cargo` | `cargo info {name}@{version}` with `--registry {registry}` when one is set, run outside the workspace under a copy of the checkout's Cargo config chain |
-| `bun` | `bun pm view {name}@{version} version` |
-| `none` | none; the package publishes to no registry |
+| `cargo` on crates.io (no `registry`, or `crates-io`) | verctl reads the crate's file in the crates.io sparse index, `https://index.crates.io/<prefix>/<name>`, and looks for a line whose `vers` is the version |
+| `cargo` on another registry | the package's own `query`, or the stderr match when it declares none |
+| `bun` | `query`: `bun pm view {name}@{version} version` |
+| `none` | nothing; the package publishes to no registry |
 
-verctl runs `query` first. When it prints the version, the package is
+verctl decides first. When the registry has the version, the package is
 `already` and its publisher does not run. Otherwise verctl runs the publisher,
-then `query` again with a bounded backoff (registry metadata can lag a
+then decides again with a bounded backoff (registry metadata can lag a
 publish by a short while), and fails unless the registry lists the version
 within that bound. The bound is a constant with its reason on it.
 
-Inside a Cargo workspace, `cargo info` can answer for a workspace member from
-its local manifest, which would report an unpublished crate as `already`. So
-verctl runs the cargo query in a temporary directory that mirrors the path
-from the repository root to the package's directory, holding a copy of every
-Cargo config file `cargo publish` would load inside the checkout
-(`.cargo/config.toml`, or the legacy `.cargo/config`) at the same relative
-place, and no manifest. Cargo then discovers them itself: deeper files win
-over shallower ones, `$CARGO_HOME` still applies, and `CARGO_*` environment
-variables still win over every file, as they do for `cargo publish`.
-Passing the files with `--config` instead lost because `--config` outranks
-the environment. A config value that is a relative path, such as a local
-`file://` index, would resolve against the copy; a repository that relies on
-one overrides the cargo `query`. Every other query runs in the package's directory,
-as its publisher does, so `bunfig.toml` and `.npmrc` stay in effect.
+The crates.io check is a direct index read because `cargo info`, run in a
+Cargo workspace, can answer for a workspace member from its local manifest
+and report an unpublished crate as `already`. Running it outside the
+workspace lost: Cargo then loses the checkout's registry config, and copying
+that config into a temporary directory drags in parent-directory configs,
+`include` targets, and relative paths. The sparse index is public, needs no
+auth, and is Cargo's own source of truth for crates.io
+([sparse index][cargo-sparse]). Every repository in scope publishes crates to
+crates.io; another registry declares `query`.
 
 The recipe is data, so the exact commands are checked against each tool's
 documentation when they are written, and the reference goes in the doc
-comment. Override: a `publishers` entry or a package's own `query`. Disable:
-`query: []`, which falls back to today's stderr match for that recipe.
+comment. Override: a `publishers` entry or a package's own `query`, which
+also replaces the crates.io read. Disable: `query: []`, which falls back to
+today's stderr match for that package.
 
-Alternative: verctl's own registry clients, as
+Alternative: verctl's own clients for every registry, as
 [release-state-machine][rsm] section 3.5 plans. Lost for this slice: each
-registry protocol and its auth is a project, and the tool that publishes
-already knows the registry, its config file, and its credentials.
+authenticated registry protocol is a project, while the crates.io index read
+is one unauthenticated request.
 
 ### 2.2 The version commit
 
@@ -233,3 +232,4 @@ template migrates with `copier update`.
 
 [rsm]: ../release-state-machine/design.md
 [pr-153]: https://github.com/victor-software-house/verctl/pull/153
+[cargo-sparse]: https://doc.rust-lang.org/cargo/reference/registry-index.html#sparse-protocol
