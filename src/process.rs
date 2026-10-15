@@ -29,8 +29,8 @@ pub fn run_limited(argv: &[String], env: &[(&str, &str)], timeout: Duration) -> 
 const STDERR_TAIL: usize = 64 * 1024;
 
 /// Inherit stdout and stream stderr so Actions show cargo/bun as they run.
-/// The last [`STDERR_TAIL`] bytes of stderr also go into the error, so a
-/// caller such as `publish` can tell an already-published version apart.
+/// The last 64 KiB of stderr also go into the error, so a caller such as
+/// `publish` can tell an already-published version apart.
 pub fn run_inherit(argv: &[String], timeout: Duration) -> Result<()> {
     ensure!(!argv.is_empty(), "driver argv is empty");
     let (stderr_r, stderr_w) = os_pipe::pipe().context("command stderr pipe")?;
