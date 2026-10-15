@@ -116,16 +116,27 @@ effect. The stock recipes:
 
 | Publisher | How "published" is decided |
 |:--|:--|
-| `cargo` on crates.io (no `registry`, or `crates-io`) | verctl reads the crate's file in the crates.io sparse index, `https://index.crates.io/<prefix>/<name>`, and looks for a line whose `vers` is the version |
-| `cargo` on another registry | the package's own `query`, or the stderr match when it declares none |
+| `cargo` whose publish target is crates.io (below) | verctl reads the crate's file in the crates.io sparse index, `https://index.crates.io/<prefix>/<name>`, with the prefix and the file name built from the lowercased crate name, and looks for a line whose `vers` equals the version as a semver version |
+| `cargo` with any other target | the package's own `query`, or the stderr match when it declares none |
 | `bun` | `query`: `bun pm view {name}@{version} version` |
 | `none` | nothing; the package publishes to no registry |
 
+A cargo package's publish target is crates.io only when every place Cargo
+reads it agrees: the package sets no `registry` in `.ctl/ver.yaml` (or sets
+`crates-io`), its manifest's `publish` field is absent or names only
+`crates-io`, `CARGO_REGISTRY_DEFAULT` is unset or `crates-io`, and no Cargo
+config file in the checkout sets `registry.default` to another registry.
+Anything else is another target, and the package needs `query` for a
+registry check.
+
+For a package with a registry check (the crates.io read or a `query`),
 verctl decides first. When the registry has the version, the package is
 `already` and its publisher does not run. Otherwise verctl runs the publisher,
 then decides again with a bounded backoff (registry metadata can lag a
 publish by a short while), and fails unless the registry lists the version
-within that bound. The bound is a constant with its reason on it.
+within that bound. The bound is a constant with its reason on it. A package
+with no registry check keeps today's rule: the publish succeeds on a zero
+exit, or on stderr that says the version already exists.
 
 The crates.io check is a direct index read because `cargo info`, run in a
 Cargo workspace, can answer for a workspace member from its local manifest

@@ -2,11 +2,12 @@
 
 ### Requirement: The registry decides whether a version is published
 
-Before it runs a package's publisher, `verctl publish` SHALL ask the
-registry, and SHALL report the package as `already` and not run the
-publisher when the registry has the version. After running a publisher it
-SHALL ask again, retrying with a bounded backoff, and fail unless the
-registry lists the version within that bound.
+For a package with a registry check, `verctl publish` SHALL ask the registry
+before the publisher runs, and report `already` without running it when the
+registry has the version. After the publisher runs it SHALL ask again with a
+bounded backoff, and fail unless the registry lists the version. A package
+with no registry check SHALL succeed on a zero exit or on stderr saying the
+version already exists.
 
 #### Scenario: A rerun after the tag push failed
 
@@ -15,22 +16,32 @@ registry lists the version within that bound.
 
 ### Requirement: How verctl asks the registry
 
-For a cargo package on crates.io with no `query`, verctl SHALL read the
-crate's crates.io sparse index file and find the version there. For any
-other package it SHALL run the recipe's `query` in the package's directory
-and treat exit zero with the version printed as published. A package with
-`query: []`, or a cargo package on another registry with no `query`, SHALL
-keep the stderr match for "already published".
+A cargo package whose publish target is crates.io and that declares no
+`query` SHALL be checked by reading its crates.io sparse index file, at the
+path built from the lowercased name, for a `vers` equal to the version. Any
+other package with a `query` SHALL be checked by running it in the package's
+directory. A package with `query: []`, or a cargo package with another
+target and no `query`, SHALL have no registry check.
 
 #### Scenario: A workspace member is not the registry
 
 - **WHEN** crate `demo` is a member of the workspace at `0.4.6` and the crates.io index file for `demo` has no `0.4.6` line
 - **THEN** `verctl publish` runs `cargo publish`
 
+#### Scenario: A crate name with capitals
+
+- **WHEN** crate `Demo_Crate` is at `0.4.6` and crates.io lists `0.4.6`
+- **THEN** verctl reads `https://index.crates.io/de/mo/demo_crate`, finds `0.4.6`, and reports `already`
+
+#### Scenario: A manifest that publishes elsewhere
+
+- **WHEN** crate `demo` sets no `registry` in `.ctl/ver.yaml` but its `Cargo.toml` has `publish = ["internal"]`, and it declares no `query`
+- **THEN** verctl reads no crates.io index, runs `cargo publish`, and succeeds on its zero exit
+
 #### Scenario: A crate on another registry
 
 - **WHEN** crate `demo` sets `registry: internal` and declares no `query`
-- **THEN** verctl reads no index, runs `cargo publish`, and treats an "already exists" error as `already`
+- **THEN** verctl reads no index, runs `cargo publish`, succeeds on its zero exit, and treats an "already exists" error as `already`
 
 #### Scenario: A scoped npm registry
 
