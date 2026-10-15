@@ -17,14 +17,16 @@ env:
   # other run can read it back.
   CACHE_WRITE: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
 
+# One group for every trigger, so a manual run and a merged Version PR never
+# publish at the same time.
 concurrency:
-  group: publish-${{ github.ref }}
+  group: publish
   cancel-in-progress: false
 
 jobs:
   crate:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event.pull_request.merged &&
        github.event.pull_request.head.ref == 'version-packages')
     runs-on: ubuntu-latest
