@@ -570,6 +570,17 @@ horizon:
         Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.
 
 archive:
+  - id: VER-062
+    title: Publish manually only from main, one run at a time
+    scope: .github/workflows/publish.yml, examples/workflows/publish.yml
+    outcome: A manual publish cannot run from another branch or alongside a merged Version PR.
+    notes:
+      - A manual run took whatever branch it was started on, and its concurrency group, keyed on github.ref, differed from the merged Version PR run (refs/pull/N/merge), so the two could publish together. publish already refuses a HEAD off the default-branch history; this stops the run before it starts.
+    completed: 2026-10-15T00:04:43
+    evidence:
+      - Both publish workflows gate workflow_dispatch on the default branch and share the concurrency group publish.
+    disposition: completed
+
   - id: VER-060
     title: Scope the Version PR workflow token to its job
     scope: .github/workflows/version-pr.yml
