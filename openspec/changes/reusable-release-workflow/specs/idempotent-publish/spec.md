@@ -23,7 +23,12 @@ version within that bound. A recipe whose `query` is
 #### Scenario: A registry declared in the repository's Cargo config
 
 - **WHEN** `.cargo/config.toml` at the repository root declares registry `internal`, and package `demo` sets `registry: internal`
-- **THEN** the cargo `query` runs outside the workspace with `--config` naming that file and `--registry internal`, and reads `internal`'s index
+- **THEN** the cargo `query` runs outside the workspace under a copy of that file with `--registry internal`, and reads `internal`'s index
+
+#### Scenario: A package-level Cargo config and an environment override
+
+- **WHEN** `crates/demo/.cargo/config.toml` declares registry `internal`, the root config declares it with another index, and CI sets `CARGO_REGISTRIES_INTERNAL_INDEX`
+- **THEN** the cargo `query` for `demo` reads the index from `CARGO_REGISTRIES_INTERNAL_INDEX`, and without that variable the one from `crates/demo/.cargo/config.toml`
 
 #### Scenario: A scoped npm registry
 

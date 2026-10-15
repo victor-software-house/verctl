@@ -114,7 +114,7 @@ registry has it. The stock recipes:
 
 | Publisher | `query` |
 |:--|:--|
-| `cargo` | `cargo info {name}@{version}` with `--registry {registry}` when one is set, run outside the workspace with the repository's Cargo config passed in |
+| `cargo` | `cargo info {name}@{version}` with `--registry {registry}` when one is set, run outside the workspace under a copy of the checkout's Cargo config chain |
 | `bun` | `bun pm view {name}@{version} version` |
 | `none` | none; the package publishes to no registry |
 
@@ -126,12 +126,17 @@ within that bound. The bound is a constant with its reason on it.
 
 Inside a Cargo workspace, `cargo info` can answer for a workspace member from
 its local manifest, which would report an unpublished crate as `already`. So
-verctl runs the cargo query from a temporary directory outside the
-workspace, and passes `--config <path>` for each Cargo config file the
-repository's directory chain would have loaded (`.cargo/config.toml` at the
-repository root and above it inside the checkout). Registry names and
-credentials then resolve as they do for `cargo publish`, while the local
-manifest cannot answer. Every other query runs in the package's directory,
+verctl runs the cargo query in a temporary directory that mirrors the path
+from the repository root to the package's directory, holding a copy of every
+Cargo config file `cargo publish` would load inside the checkout
+(`.cargo/config.toml`, or the legacy `.cargo/config`) at the same relative
+place, and no manifest. Cargo then discovers them itself: deeper files win
+over shallower ones, `$CARGO_HOME` still applies, and `CARGO_*` environment
+variables still win over every file, as they do for `cargo publish`.
+Passing the files with `--config` instead lost because `--config` outranks
+the environment. A config value that is a relative path, such as a local
+`file://` index, would resolve against the copy; a repository that relies on
+one overrides the cargo `query`. Every other query runs in the package's directory,
 as its publisher does, so `bunfig.toml` and `.npmrc` stay in effect.
 
 The recipe is data, so the exact commands are checked against each tool's
