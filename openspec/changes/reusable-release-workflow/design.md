@@ -132,7 +132,9 @@ the publisher runs in up to the filesystem root, then
 `$CARGO_HOME/config.toml` (or legacy `$CARGO_HOME/config`), with
 `CARGO_HOME` defaulting to `~/.cargo`, the first that sets it winning. The
 stock cargo publisher runs from the repository root with `--manifest-path`,
-so for it the walk starts there, not in the package's directory. When a file it reads cannot be parsed or uses
+so for it the walk starts there, not in the package's directory. When a
+repository overrides the cargo publisher, verctl cannot know the directory it
+runs in, so the target is unknown and the package needs `query`. When a file it reads cannot be parsed or uses
 `include`, the target is unknown. `cargo config get` would answer directly
 but needs a nightly Cargo, which a consumer's release job need not have.
 Any target other than crates.io, and an unknown one, needs `query` for a

@@ -16,8 +16,8 @@ version already exists.
 
 ### Requirement: How verctl asks the registry
 
-A cargo package whose publish target is crates.io and that declares no
-`query` SHALL be checked by reading its crates.io sparse index file, at the
+A cargo package on the stock publisher whose publish target is crates.io and
+that declares no `query` SHALL be checked by reading its crates.io sparse index file, at the
 path built from the lowercased name, for a `vers` equal to the version. Any
 other package with a `query` SHALL be checked by running it in the package's
 directory. A package with `query: []`, or a cargo package with another
@@ -47,6 +47,11 @@ target and no `query`, SHALL have no registry check.
 
 - **WHEN** crate `demo` lives in `crates/demo`, `crates/demo/.cargo/config.toml` sets `registry.default = "internal"`, and the stock publisher runs from the repository root with `--manifest-path`
 - **THEN** verctl ignores that file, as `cargo publish` does, and treats the target as crates.io
+
+#### Scenario: An overridden cargo publisher
+
+- **WHEN** crate `demo` replaces the stock publisher with its own argv and declares no `query`
+- **THEN** verctl treats the target as unknown, reads no crates.io index, and runs the publisher
 
 #### Scenario: A crate on another registry
 
