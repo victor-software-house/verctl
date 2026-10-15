@@ -273,6 +273,18 @@ queue:
       - >2-
         Follow-up (2026-10-12): the author lookup credited the owner on Version PR #118, so it is removed and no entry carries a byline; VER-054 adds the explicit list on next.
 
+  - id: VER-060
+    title: Scope the Version PR workflow token to its job
+    scope: .github/workflows/version-pr.yml
+    outcome: The Version PR workflow grants GITHUB_TOKEN only what its one job needs.
+    blocked_by: []
+    acceptance:
+      - version-pr.yml sets no workflow-level write permissions, and the prepare job declares its own.
+      - zizmor --pedantic reports no excessive-permissions finding for version-pr.yml.
+    notes:
+      - >2-
+        Every write in the job goes through the minted Version Packages App token, so GITHUB_TOKEN likely needs only contents: read; confirm against each step before narrowing.
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
@@ -570,6 +582,17 @@ horizon:
         Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.
 
 archive:
+  - id: VER-061
+    title: Commit the Version PR from a relative workdir
+    scope: src/git.rs
+    outcome: prepare --pr commits when verctl runs from the repository root as `.`.
+    notes:
+      - gix reports the workdir as discovered, so `.` stayed `.` and every path failed with path outside workdir; libgit2 returned it absolute. Found by the first Version PR run after the gix move.
+    completed: 2026-10-14T22:32:43
+    evidence:
+      - commit_branch_and_push resolves the workdir to an absolute path; a_workdir_found_from_dot_resolves_paths covers it.
+    disposition: completed
+
   - id: VER-050
     title: Replace git2 with gix so the openssl ban applies
     scope: git2 call sites, Cargo.toml, deny.toml
