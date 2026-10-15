@@ -2,16 +2,16 @@
 
 ### Requirement: verctl checks the docs.rs build of a released crate
 
-`verctl docs` SHALL poll docs.rs, with a bounded backoff, for each package
-released at HEAD whose publish target is crates.io, whose manifest has a
-library target, and whose version crates.io lists, until docs.rs reports the
-version built. It SHALL exit non-zero, naming the crate, when docs.rs
+When HEAD's release tag exists, `verctl docs` SHALL poll docs.rs, with a
+bounded backoff, for each package released at HEAD whose publish target is
+crates.io and that has a library target as Cargo resolves it, until docs.rs
+reports the version built. It SHALL exit non-zero, naming the crate, when docs.rs
 reports `doc_status` false, or when the crate is still unbuilt after the
 timeout.
 
 #### Scenario: A build that failed
 
-- **WHEN** `demo@0.4.6` is released at HEAD and docs.rs answers `{"doc_status": false, "version": "0.4.6"}`
+- **WHEN** `demo@0.4.6` is released at HEAD with tag `v0.4.6` and docs.rs answers `{"doc_status": false, "version": "0.4.6"}`
 - **THEN** `verctl docs` exits non-zero and reports `demo@0.4.6` as `failed`
 
 #### Scenario: A queued build
@@ -26,13 +26,18 @@ timeout.
 
 #### Scenario: A binary-only crate
 
-- **WHEN** the only package released at HEAD is a crates.io crate with no library target
+- **WHEN** the only package released at HEAD is a crates.io crate whose `cargo metadata` lists no library target
 - **THEN** `verctl docs` asks docs.rs nothing and exits zero
 
-#### Scenario: A version crates.io does not list
+#### Scenario: A library found by auto-discovery
 
-- **WHEN** `demo@0.4.6` is released at HEAD and crates.io does not list `0.4.6`
-- **THEN** `verctl docs` asks docs.rs nothing for `demo` and exits zero
+- **WHEN** `demo` has `src/lib.rs` and no `[lib]` section, and `demo@0.4.6` is released at HEAD with tag `v0.4.6`
+- **THEN** `verctl docs` polls docs.rs for `demo@0.4.6`
+
+#### Scenario: A release whose publish failed
+
+- **WHEN** `demo@0.4.6` is the version at HEAD and tag `v0.4.6` does not exist
+- **THEN** `verctl docs` asks docs.rs nothing and exits zero
 
 #### Scenario: A crate on another registry
 

@@ -91,12 +91,12 @@ workflow declares, which is why they are inputs to nothing else.
    `verctl publish`. Concurrency group `verctl-publish`, never cancelled.
 3. `assets` runs after `publish` when `inputs.assets` is true and the matrix
    is not empty, one job per commit and target, each at its commit.
-4. `docs` runs after `publish` finishes, failed or not (`always()`), when
+4. `docs` runs after `publish` finishes, failed or not (`!cancelled()`), when
    `inputs.docs` and `pending` are true, as a matrix over `commits` with no
    parallel limit, each leg at its commit running `verctl docs`
    (section 2.4). A commit released before a later leg failed is still
-   checked; a commit whose crate the registry does not list has nothing to
-   check. It never holds `propose` back.
+   checked; a commit whose release tag is missing has nothing to check. It
+   never holds `propose` back.
 5. `propose` runs after `publish` succeeds or is skipped, when
    `inputs.version-pr` is true. It checks out the pushed commit and runs
    `verctl prepare --pr`. Concurrency group `verctl-propose`, newest wins.
@@ -215,9 +215,13 @@ the run changed anything.
 ### 2.4 The docs.rs build
 
 `verctl docs` takes the packages released at HEAD whose publish target is
-crates.io (section 2.1), whose manifest has a library target (docs.rs
-documents no binary-only crate), and whose version crates.io lists (an
-unpublished version has no docs build to wait for), and polls
+crates.io (section 2.1) and that have a library target as Cargo resolves it
+(a target of a library kind in `cargo metadata --no-deps`, which counts
+`src/lib.rs` found by auto-discovery; docs.rs documents no binary-only
+crate). It checks them only when HEAD's release tag exists: `verctl publish`
+creates the tag only after the registry lists every version (section 2.1),
+so the tag is the record that the publish happened, and no read of a lagging
+index decides it. Without the tag there is no docs build to wait for. It polls
 `https://docs.rs/crate/<name>/<version>/status.json` with a bounded backoff.
 docs.rs answers 404 until it has built the version, then
 `{"doc_status": <bool>, "version": "<version>"}`. verctl reports each crate as
