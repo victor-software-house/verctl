@@ -434,32 +434,9 @@ fn non_empty_env(name: &str) -> Option<String> {
     env::var(name).ok().filter(|value| !value.is_empty())
 }
 
-/// Push the Version PR branch and open the PR, or update the open one, with
-/// the title, message, and base resolved first.
-///
-/// Kept with its released signature for library callers, so a patch release
-/// breaks no caller. Remove it in the next minor release.
-#[deprecated(note = "resolve a VersionPr and call open_or_update_version_pr")]
-pub fn open_or_update_pr(
-    root: &Path,
-    token: &str,
-    title: &str,
-    message: &str,
-    paths: &[std::path::PathBuf],
-    changelog: &str,
-    version_label: &str,
-) -> Result<Option<String>> {
-    let pr = VersionPr {
-        title: title.to_owned(),
-        message: message.to_owned(),
-        base: github::base_branch(root)?,
-    };
-    open_or_update_version_pr(root, token, &pr, paths, changelog, version_label)
-}
-
 /// Push the Version PR branch and open the PR, or update the open one. `None`
 /// when nothing changed.
-pub fn open_or_update_version_pr(
+pub fn open_or_update_pr(
     root: &Path,
     token: &str,
     pr: &VersionPr,
