@@ -7,8 +7,7 @@ on:
     types: [closed]
   workflow_dispatch:
 
-permissions:
-  contents: write
+permissions: {}
 
 # Every run that publishes shares one group, so a manual run and a merged
 # Version PR never publish at the same time. Concurrency resolves before the
@@ -25,6 +24,9 @@ concurrency:
 
 jobs:
   crate:
+    name: Publish the crate and the Release
+    permissions:
+      contents: write # creates the release tag and the GitHub Release
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) ||
       (github.event.pull_request.merged &&
@@ -47,12 +49,14 @@ jobs:
       - run: mise install --locked
       - id: plan
         run: verctl assets --github-output "$GITHUB_OUTPUT"
-      - uses: victor-software-house/verctl/actions/publish@main
+      - uses: victor-software-house/verctl/actions/publish@ffc0a3b4bf03cbc81b2677aea2bd080e98d6c43b # v0.4.5
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
   assets:
     name: ${{ matrix.id }}
+    permissions:
+      contents: write # uploads the tarball to the GitHub Release
     needs: crate
     if: needs.crate.outputs.has_assets == 'true'
     strategy:
@@ -70,7 +74,7 @@ jobs:
           version: 2026.8.2
           cache: true
       - run: mise install --locked
-      - uses: victor-software-house/verctl/actions/asset@main
+      - uses: victor-software-house/verctl/actions/asset@ffc0a3b4bf03cbc81b2677aea2bd080e98d6c43b # v0.4.5
         with:
           target: ${{ matrix.id }}
           tag: ${{ needs.crate.outputs.tag }}
