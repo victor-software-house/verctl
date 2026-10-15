@@ -18,6 +18,7 @@ concurrency:
   group: >-
     ${{ ((github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) ||
     (github.event.pull_request.merged &&
+    github.event.pull_request.base.ref == github.event.repository.default_branch &&
     github.event.pull_request.head.ref == 'version-packages'))
     && 'publish' || format('publish-noop-{0}', github.run_id) }}
   cancel-in-progress: false
@@ -30,6 +31,7 @@ jobs:
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) ||
       (github.event.pull_request.merged &&
+       github.event.pull_request.base.ref == github.event.repository.default_branch &&
        github.event.pull_request.head.ref == 'version-packages')
     runs-on: ubuntu-latest
     outputs:
