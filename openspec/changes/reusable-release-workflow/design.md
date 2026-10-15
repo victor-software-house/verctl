@@ -38,7 +38,10 @@ jobs:
 The caller grants `contents: write` for tags and Releases and
 `pull-requests: write` for the Version PR: a called workflow's
 `GITHUB_TOKEN` cannot exceed what the caller grants, and `propose` falls
-back to it when no App secret is mapped.
+back to it when no App secret is mapped. That fallback also needs the
+repository or organization setting "Allow GitHub Actions to create and
+approve pull requests", which is off by default; without it GitHub refuses
+the pull request, and `propose` fails naming the setting.
 
 Every job runs only when `github.ref` is the default branch
 (`format('refs/heads/{0}', github.event.repository.default_branch)`). A
@@ -77,14 +80,15 @@ workflow declares, which is why they are inputs to nothing else.
 ### 1.2 Jobs
 
 1. `plan` checks out the pushed commit and runs `verctl publish --plan`,
-   which writes `commit` (the version commit to release, or empty) and
-   `pending` to `$GITHUB_OUTPUT`, and `verctl assets`, which writes the
-   matrix of assets the Release lacks.
-2. `publish` runs when `inputs.publish` and `pending` are true. It checks out
-   `commit` and runs `verctl publish`. Concurrency group `verctl-publish`,
-   never cancelled.
+   which writes to `$GITHUB_OUTPUT` `commits` (every incomplete version
+   commit, oldest first, as a JSON list), `pending`, and `assets` (a matrix
+   of each version commit and target whose asset its Release lacks).
+2. `publish` runs when `inputs.publish` and `pending` are true, as a matrix
+   over `commits` with `max-parallel: 1`, so one run releases every pending
+   version commit in history order. Each leg checks out its commit and runs
+   `verctl publish`. Concurrency group `verctl-publish`, never cancelled.
 3. `assets` runs after `publish` when `inputs.assets` is true and the matrix
-   is not empty, one job per target, each at `commit`.
+   is not empty, one job per commit and target, each at its commit.
 4. `propose` runs after `publish` succeeds or is skipped, when
    `inputs.version-pr` is true. It checks out the pushed commit and runs
    `verctl prepare --pr`. Concurrency group `verctl-propose`, newest wins.
@@ -137,8 +141,13 @@ HEAD. `verctl publish --plan` finds, for each package, its version commit and
 whether its release is complete: registry, tag, and Release, plus every
 declared asset unless assets are off. The workflow passes `assets: false` as
 `VERCTL_SKIP_ASSETS=true` (`--skip-assets`), so a repository that turns
-assets off still reaches `nothing to release`. It reports the oldest
-incomplete version commit, or nothing.
+assets off still reaches `nothing to release`. It reports every incomplete
+version commit, oldest first, or nothing.
+
+A run that released only the oldest commit would leave a newer one waiting,
+and `propose` pushes `verctl/release/<base>`, not the default branch, so no
+new run would start until an unrelated push. The `publish` matrix therefore
+covers every pending commit in one run.
 
 `verctl publish` refuses to run unless HEAD is a version commit of at least
 one package whose release is incomplete. The tag it creates is at HEAD, which
@@ -188,8 +197,10 @@ workflow would carry two copies of the same rule.
 2. Close the open `version-packages` pull request, if any, and delete the
    branch. The first push after the merge opens `verctl/release/<base>`.
 3. Move any setting the old workflows carried into inputs. A repository that
-   publishes nothing sets `publish: false`; one with no App sets nothing and
-   accepts that its Version PR's CI needs a manual start.
+   publishes nothing sets `publish: false`. One with no App sets nothing,
+   turns on "Allow GitHub Actions to create and approve pull requests" in
+   the repository or organization settings, and accepts that its Version
+   PR's CI needs a manual start.
 
 The template renders the caller from copier answers, so a repository on the
 template migrates with `copier update`.

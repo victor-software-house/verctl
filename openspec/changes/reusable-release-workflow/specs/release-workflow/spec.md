@@ -49,8 +49,8 @@ SHALL default to `false`.
 ### Requirement: One flow on push to the default branch and on dispatch
 
 The workflow SHALL run its jobs in the order `plan`, `publish`, `assets`,
-`propose`. `publish` SHALL run only when `plan` reports a pending release, at
-the version commit `plan` names. `propose` SHALL run only after `publish`
+`propose`. `publish` SHALL run only when `plan` reports a pending release,
+once per pending version commit, oldest first, one at a time. `propose` SHALL run only after `publish`
 succeeded or was skipped. A dispatch SHALL run the same flow as a push. No
 job SHALL read the pull request event, its head branch, or its labels.
 
@@ -69,6 +69,11 @@ job SHALL read the pull request event, its head branch, or its labels.
 - **WHEN** `cargo publish` fails in the `publish` job
 - **THEN** `propose` does not run, and the next push to `main` plans the same version commit again
 
+#### Scenario: Two pending version commits
+
+- **WHEN** `core@0.3.1` set at commit `A` is on crates.io without its tag, and `app@0.2.1` set at a later commit `C` is unpublished
+- **THEN** one run's `publish` matrix releases `A`, then `C`, and the next push reports `nothing to release`
+
 #### Scenario: A dispatch after a lost run
 
 - **WHEN** the run for version commit `A` was replaced in its concurrency group before it started, and a person dispatches the workflow on `main` at a later commit `B`
@@ -86,8 +91,13 @@ caller SHALL grant `contents: write` and `pull-requests: write`.
 
 #### Scenario: A repository without the App
 
-- **WHEN** a caller maps no App secrets and a fragment lands on `main`
+- **WHEN** a caller maps no App secrets, the repository enables "Allow GitHub Actions to create and approve pull requests", and a fragment lands on `main`
 - **THEN** `propose` opens the Version PR with `GITHUB_TOKEN` under the caller's `pull-requests: write`
+
+#### Scenario: A repository without the App or the Actions setting
+
+- **WHEN** a caller maps no App secrets and that repository setting is off
+- **THEN** `propose` exits non-zero and its error names the setting
 
 ### Requirement: Steps pass settings through the environment
 

@@ -41,7 +41,12 @@ before any side effect and name the version commit.
 #### Scenario: The plan finds the commit
 
 - **WHEN** the same history, and `verctl publish --plan` runs at `B`
-- **THEN** it writes `commit=<A>` and `pending=true` to `$GITHUB_OUTPUT`
+- **THEN** it writes `commits=["<A>"]` and `pending=true` to `$GITHUB_OUTPUT`
+
+#### Scenario: Every incomplete commit, oldest first
+
+- **WHEN** commit `A` set `core` to `0.3.1` and later commit `C` set `app` to `0.2.1`, and neither release is complete
+- **THEN** `verctl publish --plan` writes `commits=["<A>","<C>"]`
 
 ### Requirement: A complete release is nothing to release
 
