@@ -570,6 +570,49 @@ horizon:
         Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.
 
 archive:
+  - id: VER-063
+    title: Clear the zizmor findings in the publish workflows
+    scope: .github/workflows/publish.yml, examples/workflows/
+    outcome: The publish workflow and the consumer examples pass zizmor --pedantic.
+    completed: 2026-10-15T00:21:53
+    evidence:
+      - Template expressions reach the shell through step env, the examples pin the verctl actions by the v0.4.5 commit, write permissions sit on the jobs with comments, and zizmor --pedantic reports no findings for the publish workflow and every example.
+    disposition: completed
+
+  - id: VER-062
+    title: Publish manually only from main, one run at a time
+    scope: .github/workflows/publish.yml, examples/workflows/publish.yml
+    outcome: A manual publish cannot run from another branch or alongside a merged Version PR.
+    notes:
+      - A manual run took whatever branch it was started on, and its concurrency group, keyed on github.ref, differed from the merged Version PR run (refs/pull/N/merge), so the two could publish together. publish already refuses a HEAD off the default-branch history; this stops the run before it starts.
+    completed: 2026-10-15T00:04:43
+    evidence:
+      - Both publish workflows gate workflow_dispatch on the default branch and share the concurrency group publish.
+    disposition: completed
+
+  - id: VER-060
+    title: Scope the Version PR workflow token to its job
+    scope: .github/workflows/version-pr.yml
+    outcome: The Version PR workflow grants GITHUB_TOKEN only what its one job needs.
+    notes:
+      - >2-
+        Every write in the job goes through the minted Version Packages App token, so GITHUB_TOKEN likely needs only contents: read; confirm against each step before narrowing.
+    completed: 2026-10-14T23:26:42
+    evidence:
+      - 'version-pr.yml sets permissions: {} at workflow level and contents: read on the prepare job, whose writes all use the App token; zizmor --pedantic reports no findings.'
+    disposition: completed
+
+  - id: VER-061
+    title: Commit the Version PR from a relative workdir
+    scope: src/git.rs
+    outcome: prepare --pr commits when verctl runs from the repository root as `.`.
+    notes:
+      - gix reports the workdir as discovered, so `.` stayed `.` and every path failed with path outside workdir; libgit2 returned it absolute. Found by the first Version PR run after the gix move.
+    completed: 2026-10-14T22:32:43
+    evidence:
+      - commit_branch_and_push resolves the workdir to an absolute path; a_workdir_found_from_dot_resolves_paths covers it.
+    disposition: completed
+
   - id: VER-050
     title: Replace git2 with gix so the openssl ban applies
     scope: git2 call sites, Cargo.toml, deny.toml
