@@ -27,7 +27,7 @@ concurrency:
     ${{ ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
     (github.event.pull_request.merged &&
     github.event.pull_request.head.ref == 'version-packages'))
-    && 'publish' || format('publish-{0}', github.run_id) }}
+    && 'publish' || format('publish-noop-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
