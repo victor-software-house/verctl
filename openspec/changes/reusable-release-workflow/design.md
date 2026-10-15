@@ -218,10 +218,14 @@ the run changed anything.
 crates.io (section 2.1) and that have a library target as Cargo resolves it
 (a target of a library kind in `cargo metadata --no-deps`, which counts
 `src/lib.rs` found by auto-discovery; docs.rs documents no binary-only
-crate). It checks them only when HEAD's release tag exists: `verctl publish`
-creates the tag only after the registry lists every version (section 2.1),
-so the tag is the record that the publish happened, and no read of a lagging
-index decides it. Without the tag there is no docs build to wait for. It polls
+crate). It checks each such package only when the tag `tags.template` names
+for that package's version at HEAD exists: the shared `v{version}` tag, or
+the package's own tag when the template has `{name}`. `verctl publish`
+creates tags only after the registry lists every version (section 2.1), so
+the tag is the record that the publish happened, and no read of a lagging
+index decides it. A crate that reached crates.io while another package
+failed has no tag yet; its commit stays incomplete, and the rerun that
+completes it tags the crate and checks it then. It polls
 `https://docs.rs/crate/<name>/<version>/status.json` with a bounded backoff.
 docs.rs answers 404 until it has built the version, then
 `{"doc_status": <bool>, "version": "<version>"}`. verctl reports each crate as
