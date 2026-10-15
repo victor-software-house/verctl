@@ -219,8 +219,11 @@ crates.io (section 2.1) and that have a library target as Cargo resolves it
 (a target of a library kind in `cargo metadata --no-deps`, which counts
 `src/lib.rs` found by auto-discovery; docs.rs documents no binary-only
 crate). It checks each such package only when the tag `tags.template` names
-for that package's version at HEAD exists: the shared `v{version}` tag, or
-the package's own tag when the template has `{name}`. `verctl publish`
+for that package's version at HEAD exists on `origin` and names HEAD: the
+shared `v{version}` tag, or the package's own tag when the template has
+`{name}`. verctl reads it with `git ls-remote --tags origin <tag>`, never
+from local refs: the `docs` job's checkout fetched no tags, and the
+`publish` job pushed the tag from another runner. `verctl publish`
 creates tags only after the registry lists every version (section 2.1), so
 the tag is the record that the publish happened, and no read of a lagging
 index decides it. A crate that reached crates.io while another package

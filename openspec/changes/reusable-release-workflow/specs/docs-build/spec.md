@@ -4,8 +4,8 @@
 
 `verctl docs` SHALL poll docs.rs, with a bounded backoff, for each package
 released at HEAD whose publish target is crates.io, that has a library target
-as Cargo resolves it, and whose own release tag for that version exists,
-until docs.rs reports the version built. It SHALL exit non-zero, naming the crate, when docs.rs
+as Cargo resolves it, and whose own release tag for that version exists on
+`origin` and names HEAD, until docs.rs reports the version built. It SHALL exit non-zero, naming the crate, when docs.rs
 reports `doc_status` false, or when the crate is still unbuilt after the
 timeout.
 
@@ -38,6 +38,11 @@ timeout.
 
 - **WHEN** `tags.template` is `{name}@{version}`, `core@0.3.1` reached crates.io, the publish of `app@0.2.1` failed, and neither tag exists
 - **THEN** `verctl docs` asks docs.rs nothing, and after a rerun creates both tags it polls docs.rs for `core@0.3.1` and `app@0.2.1`
+
+#### Scenario: A tag only the remote has
+
+- **WHEN** the checkout holds no tags and `origin` has `v0.4.6` naming HEAD, where `demo@0.4.6` is released
+- **THEN** `verctl docs` polls docs.rs for `demo@0.4.6`
 
 #### Scenario: A release whose publish failed
 
