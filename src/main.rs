@@ -172,7 +172,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     release::consume_fragments(consumed)?;
     let mut pr = None;
     if let Some((token, version_pr)) = &target {
-        pr = release::open_or_update_pr(
+        pr = release::open_or_update_version_pr(
             root,
             token,
             version_pr,
