@@ -45,7 +45,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: mise run ver prepare --pr
+      # The repository variable VERCTL_RELEASE_HOLD=true holds the next release:
+      # the Version PR still opens and updates, but never merges itself, so a
+      # person merges it when the hold ends. Delete the variable to resume.
       - name: Enable auto-merge
+        if: vars.VERCTL_RELEASE_HOLD != 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
