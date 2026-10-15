@@ -38,6 +38,11 @@ target and no `query`, SHALL have no registry check.
 - **WHEN** crate `demo` sets no `registry` in `.ctl/ver.yaml` but its `Cargo.toml` has `publish = ["internal"]`, and it declares no `query`
 - **THEN** verctl reads no crates.io index, runs `cargo publish`, and succeeds on its zero exit
 
+#### Scenario: A runner whose Cargo home names another default
+
+- **WHEN** crate `demo` sets no `registry`, its manifest has no `publish` list, and `$CARGO_HOME/config.toml` sets `registry.default = "internal"`
+- **THEN** verctl treats the target as not crates.io, reads no crates.io index, and runs `cargo publish`
+
 #### Scenario: A crate on another registry
 
 - **WHEN** crate `demo` sets `registry: internal` and declares no `query`

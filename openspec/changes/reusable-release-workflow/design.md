@@ -124,9 +124,15 @@ effect. The stock recipes:
 A cargo package's publish target is crates.io only when every place Cargo
 reads it agrees: the package sets no `registry` in `.ctl/ver.yaml` (or sets
 `crates-io`), its manifest's `publish` field is absent or names only
-`crates-io`, `CARGO_REGISTRY_DEFAULT` is unset or `crates-io`, and no Cargo
-config file in the checkout sets `registry.default` to another registry.
-Anything else is another target, and the package needs `query` for a
+`crates-io`, and the `registry.default` Cargo resolves for the package's
+directory is unset or `crates-io`. verctl resolves it in Cargo's documented
+order ([config hierarchy][cargo-config]): `CARGO_REGISTRY_DEFAULT`, then
+each `.cargo/config.toml` (or legacy `.cargo/config`) from the package's
+directory up to the filesystem root, then `$CARGO_HOME/config.toml`, the
+first that sets it winning. When a file it reads cannot be parsed or uses
+`include`, the target is unknown. `cargo config get` would answer directly
+but needs a nightly Cargo, which a consumer's release job need not have.
+Any target other than crates.io, and an unknown one, needs `query` for a
 registry check.
 
 For a package with a registry check (the crates.io read or a `query`),
@@ -244,3 +250,4 @@ template migrates with `copier update`.
 [rsm]: ../release-state-machine/design.md
 [pr-153]: https://github.com/victor-software-house/verctl/pull/153
 [cargo-sparse]: https://doc.rust-lang.org/cargo/reference/registry-index.html#sparse-protocol
+[cargo-config]: https://doc.rust-lang.org/cargo/reference/config.html#hierarchical-structure
