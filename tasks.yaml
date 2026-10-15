@@ -570,6 +570,15 @@ horizon:
         Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.
 
 archive:
+  - id: VER-063
+    title: Clear the zizmor findings in the publish workflows
+    scope: .github/workflows/publish.yml, examples/workflows/
+    outcome: The publish workflow and the consumer examples pass zizmor --pedantic.
+    completed: 2026-10-15T00:21:53
+    evidence:
+      - Template expressions reach the shell through step env, the examples pin the verctl actions by the v0.4.5 commit, write permissions sit on the jobs with comments, and zizmor --pedantic reports no findings for the publish workflow and every example.
+    disposition: completed
+
   - id: VER-062
     title: Publish manually only from main, one run at a time
     scope: .github/workflows/publish.yml, examples/workflows/publish.yml

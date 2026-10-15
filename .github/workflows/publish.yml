@@ -5,8 +5,7 @@ on:
     types: [closed]
   workflow_dispatch:
 
-permissions:
-  contents: write
+permissions: {}
 
 env:
   GIT_CONFIG_COUNT: "1"
@@ -24,17 +23,22 @@ env:
 # The condition repeats the crate job's.
 concurrency:
   group: >-
-    ${{ ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+    ${{ ((github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) ||
     (github.event.pull_request.merged &&
+    github.event.pull_request.base.ref == github.event.repository.default_branch &&
     github.event.pull_request.head.ref == 'version-packages'))
     && 'publish' || format('publish-noop-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
   crate:
+    name: Publish the crate and the Release
+    permissions:
+      contents: write # creates the release tag and the GitHub Release
     if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) ||
       (github.event.pull_request.merged &&
+       github.event.pull_request.base.ref == github.event.repository.default_branch &&
        github.event.pull_request.head.ref == 'version-packages')
     runs-on: ubuntu-latest
     outputs:
@@ -67,6 +71,8 @@ jobs:
 
   assets:
     name: ${{ matrix.id }}
+    permissions:
+      contents: write # uploads the tarball to the GitHub Release
     needs: crate
     if: needs.crate.outputs.has_assets == 'true'
     strategy:
@@ -90,9 +96,11 @@ jobs:
       - name: Build and upload
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          ASSET_TARGET: ${{ matrix.id }}
+          RELEASE_TAG: ${{ needs.crate.outputs.tag }}
         run: >-
           mise run ver assets
-          --build "${{ matrix.id }}"
+          --build "$ASSET_TARGET"
           --upload
-          --tag "${{ needs.crate.outputs.tag }}"
+          --tag "$RELEASE_TAG"
 

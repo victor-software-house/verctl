@@ -25,6 +25,7 @@ concurrency:
 
 jobs:
   plan:
+    name: Plan the validation jobs
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}

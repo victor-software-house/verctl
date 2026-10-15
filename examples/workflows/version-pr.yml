@@ -5,9 +5,7 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 concurrency:
   group: version-pr-${{ github.ref }}
@@ -15,7 +13,10 @@ concurrency:
 
 jobs:
   prepare:
+    name: Prepare the Version PR
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout only; the App token below makes every write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,7 +37,7 @@ jobs:
           private-key: ${{ secrets.VERSION_APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
-      - uses: victor-software-house/verctl/actions/version-pr@main
+      - uses: victor-software-house/verctl/actions/version-pr@ffc0a3b4bf03cbc81b2677aea2bd080e98d6c43b # v0.4.5
         with:
           token: ${{ steps.app-token.outputs.token }}
           # Needs a required status check on main.
