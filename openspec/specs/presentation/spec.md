@@ -1,6 +1,7 @@
 # presentation Specification
 
 ## Purpose
+
 How verctl presents release reports on top of the ctl-core presentation kernel: which values take the identifier role, and how records and JSON render.
 
 ## Requirements
