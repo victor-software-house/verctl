@@ -4,10 +4,7 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+permissions: {}
 
 env:
   GIT_CONFIG_COUNT: "1"
@@ -21,7 +18,10 @@ concurrency:
 
 jobs:
   prepare:
+    name: Prepare the Version PR
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout only; every write uses the minted Version Packages App token
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
