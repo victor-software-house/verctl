@@ -64,6 +64,7 @@ struct Declared {
     executable: bool,
 }
 
+/// Render every served template and return the files written.
 pub fn write(
     root: &Path,
     config: &Templates,
@@ -282,11 +283,11 @@ fn ensure_inside(root: &Path, target: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use git2::Repository;
     use indoc::indoc;
     use tempfile::TempDir;
 
     use super::*;
+    use crate::test_git;
 
     /// The one template every version case below renders.
     const TEMPLATE: &str = indoc! {r#"
@@ -324,15 +325,13 @@ mod tests {
     /// A repo whose index holds exactly `files`, each with the given body.
     fn repo(files: &[(&str, &str)]) -> TempDir {
         let root = TempDir::new().unwrap();
-        let repository = Repository::init(root.path()).unwrap();
-        let mut index = repository.index().unwrap();
+        test_git::init(root.path());
         for (path, body) in files {
             let full = root.path().join(path);
             fs::create_dir_all(full.parent().unwrap()).unwrap();
             fs::write(&full, body).unwrap();
-            index.add_path(Path::new(path)).unwrap();
+            test_git::git(root.path(), &["add", "-f", "--", path]);
         }
-        index.write().unwrap();
         root
     }
 

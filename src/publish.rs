@@ -15,27 +15,39 @@ use serde::Serialize;
 use crate::config::{Config, NAME_PLACEHOLDER};
 use crate::{git, github, process, publisher, release};
 
+/// How long one package upload may run.
 pub const PUBLISH_TIMEOUT: Duration = Duration::from_mins(10);
 
+/// What `publish` will do: the packages to upload and the tags to release.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishPlan {
+    /// Packages in config order.
     pub packages: Vec<PublishEntry>,
+    /// Tags in the order they are created.
     pub tags: Vec<TagPlan>,
 }
 
 /// One tag the release will create, and the packages whose notes fill it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TagPlan {
+    /// Tag name.
     pub tag: String,
+    /// Release title.
     pub title: String,
+    /// Packages whose notes fill this tag's Release.
     pub packages: Vec<PublishEntry>,
 }
 
+/// A package at its version on HEAD, with the command that uploads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishEntry {
+    /// Package name.
     pub name: String,
+    /// Version read from the manifest.
     pub version: String,
+    /// What the registry calls the package, such as `crate`.
     pub noun: String,
+    /// Publisher and registry, as shown to the operator.
     pub label: String,
     /// The upload command. Empty for a `publisher: none` package, which only
     /// gets its tag and Release. Such a package never counts as shipped: with
@@ -43,20 +55,29 @@ pub struct PublishEntry {
     pub argv: Vec<String>,
 }
 
+/// What a publish run did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishOutcome {
+    /// One line per package.
     pub packages: Vec<PublishLine>,
+    /// The Release URL for each tag, or `would create <tag>` in a dry run.
     pub releases: Vec<String>,
 }
 
+/// A package's row in the publish report.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PublishLine {
+    /// Package name.
     pub name: String,
+    /// Version published.
     pub version: String,
+    /// Publisher and registry used.
     pub via: String,
+    /// `already` when the registry had this version. `None` otherwise.
     pub note: Option<String>,
 }
 
+/// Resolve each package's version, upload command, and the tags to release.
 pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
     let mut packages = Vec::new();
     for spec in &config.packages {
@@ -81,6 +102,7 @@ pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
     Ok(PublishPlan { packages, tags })
 }
 
+/// Publish each package, then open a Release per tag. A dry run only plans.
 pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome> {
     let planned = plan(config, root)?;
     if dry_run {

@@ -1,3 +1,6 @@
+//! The merge-base version guard: a manifest version must match the default
+//! branch unless exempt.
+
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -10,25 +13,16 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 
-use git2::{Repository, Signature};
 use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
 use verctl::config::Config;
 use verctl::versions::{self, Skip};
 
-fn commit_tree(repo: &Repository, message: &str) -> git2::Oid {
-    let sig = Signature::now("t", "t@example.com").unwrap();
-    let mut index = repo.index().unwrap();
-    index
-        .add_all(["."].iter(), git2::IndexAddOption::DEFAULT, None)
-        .unwrap();
-    index.write().unwrap();
-    let tid = index.write_tree().unwrap();
-    let tree = repo.find_tree(tid).unwrap();
-    let parent = repo.head().ok().and_then(|head| head.peel_to_commit().ok());
-    let parents: Vec<&git2::Commit<'_>> = parent.as_ref().into_iter().collect();
-    repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)
-        .unwrap()
+const ORIGIN: &str = "https://github.com/victor-software-house/verctl.git";
+
+fn track_origin_main(dir: &Path, sha: &str) {
+    common::git(dir, &["remote", "add", "origin", ORIGIN]);
+    common::git(dir, &["update-ref", "refs/remotes/origin/main", sha]);
 }
 
 fn write_crate(root: &Path, version: &str) {
@@ -51,19 +45,13 @@ fn write_crate(root: &Path, version: &str) {
     .unwrap();
 }
 
-fn repo_with_origin_main(version: &str) -> (TempDir, Repository) {
+fn repo_with_origin_main(version: &str) -> TempDir {
     let dir = TempDir::new().unwrap();
-    let repo = Repository::init(dir.path()).unwrap();
+    common::init(dir.path());
     write_crate(dir.path(), version);
-    let oid = commit_tree(&repo, "init");
-    repo.remote(
-        "origin",
-        "https://github.com/victor-software-house/verctl.git",
-    )
-    .unwrap();
-    repo.reference("refs/remotes/origin/main", oid, true, "test")
-        .unwrap();
-    (dir, repo)
+    let sha = common::commit_all(dir.path(), "init");
+    track_origin_main(dir.path(), &sha);
+    dir
 }
 
 fn load(root: &Path) -> Config {
@@ -105,13 +93,13 @@ fn check_cmd(root: &Path) -> std::process::Command {
 
 #[test]
 fn matching_version_is_ok() {
-    let (dir, _) = repo_with_origin_main("1.0.0");
+    let dir = repo_with_origin_main("1.0.0");
     check(dir.path(), Skip::None).unwrap();
 }
 
 #[test]
 fn hand_edited_version_fails() {
-    let (dir, _) = repo_with_origin_main("1.0.0");
+    let dir = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
     let err = check(dir.path(), Skip::None).unwrap_err();
     assert!(
@@ -122,7 +110,7 @@ fn hand_edited_version_fails() {
 
 #[test]
 fn fragment_only_change_still_matches() {
-    let (dir, _) = repo_with_origin_main("1.0.0");
+    let dir = repo_with_origin_main("1.0.0");
     fs::create_dir_all(dir.path().join(".changeset")).unwrap();
     fs::write(
         dir.path().join(".changeset/note.md"),
@@ -140,21 +128,21 @@ fn fragment_only_change_still_matches() {
 
 #[test]
 fn version_packages_branch_is_exempt() {
-    let (dir, _) = repo_with_origin_main("1.0.0");
+    let dir = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
     check(dir.path(), Skip::VersionBranch).unwrap();
 }
 
 #[test]
 fn ci_is_exempt() {
-    let (dir, _) = repo_with_origin_main("1.0.0");
+    let dir = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
     check(dir.path(), Skip::Ci).unwrap();
 }
 
 #[test]
 fn new_package_not_on_default_is_ok() {
-    let (dir, _) = repo_with_origin_main("1.0.0");
+    let dir = repo_with_origin_main("1.0.0");
     fs::write(
         dir.path().join(verctl::config::FILE),
         indoc! {"
@@ -182,7 +170,7 @@ fn new_package_not_on_default_is_ok() {
 #[test]
 fn no_origin_is_ok() {
     let dir = TempDir::new().unwrap();
-    Repository::init(dir.path()).unwrap();
+    common::init(dir.path());
     write_crate(dir.path(), "1.0.0");
     check(dir.path(), Skip::None).unwrap();
 }
@@ -190,7 +178,7 @@ fn no_origin_is_ok() {
 #[test]
 fn bun_package_json_hand_edit_fails() {
     let dir = TempDir::new().unwrap();
-    let repo = Repository::init(dir.path()).unwrap();
+    common::init(dir.path());
     common::write_config(
         dir.path(),
         indoc! {r#"
@@ -206,14 +194,8 @@ fn bun_package_json_hand_edit_fails() {
         "#},
     )
     .unwrap();
-    let oid = commit_tree(&repo, "init");
-    repo.remote(
-        "origin",
-        "https://github.com/victor-software-house/verctl.git",
-    )
-    .unwrap();
-    repo.reference("refs/remotes/origin/main", oid, true, "test")
-        .unwrap();
+    let sha = common::commit_all(dir.path(), "init");
+    track_origin_main(dir.path(), &sha);
     fs::write(
         dir.path().join("package.json"),
         indoc! {r#"
@@ -230,7 +212,7 @@ fn bun_package_json_hand_edit_fails() {
 
 #[test]
 fn cli_hand_edit_fails_with_one_stderr_report() {
-    let (dir, _) = repo_with_origin_main("1.0.0");
+    let dir = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
     let output = check_cmd(dir.path()).output().unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -281,7 +263,7 @@ fn host_actions_keys_are_not_inherited() {
 
 #[test]
 fn ci_env_does_not_skip() {
-    let (dir, _) = repo_with_origin_main("1.0.0");
+    let dir = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
     let output = check_cmd(dir.path())
         .env("CI", "true")
@@ -293,28 +275,25 @@ fn ci_env_does_not_skip() {
 
 #[test]
 fn behind_released_main_without_local_edit_is_ok() {
-    let (dir, repo) = repo_with_origin_main("1.0.0");
-    let first = repo.head().unwrap().peel_to_commit().unwrap();
-    repo.branch("feature", &first, false).unwrap();
+    let dir = repo_with_origin_main("1.0.0");
+    let first = common::git(dir.path(), &["rev-parse", "HEAD"]);
+    common::git(dir.path(), &["branch", "feature", &first]);
     write_crate(dir.path(), "1.1.0");
-    let released = commit_tree(&repo, "release");
-    assert_ne!(released, first.id());
-    repo.reference("refs/remotes/origin/main", released, true, "test")
-        .unwrap();
-    repo.set_head("refs/heads/feature").unwrap();
-    repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
-        .unwrap();
-    assert_eq!(
-        repo.head().unwrap().peel_to_commit().unwrap().id(),
-        first.id()
+    let released = common::commit_all(dir.path(), "release");
+    assert_ne!(released, first);
+    common::git(
+        dir.path(),
+        &["update-ref", "refs/remotes/origin/main", &released],
     );
+    common::git(dir.path(), &["checkout", "-q", "-f", "feature"]);
+    assert_eq!(common::git(dir.path(), &["rev-parse", "HEAD"]), first);
     check(dir.path(), Skip::None).unwrap();
 }
 
 #[test]
 fn nested_config_maps_onto_the_git_tree() {
     let dir = TempDir::new().unwrap();
-    let repo = Repository::init(dir.path()).unwrap();
+    common::init(dir.path());
     fs::create_dir_all(dir.path().join("crates/demo")).unwrap();
     common::write_config(
         &dir.path().join("crates/demo"),
@@ -333,14 +312,8 @@ fn nested_config_maps_onto_the_git_tree() {
         "#},
     )
     .unwrap();
-    let oid = commit_tree(&repo, "init");
-    repo.remote(
-        "origin",
-        "https://github.com/victor-software-house/verctl.git",
-    )
-    .unwrap();
-    repo.reference("refs/remotes/origin/main", oid, true, "test")
-        .unwrap();
+    let sha = common::commit_all(dir.path(), "init");
+    track_origin_main(dir.path(), &sha);
     fs::write(
         dir.path().join("crates/demo/Cargo.toml"),
         indoc! {r#"
@@ -365,11 +338,8 @@ fn nested_config_maps_onto_the_git_tree() {
 
 #[test]
 fn current_branch_reads_version_packages() {
-    let (dir, repo) = repo_with_origin_main("1.0.0");
-    let oid = repo.head().unwrap().peel_to_commit().unwrap().id();
-    repo.reference("refs/heads/version-packages", oid, true, "test")
-        .unwrap();
-    repo.set_head("refs/heads/version-packages").unwrap();
+    let dir = repo_with_origin_main("1.0.0");
+    common::git(dir.path(), &["checkout", "-q", "-b", "version-packages"]);
     assert_eq!(
         verctl::git::current_branch(dir.path()).as_deref(),
         Some("version-packages")
@@ -378,7 +348,7 @@ fn current_branch_reads_version_packages() {
 
 #[test]
 fn pull_request_head_ref_is_not_an_exemption() {
-    let (dir, _) = repo_with_origin_main("1.0.0");
+    let dir = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
     let output = check_cmd(dir.path())
         .env("GITHUB_ACTIONS", "true")
@@ -394,7 +364,7 @@ fn pull_request_head_ref_is_not_an_exemption() {
 
 #[test]
 fn pull_request_version_label_is_exempt() {
-    let (dir, _) = repo_with_origin_main("1.0.0");
+    let dir = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
     let event = dir.path().join("event.json");
     fs::write(
@@ -415,7 +385,7 @@ fn pull_request_version_label_is_exempt() {
 
 #[test]
 fn issue_event_label_is_not_an_exemption() {
-    let (dir, _) = repo_with_origin_main("1.0.0");
+    let dir = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
     let event = dir.path().join("event.json");
     fs::write(
@@ -437,7 +407,7 @@ fn issue_event_label_is_not_an_exemption() {
 
 #[test]
 fn github_ref_name_is_not_an_exemption() {
-    let (dir, _) = repo_with_origin_main("1.0.0");
+    let dir = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
     let output = check_cmd(dir.path())
         .env("GITHUB_ACTIONS", "true")
@@ -453,7 +423,7 @@ fn github_ref_name_is_not_an_exemption() {
 
 #[test]
 fn configured_version_label_is_the_exemption() {
-    let (dir, _) = repo_with_origin_main("1.0.0");
+    let dir = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
     fs::write(
         dir.path().join(verctl::config::FILE),
@@ -498,12 +468,9 @@ fn configured_version_label_is_the_exemption() {
 
 #[test]
 fn version_packages_branch_cli_is_exempt() {
-    let (dir, repo) = repo_with_origin_main("1.0.0");
+    let dir = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
-    let oid = repo.head().unwrap().peel_to_commit().unwrap().id();
-    repo.reference("refs/heads/version-packages", oid, true, "test")
-        .unwrap();
-    repo.set_head("refs/heads/version-packages").unwrap();
+    common::git(dir.path(), &["checkout", "-q", "-b", "version-packages"]);
     let output = check_cmd(dir.path()).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success(), "{stdout}");

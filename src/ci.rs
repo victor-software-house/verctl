@@ -33,16 +33,22 @@ pub struct CiJob {
     pub labels: Vec<String>,
 }
 
+/// A GitHub Actions `strategy.matrix`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Matrix {
+    /// One row per check.
     pub include: Vec<CiJob>,
 }
 
+/// The validation jobs to run, as the workflow reads them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CiPlan {
+    /// The matrix the workflow fans out over.
     pub matrix: Matrix,
 }
 
+/// Plan the jobs declared under `ci`, or one `verify` job when none is
+/// declared.
 pub fn plan(config: &Config) -> Result<CiPlan> {
     runners::declared(config)?;
     let mut include = Vec::new();
@@ -82,6 +88,7 @@ fn push(include: &mut Vec<CiJob>, id: &str, resolved: Vec<runners::Machine>) {
     }
 }
 
+/// Write `matrix` as a JSON line for `$GITHUB_OUTPUT`.
 pub fn write_github_output(plan: &CiPlan, path: &Path) -> Result<()> {
     let encoded = serde_json::to_string(&plan.matrix).context("encode matrix")?;
     crate::github::write_output(path, &format!("matrix={encoded}\n"))

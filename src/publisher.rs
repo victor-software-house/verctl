@@ -10,18 +10,25 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 
+/// A publisher recipe: the command to upload a package and where its registry
+/// config lives.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[non_exhaustive]
 pub struct PublisherSpec {
+    /// What the registry calls the package. Defaults to `package`.
     pub noun: Option<String>,
+    /// Upload command, with the placeholders from the module docs.
     pub argv: Option<Vec<String>>,
     /// Ancestor file that owns registry/auth (`bunfig.toml`).
     pub config_name: Option<String>,
+    /// Arguments appended when `config_name` is found.
     pub config_argv: Option<Vec<String>>,
     /// Appended when `registry` is set and does not alias to empty.
     pub registry_argv: Option<Vec<String>>,
     /// Appended when there is no registry (or the alias is empty).
     pub default_argv: Option<Vec<String>>,
+    /// Registry aliases. An empty value means the default registry, which needs
+    /// no flag.
     #[serde(default)]
     pub registries: BTreeMap<String, String>,
 }
@@ -80,6 +87,7 @@ impl PublisherSpec {
         }
     }
 
+    /// Render the label and argv for one package, expanding placeholders.
     pub fn render(
         &self,
         name: &str,
@@ -175,6 +183,8 @@ fn find_config(manifest: &Path, file_name: &str) -> Option<PathBuf> {
 /// must render a command, so an empty one never passes for this mode.
 pub const RELEASE_ONLY: &str = "none";
 
+/// Resolve a package's noun, label, and upload command from config and stock
+/// recipes.
 pub fn resolve(
     config: &crate::config::Config,
     spec: &crate::config::PackageSpec,

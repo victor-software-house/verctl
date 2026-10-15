@@ -10,14 +10,19 @@ use crate::config::Config;
 use crate::git;
 use crate::release::VERSION_BRANCH;
 
+/// Whether, and why, the version comparison is skipped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Skip {
+    /// Compare versions.
     None,
+    /// Skip the comparison, reported as `ci`.
     Ci,
+    /// Skip on the Version PR, where versions are meant to differ.
     VersionBranch,
 }
 
 impl Skip {
+    /// Detect a Version PR from the current branch or the event's label.
     #[must_use]
     pub fn from_env(root: &Path, config: &Config) -> Self {
         if git::current_branch(root).as_deref() == Some(VERSION_BRANCH) {
@@ -31,6 +36,7 @@ impl Skip {
         Self::None
     }
 
+    /// The name reported for a skipped run, or `None` when nothing is skipped.
     #[must_use]
     pub fn label(self) -> Option<&'static str> {
         match self {
@@ -41,15 +47,22 @@ impl Skip {
     }
 }
 
+/// A package's version in the working tree beside its version at the
+/// merge-base.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct VersionRow {
+    /// Package name from the config.
     pub name: String,
+    /// Manifest path, relative to the directory holding `.ctl/`.
     pub path: String,
+    /// Version in the working tree.
     pub local: String,
+    /// Version at the merge-base, or `None` when the manifest is new.
     pub remote: Option<String>,
 }
 
 impl VersionRow {
+    /// Whether the working tree version differs from a merge-base that has one.
     #[must_use]
     pub fn drifted(&self) -> bool {
         self.remote
@@ -58,18 +71,24 @@ impl VersionRow {
     }
 }
 
+/// The version rows of a run, or the reason the run was skipped.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct VersionReport {
+    /// The skip label, or `None` when versions were compared.
     pub skip: Option<String>,
+    /// One row per package whose manifest exists in the working tree.
     pub rows: Vec<VersionRow>,
 }
 
 impl VersionReport {
+    /// Rows whose local version differs from the merge-base.
     #[must_use]
     pub fn drifted(&self) -> Vec<&VersionRow> {
         self.rows.iter().filter(|row| row.drifted()).collect()
     }
 
+    /// Fail naming each drifted package, since versions change only through a
+    /// fragment.
     pub fn require_clean(&self) -> Result<()> {
         let drifted = self.drifted();
         ensure!(
@@ -90,6 +109,7 @@ impl VersionReport {
     }
 }
 
+/// Compare versions on HEAD to the merge-base, skipping per [`Skip::from_env`].
 pub fn report(root: &Path, config: &Config) -> Result<VersionReport> {
     report_with(
         root,
@@ -99,6 +119,7 @@ pub fn report(root: &Path, config: &Config) -> Result<VersionReport> {
     )
 }
 
+/// [`report`] with the skip and the default-branch candidates given.
 pub fn report_with(
     root: &Path,
     config: &Config,
@@ -139,12 +160,14 @@ pub fn report_with(
     Ok(VersionReport { skip: None, rows })
 }
 
+/// [`report`], failing when any version drifted.
 pub fn require(root: &Path, config: &Config) -> Result<VersionReport> {
     let report = report(root, config)?;
     report.require_clean()?;
     Ok(report)
 }
 
+/// [`report_with`], failing when any version drifted.
 pub fn require_with(
     root: &Path,
     config: &Config,
@@ -156,6 +179,7 @@ pub fn require_with(
     Ok(report)
 }
 
+/// The default-branch candidates when no branch is configured.
 #[must_use]
 pub fn stock_candidates() -> Vec<String> {
     git::default_branch_candidates_from(None)

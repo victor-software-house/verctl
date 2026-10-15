@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 
 use crate::git;
 
+/// The command that refreshes the lockfile after `manifest`'s version moves,
+/// when the tree has one.
 #[must_use]
 pub fn follow_up(manifest: &Path) -> Option<String> {
     let dir = manifest.parent().unwrap_or(manifest);
@@ -92,10 +94,10 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use git2::Repository;
     use tempfile::TempDir;
 
     use super::follow_up;
+    use crate::test_git;
 
     /// `files` are workspace-relative; parents are created.
     fn tree(files: &[&str]) -> TempDir {
@@ -109,7 +111,7 @@ mod tests {
     }
 
     fn repo_at(dir: &Path) {
-        Repository::init(dir).unwrap();
+        test_git::init(dir);
     }
 
     #[test]
