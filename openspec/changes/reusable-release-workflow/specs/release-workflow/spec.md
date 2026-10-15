@@ -4,7 +4,7 @@
 
 verctl SHALL ship `.github/workflows/release.yml` triggered only by
 `workflow_call`. It SHALL declare the inputs `version-pr`, `publish`,
-`assets`, `auto-merge`, `config`, `runner`, `mise-version`, `mise-env`,
+`assets`, `docs`, `auto-merge`, `config`, `runner`, `mise-version`, `mise-env`,
 `title`, `commit-message`, and `registry-token-env`, and the optional secrets
 `app-client-id`, `app-private-key`, and `registry-token`, each with the
 default the design's input table gives. A caller that passes no input SHALL
@@ -22,8 +22,8 @@ get verctl's defaults.
 
 ### Requirement: Each part can be turned off
 
-Setting `version-pr`, `publish`, or `assets` to `false` SHALL skip the
-matching job and SHALL NOT change what the other jobs do. `auto-merge`
+Setting `version-pr`, `publish`, `assets`, or `docs` to `false` SHALL skip
+the matching job and SHALL NOT change what the other jobs do. `auto-merge`
 SHALL default to `false`.
 
 #### Scenario: A repository that publishes nothing

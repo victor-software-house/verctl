@@ -52,6 +52,10 @@ triggers release, then propose (its decision 5), and the proposal branch is
    and the action share one implementation, and `auto-merge.sh` goes.
 7. Each repository replaces `version-pr.yml` and `publish.yml` with one caller,
    rendered by the shared template.
+8. A new `verctl docs` waits for docs.rs to build each crates.io crate
+   released at a version commit, and fails when the build failed. verctl
+   0.4.5 and qctl 0.5.4 both shipped with no docs.rs build, and nothing
+   noticed.
 
 ## Capabilities
 
@@ -62,6 +66,7 @@ triggers release, then propose (its decision 5), and the proposal branch is
 - `idempotent-publish`: registry query, tag and Release checks, the version
   commit, and `nothing to release`.
 - `version-pr-branch`: the derived branch and what reads it.
+- `docs-build`: the docs.rs build check after a crates.io release.
 
 ### Modified Capabilities
 
@@ -71,7 +76,8 @@ moves into `prepare --pr`.
 ## Impact
 
 1. Code: `src/publish.rs`, `src/publisher.rs`, `src/release.rs`,
-   `src/versions.rs`, `src/git.rs`, `src/github.rs`, `src/cli.rs`.
+   `src/versions.rs`, `src/git.rs`, `src/github.rs`, `src/cli.rs`, and a
+   new `src/docs.rs`.
 2. Workflows: `.github/workflows/release.yml` (new, reusable), this
    repository's own caller, `examples/workflows/`, and the removal of
    `version-pr.yml` and `publish.yml` here.

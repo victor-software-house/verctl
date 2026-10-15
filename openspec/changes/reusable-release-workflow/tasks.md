@@ -13,6 +13,7 @@ change.
 - [ ] 1.1 `query` on publisher recipes, stock `cargo` and `bun` queries, and the pre- and post-publish checks; proof: the idempotent-publish registry scenarios pass as tests with a fake publisher and query, including a mocked crates.io index that lacks the version of a workspace member
 - [ ] 1.2 The version commit from first-parent history, and `publish --plan` with `$GITHUB_OUTPUT`; proof: the version-commit scenarios pass against a local repository
 - [ ] 1.3 `nothing to release` and the `outcome` field; proof: the nothing-to-release scenarios pass with mocked GitHub responses
+- [ ] 1.4 `verctl docs` and the `docs` job; proof: the docs-build scenarios pass against a mocked docs.rs that answers 404, then `doc_status` true or false
 
 ## 2. Version PR branch and auto-merge
 

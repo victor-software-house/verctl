@@ -59,6 +59,7 @@ override.
 | `version-pr` | boolean | `true` | `false` skips the `propose` job: no Version PR is opened or updated |
 | `publish` | boolean | `true` | `false` skips the `publish` job: no registry upload, tag, or Release |
 | `assets` | boolean | `true` | `false` skips the `assets` matrix, even when `.ctl/ver.yaml` declares assets, and leaves assets out of the completeness check (`VERCTL_SKIP_ASSETS`) |
+| `docs` | boolean | `true` | `false` skips the `docs` matrix: no docs.rs build check |
 | `auto-merge` | boolean | `false` | `true` enables auto-merge on the Version PR; needs the App secrets |
 | `config` | string | `""` | path to the declarations file; empty means `.ctl/ver.yaml` |
 | `runner` | string | `["ubuntu-latest"]` | JSON label list for the `plan`, `publish`, and `propose` jobs; asset jobs take their runners from `.ctl/ver.yaml` |
@@ -90,7 +91,10 @@ workflow declares, which is why they are inputs to nothing else.
    `verctl publish`. Concurrency group `verctl-publish`, never cancelled.
 3. `assets` runs after `publish` when `inputs.assets` is true and the matrix
    is not empty, one job per commit and target, each at its commit.
-4. `propose` runs after `publish` succeeds or is skipped, when
+4. `docs` runs after `publish` succeeds when `inputs.docs` is true, as a
+   matrix over `commits` with no parallel limit, each leg at its commit
+   running `verctl docs` (section 2.4). It never holds `propose` back.
+5. `propose` runs after `publish` succeeds or is skipped, when
    `inputs.version-pr` is true. It checks out the pushed commit and runs
    `verctl prepare --pr`. Concurrency group `verctl-propose`, newest wins.
 
@@ -204,6 +208,24 @@ When every package's release at HEAD's versions is complete, `verctl publish`
 and `verctl publish --plan` report `nothing to release` and exit zero. The
 JSON report carries `"outcome": "nothing-to-release"`, or `"released"` when
 the run changed anything.
+
+### 2.4 The docs.rs build
+
+`verctl docs` takes the packages released at HEAD whose publish target is
+crates.io (section 2.1), and polls
+`https://docs.rs/crate/<name>/<version>/status.json` with a bounded backoff.
+docs.rs answers 404 until it has built the version, then
+`{"doc_status": <bool>, "version": "<version>"}`. verctl reports each crate as
+`built` or `failed`, and exits non-zero when any failed, or when any is still
+unbuilt after `--timeout` (minutes, default 60, `VERCTL_TIMEOUT`), naming
+those crates. docs.rs can queue a build for a long time, so the check is its
+own job: a slow queue never delays the next version commit's publish or the
+Version PR.
+
+The docs.rs build does not count toward completeness (section 2.3). A failed
+build cannot be retried for the same version, so a rerun reports `nothing to
+release` and the fix is the next patch release. The failed `docs` job is the
+visible record.
 
 ## 3. The Version PR branch
 
