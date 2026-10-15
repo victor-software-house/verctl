@@ -43,6 +43,11 @@ target and no `query`, SHALL have no registry check.
 - **WHEN** crate `demo` sets no `registry`, its manifest has no `publish` list, and `$CARGO_HOME/config.toml` sets `registry.default = "internal"`
 - **THEN** verctl treats the target as not crates.io, reads no crates.io index, and runs `cargo publish`
 
+#### Scenario: A package-level config the publisher never reads
+
+- **WHEN** crate `demo` lives in `crates/demo`, `crates/demo/.cargo/config.toml` sets `registry.default = "internal"`, and the stock publisher runs from the repository root with `--manifest-path`
+- **THEN** verctl ignores that file, as `cargo publish` does, and treats the target as crates.io
+
 #### Scenario: A crate on another registry
 
 - **WHEN** crate `demo` sets `registry: internal` and declares no `query`

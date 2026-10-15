@@ -124,12 +124,15 @@ effect. The stock recipes:
 A cargo package's publish target is crates.io only when every place Cargo
 reads it agrees: the package sets no `registry` in `.ctl/ver.yaml` (or sets
 `crates-io`), its manifest's `publish` field is absent or names only
-`crates-io`, and the `registry.default` Cargo resolves for the package's
-directory is unset or `crates-io`. verctl resolves it in Cargo's documented
-order ([config hierarchy][cargo-config]): `CARGO_REGISTRY_DEFAULT`, then
-each `.cargo/config.toml` (or legacy `.cargo/config`) from the package's
-directory up to the filesystem root, then `$CARGO_HOME/config.toml`, the
-first that sets it winning. When a file it reads cannot be parsed or uses
+`crates-io`, and the `registry.default` Cargo resolves for the publisher's
+working directory is unset or `crates-io`. verctl resolves it in Cargo's
+documented order ([config hierarchy][cargo-config]): `CARGO_REGISTRY_DEFAULT`,
+then each `.cargo/config.toml` (or legacy `.cargo/config`) from the directory
+the publisher runs in up to the filesystem root, then
+`$CARGO_HOME/config.toml` (or legacy `$CARGO_HOME/config`), with
+`CARGO_HOME` defaulting to `~/.cargo`, the first that sets it winning. The
+stock cargo publisher runs from the repository root with `--manifest-path`,
+so for it the walk starts there, not in the package's directory. When a file it reads cannot be parsed or uses
 `include`, the target is unknown. `cargo config get` would answer directly
 but needs a nightly Cargo, which a consumer's release job need not have.
 Any target other than crates.io, and an unknown one, needs `query` for a
