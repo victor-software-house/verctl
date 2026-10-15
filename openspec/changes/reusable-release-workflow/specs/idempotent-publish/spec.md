@@ -20,8 +20,9 @@ A cargo package on the stock publisher whose publish target is crates.io and
 that declares no `query` SHALL be checked by reading its crates.io sparse index file, at the
 path built from the lowercased name, for a `vers` equal to the version. Any
 other package with a `query` SHALL be checked by running it in the package's
-directory. A package with `query: []`, or a cargo package with another
-target and no `query`, SHALL have no registry check.
+directory. A package with `query: []`, or a cargo package with no `query`
+whose target is another registry or unknown, which includes every cargo
+package with an overridden publisher, SHALL have no registry check.
 
 #### Scenario: A workspace member is not the registry
 
