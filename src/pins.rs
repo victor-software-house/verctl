@@ -24,6 +24,7 @@ pub fn current_versions(root: &Path, config: &Config) -> Result<Vec<(String, Str
     Ok(versions)
 }
 
+/// Rewrite every pin to the versions given, and return the files changed.
 pub fn write(root: &Path, pins: &[Pin], versions: &[(String, String)]) -> Result<Vec<PathBuf>> {
     apply(root, pins, versions, true)
 }

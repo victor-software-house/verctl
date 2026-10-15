@@ -12,10 +12,13 @@ use serde::Deserialize;
 use crate::driver::{CommandSpec, Driver, Format};
 use crate::publisher::PublisherSpec;
 
+/// A driver's read or write step: a mise task or an argv.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum CommandField {
+    /// A `mise run` task name.
     Mise(String),
+    /// A program and its arguments, run without a shell.
     Argv(Vec<String>),
 }
 
@@ -36,17 +39,28 @@ impl CommandField {
     }
 }
 
+/// A version driver as declared, before it becomes a [`Driver`]. `format` and
+/// `keys` edit the manifest in place. `read` and `write` run commands instead
+/// and take precedence.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[non_exhaustive]
 pub struct DriverSpec {
+    /// `toml` or `json`.
     pub format: Option<String>,
+    /// Key paths holding the version, tried in order.
     pub keys: Option<Vec<String>>,
+    /// Command that takes the manifest on stdin and prints the version.
     pub read: Option<CommandField>,
+    /// Command that takes the manifest on stdin and prints it with the new
+    /// version.
     pub write: Option<CommandField>,
+    /// Command run after the bumps, such as a lockfile refresh. Inferred from
+    /// the tree for stock manifests when omitted.
     pub after: Option<String>,
 }
 
 impl DriverSpec {
+    /// Build the [`Driver`]. `name` only labels the errors.
     pub fn into_driver(self, name: &str) -> Result<Driver> {
         if let (Some(read), Some(write)) = (self.read, self.write) {
             return Ok(Driver::Command {
@@ -102,11 +116,17 @@ impl DriverSpec {
     }
 }
 
+/// One released package: its manifest, how that manifest holds the version, and
+/// how it is published.
 #[derive(Debug, Clone, Deserialize)]
 #[non_exhaustive]
 pub struct PackageSpec {
+    /// The name fragments, tags, and the changelog use for the package.
     pub name: String,
+    /// The manifest, relative to the directory holding `.ctl/`.
     pub path: PathBuf,
+    /// A `drivers` entry or stock driver name. Omit to infer it from the
+    /// manifest file name.
     pub driver: Option<String>,
     /// Stock `cargo` / `bun`, a `publishers` key, or omit to infer. `none`
     /// releases the package on GitHub only: tag, Release, and assets, with no
@@ -117,6 +137,8 @@ pub struct PackageSpec {
     /// Override the publisher argv for this package.
     #[serde(default, rename = "publish")]
     pub publish_argv: Option<Vec<String>>,
+    /// Fills the publisher's `{registry}` placeholder and is named in the plan.
+    /// Empty means none.
     pub registry: Option<String>,
     /// Package CHANGELOG.md. Defaults to next to the manifest.
     pub changelog: Option<PathBuf>,
@@ -125,11 +147,13 @@ pub struct PackageSpec {
     /// first releases `0.0.1`. Inert once the package has released.
     #[serde(default)]
     pub first_minor: bool,
+    /// Inline driver fields. They override the named driver's.
     #[serde(flatten)]
     pub spec: DriverSpec,
 }
 
 impl PackageSpec {
+    /// The package changelog, resolved against `root`.
     #[must_use]
     pub fn changelog_path(&self, root: &Path) -> PathBuf {
         if let Some(path) = &self.changelog {
@@ -141,6 +165,8 @@ impl PackageSpec {
             .join("CHANGELOG.md")
     }
 
+    /// The version driver: the stock or named driver with this package's own
+    /// fields over it, and a lockfile follow-up inferred when none is set.
     pub fn resolve(&self, config: &Config, root: &Path) -> Result<Driver> {
         let inferred = self
             .path
@@ -179,6 +205,8 @@ pub struct Runner {
 #[serde(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct Job {
+    /// Names from `runners` this job runs on. Omit for one `ubuntu-latest`
+    /// machine.
     pub runners: Option<Vec<String>>,
 }
 
@@ -187,6 +215,7 @@ pub struct Job {
 #[derive(Debug, Clone, Deserialize, Default)]
 #[non_exhaustive]
 pub struct Assets {
+    /// The binary name. Defaults to the first package's name.
     pub bin: Option<String>,
     /// Ran once per target before `build`. Stock rust recipe uses rustup.
     pub prepare: Option<Vec<String>>,
@@ -206,9 +235,13 @@ pub struct Assets {
 #[serde(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct AssetTarget {
+    /// Name from `runners` of the machine that builds this target.
     pub runner: Option<String>,
+    /// Operating system name. Defaults from a known target id.
     pub os: Option<String>,
+    /// CPU architecture name. Defaults from a known target id.
     pub arch: Option<String>,
+    /// Target triple. Defaults from a known target id.
     pub triple: Option<String>,
 }
 
@@ -226,6 +259,8 @@ pub struct AssetTarget {
 #[garde(allow_unvalidated)]
 #[non_exhaustive]
 pub struct Config {
+    /// Custom drivers by name. A stock name (`cargo`, `npm`) is overridden
+    /// field by field.
     #[serde(default)]
     pub drivers: BTreeMap<String, DriverSpec>,
     /// What this repo releases. A config that names none has nothing to do.
@@ -234,6 +269,7 @@ pub struct Config {
         custom(release_only_names_no_registry)
     )]
     pub packages: Vec<PackageSpec>,
+    /// Publish recipes by name, for a package's `publisher` to select.
     #[serde(default)]
     #[garde(custom(none_is_not_a_publisher))]
     pub publishers: BTreeMap<String, PublisherSpec>,
@@ -242,11 +278,13 @@ pub struct Config {
     #[serde(default)]
     #[garde(dive)]
     pub runners: BTreeMap<String, Runner>,
+    /// Release tarball recipe. Omit for libraries.
     #[serde(default)]
     pub assets: Option<Assets>,
     /// PR and push validation. Empty means one `verify` on `ubuntu-latest`.
     #[serde(default)]
     pub ci: BTreeMap<String, Job>,
+    /// Work done after the version bumps.
     #[serde(default)]
     pub prepare: Prepare,
     /// Whose names changelog entries never credit. Omit to list no one.
@@ -319,6 +357,7 @@ fn every_pattern_is_listed(
 #[garde(allow_unvalidated)]
 #[non_exhaustive]
 pub struct Pin {
+    /// The file, relative to the directory holding `.ctl/`.
     #[garde(custom(inside_the_repo))]
     pub file: PathBuf,
     /// A mise `[tools]` entry, in a file that parses as TOML. Its own
@@ -337,6 +376,7 @@ pub struct Pin {
     /// to build a pin that rewrites anything.
     #[serde(skip)]
     pub patterns: Vec<PinPattern>,
+    /// The package whose version this file serves.
     pub package: String,
 }
 
@@ -459,6 +499,8 @@ impl Tags {
         format!("v{PLACEHOLDER}")
     }
 
+    /// Whether the template names the package, so each package gets its own
+    /// tag.
     #[must_use]
     pub fn uses_name(&self) -> bool {
         self.template.contains(NAME_PLACEHOLDER)
@@ -675,6 +717,7 @@ impl<'de> serde::de::Visitor<'de> for OccurrencesVisitor {
 }
 
 impl Occurrences {
+    /// Whether `found` occurrences satisfy this rule.
     #[must_use]
     pub const fn allows(self, found: usize) -> bool {
         match self {
@@ -741,8 +784,10 @@ pub struct Prepare {
 }
 
 impl Prepare {
+    /// The label used when `version_label` is unset or empty.
     pub const DEFAULT_VERSION_LABEL: &'static str = "verctl:version";
 
+    /// The Version PR label: the configured one, or the default.
     #[must_use]
     pub fn version_label(&self) -> &str {
         self.version_label
@@ -753,6 +798,7 @@ impl Prepare {
 }
 
 impl Config {
+    /// Read and validate the file at `path`.
     pub fn load(path: &Path) -> Result<Self> {
         Self::from_input(&Input::read(path)?)
     }
@@ -786,6 +832,7 @@ impl Config {
         }
     }
 
+    /// The package declared as `name`.
     pub fn find(&self, name: &str) -> Result<&PackageSpec> {
         self.packages
             .iter()
@@ -793,6 +840,8 @@ impl Config {
             .with_context(|| format!("package {name:?} is not in verctl config"))
     }
 
+    /// The spec for `name`: a stock driver, a declared one, or a declared one
+    /// over the stock.
     #[must_use]
     pub fn driver_spec(&self, name: &str) -> Option<DriverSpec> {
         match (DriverSpec::stock(name), self.drivers.get(name)) {

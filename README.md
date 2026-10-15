@@ -254,8 +254,9 @@ output rather than an assumption. Both also write a matrix for
 
 These replace `changesets/action`. They are **GitHub Actions, not a
 GitHub App**. The runner already has `git` and `GITHUB_TOKEN`. PRs are
-opened with octocrab. Commits and push are `git2` with that token,
-not the `git`/`gh` CLIs. There is no local token setup.
+opened with octocrab. Commits are written with `gix`; the push runs
+`git push` with that token, passed through a credential helper and
+never on the command line or in a URL. There is no local token setup.
 
 | Action | Role |
 |:--|:--|

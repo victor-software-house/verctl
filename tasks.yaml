@@ -256,28 +256,6 @@ queue:
       - >2-
         2026-10-12 (UTC): the decision also covers whether verctl should verify the ruleset that limits pushes on the proposal branch `verctl/release/<base>` to the release identity, in `check` or a separate command. The release-state-machine design documents that ruleset but does not verify it.
 
-  - id: VER-049
-    title: Deny missing_docs and missing_debug_implementations
-    scope: src/
-    outcome: verctl takes the template full lint set; every public item has a doc and a Debug implementation.
-    blocked_by:
-      []
-    acceptance:
-      - Cargo.toml drops the local edit that leaves missing_docs and missing_debug_implementations off.
-      - mise run verify passes with both denied.
-
-  - id: VER-050
-    title: Replace git2 with gix so the openssl ban applies
-    scope: git2 call sites, Cargo.toml, deny.toml
-    outcome: verctl builds with no OpenSSL, and deny.toml takes the template openssl and native-tls bans.
-    blocked_by:
-      []
-    acceptance:
-      - Cargo.toml has no git2 dependency, and no crate in the graph depends on openssl or native-tls.
-      - deny.toml drops the local edit, so the template bans apply and mise run verify passes.
-    notes:
-      - git2 builds with vendored OpenSSL (features https, vendored-libgit2, vendored-openssl), which needs Perl on every build machine. gix covers clone, fetch, commit, and push over HTTPS with rustls; the shared Rust guidance prefers it where it covers the operation.
-
   - id: VER-051
     title: Fill each changelog entry with its pull request and commit, and apply internalAuthors
     scope: src/release.rs changelog_sections, src/changelog.rs
@@ -294,6 +272,18 @@ queue:
         Decision (operator, 2026-10-12): render the reference as a short (#N) and credit no maintainer by default; credit outside contributors only. OpenSpec change changelog-references.
       - >2-
         Follow-up (2026-10-12): the author lookup credited the owner on Version PR #118, so it is removed and no entry carries a byline; VER-054 adds the explicit list on next.
+
+  - id: VER-060
+    title: Scope the Version PR workflow token to its job
+    scope: .github/workflows/version-pr.yml
+    outcome: The Version PR workflow grants GITHUB_TOKEN only what its one job needs.
+    blocked_by: []
+    acceptance:
+      - version-pr.yml sets no workflow-level write permissions, and the prepare job declares its own.
+      - zizmor --pedantic reports no excessive-permissions finding for version-pr.yml.
+    notes:
+      - >2-
+        Every write in the job goes through the minted Version Packages App token, so GITHUB_TOKEN likely needs only contents: read; confirm against each step before narrowing.
 
 horizon:
   - id: VER-038
@@ -592,6 +582,37 @@ horizon:
         Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.
 
 archive:
+  - id: VER-061
+    title: Commit the Version PR from a relative workdir
+    scope: src/git.rs
+    outcome: prepare --pr commits when verctl runs from the repository root as `.`.
+    notes:
+      - gix reports the workdir as discovered, so `.` stayed `.` and every path failed with path outside workdir; libgit2 returned it absolute. Found by the first Version PR run after the gix move.
+    completed: 2026-10-14T22:32:43
+    evidence:
+      - commit_branch_and_push resolves the workdir to an absolute path; a_workdir_found_from_dot_resolves_paths covers it.
+    disposition: completed
+
+  - id: VER-050
+    title: Replace git2 with gix so the openssl ban applies
+    scope: git2 call sites, Cargo.toml, deny.toml
+    outcome: verctl builds with no OpenSSL, and deny.toml takes the template openssl and native-tls bans.
+    notes:
+      - git2 builds with vendored OpenSSL (features https, vendored-libgit2, vendored-openssl), which needs Perl on every build machine. gix covers clone, fetch, commit, and push over HTTPS with rustls; the shared Rust guidance prefers it where it covers the operation.
+    completed: 2026-10-13T16:32:36
+    evidence:
+      - git2 is gone; gix 0.89 reads, fetches, and commits over rustls, git push carries the token through an env-reading credential helper, and deny.toml takes the openssl and native-tls bans.
+    disposition: completed
+
+  - id: VER-049
+    title: Deny missing_docs and missing_debug_implementations
+    scope: src/
+    outcome: verctl takes the template full lint set; every public item has a doc and a Debug implementation.
+    completed: 2026-10-13T16:03:05
+    evidence:
+      - missing_docs and missing_debug_implementations are denied in Cargo.toml; every public item has a doc, and FetchDefault prints a redacted token.
+    disposition: completed
+
   - id: VER-059
     title: Serve the ver task raw
     scope: tasks

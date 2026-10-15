@@ -1,3 +1,5 @@
+//! The `verctl` binary: parses the command line and runs the chosen command.
+
 use std::path::Path;
 
 use anyhow::{Context, Result};

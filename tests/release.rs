@@ -1,3 +1,6 @@
+//! Fragment consumption, changelog writing, and Version PR notes, including
+//! pull request and commit links.
+
 mod common;
 
 use std::fs;
@@ -390,26 +393,6 @@ fn local_prepare_writes_changelog_and_consumes() {
     assert!(log.contains("Patch."), "{log}");
 }
 
-/// Commit everything in `root` on top of HEAD, with `subject`, and hand back
-/// the new commit's id.
-#[expect(
-    clippy::unwrap_used,
-    reason = "fixture setup outside a #[test]: a broken fixture fails the test"
-)]
-fn commit_all(repo: &git2::Repository, subject: &str) -> git2::Oid {
-    let sig = git2::Signature::now("t", "t@example.com").unwrap();
-    let mut index = repo.index().unwrap();
-    index
-        .add_all(["."].iter(), git2::IndexAddOption::DEFAULT, None)
-        .unwrap();
-    index.write().unwrap();
-    let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
-    let parent = repo.head().ok().and_then(|head| head.peel_to_commit().ok());
-    let parents: Vec<&git2::Commit<'_>> = parent.iter().collect();
-    repo.commit(Some("HEAD"), &sig, &sig, subject, &tree, &parents)
-        .unwrap()
-}
-
 /// A squash-merged fragment links its pull request, and one pushed straight
 /// to the branch links its commit.
 #[test]
@@ -432,10 +415,17 @@ fn prepare_links_the_pull_request_or_commit_that_added_each_fragment() {
         "#},
     )
     .unwrap();
-    let repo = git2::Repository::init(root.path()).unwrap();
-    repo.remote("origin", "https://github.com/acme/demo.git")
-        .unwrap();
-    commit_all(&repo, "chore: start");
+    common::init(root.path());
+    common::git(
+        root.path(),
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/acme/demo.git",
+        ],
+    );
+    common::commit_all(root.path(), "chore: start");
     let changes = root.path().join(".changeset");
     fs::create_dir_all(&changes).unwrap();
     fs::write(
@@ -449,7 +439,7 @@ fn prepare_links_the_pull_request_or_commit_that_added_each_fragment() {
         "},
     )
     .unwrap();
-    commit_all(&repo, "fix: the parser (#12)");
+    common::commit_all(root.path(), "fix: the parser (#12)");
     fs::write(
         changes.join("direct.md"),
         indoc! {"
@@ -461,7 +451,7 @@ fn prepare_links_the_pull_request_or_commit_that_added_each_fragment() {
         "},
     )
     .unwrap();
-    let direct = commit_all(&repo, "fix: the reader").to_string();
+    let direct = common::commit_all(root.path(), "fix: the reader");
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
         .current_dir(root.path())
         .env_remove("GITHUB_TOKEN")

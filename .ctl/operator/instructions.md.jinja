@@ -119,9 +119,15 @@ lists extra globs that command may write. Any other dirty path
 fails. `--pr` also opens or force-updates `version-packages` (body is the
 changelog).
 Auth is `GITHUB_TOKEN` / `GH_TOKEN` only. Push uses that token over
-HTTPS, not the machine git/ssh account. We do not call `git` or `gh`
-as commands. Local `--pr` is recovery when that same token is already
-in the environment.
+HTTPS, not the machine git/ssh account: `--pr` runs `git push`, so it
+needs `git` on PATH, with a credential helper that reads the token from
+the push's environment and replaces any helper you configured. The
+push skips repository hooks. We do not call `gh`. Local `--pr` is
+recovery when that same token is already in the environment.
+
+verctl reads the repository that covers the directory it runs in, as
+it is on disk. Inside a git hook it ignores `GIT_INDEX_FILE`,
+`GIT_WORK_TREE`, and `GIT_DIR`, and it never writes the index.
 
 `prepare --dry-run` and `prepare --preview` print the same plan and
 write nothing. `prepare --pr --dry-run` also lists consumed fragments
