@@ -27,5 +27,5 @@ change.
 
 ## 4. Docs and consumers
 
-- [ ] 4.1 Instructions, the operator skill, README, AGENTS.md, and `examples/workflows/` describe the caller and the migration; proof: `cargo test operator_docs` passes and no document names `version-packages`
+- [ ] 4.1 Instructions, the operator skill, README, AGENTS.md, and `examples/workflows/` describe the caller and the migration; proof: `cargo test operator_docs` passes, and only the migration guide names `version-packages`
 - [ ] 4.2 The template renders the caller; proof: a template-rendered repository's caller matches design section 1 and its first release passes

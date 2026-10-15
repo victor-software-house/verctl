@@ -294,7 +294,7 @@ queue:
     acceptance:
       - verctl ships .github/workflows/release.yml on workflow_call, whose inputs turn off the Version PR, publishing, assets, and auto-merge and override runners, config, mise, and secret names, with every default owned by verctl.
       - verctl publish asks the registry before publishing, acts only at a version commit, and reports nothing to release when every release is complete.
-      - The Version PR branch is verctl/release/<base>, and no file names version-packages.
+      - The Version PR branch is verctl/release/<base>, and no source or action file names version-packages; only the migration guide mentions it.
       - This repository releases through its own caller, and a rerun reports nothing to release.
     notes:
       - OpenSpec change reusable-release-workflow in openspec/changes/reusable-release-workflow; it takes slice B of release-state-machine (VER-011) as a patch.

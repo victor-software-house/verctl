@@ -25,6 +25,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  pull-requests: write
 jobs:
   release:
     uses: victor-software-house/verctl/.github/workflows/release.yml@<sha> # v0.4.6
@@ -33,6 +34,17 @@ jobs:
       app-private-key: ${{ secrets.CHANGESET_VERSION_APP_PRIVATE_KEY }}
       registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 ```
+
+The caller grants `contents: write` for tags and Releases and
+`pull-requests: write` for the Version PR: a called workflow's
+`GITHUB_TOKEN` cannot exceed what the caller grants, and `propose` falls
+back to it when no App secret is mapped.
+
+Every job runs only when `github.ref` is the default branch
+(`format('refs/heads/{0}', github.event.repository.default_branch)`). A
+dispatch from any other branch runs no job, as [#153][pr-153] made the
+publish workflow do, so `propose` never derives `verctl/release/<feature>`
+and `plan` never releases a commit outside the default branch.
 
 ### 1.1 Inputs
 
@@ -43,7 +55,7 @@ override.
 |:--|:--|:--|:--|
 | `version-pr` | boolean | `true` | `false` skips the `propose` job: no Version PR is opened or updated |
 | `publish` | boolean | `true` | `false` skips the `publish` job: no registry upload, tag, or Release |
-| `assets` | boolean | `true` | `false` skips the `assets` matrix, even when `.ctl/ver.yaml` declares assets |
+| `assets` | boolean | `true` | `false` skips the `assets` matrix, even when `.ctl/ver.yaml` declares assets, and leaves assets out of the completeness check (`VERCTL_SKIP_ASSETS`) |
 | `auto-merge` | boolean | `false` | `true` enables auto-merge on the Version PR; needs the App secrets |
 | `config` | string | `""` | path to the declarations file; empty means `.ctl/ver.yaml` |
 | `runner` | string | `["ubuntu-latest"]` | JSON label list for the `plan`, `publish`, and `propose` jobs; asset jobs take their runners from `.ctl/ver.yaml` |
@@ -103,7 +115,9 @@ registry has it. The stock recipes:
 
 verctl runs `query` first. When it prints the version, the package is
 `already` and its publisher does not run. Otherwise verctl runs the publisher,
-then `query` again, and fails unless the registry now lists the version.
+then `query` again with a bounded backoff (registry metadata can lag a
+publish by a short while), and fails unless the registry lists the version
+within that bound. The bound is a constant with its reason on it.
 
 The recipe is data, so the exact commands are checked against each tool's
 documentation when they are written, and the reference goes in the doc
@@ -121,7 +135,10 @@ A package's version commit is the newest commit on the first-parent history
 of the default branch where its manifest version became the version it has at
 HEAD. `verctl publish --plan` finds, for each package, its version commit and
 whether its release is complete: registry, tag, and Release, plus every
-declared asset. It reports the oldest incomplete version commit, or nothing.
+declared asset unless assets are off. The workflow passes `assets: false` as
+`VERCTL_SKIP_ASSETS=true` (`--skip-assets`), so a repository that turns
+assets off still reaches `nothing to release`. It reports the oldest
+incomplete version commit, or nothing.
 
 `verctl publish` refuses to run unless HEAD is a version commit of at least
 one package whose release is incomplete. The tag it creates is at HEAD, which
@@ -185,3 +202,4 @@ template migrates with `copier update`.
    [release-state-machine][rsm].
 
 [rsm]: ../release-state-machine/design.md
+[pr-153]: https://github.com/victor-software-house/verctl/pull/153

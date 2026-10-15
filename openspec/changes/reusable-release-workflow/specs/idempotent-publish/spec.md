@@ -5,8 +5,9 @@
 Before it runs a package's publisher, `verctl publish` SHALL run the recipe's
 `query` and treat the package as published when the query exits zero and
 prints the version. It SHALL then not run the publisher, and SHALL report the
-package as `already`. After running a publisher it SHALL run the query again
-and fail unless the registry lists the version. A recipe whose `query` is
+package as `already`. After running a publisher it SHALL run the query again,
+retrying with a bounded backoff, and fail unless the registry lists the
+version within that bound. A recipe whose `query` is
 `[]` SHALL keep the stderr match for "already published".
 
 #### Scenario: A rerun after the tag push failed
@@ -16,8 +17,13 @@ and fail unless the registry lists the version. A recipe whose `query` is
 
 #### Scenario: A publisher that exits zero without publishing
 
-- **WHEN** the publisher exits zero and `query` still does not print `0.4.6`
+- **WHEN** the publisher exits zero and `query` still does not print `0.4.6` when the backoff ends
 - **THEN** `verctl publish` exits non-zero, names `demo@0.4.6`, and creates no tag
+
+#### Scenario: Registry metadata lags the publish
+
+- **WHEN** the publisher exits zero, the first `query` after it does not print `0.4.6`, and a retry within the bound does
+- **THEN** `verctl publish` reports `demo@0.4.6` as published and goes on to the tag
 
 ### Requirement: verctl publishes only at a version commit
 
@@ -39,7 +45,9 @@ before any side effect and name the version commit.
 
 ### Requirement: A complete release is nothing to release
 
-When every package's registry entry, tag, Release, and declared assets exist
+With assets on, the declared assets count toward completeness; with
+`--skip-assets` (`VERCTL_SKIP_ASSETS=true`) they do not.
+When every package's registry entry, tag, Release, and counted assets exist
 for its version at HEAD, `verctl publish` and `verctl publish --plan` SHALL
 report `nothing to release`, run no publisher, create nothing, and exit zero.
 The JSON report SHALL carry `"outcome": "nothing-to-release"`.
@@ -48,6 +56,11 @@ The JSON report SHALL carry `"outcome": "nothing-to-release"`.
 
 - **WHEN** `demo@0.4.6` is on crates.io, tag `v0.4.6` and its Release exist with both declared assets, and `verctl publish --format json` runs
 - **THEN** it exits zero with `"outcome": "nothing-to-release"`
+
+#### Scenario: Assets turned off
+
+- **WHEN** `.ctl/ver.yaml` declares assets for `demo`, none was ever uploaded, `demo@0.4.6` is on crates.io with its tag and Release, and `VERCTL_SKIP_ASSETS=true`
+- **THEN** `verctl publish --plan` reports `nothing to release`
 
 #### Scenario: Only an asset is missing
 

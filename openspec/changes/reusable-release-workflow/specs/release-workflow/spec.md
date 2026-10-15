@@ -34,7 +34,7 @@ SHALL default to `false`.
 #### Scenario: No assets
 
 - **WHEN** `.ctl/ver.yaml` declares assets `darwin-arm64` and `linux-x64` and the caller sets `assets: false`
-- **THEN** no asset job runs, and `verctl publish` creates the Release as it would for a package without assets
+- **THEN** no asset job runs, `verctl publish` creates the Release as it would for a package without assets, and the next push reports `nothing to release`
 
 #### Scenario: No Version PR
 
@@ -73,6 +73,21 @@ job SHALL read the pull request event, its head branch, or its labels.
 
 - **WHEN** the run for version commit `A` was replaced in its concurrency group before it started, and a person dispatches the workflow on `main` at a later commit `B`
 - **THEN** `plan` reports `A`, and `publish` checks out `A` and releases it
+
+### Requirement: The workflow runs only on the default branch
+
+Every job SHALL run only when `github.ref` names the default branch. The
+caller SHALL grant `contents: write` and `pull-requests: write`.
+
+#### Scenario: A dispatch from a feature branch
+
+- **WHEN** a person dispatches the caller's workflow on branch `fix/typo`
+- **THEN** no job runs, no `verctl/release/fix/typo` branch is pushed, and nothing is published
+
+#### Scenario: A repository without the App
+
+- **WHEN** a caller maps no App secrets and a fragment lands on `main`
+- **THEN** `propose` opens the Version PR with `GITHUB_TOKEN` under the caller's `pull-requests: write`
 
 ### Requirement: Steps pass settings through the environment
 
