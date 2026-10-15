@@ -10,6 +10,15 @@ readme = "README.md"
 keywords = ["version", "changelog", "mise", "changeset", "release"]
 categories = ["command-line-utilities", "development-tools"]
 
+# `release::open_or_update_pr` takes the resolved Version PR instead of a
+# title and a message (VER-064), which cargo-semver-checks reports as a
+# breaking change against 0.4.5. That change ships in a patch, by the
+# operator's ruling, so this one lint warns instead of failing. It still
+# prints the finding. VER-065 removes this table once a release with the new
+# signature is on crates.io, because the check then compares against it.
+[package.metadata.cargo-semver-checks.lints]
+function_parameter_count_changed = "warn"
+
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "deny"

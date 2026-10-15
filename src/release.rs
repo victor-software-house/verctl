@@ -398,30 +398,64 @@ pub fn prepend_changelog(path: &Path, section: &str) -> Result<()> {
     }
 }
 
+/// What the Version PR is called and which branch it targets.
+///
+/// Resolved before `prepare` writes anything, so a run that cannot tell its
+/// base fails with the tree untouched.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VersionPr {
+    /// `VERCTL_PR_TITLE`; unset or empty means `chore(release): version
+    /// packages`.
+    pub title: String,
+    /// `VERCTL_COMMIT_MESSAGE`; unset or empty means the title.
+    pub message: String,
+    /// The branch [`github::base_branch`] names.
+    pub base: String,
+}
+
+impl VersionPr {
+    /// Read the title and message from the environment and resolve the base.
+    ///
+    /// An empty variable counts as unset: a composite action passes an input
+    /// it was not given as `""`.
+    pub fn from_env(root: &Path) -> Result<Self> {
+        let title = non_empty_env("VERCTL_PR_TITLE")
+            .unwrap_or_else(|| "chore(release): version packages".into());
+        let message = non_empty_env("VERCTL_COMMIT_MESSAGE").unwrap_or_else(|| title.clone());
+        Ok(Self {
+            title,
+            message,
+            base: github::base_branch(root)?,
+        })
+    }
+}
+
+fn non_empty_env(name: &str) -> Option<String> {
+    env::var(name).ok().filter(|value| !value.is_empty())
+}
+
 /// Push the Version PR branch and open the PR, or update the open one. `None`
 /// when nothing changed.
 pub fn open_or_update_pr(
     root: &Path,
     token: &str,
-    title: &str,
-    message: &str,
+    pr: &VersionPr,
     paths: &[std::path::PathBuf],
     changelog: &str,
     version_label: &str,
 ) -> Result<Option<String>> {
     let repo = github::repo(root)?;
-    match git::commit_branch_and_push(root, VERSION_BRANCH, message, token, &repo, paths)? {
+    match git::commit_branch_and_push(root, VERSION_BRANCH, &pr.message, token, &repo, paths)? {
         git::PushOutcome::Empty => return Ok(None),
         git::PushOutcome::Pushed => {}
     }
     let body = pr_body(changelog);
     if let Some(existing) = github::existing_pr(token, &repo, VERSION_BRANCH)? {
-        let url = github::update_pr(token, &repo, existing.number, title, &body)?;
+        let url = github::update_pr(token, &repo, existing.number, &pr.title, &body)?;
         github::ensure_version_label(token, &repo, existing.number, version_label)?;
         return Ok(Some(url));
     }
-    let base = github::base_branch(root);
-    let created = github::create_pr(token, &repo, title, VERSION_BRANCH, &base, &body)?;
+    let created = github::create_pr(token, &repo, &pr.title, VERSION_BRANCH, &pr.base, &body)?;
     github::ensure_version_label(token, &repo, created.number, version_label)?;
     Ok(Some(created.url))
 }

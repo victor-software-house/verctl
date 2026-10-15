@@ -7,9 +7,6 @@ on:
 permissions: {}
 
 env:
-  GIT_CONFIG_COUNT: "1"
-  GIT_CONFIG_KEY_0: init.defaultBranch
-  GIT_CONFIG_VALUE_0: main
   MISE_ENV: ci
 
 concurrency:
@@ -48,7 +45,25 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: mise run ver prepare --pr
+      # The repository variable VERCTL_RELEASE_HOLD=true holds the next release:
+      # the Version PR still opens and updates, but never merges itself, so a
+      # person merges it when the hold ends. Delete the variable to resume.
+      # Auto-merge enabled before the hold survives later pushes, so the hold
+      # also turns it off on the open Version PR.
+      - name: Hold the release
+        if: vars.VERCTL_RELEASE_HOLD == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          number=$(gh pr list --repo "${REPO}" --head version-packages --base "${BASE}" --state open --json number --jq '.[0].number // empty')
+          if [ -n "${number}" ] && [ "$(gh pr view "${number}" --repo "${REPO}" --json autoMergeRequest --jq '.autoMergeRequest != null')" = true ]; then
+            gh pr merge "${number}" --repo "${REPO}" --disable-auto
+          fi
       - name: Enable auto-merge
+        if: vars.VERCTL_RELEASE_HOLD != 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}

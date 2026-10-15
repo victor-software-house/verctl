@@ -273,6 +273,19 @@ queue:
       - >2-
         Follow-up (2026-10-12): the author lookup credited the owner on Version PR #118, so it is removed and no entry carries a byline; VER-054 adds the explicit list on next.
 
+  - id: VER-065
+    title: Hold the VER-064 release until the template migration, then drop its semver override
+    scope: release, .github/workflows/version-pr.yml, Cargo.toml
+    outcome: VER-064 reaches crates.io only in the patch release after the template migration, and neither the hold nor the override outlives that release.
+    blocked_by: []
+    acceptance:
+      - While the repository variable VERCTL_RELEASE_HOLD is true, the Version PR on main opens and updates but never enables auto-merge.
+      - After the template migration merges, the operator merges the Version PR, and VERCTL_RELEASE_HOLD is deleted.
+      - Once the release that carries VER-064 is on crates.io, the [package.metadata.cargo-semver-checks.lints] table leaves Cargo.toml and mise run semver passes without it.
+    notes:
+      - >2-
+        Operator ruling 2026-10-15 on #155: no deprecated wrapper and no minor bump; the change keeps its fragment, and only the Version PR merge is held until the template migration lands.
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
@@ -570,6 +583,15 @@ horizon:
         Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.
 
 archive:
+  - id: VER-064
+    title: Derive Version PR defaults instead of hardcoding them
+    scope: release
+    outcome: Every default a caller does not set comes from verctl, and an unknown base branch fails instead of becoming main.
+    completed: 2026-10-15T01:39:32
+    evidence:
+      - prepare --pr resolves the Version PR base before writing and fails when GITHUB_REF_NAME, VERCTL_DEFAULT_BRANCH, and origin/HEAD are all absent; the version-pr action defaults title and commit-message to empty; the publish and Version PR workflows drop init.defaultBranch; the example names the CHANGESET_VERSION_APP secrets.
+    disposition: completed
+
   - id: VER-063
     title: Clear the zizmor findings in the publish workflows
     scope: .github/workflows/publish.yml, examples/workflows/
