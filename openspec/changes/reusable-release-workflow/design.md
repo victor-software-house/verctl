@@ -145,7 +145,9 @@ runs in, so the target is unknown and the package needs `query`. When a file it 
 `include`, the target is unknown. `cargo config get` would answer directly
 but needs a nightly Cargo, which a consumer's release job need not have.
 Any target other than crates.io, and an unknown one, needs `query` for a
-registry check.
+registry check. The same holds for an overridden upload command of any
+publisher: a bun package whose own argv runs `npm publish --registry …` would
+otherwise be checked against the registry the stock `bun pm view` asks.
 
 For a package with a registry check (the crates.io read or a `query`),
 verctl decides first. When the registry has the version, the package is

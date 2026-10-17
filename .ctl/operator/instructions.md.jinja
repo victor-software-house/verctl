@@ -171,7 +171,7 @@ crates.io sparse index; any other package runs its recipe's `query`
 listed version is `already`, and its publisher does not run. After a
 publish, `publish` asks again for about two minutes, counting a failed
 check as not listed yet, and fails unless the registry lists the version. A package with no check (`query: []`, or a
-cargo package with an overridden command or another target and no `query`)
+package with an overridden command, or a cargo package with another target, and no `query`)
 succeeds on a zero exit or on stderr saying the version exists. GitHub Packages for bun uses a
 nearby `bunfig.toml` as `--config`. One typed report feeds ctl-core pretty,
 colorless, and JSON output; tests pass `--color never`. JSON is never

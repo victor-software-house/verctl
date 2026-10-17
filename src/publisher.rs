@@ -317,9 +317,10 @@ fn publisher_name(spec: &crate::config::PackageSpec) -> &str {
 /// A package's own `query` wins, then its `publishers` entry's, and an empty
 /// one turns the check off. Otherwise a stock cargo package whose publish
 /// target is crates.io is read from the sparse index, and a stock recipe's
-/// query applies. A cargo package with an overridden command, or with a target
-/// verctl cannot tell, has no check unless it declares `query`: verctl cannot
-/// know the directory such a command runs in, nor the registry it uploads to.
+/// query applies. A package with an overridden command, for any publisher, or
+/// a cargo package with a target verctl cannot tell, has no check unless it
+/// declares `query`: verctl cannot know the directory such a command runs in,
+/// nor the registry it uploads to.
 ///
 /// The registry is asked for the name the manifest declares (`package.name`
 /// in `Cargo.toml`, `name` in `package.json`), not the label `.ctl/ver.yaml`
@@ -363,8 +364,10 @@ pub fn registry_check(
             Appended::Nothing,
         );
     }
-    let overridden = spec.publish_argv.is_some() || over.is_some_and(|over| over.argv.is_some());
-    if name == "cargo" && !overridden {
+    if spec.publish_argv.is_some() || over.is_some_and(|over| over.argv.is_some()) {
+        return Ok(RegistryCheck::Unchecked);
+    }
+    if name == "cargo" {
         let target = registry::cargo_target(
             spec.registry.as_deref(),
             &manifest,
@@ -574,6 +577,23 @@ mod tests {
                 publisher: none
         "});
         assert_eq!(found, vec![RegistryCheck::Unchecked; 3]);
+    }
+
+    /// A bun package's own upload command may name another registry, so the
+    /// stock `bun pm view` query would ask the wrong one.
+    #[test]
+    fn an_overridden_bun_publisher_has_no_check() {
+        let found = checks(indoc! {"
+            packages:
+              - name: web
+                path: package.json
+                publish:
+                  - npm
+                  - publish
+                  - --registry
+                  - https://registry.example.com
+        "});
+        assert_eq!(found, vec![RegistryCheck::Unchecked]);
     }
 
     #[test]

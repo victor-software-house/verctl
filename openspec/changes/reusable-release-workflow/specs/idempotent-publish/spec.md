@@ -54,9 +54,9 @@ it in the package's directory.
 
 ### Requirement: Packages without a registry check
 
-A package with `query: []`, or a cargo package with no `query` whose target
-is another registry or unknown, which includes every cargo package with an
-overridden publisher, SHALL have no registry check.
+A package with `query: []`, a package of any publisher whose upload command
+is overridden and that declares no `query`, or a cargo package with no `query`
+whose target is another registry or unknown, SHALL have no registry check.
 
 #### Scenario: A manifest that publishes elsewhere
 
@@ -72,6 +72,11 @@ overridden publisher, SHALL have no registry check.
 
 - **WHEN** crate `demo` replaces the stock publisher with its own argv and declares no `query`
 - **THEN** verctl treats the target as unknown, reads no crates.io index, and runs the publisher
+
+#### Scenario: An overridden bun publisher
+
+- **WHEN** bun package `web` replaces the stock publisher with `npm publish --registry https://registry.example.com` and declares no `query`
+- **THEN** verctl runs no `bun pm view` query and runs the publisher
 
 #### Scenario: A crate on another registry
 
