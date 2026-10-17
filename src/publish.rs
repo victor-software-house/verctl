@@ -78,6 +78,13 @@ pub struct PublishLine {
 }
 
 /// Resolve each package's version, upload command, and the tags to release.
+///
+/// # Errors
+///
+/// Returns an error when a package's version driver cannot be resolved, its
+/// manifest cannot be read, or the driver finds no version in it. It also
+/// fails when no publisher resolves for a package (see
+/// [`publisher::resolve`]) or when [`tags_for`] rejects the packages.
 pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
     let mut packages = Vec::new();
     for spec in &config.packages {
@@ -103,6 +110,18 @@ pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
 }
 
 /// Publish each package, then open a Release per tag. A dry run only plans.
+///
+/// A package whose registry already has the version is reported with an
+/// `already` note and is not an error.
+///
+/// # Errors
+///
+/// Returns an error when [`plan`] fails. Outside a dry run it also fails when
+/// a package version has no changelog section, when HEAD is not on the
+/// default branch history, when no GitHub token is in the environment, when a
+/// publish command fails for a reason other than a republish, or when the
+/// repository, HEAD commit, or a Release cannot be resolved or created. A
+/// failure partway through leaves the packages already published as they are.
 pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome> {
     let planned = plan(config, root)?;
     if dry_run {
@@ -209,6 +228,13 @@ fn already_published(message: &str) -> bool {
 /// A template without `{name}` names one tag for the whole release and refuses
 /// when the packages do not share one version. A template with `{name}` names
 /// one tag per package and refuses when two packages would render the same tag.
+///
+/// # Errors
+///
+/// Returns an error when `packages` is empty, when a template without
+/// `{name}` meets more than one version, when a template with `{name}`
+/// renders the same tag for two packages, or when the template cannot be
+/// rendered.
 pub fn tags_for(config: &Config, packages: &[PublishEntry]) -> Result<Vec<TagPlan>> {
     ensure!(
         !packages.is_empty(),
