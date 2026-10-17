@@ -1,0 +1,27 @@
+name: Self-release
+
+# verctl releases through its own reusable workflow, at the same commit, so a
+# change to the workflow is exercised by the release that ships it.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write # tags, Releases, assets, and verctl/release/main without the App
+  pull-requests: write # the Version PR without the App
+
+jobs:
+  release:
+    uses: ./.github/workflows/release.yml
+    with:
+      # The repository variable VERCTL_RELEASE_HOLD=true holds the next
+      # release: the Version PR opens and updates but never merges itself, so
+      # a person merges it when the hold ends (VER-065). Delete the variable
+      # to resume.
+      auto-merge: ${{ vars.VERCTL_RELEASE_HOLD != 'true' }}
+    secrets:
+      app-client-id: ${{ secrets.CHANGESET_VERSION_APP_CLIENT_ID }}
+      app-private-key: ${{ secrets.CHANGESET_VERSION_APP_PRIVATE_KEY }}
+      registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
