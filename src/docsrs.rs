@@ -247,10 +247,12 @@ async fn fetch_status(url: &str) -> Result<Option<bool>> {
         .with_context(|| format!("GET {url}"))?;
     match response.status() {
         reqwest::StatusCode::OK => {
-            let body: StatusJson = response
-                .json()
+            let raw = response
+                .text()
                 .await
                 .with_context(|| format!("GET {url}"))?;
+            let body: StatusJson =
+                serde_json::from_str(&raw).with_context(|| format!("GET {url}: {raw}"))?;
             Ok(Some(body.doc_status))
         }
         reqwest::StatusCode::NOT_FOUND => Ok(None),
