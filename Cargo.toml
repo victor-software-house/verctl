@@ -10,14 +10,21 @@ readme = "README.md"
 keywords = ["version", "changelog", "mise", "changeset", "release"]
 categories = ["command-line-utilities", "development-tools"]
 
-# `release::open_or_update_pr` takes the resolved Version PR instead of a
-# title and a message (VER-064), which cargo-semver-checks reports as a
-# breaking change against 0.4.5. That change ships in a patch, by the
-# operator's ruling, so this one lint warns instead of failing. It still
-# prints the finding. VER-065 removes this table once a release with the new
-# signature is on crates.io, because the check then compares against it.
+# Patch releases carry API changes that cargo-semver-checks reports as
+# breaking against 0.4.5, by the operator's ruling, so these lints warn
+# instead of failing. They still print each finding.
+# - `function_parameter_count_changed`: `release::open_or_update_pr` takes
+#   the resolved Version PR instead of a title and a message (VER-064).
+# - `pub_module_level_const_missing`: `release::VERSION_BRANCH` gave way to
+#   the derived `release::version_branch` (VER-066).
+# - `constructible_struct_adds_field`: `cli::PrepareArgs` gained
+#   `auto_merge` (VER-066).
+# VER-065 removes this table once a release with these changes is on
+# crates.io, because the check then compares against it.
 [package.metadata.cargo-semver-checks.lints]
 function_parameter_count_changed = "warn"
+pub_module_level_const_missing = "warn"
+constructible_struct_adds_field = "warn"
 
 [lints.rust]
 unsafe_code = "forbid"

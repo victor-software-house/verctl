@@ -248,7 +248,7 @@ fn prepare_pr_preview_needs_no_auth_and_writes_nothing() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("bump.md"), "{stdout}");
     assert!(stdout.contains("consume"), "{stdout}");
-    assert!(stdout.contains("version-packages"), "{stdout}");
+    assert!(stdout.contains("verctl/release/"), "{stdout}");
     let cargo = fs::read_to_string(root.path().join("Cargo.toml")).expect("read");
     assert!(cargo.contains("version = \"1.0.0\""), "{cargo}");
     assert!(root.path().join(".changeset/bump.md").exists());
@@ -366,6 +366,42 @@ fn check_ok_when_dir_missing() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("ok"), "{stdout}");
     assert!(stdout.contains("0 fragment(s)"), "{stdout}");
+}
+
+#[test]
+fn auto_merge_needs_pr() {
+    let root = demo_root();
+    let output = common::verctl()
+        .current_dir(root.path())
+        .args(["prepare", "--auto-merge", "--color", "never"])
+        .output()
+        .expect("spawn");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("--auto-merge needs --pr"), "{stderr}");
+    let cargo = fs::read_to_string(root.path().join("Cargo.toml")).expect("read");
+    assert!(cargo.contains("version = \"1.0.0\""), "{cargo}");
+}
+
+/// A merge made with the job's own token starts no workflow, so auto-merge
+/// with it is refused before a manifest moves or a fragment is consumed.
+#[test]
+fn auto_merge_refuses_the_job_token_before_writing() {
+    let root = demo_root();
+    let output = common::verctl()
+        .current_dir(root.path())
+        .env("GITHUB_TOKEN", "job-token")
+        .env("VERCTL_JOB_TOKEN", "job-token")
+        .env("GITHUB_REF_NAME", "main")
+        .args(["prepare", "--pr", "--auto-merge", "--color", "never"])
+        .output()
+        .expect("spawn");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("starts no workflow"), "{stderr}");
+    let cargo = fs::read_to_string(root.path().join("Cargo.toml")).expect("read");
+    assert!(cargo.contains("version = \"1.0.0\""), "{cargo}");
+    assert!(root.path().join(".changeset/bump.md").exists());
 }
 
 #[test]
