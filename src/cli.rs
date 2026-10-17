@@ -170,6 +170,11 @@ pub struct PrepareArgs {
     /// Write files only. This is the default. Opposite of --pr.
     #[arg(long, overrides_with = "pr")]
     pub no_pr: bool,
+    /// Enable GitHub auto-merge on the Version PR, as a squash titled after
+    /// it. Needs `--pr`, a ruleset on the base that requires a status check,
+    /// and a token other than the job's own (`VERCTL_JOB_TOKEN`).
+    #[arg(long)]
+    pub auto_merge: bool,
 }
 
 impl PrepareArgs {
@@ -241,6 +246,12 @@ mod tests {
     fn last_pr_flag_wins() {
         assert!(!prepare_from(&["--pr", "--no-pr"]).open_pr());
         assert!(prepare_from(&["--no-pr", "--pr"]).open_pr());
+    }
+
+    #[test]
+    fn auto_merge_is_off_unless_asked() {
+        assert!(!prepare_from(&["--pr"]).auto_merge);
+        assert!(prepare_from(&["--pr", "--auto-merge"]).auto_merge);
     }
 
     #[test]

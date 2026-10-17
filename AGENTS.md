@@ -141,12 +141,13 @@ PR that ships the behavior.** Do not save them up for a release dump.
 Never hand-edit versions or
 CHANGELOG. `prepare --pr` is the Version PR. `verctl check --versions`
 compares each manifest to the merge-base of HEAD and the default
-branch. Exempt on `version-packages` locally, or when the GitHub
-event has the Version PR label (`verctl:version`). CI does not skip.
-This repository's Version PR workflow enables auto-merge, except while the
-repository variable `VERCTL_RELEASE_HOLD` is `true`: then it skips that step
-and turns off auto-merge already on the open Version PR, so the release waits
-for a person to merge it. Delete the variable to resume.
+branch. Exempt on a `verctl/release/<base>` branch locally, or when the
+GitHub event has the Version PR label (`verctl:version`). CI does not skip.
+This repository's Version PR workflow asks verctl for auto-merge
+(`VERCTL_AUTO_MERGE`), except while the repository variable
+`VERCTL_RELEASE_HOLD` is `true`: then it does not ask, and turns off
+auto-merge already on the open Version PR, so the release waits for a
+person to merge it. Delete the variable to resume.
 mise: the repository setup comes from the shared Copier template
 (kind `rust-crate`, layout `crate`); `.copier-answers.yml` records its
 tag and answers. Take a new tag with `copier update --defaults` and
