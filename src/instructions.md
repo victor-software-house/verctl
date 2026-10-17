@@ -179,7 +179,17 @@ package on GitHub only: `publish` creates its tag and Release, and
 `assets` its tarballs, with no registry upload. Use it for a private
 binary, such as a Cargo package with `publish = false`. A `registry`
 or `publish` on the same package fails the load, and so does a
-`publishers.none` entry. Every other publisher must render a command. GitHub Packages for bun uses a
+`publishers.none` entry. Every other publisher must render a command.
+Before a publisher runs, `publish` asks the registry. A stock cargo
+package whose publish target is crates.io (its `registry`, its manifest's
+`publish`, and Cargo's `registry.default` all agree) is read from the
+crates.io sparse index; any other package runs its recipe's `query`
+(stock bun: `bun pm view {name}@{version} version`) in its directory. A
+listed version is `already`, and its publisher does not run. After a
+publish, `publish` asks again for about two minutes and fails unless the
+registry lists the version. A package with no check (`query: []`, or a
+cargo package with an overridden command or another target and no `query`)
+succeeds on a zero exit or on stderr saying the version exists. GitHub Packages for bun uses a
 nearby `bunfig.toml` as `--config`. One typed report feeds ctl-core pretty,
 colorless, and JSON output; tests pass `--color never`. JSON is never
 coloured, whatever `CLICOLOR_FORCE` or `FORCE_COLOR` say, and a parse
