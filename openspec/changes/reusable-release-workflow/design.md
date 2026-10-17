@@ -300,7 +300,22 @@ workflow would carry two copies of the same rule.
 The template renders the caller from copier answers, so a repository on the
 template migrates with `copier update`.
 
-## 6. Non-goals
+## 6. Semver
+
+The change ships in a patch release with no major bump, by the operator's
+ruling on 2026-10-17. Its new flags add fields to the clap argument structs
+in `cli`, the `docs` command adds a `cli::Command` variant, and the derived
+Version PR branch removes `release::VERSION_BRANCH`. cargo-semver-checks calls
+each of those breaking, though only verctl's own binary builds the `cli`
+types. The per-lint table in `Cargo.toml` that VER-065 removes after the
+release therefore warns on `constructible_struct_adds_field`,
+`struct_marked_non_exhaustive`, `pub_module_level_const_missing`, and
+`enum_variant_added`, beside the existing `function_parameter_count_changed`.
+The `cli` argument structs become `#[non_exhaustive]` in this release, so a
+later flag is never a breaking change again. `cli::Command` stays exhaustive,
+because the binary matches it without a wildcard arm.
+
+## 7. Non-goals
 
 1. Releases from a maintenance base other than the default branch.
 2. Releasing an older version that a newer merged version superseded.
