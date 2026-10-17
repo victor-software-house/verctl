@@ -10,6 +10,10 @@ readme = "README.md"
 keywords = ["version", "changelog", "mise", "changeset", "release"]
 categories = ["command-line-utilities", "development-tools"]
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cap-lints", "warn"]
+
 # `release::open_or_update_pr` takes the resolved Version PR instead of a
 # title and a message (VER-064), which cargo-semver-checks reports as a
 # breaking change against 0.4.5. That change ships in a patch, by the

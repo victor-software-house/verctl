@@ -65,6 +65,14 @@ struct Declared {
 }
 
 /// Render every served template and return the files written.
+///
+/// # Errors
+///
+/// Returns an error when the tracked files cannot be listed, when a template
+/// exists in the source tree but is neither tracked nor ignored, or when a
+/// template cannot be read, parsed, or rendered. It also fails when a
+/// template's declarations do not match the schema, when its target escapes
+/// the repository or is a symlink, or when a target cannot be written.
 pub fn write(
     root: &Path,
     config: &Templates,
@@ -78,11 +86,21 @@ pub fn write(
 /// A repo that serves nothing must not pay for what rendering needs — reading
 /// every package's manifest to build the version map — so the caller asks
 /// first.
+///
+/// # Errors
+///
+/// Returns an error when the tracked files cannot be listed, or when a
+/// template exists in the source tree but is neither tracked nor ignored.
 pub fn any(root: &Path, config: &Templates) -> Result<bool> {
     Ok(!sources(root, config)?.is_empty())
 }
 
 /// Same checks as `write`, without touching disk.
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`write`], except that no target
+/// is written, so a write failure cannot occur.
 pub fn plan(
     root: &Path,
     config: &Templates,

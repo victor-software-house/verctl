@@ -298,6 +298,18 @@ queue:
     notes:
       - OpenSpec change env-bound-flags in openspec/changes/env-bound-flags; it needs ctl-core 0.6.21 (EnvPrefix and env_under_flags).
 
+  - id: VER-068
+    title: Give the crate a docs.rs landing page and errors docs
+    scope: Cargo.toml, src/lib.rs, and the public item docs
+    outcome: verctl builds on docs.rs and its page tells a reader what the crate is and how to use it.
+    blocked_by: []
+    acceptance:
+      - Cargo.toml sets [package.metadata.docs.rs] with all-features = true and rustdoc-args = ["--cap-lints", "warn"].
+      - 'src/lib.rs has no allow of clippy::missing_errors_doc, and every fallible public function has an # Errors section.'
+      - The crate root docs carry a summary, a compiled Quick start doctest, and a Cargo features section.
+    notes:
+      - The docs.rs build itself is proven only after the next release; VER-066 adds the docs job that checks it.
+
   - id: VER-066
     title: Ship one reusable release workflow with an idempotent publish
     scope: .github/workflows/release.yml, publish, prepare --pr, examples, and the reusable-release-workflow spec

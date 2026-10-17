@@ -87,7 +87,11 @@ impl PublisherSpec {
         }
     }
 
-    /// Render the label and argv for one package, expanding placeholders.
+    /// Render the noun and argv for one package, expanding placeholders.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the publisher declares no `argv`.
     pub fn render(
         &self,
         name: &str,
@@ -185,6 +189,13 @@ pub const RELEASE_ONLY: &str = "none";
 
 /// Resolve a package's noun, label, and upload command from config and stock
 /// recipes.
+///
+/// # Errors
+///
+/// Returns an error when the package has no publisher: no stock recipe, no
+/// `publishers` entry, and no `publish_argv`. It also fails when the
+/// publisher declares no `argv`, or when the rendered command is empty, which
+/// only `publisher: none` may be.
 pub fn resolve(
     config: &crate::config::Config,
     spec: &crate::config::PackageSpec,

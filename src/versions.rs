@@ -89,6 +89,11 @@ impl VersionReport {
 
     /// Fail naming each drifted package, since versions change only through a
     /// fragment.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when any row has drifted from the merge-base. The
+    /// message lists each drifted package with its remote and local version.
     pub fn require_clean(&self) -> Result<()> {
         let drifted = self.drifted();
         ensure!(
@@ -110,6 +115,10 @@ impl VersionReport {
 }
 
 /// Compare versions on HEAD to the merge-base, skipping per [`Skip::from_env`].
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`report_with`].
 pub fn report(root: &Path, config: &Config) -> Result<VersionReport> {
     report_with(
         root,
@@ -120,6 +129,13 @@ pub fn report(root: &Path, config: &Config) -> Result<VersionReport> {
 }
 
 /// [`report`] with the skip and the default-branch candidates given.
+///
+/// # Errors
+///
+/// Returns an error when the merge-base cannot be found or read, as described
+/// for [`crate::git::files_on_merge_base`], when a package's driver cannot be
+/// resolved, or when the driver cannot read a version from the local manifest
+/// or from the merge-base copy.
 pub fn report_with(
     root: &Path,
     config: &Config,
@@ -161,6 +177,11 @@ pub fn report_with(
 }
 
 /// [`report`], failing when any version drifted.
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`report`], or when any version
+/// drifted, as described for [`VersionReport::require_clean`].
 pub fn require(root: &Path, config: &Config) -> Result<VersionReport> {
     let report = report(root, config)?;
     report.require_clean()?;
@@ -168,6 +189,11 @@ pub fn require(root: &Path, config: &Config) -> Result<VersionReport> {
 }
 
 /// [`report_with`], failing when any version drifted.
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`report_with`], or when any
+/// version drifted, as described for [`VersionReport::require_clean`].
 pub fn require_with(
     root: &Path,
     config: &Config,

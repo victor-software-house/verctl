@@ -13,6 +13,11 @@ use crate::config::{Config, PLACEHOLDER, Pin, PinPattern};
 const VERSION: &str = r"[0-9]+(?:\.[0-9]+)*";
 
 /// Current declared versions of every configured package.
+///
+/// # Errors
+///
+/// Returns an error when a package's driver cannot be resolved, its manifest
+/// cannot be read, or the driver cannot read a version from it.
 pub fn current_versions(root: &Path, config: &Config) -> Result<Vec<(String, String)>> {
     let mut versions = Vec::new();
     for spec in &config.packages {
@@ -25,11 +30,24 @@ pub fn current_versions(root: &Path, config: &Config) -> Result<Vec<(String, Str
 }
 
 /// Rewrite every pin to the versions given, and return the files changed.
+///
+/// # Errors
+///
+/// Returns an error when a pin file lies outside `root` or is a symlink,
+/// cannot be read or written, has no `[tools]` entry for the pinned tool, or
+/// has a pattern that is malformed or matches a number of times its
+/// `occurrences` does not allow. Files rewritten before the failing pin stay
+/// changed.
 pub fn write(root: &Path, pins: &[Pin], versions: &[(String, String)]) -> Result<Vec<PathBuf>> {
     apply(root, pins, versions, true)
 }
 
 /// Same checks as `write`, without touching disk.
+///
+/// # Errors
+///
+/// Returns an error under the same conditions as [`write`], except that no
+/// file is written, so a write failure cannot occur.
 pub fn plan(root: &Path, pins: &[Pin], versions: &[(String, String)]) -> Result<Vec<PathBuf>> {
     apply(root, pins, versions, false)
 }
