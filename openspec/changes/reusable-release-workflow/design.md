@@ -80,7 +80,8 @@ workflow declares, which is why they are inputs to nothing else.
 
 ### 1.2 Jobs
 
-1. `plan` checks out the pushed commit and runs `verctl publish --plan`,
+1. `plan` checks out the pushed commit and runs `verctl publish --plan`
+   (`VERCTL_PLAN=true`),
    which writes to `$GITHUB_OUTPUT` `commits` (every incomplete version
    commit, oldest first, as a JSON list), `pending`, and `assets` (a matrix
    of each version commit and target whose asset its Release lacks).
@@ -99,10 +100,14 @@ workflow declares, which is why they are inputs to nothing else.
    never holds `propose` back.
 5. `propose` runs after `publish` succeeds or is skipped, when
    `inputs.version-pr` is true. It checks out the pushed commit and runs
-   `verctl prepare --pr`. Concurrency group `verctl-propose`, newest wins.
+   `verctl prepare --pr` (`VERCTL_PR=true`). Concurrency group
+   `verctl-propose`, newest wins.
 
-Every step sets its settings in `env:` and runs `verctl <verb>`. No step
-builds argv in a shell. This needs ctl-core's environment-bound flags
+Every step sets its settings in `env:` and runs `mise run ver <verb>`, the
+served task, so a caller's pinned verctl runs, and in verctl's own repository
+the checkout builds the verctl it releases. No step builds argv in a shell.
+Flags such as `--plan` and `--pr` are set as `VERCTL_PLAN` and `VERCTL_PR`.
+This needs ctl-core's environment-bound flags
 (CTC-022): `VERCTL_CONFIG`, `VERCTL_AUTO_MERGE`, and the rest are read by
 verctl itself.
 

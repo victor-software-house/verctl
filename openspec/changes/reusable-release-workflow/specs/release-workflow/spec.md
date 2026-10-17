@@ -102,7 +102,9 @@ caller SHALL grant `contents: write` and `pull-requests: write`.
 ### Requirement: Steps pass settings through the environment
 
 Every workflow step that runs verctl SHALL set its settings in `env:` and run
-`verctl <verb>` with no argument built in the shell.
+`mise run ver <verb>` with no argument built in the shell. The served `ver`
+task execs the verctl the caller pins; in verctl's own repository it builds
+the verctl being released.
 
 #### Scenario: A config path
 

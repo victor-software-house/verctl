@@ -25,7 +25,7 @@ change.
 ## 3. Workflow
 
 - [ ] 3.1 `.github/workflows/release.yml` with the inputs, secrets, jobs, and concurrency of design section 1; proof: zizmor `--pedantic` and the conftest policy pass on it
-- [ ] 3.2 Every step runs `verctl <verb>` with `env:` only, on a verctl that adopts ctl-core's environment-bound flags; proof: `git grep -n '\-c "\$' .github actions` prints nothing
+- [ ] 3.2 Every step runs `mise run ver <verb>` with `env:` only, on a verctl that adopts ctl-core's environment-bound flags; proof: `git grep -n '\-c "\$' .github actions` prints nothing
 - [ ] 3.3 This repository calls its own workflow, with `mise run ver` building verctl, and deletes `version-pr.yml` and `publish.yml`; proof: the next Version PR merge on `main` releases through the new workflow and a rerun reports `nothing to release`
 
 ## 4. Docs and consumers
