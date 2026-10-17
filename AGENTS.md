@@ -158,8 +158,8 @@ and native-tls bans all apply as the template ships them.
 restores with its action) and the formatting nightly;
 `rust-toolchain.toml` and `rust-version` match. `verify` comes from
 ctl-core's `tasks/rust.toml`. `check:repo` is the template's (TOML format,
-Markdown, spelling, workflows, OpenSpec) and ends with `check:local`, which
-`mise-tasks/local.toml` fills with workflow policy, the version guard, and
+Markdown, spelling, workflows, OpenSpec) and runs `check:local`, which
+`mise-tasks/check/local.sh` fills with workflow policy, the version guard, and
 pending fragments; never edit `check:repo`. This repo's other tasks live in
 `mise-tasks/`. CI adds `deny:advisories`, `semver`, and `cargo package`. Its
 `ci.yml` keeps the `plan` job and the `verify` matrix, so a public repo
