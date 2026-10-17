@@ -1,9 +1,9 @@
 //! How a package is published. Cargo and bun are stock recipes.
 //!
 //! Override a `publishers` entry or set `publisher` + `argv` on a
-//! package. Placeholders: `{path}` `{dir}` `{registry}` `{config}`; a
-//! `query` takes `{path}` `{dir}` `{name}` `{version}`. [`RELEASE_ONLY`]
-//! publishes to no registry.
+//! package. Placeholders: `{path}` `{dir}` `{registry}` `{config}`, and in a
+//! `query` also `{name}` `{version}`. [`RELEASE_ONLY`] publishes to no
+//! registry.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -109,22 +109,20 @@ impl PublisherSpec {
             .argv
             .as_ref()
             .with_context(|| format!("publisher {name:?} needs argv"))?;
-        let out = self.assemble(argv, manifest, registry, &[], true);
+        let out = self.assemble(argv, manifest, registry, &[], Appended::Upload);
         let noun = self.noun.clone().unwrap_or_else(|| "package".into());
         Ok((noun, out))
     }
 
-    /// Expand `argv` for the package in `manifest`, then append the recipe's
-    /// config or registry arguments, so a `query` asks the same registry the
-    /// upload goes to. `extra` adds placeholders, and `with_default` appends
-    /// `default_argv`, which only an upload takes (`--access public`).
+    /// Expand `argv` for the package in `manifest`, then append what
+    /// `appended` asks for. `extra` adds placeholders.
     fn assemble(
         &self,
         argv: &[String],
         manifest: &Path,
         registry: Option<&str>,
         extra: &[(&'static str, String)],
-        with_default: bool,
+        appended: Appended,
     ) -> Vec<String> {
         let dir = package_dir(manifest);
         let config = self
@@ -144,16 +142,22 @@ impl PublisherSpec {
             ctx.insert("registry", registry.clone());
         }
         let mut out = expand(argv, &ctx);
-        if config.is_some()
+        let (recipe, default) = match appended {
+            Appended::Upload => (true, true),
+            Appended::StockQuery => (true, false),
+            Appended::Nothing => (false, false),
+        };
+        if recipe
+            && config.is_some()
             && let Some(extra) = &self.config_argv
         {
             out.extend(expand(extra, &ctx));
         }
-        if config.is_none() && registry.is_some() {
+        if recipe && config.is_none() && registry.is_some() {
             if let Some(extra) = &self.registry_argv {
                 out.extend(expand(extra, &ctx));
             }
-        } else if with_default
+        } else if default
             && registry.is_none()
             && let Some(extra) = &self.default_argv
         {
@@ -161,6 +165,20 @@ impl PublisherSpec {
         }
         out
     }
+}
+
+/// What [`PublisherSpec::assemble`] appends after the expanded argv.
+#[derive(Debug, Clone, Copy)]
+enum Appended {
+    /// The recipe's config or registry arguments, else `default_argv`
+    /// (`--access public`): the full upload command.
+    Upload,
+    /// The recipe's config or registry arguments, so a stock query asks the
+    /// registry the upload goes to.
+    StockQuery,
+    /// Nothing: a query a repository declares runs as written, and reaches
+    /// the registry through its own `{registry}` or `{config}` placeholder.
+    Nothing,
 }
 
 /// The directory a manifest sits in; `.` for a bare file name.
@@ -294,8 +312,9 @@ fn publisher_name(spec: &crate::config::PackageSpec) -> &str {
 ///
 /// The registry is asked for the name the manifest declares (`package.name`
 /// in `Cargo.toml`, `name` in `package.json`), not the label `.ctl/ver.yaml`
-/// gives the package, and a query takes the recipe's registry or config
-/// arguments, so it asks the registry the upload goes to.
+/// gives the package. A stock query takes the recipe's registry or config
+/// arguments, so it asks the registry the upload goes to; a declared query
+/// runs as written, with `{registry}` and `{config}` to place them itself.
 ///
 /// # Errors
 ///
@@ -324,7 +343,14 @@ pub fn registry_check(
         .as_ref()
         .or_else(|| over.and_then(|over| over.query.as_ref()));
     if let Some(argv) = declared {
-        return query_check(&publisher, argv, spec, &manifest, version);
+        return query_check(
+            &publisher,
+            argv,
+            spec,
+            &manifest,
+            version,
+            Appended::Nothing,
+        );
     }
     let overridden = spec.publish_argv.is_some() || over.is_some_and(|over| over.argv.is_some());
     if name == "cargo" && !overridden {
@@ -342,27 +368,40 @@ pub fn registry_check(
         });
     }
     match publisher.query.clone() {
-        Some(argv) => query_check(&publisher, &argv, spec, &manifest, version),
+        Some(argv) => query_check(
+            &publisher,
+            &argv,
+            spec,
+            &manifest,
+            version,
+            Appended::StockQuery,
+        ),
         None => Ok(RegistryCheck::Unchecked),
     }
 }
 
+/// A query check whose `{name}` is the name the manifest declares, read only
+/// when the query uses it, and the package's label when the manifest is not
+/// one verctl can read a name from (`pyproject.toml`, a directory).
 fn query_check(
     publisher: &PublisherSpec,
     argv: &[String],
     spec: &crate::config::PackageSpec,
     manifest: &Path,
     version: &str,
+    appended: Appended,
 ) -> Result<RegistryCheck> {
     if argv.is_empty() {
         return Ok(RegistryCheck::Unchecked);
     }
-    let extra = [
-        ("name", manifest_name(manifest)?),
-        ("version", version.to_owned()),
-    ];
+    let name = if argv.iter().any(|part| part.contains("{name}")) {
+        manifest_name(manifest).unwrap_or_else(|_| spec.name.clone())
+    } else {
+        spec.name.clone()
+    };
+    let extra = [("name", name), ("version", version.to_owned())];
     Ok(RegistryCheck::Query {
-        argv: publisher.assemble(argv, manifest, spec.registry.as_deref(), &extra, false),
+        argv: publisher.assemble(argv, manifest, spec.registry.as_deref(), &extra, appended),
         dir: package_dir(manifest).to_path_buf(),
     })
 }
@@ -574,6 +613,36 @@ mod tests {
                 "version",
                 "--registry",
                 "https://npm.pkg.github.com",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_declared_query_runs_as_written() {
+        let found = checks(indoc! {"
+            packages:
+              - name: web
+                path: package.json
+                publisher: bun
+                registry: github
+                query:
+                  - registry-cli
+                  - view
+                  - '{name}'
+                  - --from
+                  - '{registry}'
+        "});
+        let RegistryCheck::Query { argv, .. } = &found[0] else {
+            panic!("expected a query, got {:?}", found[0]);
+        };
+        assert_eq!(
+            argv,
+            &[
+                "registry-cli",
+                "view",
+                "@acme/web",
+                "--from",
+                "https://npm.pkg.github.com"
             ]
         );
     }

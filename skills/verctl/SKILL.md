@@ -107,6 +107,13 @@ package's bump, or when a fragment names a package that is not in `packages`.
 `publisher: none` on a package releases it on GitHub only (tag, Release,
 assets), with no registry upload; use it for private binaries.
 
+`publish` asks the registry before and after each publisher: the crates.io
+sparse index for a stock cargo package bound for crates.io, the recipe's
+`query` otherwise. A listed version is `already`; a publisher that exits zero
+while the registry never lists the version fails. Set `query` on a package or
+a `publishers` entry for another registry, and `query: []` to turn the check
+off.
+
 `tags.template` (default `v{version}`) names release tags. `{name}` makes
 one tag and one Release per package; without it, differing versions refuse.
 Each Release body is that package's CHANGELOG section. The tag is created
