@@ -46,8 +46,10 @@ enum Pending {
     /// docs.rs answered 404: it has not started a build.
     Unlisted,
     /// docs.rs listed the version without documentation: a build that is
-    /// running or that failed.
-    Undocumented,
+    /// running or that failed. A later failed request keeps this state and
+    /// carries its error, so a request that fails after docs.rs listed the
+    /// version does not turn a failed build into an unbuilt one.
+    Undocumented(Option<String>),
     /// The request failed, with this error.
     Unreachable(String),
 }
@@ -62,9 +64,10 @@ pub struct DocsLine {
     pub version: String,
     /// What docs.rs reported.
     pub status: DocsStatus,
-    /// For a crate still unbuilt at the deadline, the error the last poll
-    /// hit, if it hit one: docs.rs was unreachable or answered with a
-    /// server error, so "unbuilt" may mean "could not ask".
+    /// For a crate not built at the deadline, the error the last poll hit,
+    /// if it hit one: docs.rs was unreachable or answered with a server
+    /// error, so "unbuilt" may mean "could not ask", and "failed" may mean
+    /// docs.rs could not be asked again after it listed the version.
     pub last_error: Option<String>,
 }
 
@@ -197,7 +200,7 @@ fn wait_built(base: &str, wanted: &[Wanted], timeout: Duration, poll: Duration) 
     let mut lines = Vec::new();
     loop {
         let mut unbuilt = Vec::new();
-        for (crate_version, _) in remaining {
+        for (crate_version, previous) in remaining {
             match status(base, &crate_version.name, &crate_version.version) {
                 Ok(Some(true)) => lines.push(DocsLine {
                     name: crate_version.name.clone(),
@@ -205,10 +208,15 @@ fn wait_built(base: &str, wanted: &[Wanted], timeout: Duration, poll: Duration) 
                     status: DocsStatus::Built,
                     last_error: None,
                 }),
-                Ok(Some(false)) => unbuilt.push((crate_version, Pending::Undocumented)),
+                Ok(Some(false)) => unbuilt.push((crate_version, Pending::Undocumented(None))),
                 Ok(None) => unbuilt.push((crate_version, Pending::Unlisted)),
                 Err(error) => {
-                    unbuilt.push((crate_version, Pending::Unreachable(format!("{error:#}"))));
+                    let error = format!("{error:#}");
+                    let next = match previous {
+                        Pending::Undocumented(_) => Pending::Undocumented(Some(error)),
+                        Pending::Unlisted | Pending::Unreachable(_) => Pending::Unreachable(error),
+                    };
+                    unbuilt.push((crate_version, next));
                 }
             }
         }
@@ -221,7 +229,7 @@ fn wait_built(base: &str, wanted: &[Wanted], timeout: Duration, poll: Duration) 
     }
     lines.extend(remaining.into_iter().map(|(crate_version, pending)| {
         let (status, last_error) = match pending {
-            Pending::Undocumented => (DocsStatus::Failed, None),
+            Pending::Undocumented(error) => (DocsStatus::Failed, error),
             Pending::Unlisted => (DocsStatus::Unbuilt, None),
             Pending::Unreachable(error) => (DocsStatus::Unbuilt, Some(error)),
         };
@@ -331,6 +339,32 @@ mod tests {
             .mount(&server)
             .await;
         assert_eq!(wait(&server, Duration::ZERO).await, DocsStatus::Failed);
+    }
+
+    #[tokio::test]
+    async fn a_listed_build_stays_failed_when_docs_rs_stops_answering() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(STATUS))
+            .respond_with(answer(false))
+            .up_to_n_times(1)
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(STATUS))
+            .respond_with(ResponseTemplate::new(502))
+            .mount(&server)
+            .await;
+        let base = server.uri();
+        let line = tokio::task::spawn_blocking(move || {
+            wait_built(&base, &demo(), Duration::from_millis(200), Duration::ZERO)
+        })
+        .await
+        .unwrap()
+        .remove(0);
+        assert_eq!(line.status, DocsStatus::Failed);
+        assert!(line.last_error.is_some_and(|error| error.contains("502")));
     }
 
     #[tokio::test]
