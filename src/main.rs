@@ -8,14 +8,15 @@ use verctl::cli::{CheckArgs, Cli, Command, PrepareArgs, PublishArgs, StatusArgs}
 use verctl::config::{self, Config};
 use verctl::fragment::{self, Bump};
 use verctl::{
-    assets, ci, git, github, pins, prepare, process, publish, release, templates, versions,
+    assets, ci, git, github, pending, pins, prepare, process, publish, release, templates, versions,
 };
 
 mod presentation;
 
 use presentation::{
     AssetsReport, CheckReport, CiReport, InstructionsReport, PinReport, PrepareBump, PrepareReport,
-    PublishReport, Report, StatusFragment, StatusPackage, StatusReport, VersionCheckReport,
+    PublishReport, ReleaseRow, Report, StatusFragment, StatusPackage, StatusReport,
+    VersionCheckReport,
 };
 
 const INSTRUCTIONS: &str = include_str!("instructions.md");
@@ -261,11 +262,53 @@ fn preview_report(
 fn publish_report(args: &verctl::cli::PublishArgs) -> Result<PublishReport> {
     let config = Config::load(&args.config)?;
     let root = &config::root_of(&args.config);
-    let outcome = publish::run(&config, root, args.dry_run())?;
+    if args.plan {
+        return publish_plan_report(args, &config, root);
+    }
+    let run = publish::run_pending(&config, root, args.dry_run(), args.skip_assets)?;
     Ok(PublishReport {
-        packages: outcome.packages,
-        releases: outcome.releases,
+        outcome: run.outcome,
+        packages: run.published.packages,
+        releases: run.published.releases,
+        waiting: run.waiting.iter().map(ReleaseRow::from).collect(),
+        pending: Vec::new(),
         dry_run: args.dry_run(),
+    })
+}
+
+/// `publish --plan`: every incomplete version commit, written to
+/// `$GITHUB_OUTPUT` for the workflow's matrix when Actions set it.
+fn publish_plan_report(
+    args: &verctl::cli::PublishArgs,
+    config: &Config,
+    root: &std::path::Path,
+) -> Result<PublishReport> {
+    let token = release::resolve_token()?;
+    let pending = pending::pending(config, root, &token, args.skip_assets)?;
+    if let Some(path) = std::env::var_os("GITHUB_OUTPUT").filter(|path| !path.is_empty()) {
+        pending::write_github_output(&pending, std::path::Path::new(&path))?;
+    }
+    Ok(PublishReport {
+        outcome: if pending.is_empty() {
+            publish::Outcome::NothingToRelease
+        } else {
+            publish::Outcome::Released
+        },
+        packages: Vec::new(),
+        releases: Vec::new(),
+        waiting: Vec::new(),
+        pending: pending
+            .commits
+            .iter()
+            .flat_map(|commit| {
+                commit.packages.iter().map(|package| ReleaseRow {
+                    name: package.name.clone(),
+                    version: package.version.clone(),
+                    commit: commit.sha.clone(),
+                })
+            })
+            .collect(),
+        dry_run: false,
     })
 }
 

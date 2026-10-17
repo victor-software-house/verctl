@@ -175,6 +175,75 @@ pub fn added_by(root: &Path, path: &Path) -> Result<Option<AddedBy>> {
     }
 }
 
+/// The commit that set a package's version, and how far it sits below HEAD.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct VersionCommit {
+    /// Full hex SHA of the commit.
+    pub sha: String,
+    /// First-parent steps from HEAD: 0 is HEAD itself. A larger depth is an
+    /// older commit, so sorting by depth, largest first, orders releases the
+    /// way history made them.
+    pub depth: usize,
+}
+
+/// The newest commit on HEAD's first-parent history where the version `read`
+/// finds in `path` became the version it has at HEAD.
+///
+/// The walk follows first parents only, so a merge counts as the commit that
+/// brought the version to this branch, which is where the release happens.
+/// `read` returns `None` when a revision of the file holds no version, which
+/// counts as a different version.
+///
+/// # Errors
+///
+/// Returns an error when `root` is in no repository, `path` is outside it,
+/// HEAD has no version in `path`, a commit or tree cannot be read, or the walk
+/// reaches a shallow clone's boundary before the version changes: the commit
+/// that set it is not in the clone, so a full fetch is needed.
+pub fn version_commit(
+    root: &Path,
+    path: &Path,
+    read: &dyn Fn(&str) -> Option<String>,
+) -> Result<VersionCommit> {
+    let repo = discover(root).context("finding a version commit needs a git repository")?;
+    let rel = git_path(root, path, repo.workdir())
+        .with_context(|| format!("{} is not in the repository", path.display()))?;
+    let version_at = |commit: &gix::Commit<'_>| -> Result<Option<String>> {
+        Ok(blob_at(&commit.tree()?, &rel).and_then(|raw| read(&raw)))
+    };
+    let mut commit = repo
+        .head_commit()
+        .context("finding a version commit needs HEAD")?;
+    let wanted = version_at(&commit)?
+        .with_context(|| format!("HEAD has no version in {}", rel.display()))?;
+    let boundary: Vec<gix::ObjectId> = repo
+        .shallow_commits()?
+        .map(|commits| commits.iter().copied().collect())
+        .unwrap_or_default();
+    let mut depth = 0;
+    loop {
+        ensure!(
+            !boundary.contains(&commit.id().detach()),
+            "cannot find the commit that set {} to {wanted}: the clone is shallow; fetch the full history",
+            rel.display()
+        );
+        let Some(parent) = commit.parent_ids().next() else {
+            break;
+        };
+        let parent = repo.find_commit(parent.detach())?;
+        if version_at(&parent)?.as_deref() != Some(wanted.as_str()) {
+            break;
+        }
+        commit = parent;
+        depth += 1;
+    }
+    Ok(VersionCommit {
+        sha: commit.id().to_string(),
+        depth,
+    })
+}
+
 fn has_path(commit: &gix::Commit<'_>, rel: &Path) -> Result<bool> {
     Ok(commit.tree()?.lookup_entry_by_path(rel)?.is_some())
 }
@@ -1012,7 +1081,7 @@ mod tests {
 
     use indoc::indoc;
 
-    use super::{AddedBy, added_by, origin_url};
+    use super::{AddedBy, VersionCommit, added_by, origin_url, version_commit};
     use crate::test_git::{commit_all, git, init};
 
     /// The paths of every blob in the commit `sha`.
@@ -1021,6 +1090,66 @@ mod tests {
             .lines()
             .map(str::to_owned)
             .collect()
+    }
+
+    fn version_line(raw: &str) -> Option<String> {
+        raw.lines()
+            .find_map(|line| line.strip_prefix("version = "))
+            .map(|version| version.trim_matches('"').to_owned())
+    }
+
+    fn write_version(dir: &Path, version: &str) {
+        std::fs::write(
+            dir.join("Cargo.toml"),
+            indoc::formatdoc! {r#"
+                [package]
+                name = "demo"
+                version = "{version}"
+            "#},
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn head_moved_past_the_release_finds_the_commit_that_set_it() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        write_version(dir.path(), "0.4.5");
+        commit_all(dir.path(), "chore: start");
+        write_version(dir.path(), "0.4.6");
+        let set = commit_all(dir.path(), "chore(release): version packages (#7)");
+        std::fs::write(dir.path().join("README"), "later\n").unwrap();
+        commit_all(dir.path(), "docs: later (#8)");
+        let found =
+            version_commit(dir.path(), &dir.path().join("Cargo.toml"), &version_line).unwrap();
+        assert_eq!(found, VersionCommit { sha: set, depth: 1 });
+    }
+
+    #[test]
+    fn the_first_commit_is_the_version_commit_when_nothing_changed_it() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        write_version(dir.path(), "0.0.1");
+        let first = commit_all(dir.path(), "chore: start");
+        let found =
+            version_commit(dir.path(), &dir.path().join("Cargo.toml"), &version_line).unwrap();
+        assert_eq!(found.sha, first);
+        assert_eq!(found.depth, 0);
+    }
+
+    #[test]
+    fn a_version_set_again_after_a_revert_names_the_newest_change() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        write_version(dir.path(), "0.4.6");
+        commit_all(dir.path(), "chore: start");
+        write_version(dir.path(), "0.4.5");
+        commit_all(dir.path(), "revert: 0.4.6");
+        write_version(dir.path(), "0.4.6");
+        let again = commit_all(dir.path(), "chore(release): version packages (#9)");
+        let found =
+            version_commit(dir.path(), &dir.path().join("Cargo.toml"), &version_line).unwrap();
+        assert_eq!(found.sha, again);
     }
 
     #[test]

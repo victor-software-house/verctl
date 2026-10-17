@@ -24,6 +24,7 @@ pub mod fragment;
 pub mod git;
 /// GitHub outputs, repositories, and pull requests.
 pub mod github;
+pub mod pending;
 pub mod pins;
 /// The plan of version bumps for a release.
 pub mod prepare;
