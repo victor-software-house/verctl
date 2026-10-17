@@ -49,7 +49,8 @@ jobs:
           name: verctl-${{ runner.os }}-${{ runner.arch }}
           path: target/release/verctl
           if-no-files-found: error
-          retention-days: 1
+          # A failed release job can be rerun for a week without rebuilding.
+          retention-days: 7
 
   # The repository variable VERCTL_RELEASE_HOLD=true holds the next release:
   # the Version PR opens and updates but never merges itself, so a person
