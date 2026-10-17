@@ -3,19 +3,19 @@
 lockfile_version = 3
 
 [[tools."github:victor-software-house/qctl"]]
-version = "0.4.2"
+version = "0.5.9"
 backend = "github:victor-software-house/qctl"
-specifiers = ["0.4.2"]
+specifiers = ["0.5.9"]
 
 [tools."github:victor-software-house/qctl"."platforms.linux-x64"]
-checksum = "sha256:eab5f06bb0730fb74830d06b13a365c36a8dae79d7d6da45cf7c30dc60147968"
-url = "https://github.com/victor-software-house/qctl/releases/download/v0.4.2/qctl_0.4.2_linux_x64.tar.gz"
-url_api = "https://api.github.com/repos/victor-software-house/qctl/releases/assets/560432418"
+checksum = "sha256:5bc377ea6694be6adc8655dda15a3c7776d82e80aa762b5614a069108e8f8806"
+url = "https://github.com/victor-software-house/qctl/releases/download/v0.5.9/qctl_0.5.9_linux_x64.tar.gz"
+url_api = "https://api.github.com/repos/victor-software-house/qctl/releases/assets/651679245"
 
 [tools."github:victor-software-house/qctl"."platforms.macos-arm64"]
-checksum = "sha256:bb09cb3944c7edce30d51200f9b3faca6477abde29bca259f098446a1a4432f2"
-url = "https://github.com/victor-software-house/qctl/releases/download/v0.4.2/qctl_0.4.2_macos_arm64.tar.gz"
-url_api = "https://api.github.com/repos/victor-software-house/qctl/releases/assets/560432318"
+checksum = "sha256:160e336f60201a2279495fb9ff86f49ef126e2e327967c63e3c4c5b3978c6982"
+url = "https://github.com/victor-software-house/qctl/releases/download/v0.5.9/qctl_0.5.9_macos_arm64.tar.gz"
+url_api = "https://api.github.com/repos/victor-software-house/qctl/releases/assets/651679505"
 
 [[tools.python]]
 version = "3.14.8"
