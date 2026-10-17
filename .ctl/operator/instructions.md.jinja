@@ -145,6 +145,18 @@ and whether the Version PR would open or update. Preview does not
 require GitHub auth.
 
 `publish` ships the versions already on HEAD, then a GitHub Release.
+A package's version commit is the newest commit on HEAD's first-parent
+history where its manifest version became the version at HEAD. A release
+is complete when the registry lists the version and its tag, its Release,
+and every declared asset exist; `--skip-assets` (`VERCTL_SKIP_ASSETS`)
+leaves assets out. `publish --plan` lists every version commit with an
+incomplete release, oldest first, and writes `commits` (a JSON list),
+`pending`, and `assets` (a job matrix of commit, target, and labels) to
+`$GITHUB_OUTPUT` when it is set. `publish` releases only the packages
+whose version commit is HEAD, names the others, and fails before any side
+effect on a commit that releases nothing. When every release is complete,
+both report `nothing to release` and exit zero; the JSON report's
+`outcome` is `nothing-to-release` or `released`.
 It refuses unless each package version has a matching CHANGELOG
 heading (the Version PR writes those) and, when `origin` exists,
 HEAD is an ancestor of the default branch (`origin/HEAD`, then

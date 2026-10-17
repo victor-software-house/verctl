@@ -420,6 +420,83 @@ async fn peel_tag(crab: &Octocrab, repo: &Repo, tag: &str, tag_sha: &str) -> Res
     Ok(peeled.object.sha)
 }
 
+/// What GitHub holds for one release tag.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ReleaseState {
+    /// The commit the tag names, peeled through an annotated tag. `None` when
+    /// the tag does not exist.
+    pub tag: Option<String>,
+    /// Whether a Release exists for the tag.
+    pub release: bool,
+    /// The file names of the Release's assets.
+    pub assets: Vec<String>,
+}
+
+/// Read the tag and the Release for `tag`, so a plan can tell which parts of a
+/// release still need doing.
+///
+/// # Errors
+///
+/// Returns an error when the GitHub client cannot be built, or when GitHub
+/// answers a tag or Release lookup with an error other than 404.
+pub fn release_state(token: &str, repo: &Repo, tag: &str) -> Result<ReleaseState> {
+    block(async {
+        let crab = client(token)?;
+        release_state_with(&crab, repo, tag).await
+    })
+}
+
+async fn release_state_with(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<ReleaseState> {
+    let tag_sha = match crab
+        .repos(&repo.owner, &repo.name)
+        .get_ref(&octocrab::params::repos::Reference::Tag(tag.to_owned()))
+        .await
+    {
+        Ok(_) => Some(tag_commit_sha(crab, repo, tag).await?),
+        Err(error) if is_not_found(&error) => None,
+        Err(error) => return Err(error).with_context(|| format!("read tag {tag}")),
+    };
+    let release: Result<ReleaseAssets, _> = crab
+        .get(
+            format!(
+                "/repos/{owner}/{name}/releases/tags/{tag}",
+                owner = repo.owner,
+                name = repo.name
+            ),
+            None::<&()>,
+        )
+        .await;
+    let (release, assets) = match release {
+        Ok(found) => (
+            true,
+            found.assets.into_iter().map(|asset| asset.name).collect(),
+        ),
+        Err(error) if is_not_found(&error) => (false, Vec::new()),
+        Err(error) => return Err(error).with_context(|| format!("get release {tag}")),
+    };
+    Ok(ReleaseState {
+        tag: tag_sha,
+        release,
+        assets,
+    })
+}
+
+fn is_not_found(error: &octocrab::Error) -> bool {
+    matches!(error, octocrab::Error::GitHub { source, .. } if source.status_code.as_u16() == 404)
+}
+
+/// The part of a Release a plan reads.
+#[derive(serde::Deserialize)]
+struct ReleaseAssets {
+    assets: Vec<AssetName>,
+}
+
+#[derive(serde::Deserialize)]
+struct AssetName {
+    name: String,
+}
+
 /// Attach `tarball` to the release for `tag`.
 ///
 /// Returns the download URL, or `already <name>` when the release has an
@@ -760,6 +837,55 @@ mod tests {
             "published_at": "2026-08-22T00:00:00Z",
             "assets": []
         })
+    }
+
+    fn release_with_assets(names: &[&str]) -> Mock {
+        let mut json = release_json("main");
+        json["assets"] = names
+            .iter()
+            .map(|name| serde_json::json!({"name": name}))
+            .collect();
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases/tags/{TAG}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json))
+    }
+
+    fn missing_tag() -> Mock {
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/git/ref/tags/{TAG}")))
+            .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
+                "message": "Not Found",
+                "documentation_url": "https://docs.github.com"
+            })))
+    }
+
+    #[tokio::test]
+    async fn a_release_never_made_has_no_tag_and_no_release() {
+        let server = MockServer::start().await;
+        missing_tag().mount(&server).await;
+        missing_release().mount(&server).await;
+        let state = super::release_state_with(&crab(&server.uri()), &repo(), TAG)
+            .await
+            .unwrap();
+        assert_eq!(state, super::ReleaseState::default());
+    }
+
+    #[tokio::test]
+    async fn a_finished_release_names_its_commit_and_assets() {
+        let server = MockServer::start().await;
+        lightweight_tag(PUBLISHED).mount(&server).await;
+        release_with_assets(&["app-darwin-arm64.tar.gz", "app-linux-x64.tar.gz"])
+            .mount(&server)
+            .await;
+        let state = super::release_state_with(&crab(&server.uri()), &repo(), TAG)
+            .await
+            .unwrap();
+        assert_eq!(state.tag.as_deref(), Some(PUBLISHED));
+        assert!(state.release);
+        assert_eq!(
+            state.assets,
+            ["app-darwin-arm64.tar.gz", "app-linux-x64.tar.gz"]
+        );
     }
 
     #[tokio::test]

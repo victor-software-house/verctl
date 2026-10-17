@@ -136,6 +136,16 @@ The JSON report SHALL carry `"outcome": "nothing-to-release"`.
 - **WHEN** `.ctl/ver.yaml` declares assets for `demo`, none was ever uploaded, `demo@0.4.6` is on crates.io with its tag and Release, and `VERCTL_SKIP_ASSETS=true`
 - **THEN** `verctl publish --plan` reports `nothing to release`
 
+#### Scenario: The tag sits on a later commit at the same version
+
+- **WHEN** commit `A` set `demo` to `0.4.6`, a publish rerun at the later commit `B` (no version change) created tag `v0.4.6` there, and `demo@0.4.6` is on crates.io with its Release
+- **THEN** `verctl publish --plan` treats `B` as the release commit and reports `nothing to release`
+
+#### Scenario: The tag sits on a commit at another version
+
+- **WHEN** tag `v0.4.6` names a commit where `demo` is `0.4.5`
+- **THEN** `verctl publish --plan` exits non-zero and names the tag, that commit, and the version commit
+
 #### Scenario: Only an asset is missing
 
 - **WHEN** the release of `demo@0.4.6` lacks only its `darwin-arm64` asset

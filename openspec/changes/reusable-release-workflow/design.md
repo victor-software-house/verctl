@@ -214,6 +214,15 @@ report names it. The tag it creates is at HEAD, which is then that
 package's version commit. So a run on a later commit can no longer tag a
 commit that was never published.
 
+A tag that already exists names the release commit when it sits on another
+first-parent commit where the package has the same version. A publish rerun
+after later commits tagged a newer HEAD that way, and a version set again
+after a revert keeps the tag from its first release; in both cases the
+registry already has the version, so that commit is the release and its
+assets build there. A tag on a commit with another version, or off the
+first-parent history, fails the plan: that release was tagged in the wrong
+place, and counting it complete would hide it.
+
 Alternative: dispatch with a `commit` input to resume. Lost: a missed run, for
 example a pending run replaced in its concurrency group, would then need a
 person to find the commit. The plan job finds it on the next push.
@@ -300,7 +309,22 @@ workflow would carry two copies of the same rule.
 The template renders the caller from copier answers, so a repository on the
 template migrates with `copier update`.
 
-## 6. Non-goals
+## 6. Semver
+
+The change ships in a patch release with no major bump, by the operator's
+ruling on 2026-10-17. Its new flags add fields to the clap argument structs
+in `cli`, the `docs` command adds a `cli::Command` variant, and the derived
+Version PR branch removes `release::VERSION_BRANCH`. cargo-semver-checks calls
+each of those breaking, though only verctl's own binary builds the `cli`
+types. The per-lint table in `Cargo.toml` that VER-065 removes after the
+release therefore warns on `constructible_struct_adds_field`,
+`struct_marked_non_exhaustive`, `pub_module_level_const_missing`, and
+`enum_variant_added`, beside the existing `function_parameter_count_changed`.
+The `cli` argument structs become `#[non_exhaustive]` in this release, so a
+later flag is never a breaking change again. `cli::Command` stays exhaustive,
+because the binary matches it without a wildcard arm.
+
+## 7. Non-goals
 
 1. Releases from a maintenance base other than the default branch.
 2. Releasing an older version that a newer merged version superseded.
