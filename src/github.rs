@@ -10,6 +10,11 @@ use octocrab::params::State;
 /// GitHub takes the last value for a repeated key.
 /// A previous writer that skipped its own trailing newline would otherwise
 /// have its last line fused onto this one, losing both assignments.
+///
+/// # Errors
+///
+/// Returns an error, naming `path`, when the file cannot be opened, read,
+/// or written.
 pub fn write_output(path: &Path, body: &str) -> Result<()> {
     use std::io::{Read, Seek, SeekFrom, Write};
     let mut file = std::fs::OpenOptions::new()
@@ -46,6 +51,12 @@ pub struct Repo {
 }
 
 /// Actions sets `GITHUB_REPOSITORY`. Locally, `origin` is the contract.
+///
+/// # Errors
+///
+/// Returns an error when `GITHUB_REPOSITORY` is set but is not `owner/name`,
+/// or, without it, when the `origin` URL cannot be read or is not a GitHub
+/// remote.
 pub fn repo(root: &Path) -> Result<Repo> {
     if let Ok(slug) = env::var("GITHUB_REPOSITORY")
         && !slug.is_empty()
@@ -57,6 +68,11 @@ pub fn repo(root: &Path) -> Result<Repo> {
 }
 
 /// Parses an `owner/name` slug.
+///
+/// # Errors
+///
+/// Returns an error when `slug` has no `/`, an empty owner or name, or more
+/// than one `/`.
 pub fn parse_slug(slug: &str) -> Result<Repo> {
     let (owner, name) = slug
         .split_once('/')
@@ -72,6 +88,11 @@ pub fn parse_slug(slug: &str) -> Result<Repo> {
 }
 
 /// Parses an ssh or https remote URL on github.com or a `*.github.com` host.
+///
+/// # Errors
+///
+/// Returns an error when the URL is not an ssh or http(s) URL with a path,
+/// when its host is not GitHub, or when the path is not `owner/name`.
 pub fn parse_remote(url: &str) -> Result<Repo> {
     let url = url.trim();
     if let Some(rest) = url.strip_prefix("git@") {
@@ -103,6 +124,10 @@ pub fn parse_remote(url: &str) -> Result<Repo> {
 /// None of them set is an error, not a guess: a repository whose default is
 /// not `main` would get a Version PR against a branch it does not release
 /// from.
+///
+/// # Errors
+///
+/// Returns an error when none of those three sources names a branch.
 pub fn base_branch(root: &Path) -> Result<String> {
     if let Ok(name) = env::var("GITHUB_REF_NAME")
         && !name.is_empty()
@@ -126,6 +151,11 @@ pub struct ExistingPr {
 }
 
 /// The open pull request from `head` in this repository, if one exists.
+///
+/// # Errors
+///
+/// Returns an error when the GitHub client cannot be built or the pull
+/// request listing request fails.
 pub fn existing_pr(token: &str, repo: &Repo, head: &str) -> Result<Option<ExistingPr>> {
     block(async {
         let crab = client(token)?;
@@ -149,6 +179,11 @@ pub fn existing_pr(token: &str, repo: &Repo, head: &str) -> Result<Option<Existi
 }
 
 /// Sets the title and body of pull request `number` and returns its URL.
+///
+/// # Errors
+///
+/// Returns an error when the GitHub client cannot be built, the update
+/// request fails, or the response carries no URL.
 pub fn update_pr(token: &str, repo: &Repo, number: u64, title: &str, body: &str) -> Result<String> {
     block(async {
         let crab = client(token)?;
@@ -167,6 +202,12 @@ pub fn update_pr(token: &str, repo: &Repo, number: u64, title: &str, body: &str)
 }
 
 /// Opens a pull request from `head` into `base`.
+///
+/// # Errors
+///
+/// Returns an error when the GitHub client cannot be built, the create
+/// request fails (for example when `head` does not exist), or the response
+/// carries no URL.
 pub fn create_pr(
     token: &str,
     repo: &Repo,
@@ -234,6 +275,15 @@ pub fn labels_from_event(raw: &str) -> Vec<String> {
 }
 
 /// Create the label if needed, then apply it to the Version PR.
+///
+/// An empty `label` does nothing. A label that already exists is not an
+/// error.
+///
+/// # Errors
+///
+/// Returns an error when the GitHub client cannot be built, creating the label
+/// fails for a reason other than it already existing, or applying it to
+/// pull request `number` fails.
 pub fn ensure_version_label(token: &str, repo: &Repo, number: u64, label: &str) -> Result<()> {
     if label.is_empty() {
         return Ok(());
@@ -263,6 +313,13 @@ pub fn ensure_version_label(token: &str, repo: &Repo, number: u64, label: &str) 
 /// An existing release is not trusted: GitHub's `target_commitish` on the
 /// Release object is a branch name more often than a SHA. The git ref is
 /// re-read either way, and a tag that names another commit fails.
+///
+/// # Errors
+///
+/// Returns an error when the GitHub client cannot be built, a release or tag
+/// lookup fails, the release cannot be created, or the tag does not name
+/// `sha`. The tag is checked against an existing release only when `shipped`
+/// is true.
 pub fn ensure_release(
     token: &str,
     repo: &Repo,
@@ -364,6 +421,15 @@ async fn peel_tag(crab: &Octocrab, repo: &Repo, tag: &str, tag_sha: &str) -> Res
 }
 
 /// Attach `tarball` to the release for `tag`.
+///
+/// Returns the download URL, or `already <name>` when the release has an
+/// asset of that name.
+///
+/// # Errors
+///
+/// Returns an error when `tarball` has no UTF-8 file name or cannot be read,
+/// the GitHub client cannot be built, the release for `tag` does not exist,
+/// or the upload fails for a reason other than a duplicate asset.
 pub fn upload_release_asset(token: &str, repo: &Repo, tag: &str, tarball: &Path) -> Result<String> {
     let name = tarball
         .file_name()
@@ -413,6 +479,11 @@ pub struct PullAuthor {
 /// The author of pull request `number`, from
 /// `GET /repos/{owner}/{repo}/pulls/{number}`
 /// (<https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request>).
+///
+/// # Errors
+///
+/// Returns an error when the GitHub client cannot be built or the request or
+/// its decoding fails, for example when pull request `number` does not exist.
 pub fn pull_author(token: &str, repo: &Repo, number: u64) -> Result<PullAuthor> {
     block(async {
         let crab = client(token)?;

@@ -49,11 +49,21 @@ pub enum CommandSpec {
 
 impl Driver {
     /// The stock driver for `Cargo.toml`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if the built-in definition fails validation,
+    /// which a test guards against.
     pub fn cargo() -> Result<Self> {
         crate::config::stock_driver("cargo")
     }
 
     /// The stock driver for `package.json`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if the built-in definition fails validation,
+    /// which a test guards against.
     pub fn npm() -> Result<Self> {
         crate::config::stock_driver("npm")
     }
@@ -67,6 +77,13 @@ impl Driver {
     }
 
     /// The current version in `raw`.
+    ///
+    /// # Errors
+    ///
+    /// For a path driver, returns an error when `raw` is not valid TOML or
+    /// JSON, or when none of the configured keys holds a string. For a command
+    /// driver, returns an error when the filter cannot be run, times out,
+    /// exits unsuccessfully, or prints non-UTF-8 or oversized output.
     pub fn read(&self, raw: &str) -> Result<String> {
         match self {
             Self::Path { format, keys, .. } => match format {
@@ -78,6 +95,11 @@ impl Driver {
     }
 
     /// `raw` with the version replaced by `new_version`.
+    ///
+    /// # Errors
+    ///
+    /// Fails on the same conditions as [`Driver::read`]: unparsable input, no
+    /// configured key holding a string, or a command filter that fails.
     pub fn write(&self, raw: &str, new_version: &str) -> Result<String> {
         match self {
             Self::Path { format, keys, .. } => match format {

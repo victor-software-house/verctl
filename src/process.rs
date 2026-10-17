@@ -16,11 +16,21 @@ pub const DEFAULT_OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
 /// `duct` owns the pipe lifetime so a streaming child cannot deadlock
 /// the parent the way a sequential `write_all` + `wait_with_output` can.
 /// stdout/stderr are read incrementally and killed at `output_limit`.
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`filter_limited`] with the
+/// default timeout and output limit.
 pub fn filter(argv: &[String], stdin: &str, env: &[(&str, &str)]) -> Result<String> {
     filter_limited(argv, stdin, env, DEFAULT_TIMEOUT, DEFAULT_OUTPUT_LIMIT)
 }
 
 /// Run an argv with no stdin. Used by `publish`.
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`filter_limited`] with the given
+/// `timeout` and the default output limit.
 pub fn run_limited(argv: &[String], env: &[(&str, &str)], timeout: Duration) -> Result<String> {
     filter_limited(argv, "", env, timeout, DEFAULT_OUTPUT_LIMIT)
 }
@@ -31,6 +41,13 @@ const STDERR_TAIL: usize = 64 * 1024;
 /// Inherit stdout and stream stderr so Actions show cargo/bun as they run.
 /// The last 64 KiB of stderr also go into the error, so a caller such as
 /// `publish` can tell an already-published version apart.
+///
+/// # Errors
+///
+/// Returns an error when `argv` is empty, the stderr pipe cannot be created,
+/// the command cannot be spawned or waited on, it runs longer than `timeout`,
+/// or it exits unsuccessfully. A non-zero exit carries the joined argv and
+/// the stderr tail.
 pub fn run_inherit(argv: &[String], timeout: Duration) -> Result<()> {
     ensure!(!argv.is_empty(), "driver argv is empty");
     let (stderr_r, stderr_w) = os_pipe::pipe().context("command stderr pipe")?;
@@ -100,6 +117,14 @@ pub fn argv(parts: &[&str]) -> Vec<String> {
 }
 
 /// [`filter`] with an explicit timeout and output limit.
+///
+/// # Errors
+///
+/// Returns an error when `argv` is empty, the pipes cannot be created, the
+/// command cannot be spawned or waited on, it runs longer than `timeout`, it
+/// prints more than `output_limit` bytes on either stream, it exits
+/// unsuccessfully (the error carries the argv, status, and trimmed stderr),
+/// or its stdout is not UTF-8.
 pub fn filter_limited(
     argv: &[String],
     stdin: &str,
