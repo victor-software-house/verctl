@@ -65,6 +65,7 @@ override.
 | `runner` | string | `["ubuntu-latest"]` | JSON label list for the `plan`, `publish`, and `propose` jobs; asset jobs take their runners from `.ctl/ver.yaml` |
 | `mise-version` | string | the version verctl's own CI runs | the mise that installs the caller's tools, including verctl |
 | `mise-env` | string | `ci` | `MISE_ENV` for every job |
+| `verctl-artifact` | string | `""` | for verctl's own release: each job downloads the build `<prefix>-<runner.os>-<runner.arch>` uploaded earlier in the calling run and puts it first on PATH; empty runs the verctl the caller pins (section 1.3) |
 | `title` | string | `""` | Version PR title; empty means `chore(release): version packages` |
 | `commit-message` | string | `""` | Version PR commit message; empty means the title |
 | `registry-token-env` | string | `CARGO_REGISTRY_TOKEN` | the variable the `registry-token` secret is exported as for the publisher |
@@ -104,8 +105,9 @@ workflow declares, which is why they are inputs to nothing else.
    `verctl-propose`, newest wins.
 
 Every step sets its settings in `env:` and runs `mise run ver <verb>`, the
-served task, so a caller's pinned verctl runs, and in verctl's own repository
-the checkout builds the verctl it releases. No step builds argv in a shell.
+served task, with the verctl version pinned in that task, so a caller's pinned
+verctl runs. In verctl's own repository each job runs the build section 1.3
+describes. No step builds argv in a shell.
 Flags such as `--plan` and `--pr` are set as `VERCTL_PLAN` and `VERCTL_PR`.
 This needs ctl-core's environment-bound flags
 (CTC-022): `VERCTL_CONFIG`, `VERCTL_AUTO_MERGE`, and the rest are read by
@@ -115,6 +117,38 @@ The `plan` and `propose` jobs run on every push to the default branch. On a
 push that changes no version, `plan` reports nothing pending, `publish` and
 `assets` are skipped, and `propose` opens or updates the Version PR as
 `version-pr.yml` does today.
+
+### 1.3 Building verctl
+
+verctl is built from source only for a release, and only in CI, never in
+every job. If a pull-request or merge workflow already built the binary, the
+release reuses that artifact rather than building again. In verctl's own
+repository the release run builds once (or reuses), and every other job uses
+the pinned verctl.
+
+`self-release.yml` does this with a `build` job ahead of the reusable
+workflow: one `cargo build --release` per platform the release runs on
+(ubuntu-latest for `plan`, `publish`, `docs`, `propose`, and the `linux-x64`
+asset; macos-latest for the `darwin-arm64` asset), each uploaded as
+`verctl-<runner.os>-<runner.arch>`. It calls `release.yml` with
+`verctl-artifact: verctl` and `mise-env: ci,release`. Each job downloads the
+build for its own platform and puts it first on PATH, and
+`mise.release.toml`'s `ver` task runs `verctl` from PATH with no pin, so a
+pinned tool cannot shadow it.
+
+The release needs the verctl it releases, not a pin: at a version commit the
+served `tasks/ver/ver` already names the new version, whose tarball does not
+exist until `publish` uploads it, and the previous release cannot read the
+`VERCTL_*` settings the steps set. A job runs on one machine, so a Linux build
+cannot serve the macOS asset job; that is why there is one build per platform
+rather than one in all.
+
+Reusing a binary from the merge's CI run waits until CI uploads one; until
+then the release builds its own. A consumer passes no `verctl-artifact` and
+always runs its pin. verctl's CI `plan` job still runs `cargo run` for
+`verctl ci`; moving it to a pinned verctl needs a pin outside the served
+task, which the Version PR rewrites to a version not yet published, and is
+left to a follow-up.
 
 ## 2. Idempotent publish
 

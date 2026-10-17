@@ -103,8 +103,14 @@ caller SHALL grant `contents: write` and `pull-requests: write`.
 
 Every workflow step that runs verctl SHALL set its settings in `env:` and run
 `mise run ver <verb>` with no argument built in the shell. The served `ver`
-task execs the verctl the caller pins; in verctl's own repository it builds
-the verctl being released.
+task execs the verctl version pinned in it. No job SHALL build verctl from
+source, except that verctl's own release run builds it once per platform and
+every job of that run reuses the build through `verctl-artifact`.
+
+#### Scenario: verctl's own release
+
+- **WHEN** a push to verctl's `main` starts `self-release.yml`
+- **THEN** its `build` job builds verctl once on ubuntu-latest and once on macos-latest, and no job of `release.yml` compiles verctl
 
 #### Scenario: A config path
 

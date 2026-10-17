@@ -86,7 +86,8 @@ moves into `prepare --pr`.
    until [VER-043][ver-043].
 4. Consumers: each replaces two workflows with one caller in one pull request,
    closes the open `version-packages` pull request, and deletes that branch.
-5. Every step runs `mise run ver <verb>` with settings in `env:` only, which needs
+5. Every step runs `mise run ver <verb>`, on the verctl pinned in the task,
+   with settings in `env:` only, which needs
    ctl-core's environment-bound flags (CTC-022) in the verctl release that
    ships this.
 

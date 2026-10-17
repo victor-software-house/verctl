@@ -102,9 +102,28 @@ that ends with a reference), `summary_has_terminal`, `dependencies`.
 
 ## Version PR
 
-Happy path is GitHub Actions: `victor-software-house/verctl/actions/version-pr`,
-not `changesets/action`. The workflow already has
-`git`, `gh`, and `${{ github.token }}`. No PAT. Only `auto-merge` needs an App token.
+Happy path is verctl's reusable workflow,
+`victor-software-house/verctl/.github/workflows/release.yml`, called from a
+thin caller on push to the default branch and on `workflow_dispatch`
+(`examples/workflows/release.yml`). It plans every incomplete version
+commit, publishes each in history order, builds the assets each Release
+lacks, waits for docs.rs, then opens or updates the Version PR. Every
+input is optional and defaults to verctl's: `version-pr`, `publish`,
+`assets`, `docs`, `auto-merge`, `config`, `runner`, `mise-version`,
+`mise-env`, `title`, `commit-message`, `registry-token-env`, and
+`verctl-artifact` (verctl's own release only: each job runs a verctl
+build from the calling run); secrets `app-client-id`, `app-private-key`,
+`registry-token`. Steps set `env:` and
+run `mise run ver <verb>`, so a caller serves the `ver` task. Without the
+App secrets the Version PR is opened with `GITHUB_TOKEN`, which needs the
+setting "Allow GitHub Actions to create and approve pull requests", and
+its own CI does not start. The actions under `actions/` remain for
+hand-written workflows.
+
+Migrating from `version-pr.yml` and `publish.yml`: add the caller as
+`.github/workflows/release.yml` and delete both in one pull request,
+close the open `version-packages` pull request and delete that branch,
+and move any setting the old workflows carried into inputs.
 
 Do not hand-edit versions. `verctl check --versions` compares each
 declared manifest to the merge-base of HEAD and the default branch.
@@ -126,18 +145,17 @@ token. Cancel one Version PR's auto-merge with
 `gh pr merge --disable-auto <number>`.
 
 This repo compiles itself: `mise.toml` holds the toolchain, and
-`mise run ver` runs this checkout. `release` is the published
-tarball. Local default is `dev` (`.miserc.toml`), which adds the hook
-tools; CI runs `ci`. This repo's own lanes build the verctl they run:
-a lane that installed its own tarball could only ever run the
-previous release, which is exactly when new behaviour is needed. Consumers run `release`, because the
+`mise run ver` runs this checkout. Local default is `dev`
+(`.miserc.toml`), which adds the hook tools; CI runs `ci`. Its release
+run builds verctl once per platform and every release job reuses that
+build through `verctl-artifact`; `release` here is a `ver` task that
+runs `verctl` from PATH, with no pin. A release that installed its own
+tarball could only ever run the previous release, which is exactly
+when new behaviour is needed. Consumers run their pin, because the
 verctl they install is independent of the version they release.
 `verctl pin` rewrites collocated `github:…/verctl` entries (and
 `?ref=v…` includes) to the versions on HEAD; `prepare` calls it, so
-the Version PR commit carries them. `mise.release.toml` is not a
-`pins` entry — it names a tarball that must already exist. Bump
-it by hand when a lane wants a newer verb, then `mise -E release
-lock`.
+the Version PR commit carries them.
 
 `prepare` writes versions, per-package CHANGELOG.md (next to each
 manifest), and consumes fragments (same as `changeset version`).
@@ -232,13 +250,12 @@ SHA). After create, and when a Release already exists, the tag is
 re-read and the run fails if it names another commit. A retry at the
 same commit is a no-op.
 
-Happy path after the Version PR merges is
-`victor-software-house/verctl/actions/publish`. It runs when the
-Version PR from `verctl/release/<base>` is merged. verctl 0.4.5 and older
-pushed `version-packages`; a workflow that tests the head branch accepts
-both until that last Version PR has merged. Native tarballs are a second job,
-only when an `assets` target is declared. `verctl assets` prints the
-matrix; `--build` + `--upload` is `actions/asset`. Publish pushes
+After the Version PR merges, the next push runs the reusable workflow's
+`publish` matrix at each version commit. A hand-written workflow uses
+`victor-software-house/verctl/actions/publish` instead. Native tarballs
+are the `assets` matrix, only when an `assets` target is declared;
+`verctl assets` prints the matrix, and `--build` + `--upload` is
+`actions/asset`. Publish pushes
 nothing but the tag. `pins` are rewritten by `prepare`, on the
 Version PR commit the tag will name, so the released tree carries its
 own pins. A pin that must name an already-published tarball — a repo's
