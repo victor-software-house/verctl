@@ -21,6 +21,11 @@ pub const VERSION_BRANCH: &str = "version-packages";
 /// The token is the one the environment already has (`GITHUB_TOKEN` in
 /// Actions). We do not call `gh` and we do not use the logged-in
 /// account. Local `--pr` is recovery when that same token is in the env.
+///
+/// # Errors
+///
+/// Returns an error when neither `GITHUB_TOKEN` nor `GH_TOKEN` is set to a
+/// non-empty value.
 pub fn resolve_token() -> Result<String> {
     env_token().context(
         "prepare --pr needs GITHUB_TOKEN (Actions sets it; locally export the same token — not `gh`)",
@@ -94,6 +99,11 @@ pub fn contributing_fragments<'a>(
 }
 
 /// Delete the fragment files once a Version PR has consumed them.
+///
+/// # Errors
+///
+/// Returns an error naming the first fragment file that cannot be deleted.
+/// Fragments before it are already gone.
 pub fn consume_fragments<'a, I>(fragments: I) -> Result<()>
 where
     I: IntoIterator<Item = &'a Fragment>,
@@ -125,6 +135,12 @@ enum Origin {
 /// subject). With a token, the pull request author is credited when
 /// [`credits`] says so; a failed lookup credits no one, so a maintainer is
 /// never named by accident.
+///
+/// # Errors
+///
+/// Returns an error when the history walk that finds the commit adding a
+/// fragment fails, as [`git::added_by`] describes. A missing GitHub `origin`
+/// is not an error and yields empty origins.
 pub fn origins(
     root: &Path,
     token: Option<&str>,
@@ -181,12 +197,21 @@ pub fn credits(changelog: &crate::config::Changelog, author: &github::PullAuthor
 }
 
 /// [`changelog_sections_with`] with no references.
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`changelog_sections_with`].
 pub fn changelog_sections(plan: &[PlanEntry], fragments: &[Fragment]) -> Result<String> {
     changelog_sections_with(plan, fragments, &Origins::default())
 }
 
 /// One `## name version` section per plan entry, each fragment a bullet that
 /// links where it came from when `origins` knows.
+///
+/// # Errors
+///
+/// Returns an error when a fragment's entry cannot be rendered, or when no
+/// fragment names a plan entry's package, leaving that section without a body.
 pub fn changelog_sections_with(
     plan: &[PlanEntry],
     fragments: &[Fragment],
@@ -265,6 +290,10 @@ fn group_entries(entries: &[(Option<Group>, String)]) -> String {
 }
 
 /// [`write_changelogs_with`] with no references.
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`write_changelogs_with`].
 pub fn write_changelogs(
     config: &crate::config::Config,
     root: &Path,
@@ -275,6 +304,15 @@ pub fn write_changelogs(
 }
 
 /// Prepend each plan entry's section to its package CHANGELOG.md.
+///
+/// Returns the changelog paths written.
+///
+/// # Errors
+///
+/// Returns an error when a plan entry names a package missing from the
+/// config, when its section cannot be built (see
+/// [`changelog_sections_with`]), or when its changelog cannot be read or
+/// written. Changelogs before the failing one are already written.
 pub fn write_changelogs_with(
     config: &crate::config::Config,
     root: &Path,
@@ -346,6 +384,12 @@ pub fn notes_for<'a>(
 }
 
 /// Fail unless every package version has a changelog heading.
+///
+/// # Errors
+///
+/// Returns an error when a package is missing from the config, or when any
+/// package's changelog is unreadable or has no `## name version` or
+/// `## version` heading for it. The latter error lists every such package.
 pub fn require_changelog_versions<'a>(
     config: &crate::config::Config,
     root: &Path,
@@ -370,6 +414,13 @@ pub fn require_changelog_versions<'a>(
 }
 
 /// Add a changelog section above the existing entries, keeping the title.
+///
+/// A missing file is created with a `# Changelog` title.
+///
+/// # Errors
+///
+/// Returns an error, naming `path`, when the file exists but cannot be read,
+/// or when it cannot be written.
 pub fn prepend_changelog(path: &Path, section: &str) -> Result<()> {
     match fs::read_to_string(path) {
         Ok(existing) => {
@@ -418,6 +469,11 @@ impl VersionPr {
     ///
     /// An empty variable counts as unset: a composite action passes an input
     /// it was not given as `""`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when no base branch can be resolved, as
+    /// [`github::base_branch`] describes.
     pub fn from_env(root: &Path) -> Result<Self> {
         let title = non_empty_env("VERCTL_PR_TITLE")
             .unwrap_or_else(|| "chore(release): version packages".into());
@@ -436,6 +492,13 @@ fn non_empty_env(name: &str) -> Option<String> {
 
 /// Push the Version PR branch and open the PR, or update the open one. `None`
 /// when nothing changed.
+///
+/// # Errors
+///
+/// Returns an error when the GitHub repository cannot be resolved, when the
+/// branch cannot be committed or pushed (see [`git::commit_branch_and_push`]),
+/// or when looking up, updating, or creating the pull request, or applying
+/// `version_label`, fails. A failure after the push leaves the branch pushed.
 pub fn open_or_update_pr(
     root: &Path,
     token: &str,

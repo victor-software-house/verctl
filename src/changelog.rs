@@ -90,11 +90,21 @@ pub fn summary_body(summary: &str) -> &str {
 }
 
 /// Renders `input` with the stock release template.
+///
+/// # Errors
+///
+/// Returns an error when the stock template fails to render, which a test
+/// guards against.
 pub fn render_release(input: &ReleaseInput) -> Result<String> {
     render_release_template(RELEASE_TEMPLATE, input)
 }
 
 /// Renders `input` with `template` in place of the stock release template.
+///
+/// # Errors
+///
+/// Returns an error when `template` is not valid minijinja syntax, or when
+/// rendering it fails, for example on an unknown filter or a failed call.
 pub fn render_release_template(template: &str, input: &ReleaseInput) -> Result<String> {
     let mut env = Environment::new();
     env.add_template("changelog", template)
@@ -114,6 +124,11 @@ pub fn render_release_template(template: &str, input: &ReleaseInput) -> Result<S
 }
 
 /// Renders the `Updated dependencies:` entry for `dependencies`.
+///
+/// # Errors
+///
+/// Returns an error when the built-in dependency template fails to parse or
+/// render, which a test guards against.
 pub fn render_dependencies(dependencies: &[Dependency]) -> Result<String> {
     let mut env = Environment::new();
     env.add_template("deps", DEPENDENCY_TEMPLATE)

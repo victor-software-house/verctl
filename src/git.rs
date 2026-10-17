@@ -29,6 +29,11 @@ pub fn current_branch(root: &Path) -> Option<String> {
 }
 
 /// The commit HEAD currently names, as a full hex SHA.
+///
+/// # Errors
+///
+/// Returns an error when `root` is not inside a git repository, or when HEAD
+/// names no commit, as in a repository with no commits.
 pub fn head_sha(root: &Path) -> Result<String> {
     let repo = discover(root).context("publish needs a git repository to name the tag")?;
     let commit = repo
@@ -46,6 +51,16 @@ const NEED_FULL_FETCH: &str =
 /// Paths are relative to `root` (the directory holding `.ctl/`) and are mapped
 /// onto the git workdir so `-c crates/foo/.ctl/ver.yaml` still hits the
 /// right blob. One repository open for the whole list.
+///
+/// Every entry is `None` when there is no repository, or when the repository
+/// has no `origin` remote and none of the candidate refs exists. A path
+/// missing from the merge-base tree is `None` for that entry only.
+///
+/// # Errors
+///
+/// Returns an error when `origin` exists but its default branch ref cannot be
+/// resolved, when HEAD names no commit, when there is no merge-base (a shallow
+/// clone, for one), or when the merge-base commit or its tree cannot be read.
 pub fn files_on_merge_base(
     root: &Path,
     rels: &[&Path],
@@ -90,6 +105,11 @@ fn blob_at(tree: &gix::Tree<'_>, rel: &Path) -> Option<String> {
 }
 
 /// The URL of the `origin` remote.
+///
+/// # Errors
+///
+/// Returns an error when `root` is not inside a git repository, when there is
+/// no `origin` remote, or when `origin` has no fetch URL.
 pub fn origin_url(root: &Path) -> Result<String> {
     let repo = discover(root).context("open git repository")?;
     let remote = repo.find_remote("origin").context("git remote origin")?;
@@ -123,6 +143,11 @@ pub struct AddedBy {
 /// `.git/shallow` is the boundary, so it counts as parentless, and naming it
 /// would link the wrong commit. A parent that exists but cannot be loaded is
 /// treated the same way.
+///
+/// # Errors
+///
+/// Returns an error when the shallow boundary cannot be read, or when a tree
+/// or commit message on the walk cannot be read.
 pub fn added_by(root: &Path, path: &Path) -> Result<Option<AddedBy>> {
     let Ok(repo) = discover(root) else {
         return Ok(None);
@@ -207,6 +232,12 @@ pub fn upstream_default_branch(root: &Path) -> Option<String> {
 /// have nothing to prove. A repo that has `origin` but no peelable
 /// default-tracking ref fails closed. A shallow clone that cannot walk
 /// the graph also fails closed.
+///
+/// # Errors
+///
+/// Returns an error when `origin` exists but its default branch ref cannot be
+/// resolved, when HEAD is not an ancestor of the default branch, or when the
+/// merge-base cannot be computed, as in a shallow clone.
 pub fn require_on_default_history(root: &Path) -> Result<()> {
     prove_default_history(root, &candidate_names(env_base_ref().as_deref()))
 }
@@ -280,6 +311,14 @@ pub fn configured_default_branch() -> Option<String> {
 /// Point `origin/HEAD` at `origin/<branch>`. Fetch that one ref only
 /// when it is missing. The fetch is the branch's history, not a
 /// depth-1 tip: `require_on_default_history` walks parents.
+///
+/// An empty `branch`, no repository, and no `origin` remote are each a no-op.
+///
+/// # Errors
+///
+/// Returns an error when the fetch fails (remote unreachable, credentials
+/// rejected, or the branch absent on the remote), when `origin/<branch>` is
+/// still missing afterwards, or when `origin/HEAD` cannot be updated.
 pub fn ensure_origin_head(root: &Path, branch: &str, fetch: &FetchDefault) -> Result<()> {
     if branch.is_empty() {
         return Ok(());
@@ -413,6 +452,10 @@ pub fn workdir_covering(dir: &Path) -> Option<PathBuf> {
 /// project's, and what is left is rebased onto it. A tree with no repository
 /// tracks nothing — it cannot serve a file by tag — but a repository whose
 /// index cannot be read is an error, never an empty answer.
+///
+/// # Errors
+///
+/// Returns an error when the repository's index cannot be read.
 pub fn tracked(root: &Path) -> Result<Vec<PathBuf>> {
     let Some(repo) = repo_covering(root) else {
         return Ok(Vec::new());
@@ -637,6 +680,13 @@ fn matches_stage(pattern: &str, rel: &str) -> bool {
 /// the unexpected-dirty check; not a filesystem glob. Renames are not
 /// tracked, so a moved file shows as its old and its new path, each of
 /// which must be allowed.
+///
+/// # Errors
+///
+/// Returns an error when `git status` cannot be computed, or when a dirty
+/// path is neither in `allowed` nor matched by `globs`. The latter error lists
+/// those paths. A root outside a repository is not an error and returns an
+/// empty list.
 pub fn assert_only_allowed(
     root: &Path,
     allowed: &[PathBuf],
@@ -751,6 +801,17 @@ pub enum PushOutcome {
 
 /// Commits `paths` onto `branch` without moving HEAD, then force-pushes
 /// `branch` to `github` over HTTPS with `token`.
+///
+/// Returns [`PushOutcome::Empty`] without pushing when `paths` leave the tree
+/// unchanged.
+///
+/// # Errors
+///
+/// Returns an error when `root` is not inside a git repository, when the
+/// repository has no workdir or HEAD names no commit, when a path lies
+/// outside the workdir, is not UTF-8, or cannot be read or filtered, when the
+/// commit or branch ref cannot be written, or when `git push` fails or runs
+/// past five minutes.
 pub fn commit_branch_and_push(
     root: &Path,
     branch: &str,

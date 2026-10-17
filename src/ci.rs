@@ -49,6 +49,11 @@ pub struct CiPlan {
 
 /// Plan the jobs declared under `ci`, or one `verify` job when none is
 /// declared.
+///
+/// # Errors
+///
+/// Returns an error when a declared runner is invalid, or when a job names a
+/// machine that is missing, repeated, or not declared under `runners`.
 pub fn plan(config: &Config) -> Result<CiPlan> {
     runners::declared(config)?;
     let mut include = Vec::new();
@@ -89,6 +94,11 @@ fn push(include: &mut Vec<CiJob>, id: &str, resolved: Vec<runners::Machine>) {
 }
 
 /// Write `matrix` as a JSON line for `$GITHUB_OUTPUT`.
+///
+/// # Errors
+///
+/// Returns an error when the matrix cannot be encoded as JSON, or when the
+/// file at `path` cannot be opened or written.
 pub fn write_github_output(plan: &CiPlan, path: &Path) -> Result<()> {
     let encoded = serde_json::to_string(&plan.matrix).context("encode matrix")?;
     crate::github::write_output(path, &format!("matrix={encoded}\n"))

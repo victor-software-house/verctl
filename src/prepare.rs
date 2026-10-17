@@ -26,6 +26,13 @@ pub struct PlanEntry {
 }
 
 /// Fold the fragments into one bump per package, leaving out `none`.
+///
+/// # Errors
+///
+/// Returns an error when a fragment names a package the config does not
+/// declare, a package's driver or manifest cannot be resolved or read, its
+/// current version cannot be read, or the bump is refused by
+/// [`crate::bump::apply`].
 pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<PlanEntry>> {
     let mut by_name: BTreeMap<&str, Bump> = BTreeMap::new();
     for fragment in fragments {
@@ -62,6 +69,12 @@ pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<
 
 /// Write each new version, returning the follow-up commands, sorted and
 /// deduplicated.
+///
+/// # Errors
+///
+/// Returns an error when a manifest cannot be read or written, or when its
+/// driver cannot write the new version. Manifests written before the failing
+/// entry stay changed.
 pub fn apply_plan(entries: &[PlanEntry]) -> Result<Vec<String>> {
     let mut follow_up = Vec::new();
     for entry in entries {

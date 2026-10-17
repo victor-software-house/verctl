@@ -20,6 +20,10 @@ pub enum Bump {
 
 impl Bump {
     /// Read `major`, `minor`, `patch`, or `none`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `raw` is any other string.
     pub fn parse(raw: &str) -> Result<Self> {
         match raw {
             "none" => Ok(Self::None),
@@ -73,6 +77,10 @@ impl Group {
     pub const ALL: [Self; 3] = [Self::Added, Self::Changed, Self::Fixed];
 
     /// Read `added`, `changed`, or `fixed`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `raw` is any other string.
     pub fn parse(raw: &str) -> Result<Self> {
         match raw {
             "added" => Ok(Self::Added),
@@ -124,6 +132,13 @@ impl Fragment {
 }
 
 /// Parse a fragment from its raw text. `path` names it in errors.
+///
+/// # Errors
+///
+/// Returns an error when the text does not start with front matter, when the
+/// front matter is not a mapping of strings, when its `verctl:group` is
+/// unknown, when it names no package, or when a bump is not `major`, `minor`,
+/// `patch`, or `none`.
 pub fn parse_str(raw: &str, path: impl Into<PathBuf>) -> Result<Fragment> {
     let path = path.into();
     let input = Input::new(path.display().to_string(), raw);
@@ -162,6 +177,11 @@ pub fn parse_str(raw: &str, path: impl Into<PathBuf>) -> Result<Fragment> {
 
 /// Load every fragment in `dir`, sorted by path. A missing directory yields
 /// none.
+///
+/// # Errors
+///
+/// Returns an error when `dir` cannot be read, or when a fragment file in it
+/// cannot be read or fails [`parse_str`].
 pub fn load_dir(dir: &Path) -> Result<Vec<Fragment>> {
     if !dir.is_dir() {
         return Ok(Vec::new());
