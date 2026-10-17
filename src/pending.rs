@@ -10,13 +10,13 @@ use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use serde::Serialize;
 
 use crate::assets::{self, MatrixTarget};
 use crate::config::Config;
 use crate::git::{self, VersionCommit};
-use crate::github::{self, ReleaseState, Repo};
+use crate::github::{self, ReleaseState};
 use crate::publish::{self, PublishEntry};
 use crate::publisher;
 use crate::registry::RegistryCheck;
@@ -98,8 +98,10 @@ struct PackageState {
 ///
 /// Returns an error when a package's version, driver, or publisher cannot be
 /// resolved, its version commit cannot be found (see
-/// [`git::version_commit`]), the repository has no GitHub `origin`, or a
-/// registry or GitHub lookup fails.
+/// [`git::version_commit`]), the repository has no GitHub `origin`, a
+/// registry or GitHub lookup fails, or a package's tag names a commit other
+/// than its version commit: that release was tagged in the wrong place, and
+/// counting it complete would hide it.
 pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> Result<Pending> {
     let planned = publish::plan(config, root)?;
     let repo = github::repo(root)?;
@@ -119,13 +121,23 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
                 .map(|version| version.trim().to_owned())
         };
         let commit = git::version_commit(root, &root.join(&spec.path), &read)?;
-        let release = match releases.entry(tag_of(&planned, entry)?) {
+        let tag = tag_of(&planned, entry)?;
+        let release = match releases.entry(tag.clone()) {
             Entry::Occupied(found) => found.into_mut(),
             Entry::Vacant(slot) => {
                 let state = github::release_state(token, &repo, slot.key())?;
                 slot.insert(state)
             }
         };
+        if let Some(named) = &release.tag {
+            ensure!(
+                named.eq_ignore_ascii_case(&commit.sha),
+                "tag {tag} names {named}, not {}@{}'s version commit {}",
+                entry.name,
+                entry.version,
+                commit.sha
+            );
+        }
         let listed = registry_lists(config, root, spec, entry, release)?;
         let declared: &[MatrixTarget] = if index == 0 { &targets } else { &[] };
         states.push(state_of(entry, commit, listed, release, declared));
