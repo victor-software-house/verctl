@@ -214,6 +214,15 @@ report names it. The tag it creates is at HEAD, which is then that
 package's version commit. So a run on a later commit can no longer tag a
 commit that was never published.
 
+A tag that already exists names the release commit when it sits on another
+first-parent commit where the package has the same version. A publish rerun
+after later commits tagged a newer HEAD that way, and a version set again
+after a revert keeps the tag from its first release; in both cases the
+registry already has the version, so that commit is the release and its
+assets build there. A tag on a commit with another version, or off the
+first-parent history, fails the plan: that release was tagged in the wrong
+place, and counting it complete would hide it.
+
 Alternative: dispatch with a `commit` input to resume. Lost: a missed run, for
 example a pending run replaced in its concurrency group, would then need a
 person to find the commit. The plan job finds it on the next push.

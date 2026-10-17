@@ -10,11 +10,12 @@ use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::path::Path;
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result};
 use serde::Serialize;
 
 use crate::assets::{self, MatrixTarget};
 use crate::config::Config;
+use crate::driver::Driver;
 use crate::git::{self, VersionCommit};
 use crate::github::{self, ReleaseState};
 use crate::publish::{self, PublishEntry};
@@ -99,9 +100,10 @@ struct PackageState {
 /// Returns an error when a package's version, driver, or publisher cannot be
 /// resolved, its version commit cannot be found (see
 /// [`git::version_commit`]), the repository has no GitHub `origin`, a
-/// registry or GitHub lookup fails, or a package's tag names a commit other
-/// than its version commit: that release was tagged in the wrong place, and
-/// counting it complete would hide it.
+/// registry or GitHub lookup fails, or a package's tag names a commit that is
+/// neither its version commit nor another first-parent commit at the same
+/// version (see [`git::tagged_commit`]): that release was tagged in the wrong
+/// place, and counting it complete would hide it.
 pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> Result<Pending> {
     let planned = publish::plan(config, root)?;
     let repo = github::repo(root)?;
@@ -113,19 +115,15 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
     let mut found = Vec::new();
     for (spec, entry) in config.packages.iter().zip(&planned.packages) {
         let driver = spec.resolve(config, root)?;
-        let read = |raw: &str| {
-            driver
-                .read(raw)
-                .ok()
-                .map(|version| version.trim().to_owned())
-        };
-        let commit = git::version_commit(root, &root.join(&spec.path), &read)?;
-        found.push((spec, entry, tag_of(&planned, entry)?, commit));
+        let commit = git::version_commit(root, &root.join(&spec.path), &|raw: &str| {
+            version_in(&driver, raw)
+        })?;
+        found.push(((spec, driver), entry, tag_of(&planned, entry)?, commit));
     }
     let release_commits = newest_per_tag(&found);
     let mut states = Vec::new();
     let mut releases: BTreeMap<String, ReleaseState> = BTreeMap::new();
-    for (index, (spec, entry, tag, _)) in found.iter().enumerate() {
+    for (index, ((spec, driver), entry, tag, _)) in found.iter().enumerate() {
         let commit = release_commits[tag.as_str()].clone();
         let release = match releases.entry(tag.clone()) {
             Entry::Occupied(held) => held.into_mut(),
@@ -134,20 +132,35 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
                 slot.insert(state)
             }
         };
-        if let Some(named) = &release.tag {
-            ensure!(
-                named.eq_ignore_ascii_case(&commit.sha),
-                "tag {tag} names {named}, not the version commit {} that releases {}@{}",
-                commit.sha,
-                entry.name,
-                entry.version
-            );
-        }
+        let read = |raw: &str| version_in(driver, raw);
+        let commit = match &release.tag {
+            Some(named) if !named.eq_ignore_ascii_case(&commit.sha) => {
+                git::tagged_commit(root, &root.join(&spec.path), named, &read)?.with_context(
+                    || {
+                        format!(
+                            "tag {tag} names {named}: not the version commit {} and not a \
+                             first-parent commit at {}@{}",
+                            commit.sha, entry.name, entry.version
+                        )
+                    },
+                )?
+            }
+            Some(_) | None => commit,
+        };
         let listed = registry_lists(config, root, spec, entry, release)?;
         let declared: &[MatrixTarget] = if index == 0 { &targets } else { &[] };
         states.push(state_of(entry, commit, listed, release, declared));
     }
     Ok(group(states))
+}
+
+/// The version `driver` reads from one revision of a manifest, or `None` when
+/// that revision holds none.
+fn version_in(driver: &Driver, raw: &str) -> Option<String> {
+    driver
+        .read(raw)
+        .ok()
+        .map(|version| version.trim().to_owned())
 }
 
 /// The commit that releases each tag: the newest version commit among the
