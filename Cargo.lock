@@ -4250,6 +4250,7 @@ dependencies = [
  "octocrab",
  "os_pipe",
  "regex",
+ "reqwest",
  "semver",
  "serde",
  "serde_json",

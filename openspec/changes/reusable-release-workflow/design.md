@@ -145,14 +145,19 @@ runs in, so the target is unknown and the package needs `query`. When a file it 
 `include`, the target is unknown. `cargo config get` would answer directly
 but needs a nightly Cargo, which a consumer's release job need not have.
 Any target other than crates.io, and an unknown one, needs `query` for a
-registry check.
+registry check. The same holds for an overridden upload command of any
+publisher: a bun package whose own argv runs `npm publish --registry …` would
+otherwise be checked against the registry the stock `bun pm view` asks.
 
 For a package with a registry check (the crates.io read or a `query`),
 verctl decides first. When the registry has the version, the package is
 `already` and its publisher does not run. Otherwise verctl runs the publisher,
 then decides again with a bounded backoff (registry metadata can lag a
 publish by a short while), and fails unless the registry lists the version
-within that bound. The bound is a constant with its reason on it. A package
+within that bound. A check that fails during that wait (an index timeout, a
+5xx) counts as not listed for that round, because the upload already
+happened; the last round's error is reported if the bound runs out. The bound
+is a constant with its reason on it. A package
 with no registry check keeps today's rule: the publish succeeds on a zero
 exit, or on stderr that says the version already exists.
 
@@ -171,6 +176,14 @@ documentation when they are written, and the reference goes in the doc
 comment. Override: a `publishers` entry or a package's own `query`, which
 also replaces the crates.io read. Disable: `query: []`, which falls back to
 today's stderr match for that package.
+
+The index read and the docs.rs check (section 2.4) use `reqwest`, declared
+directly as 0.13.5 with `default-features = false` and the `rustls` feature.
+The operator approved the dependency on 2026-10-17. gix's HTTP transport
+already builds that version with rustls, so no crate enters the build.
+octocrab is no substitute: pointed at another host it would send the GitHub
+token there. Starting `curl` would make it a tool every consumer must
+declare.
 
 Alternative: verctl's own clients for every registry, as
 [release-state-machine][rsm] section 3.5 plans. Lost for this slice: each
