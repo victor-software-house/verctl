@@ -25,6 +25,7 @@ completion bootstrap.
 | `pin` | — | Rewrite collocated tool pins to the versions on HEAD |
 | `assets` | — | Plan or build native GitHub Release tarballs declared under `assets` |
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
+| `docs` | — | Wait for docs.rs to build each crates.io crate released at HEAD |
 
 Every long option also reads `VERCTL_<LONG>`: `VERCTL_CONFIG`,
 `VERCTL_DRY_RUN`, `VERCTL_FORMAT`, and so on, with `-` turned into `_`. A
@@ -207,6 +208,13 @@ colorless, and JSON output; tests pass `--color never`. JSON is never
 coloured, whatever `CLICOLOR_FORCE` or `FORCE_COLOR` say, and a parse
 error under `--format json` is a JSON error even when the bad argument
 comes first.
+
+`docs` waits for docs.rs to build each crates.io library crate whose
+release tag names HEAD, polling every 30 seconds for `--timeout` minutes
+(default 60, `VERCTL_TIMEOUT`). It fails naming each crate docs.rs failed
+to build or had not built in time; a failed build stays failed for that
+version, so the fix is the next patch release. It needs a GitHub token to
+read the tag.
 
 Tag names come from `tags.template` (default `v{version}`). The
 placeholders are `{version}` and `{name}` — the same vocabulary

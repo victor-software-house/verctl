@@ -8,14 +8,15 @@ use verctl::cli::{CheckArgs, Cli, Command, PrepareArgs, PublishArgs, StatusArgs}
 use verctl::config::{self, Config};
 use verctl::fragment::{self, Bump};
 use verctl::{
-    assets, ci, git, github, pending, pins, prepare, process, publish, release, templates, versions,
+    assets, ci, docsrs, git, github, pending, pins, prepare, process, publish, release, templates,
+    versions,
 };
 
 mod presentation;
 
 use presentation::{
-    AssetsReport, CheckReport, CiReport, InstructionsReport, PinReport, PrepareBump, PrepareReport,
-    PublishReport, ReleaseRow, Report, StatusFragment, StatusPackage, StatusReport,
+    AssetsReport, CheckReport, CiReport, DocsReport, InstructionsReport, PinReport, PrepareBump,
+    PrepareReport, PublishReport, ReleaseRow, Report, StatusFragment, StatusPackage, StatusReport,
     VersionCheckReport,
 };
 
@@ -39,7 +40,17 @@ fn execute(cli: Cli) -> Result<Report> {
         Command::Pin(args) => pin_report(&args).map(Report::Pin),
         Command::Assets(args) => assets_report(&args).map(Report::Assets),
         Command::Ci(args) => ci_report(&args).map(Report::Ci),
+        Command::Docs(args) => docs_report(&args).map(Report::Docs),
     }
+}
+
+fn docs_report(args: &verctl::cli::DocsArgs) -> Result<DocsReport> {
+    let config = Config::load(&args.config)?;
+    let root = &config::root_of(&args.config);
+    let timeout = std::time::Duration::from_secs(args.timeout.saturating_mul(60));
+    Ok(DocsReport {
+        crates: docsrs::run(&config, root, timeout)?,
+    })
 }
 
 /// Fragments that parse and that `prepare` would accept: every package they
