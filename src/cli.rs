@@ -57,8 +57,9 @@ pub struct DocsArgs {
     /// Package map. Defaults to .ctl/ver.yaml in the current directory.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
     pub config: PathBuf,
-    /// Minutes to wait for docs.rs before a crate it has not built fails.
-    #[arg(long, default_value_t = 60)]
+    /// Minutes to wait for docs.rs before a crate it has not built fails, at
+    /// most a day.
+    #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(0..=1440))]
     pub timeout: u64,
 }
 
