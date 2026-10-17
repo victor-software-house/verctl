@@ -14,7 +14,7 @@ use serde::Serialize;
 
 use crate::config::{Config, NAME_PLACEHOLDER};
 use crate::registry::{self, RegistryCheck};
-use crate::{git, github, process, publisher, release};
+use crate::{git, github, pending, process, publisher, release};
 
 /// How long one package upload may run.
 pub const PUBLISH_TIMEOUT: Duration = Duration::from_mins(10);
@@ -104,7 +104,67 @@ pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
 }
 
 /// Publish each package, then open a Release per tag. A dry run only plans.
+///
+/// This is [`run_pending`] with assets counted toward completeness.
 pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome> {
+    Ok(run_pending(config, root, dry_run, false)?.published)
+}
+
+/// Whether a publish run found anything to release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Outcome {
+    /// Every package's registry entry, tag, Release, and counted assets
+    /// already exist, so the run did nothing.
+    NothingToRelease,
+    /// The run released the packages whose version commit is HEAD.
+    Released,
+}
+
+/// What a publish run did, and what it left for another version commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct PublishRun {
+    /// Whether there was anything to release.
+    pub outcome: Outcome,
+    /// The packages and Releases this run handled.
+    pub published: PublishOutcome,
+    /// Incomplete packages whose version commit is not HEAD.
+    pub waiting: Vec<Waiting>,
+}
+
+/// An incomplete package left for the run at its own version commit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+pub struct Waiting {
+    /// Package name.
+    pub name: String,
+    /// Version at HEAD.
+    pub version: String,
+    /// The version commit that releases it.
+    pub commit: String,
+}
+
+/// Release the packages whose version commit is HEAD and whose release is
+/// incomplete, and report nothing to release when every release is complete.
+///
+/// A run on any other commit with an incomplete release fails before any side
+/// effect and names the version commits, so a later commit can never tag one
+/// that was never published. With `skip_assets`, declared assets do not count
+/// toward completeness. A dry run plans every package and asks nothing.
+///
+/// # Errors
+///
+/// Returns an error when the plan cannot be resolved, a changelog lacks the
+/// heading for a package version, HEAD is not on the default branch, no token
+/// is set, a registry or GitHub lookup fails, HEAD is not the version commit
+/// of an incomplete release, or a publisher, tag, or Release step fails.
+pub fn run_pending(
+    config: &Config,
+    root: &Path,
+    dry_run: bool,
+    skip_assets: bool,
+) -> Result<PublishRun> {
     let planned = plan(config, root)?;
     if dry_run {
         let releases = planned
@@ -112,15 +172,44 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
             .iter()
             .map(|tag| formatdoc!("would create {tag}", tag = tag.tag))
             .collect();
-        return Ok(PublishOutcome {
-            packages: planned.packages.iter().map(PublishLine::from).collect(),
-            releases,
+        return Ok(PublishRun {
+            outcome: Outcome::Released,
+            published: PublishOutcome {
+                packages: planned.packages.iter().map(PublishLine::from).collect(),
+                releases,
+            },
+            waiting: Vec::new(),
         });
     }
     prove_version_commit(config, root, &planned)?;
     let token = release::resolve_token()?;
+    let pending = pending::pending(config, root, &token, skip_assets)?;
+    if pending.is_empty() {
+        return Ok(PublishRun {
+            outcome: Outcome::NothingToRelease,
+            published: PublishOutcome {
+                packages: Vec::new(),
+                releases: Vec::new(),
+            },
+            waiting: Vec::new(),
+        });
+    }
+    let head = git::head_sha(root)?;
+    let (here, waiting) = at_head(&pending, &head)?;
+    let selected: Vec<(&crate::config::PackageSpec, &PublishEntry)> = config
+        .packages
+        .iter()
+        .zip(&planned.packages)
+        .filter(|(_, entry)| {
+            here.packages
+                .iter()
+                .any(|package| package.name == entry.name)
+        })
+        .collect();
+    let entries: Vec<PublishEntry> = selected.iter().map(|(_, entry)| (*entry).clone()).collect();
+    let tags = tags_for(config, &entries)?;
     let mut packages = Vec::new();
-    for (spec, entry) in config.packages.iter().zip(&planned.packages) {
+    for (spec, entry) in selected {
         if entry.argv.is_empty() {
             packages.push(PublishLine::from(entry));
             continue;
@@ -137,7 +226,7 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
     let repo = github::repo(root)?;
     let sha = git::head_sha(root)?;
     let mut releases = Vec::new();
-    for tag in &planned.tags {
+    for tag in &tags {
         let shipped = tag.packages.iter().any(|entry| {
             !entry.argv.is_empty()
                 && packages
@@ -155,7 +244,43 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
             github::ensure_release(&token, &repo, &tag.tag, &tag.title, &notes, &sha, shipped)?;
         releases.push(url);
     }
-    Ok(PublishOutcome { packages, releases })
+    Ok(PublishRun {
+        outcome: Outcome::Released,
+        published: PublishOutcome { packages, releases },
+        waiting,
+    })
+}
+
+/// The pending commit at `head`, and every incomplete package left for another
+/// version commit. A `head` that releases nothing fails, naming the commits
+/// that do, before anything is published.
+fn at_head<'a>(
+    pending: &'a pending::Pending,
+    head: &str,
+) -> Result<(&'a pending::PendingCommit, Vec<Waiting>)> {
+    let waiting: Vec<Waiting> = pending
+        .commits
+        .iter()
+        .filter(|commit| !commit.sha.eq_ignore_ascii_case(head))
+        .flat_map(|commit| {
+            commit.packages.iter().map(|package| Waiting {
+                name: package.name.clone(),
+                version: package.version.clone(),
+                commit: commit.sha.clone(),
+            })
+        })
+        .collect();
+    let Some(here) = pending.at(head) else {
+        let named: Vec<String> = waiting
+            .iter()
+            .map(|left| format!("{}@{} at {}", left.name, left.version, left.commit))
+            .collect();
+        bail!(
+            "HEAD {head} is not the version commit of an incomplete release; publish at the version commit of {}",
+            named.join(", ")
+        );
+    };
+    Ok((here, waiting))
 }
 
 /// Publish one package under its registry check, and return `already` when
@@ -319,6 +444,49 @@ mod tests {
 
     use super::{PublishEntry, already_published, tags_for};
     use crate::config::Config;
+
+    mod head {
+        use super::super::at_head;
+        use crate::pending::{Pending, PendingCommit, PendingPackage};
+
+        fn pending() -> Pending {
+            let package = |name: &str, version: &str| PendingPackage {
+                name: name.into(),
+                version: version.into(),
+            };
+            Pending {
+                commits: vec![
+                    PendingCommit {
+                        sha: "aaa".into(),
+                        packages: vec![package("core", "0.3.1")],
+                    },
+                    PendingCommit {
+                        sha: "ccc".into(),
+                        packages: vec![package("app", "0.2.1")],
+                    },
+                ],
+                assets: Vec::new(),
+            }
+        }
+
+        #[test]
+        fn head_moved_past_the_release_names_the_version_commit() {
+            let error = at_head(&pending(), "bbb").unwrap_err();
+            let message = format!("{error:#}");
+            assert!(message.contains("core@0.3.1 at aaa"), "{message}");
+            assert!(message.contains("app@0.2.1 at ccc"), "{message}");
+        }
+
+        #[test]
+        fn another_package_pending_at_an_older_commit_waits() {
+            let pending = pending();
+            let (here, waiting) = at_head(&pending, "ccc").unwrap();
+            assert_eq!(here.packages[0].name, "app");
+            assert_eq!(waiting.len(), 1);
+            assert_eq!(waiting[0].name, "core");
+            assert_eq!(waiting[0].commit, "aaa");
+        }
+    }
 
     #[cfg(unix)]
     mod checked {
