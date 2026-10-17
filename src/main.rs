@@ -83,6 +83,24 @@ fn versions_for_templates(
     Ok(planned.to_vec())
 }
 
+/// The token and Version PR that `prepare --pr` writes with, and the
+/// auto-merge refusals, all settled before anything is written; `None` when
+/// the run opens no pull request.
+fn version_pr_target(
+    args: &PrepareArgs,
+    root: &Path,
+) -> Result<Option<(String, release::VersionPr)>> {
+    if !args.open_pr() || args.dry_run() {
+        return Ok(None);
+    }
+    let token = release::resolve_token()?;
+    let version_pr = release::VersionPr::from_env(root)?;
+    if args.auto_merge {
+        release::require_auto_merge(root, &token, &version_pr.base)?;
+    }
+    Ok(Some((token, version_pr)))
+}
+
 fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     anyhow::ensure!(
         !args.auto_merge || args.open_pr(),
@@ -104,16 +122,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
             dry_run,
         });
     }
-    let target = if args.open_pr() && !dry_run {
-        let token = release::resolve_token()?;
-        let version_pr = release::VersionPr::from_env(root)?;
-        if args.auto_merge {
-            release::require_auto_merge(root, &token, &version_pr.base)?;
-        }
-        Some((token, version_pr))
-    } else {
-        None
-    };
+    let target = version_pr_target(args, root)?;
     let token = target.as_ref().map(|(token, _)| token.as_str());
     let bumps: Vec<PrepareBump> = plan
         .iter()
