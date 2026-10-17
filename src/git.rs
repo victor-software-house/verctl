@@ -1200,7 +1200,7 @@ mod tests {
 
     use indoc::indoc;
 
-    use super::{AddedBy, VersionCommit, added_by, origin_url, version_commit};
+    use super::{AddedBy, VersionCommit, added_by, origin_url, tagged_commit, version_commit};
     use crate::test_git::{commit_all, git, init};
 
     /// The paths of every blob in the commit `sha`.
