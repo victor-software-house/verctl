@@ -1,8 +1,10 @@
 //! The publish action must not fetch. `verctl publish` owns that, with tests.
 //! The Version PR action leaves the title and commit message to verctl.
+//! Every action passes settings as `VERCTL_*` variables and runs the bare verb.
 
 const ACTION: &str = include_str!("../actions/publish/action.yml");
 const VERSION_PR: &str = include_str!("../actions/version-pr/action.yml");
+const ASSET: &str = include_str!("../actions/asset/action.yml");
 
 #[test]
 fn publish_action_does_not_fetch() {
@@ -34,4 +36,20 @@ fn version_pr_action_leaves_the_title_to_verctl() {
         !VERSION_PR.contains(r#"default: "chore(release): version packages""#),
         "{VERSION_PR}"
     );
+}
+
+/// verctl reads every flag from `VERCTL_<LONG>`, so no action rebuilds argv in
+/// bash or restates verctl's default config path.
+#[test]
+fn actions_set_variables_and_run_the_bare_verb() {
+    for (action, verb) in [
+        (VERSION_PR, "run: exec verctl prepare --pr\n"),
+        (ACTION, "run: exec verctl publish\n"),
+        (ASSET, "run: exec verctl assets --upload\n"),
+    ] {
+        assert!(action.contains(verb), "{action}");
+        assert!(!action.contains("extra=("), "{action}");
+        assert!(!action.contains("-c \""), "{action}");
+        assert!(!action.contains("default: .ctl/ver.yaml"), "{action}");
+    }
 }

@@ -26,6 +26,12 @@ completion bootstrap.
 | `assets` | — | Plan or build native GitHub Release tarballs declared under `assets` |
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
 
+Every long option also reads `VERCTL_<LONG>`: `VERCTL_CONFIG`,
+`VERCTL_DRY_RUN`, `VERCTL_FORMAT`, and so on, with `-` turned into `_`. A
+flag on the command line wins over its variable, and an empty variable is
+unset. `--help` names each one. An action or a CI step sets them in `env:`
+and runs the bare verb; it never rebuilds argv in a shell.
+
 Until a tagged GitHub Release exists, use a local or
 `cargo install --git` build, then `verctl`.
 

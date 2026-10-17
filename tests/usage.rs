@@ -1,5 +1,7 @@
 //! Hidden `--usage-spec` and the served-task mount line.
 
+mod common;
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -13,7 +15,7 @@ fn crate_file(relative: &str) -> String {
 }
 
 fn verctl(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_verctl"))
+    common::verctl()
         .args(args)
         .output()
         .unwrap_or_else(|error| panic!("spawn verctl: {error}"))

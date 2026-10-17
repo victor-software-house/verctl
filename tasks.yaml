@@ -286,6 +286,18 @@ queue:
       - >2-
         Operator ruling 2026-10-15 on #155: no deprecated wrapper and no minor bump; the change keeps its fragment, and only the Version PR merge is held until the template migration lands.
 
+  - id: VER-067
+    title: Read every flag from the environment
+    scope: src/cli.rs, actions, tests, and the env-bound-flags spec
+    outcome: Every verctl option reads VERCTL_<LONG>, and the actions set env and run the bare verb.
+    blocked_by: []
+    acceptance:
+      - Every long option verctl declares, shared flags included, reads VERCTL_<LONG>, with a flag winning over its variable and an empty variable meaning unset.
+      - The version-pr, publish, and asset actions run exec verctl <verb> with settings in env only, and git grep finds no -c "$ in actions.
+      - Integration tests start verctl through one helper that removes the colour variables and every VERCTL_* variable.
+    notes:
+      - OpenSpec change env-bound-flags in openspec/changes/env-bound-flags; it needs ctl-core 0.6.21 (EnvPrefix and env_under_flags).
+
   - id: VER-066
     title: Ship one reusable release workflow with an idempotent publish
     scope: .github/workflows/release.yml, publish, prepare --pr, examples, and the reusable-release-workflow spec

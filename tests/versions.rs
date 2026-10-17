@@ -83,7 +83,7 @@ fn inherited(
 }
 
 fn check_cmd(root: &Path) -> std::process::Command {
-    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"));
+    let mut cmd = common::verctl();
     cmd.env_clear()
         .envs(inherited(std::env::vars_os()))
         .current_dir(root)

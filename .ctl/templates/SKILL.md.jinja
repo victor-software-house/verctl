@@ -22,6 +22,11 @@ PATH.
 
 {{ command_inventory(verctl_surface) | trim }}
 
+Every long option also reads `VERCTL_<LONG>` (`VERCTL_CONFIG`,
+`VERCTL_DRY_RUN`, `VERCTL_FORMAT`): a flag wins over its variable, an empty
+variable is unset, and `--help` names each one. A workflow or action sets
+them in `env:` and runs the bare verb; never rebuild argv in a shell.
+
 Every command returns one typed report. Use `--format json` for the same data
 without ANSI, whatever `CLICOLOR_FORCE` or `FORCE_COLOR` say; JSON errors use
 stdout, while human errors use stderr. `--quiet` suppresses only successful
@@ -36,6 +41,13 @@ Apps in `changelog.internal_authors`; only an unlisted person whose pull
 request comes from a fork gets a byline. Consumers use
 `victor-software-house/verctl/actions/version-pr`, not changesets/action.
 Do not assemble changelog strings in ad-hoc Rust. Do not add a Node adapter.
+
+`prepare --pr` opens the Version PR against `GITHUB_REF_NAME`, else
+`VERCTL_DEFAULT_BRANCH`, else the branch `origin/HEAD` names, and fails before
+writing anything when none is set; it never guesses `main`. The title and
+commit message default to `chore(release): version packages`;
+`VERCTL_PR_TITLE` and `VERCTL_COMMIT_MESSAGE`, or the action's `title` and
+`commit-message` inputs, override them, and an empty value is unset.
 
 A new package starts at `0.0.0`. Its first fragment is a `patch`, so its
 first release is `0.0.1`. Moving to `0.1.0` or `1.0.0` is a separate operator

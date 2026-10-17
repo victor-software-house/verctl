@@ -198,7 +198,7 @@ fn each_package_gets_its_own_changelog() {
         "},
     )
     .unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .current_dir(root.path())
         .args(["prepare", "--no-pr"])
         .output()
@@ -373,7 +373,7 @@ fn local_prepare_writes_changelog_and_consumes() {
         "},
     )
     .unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .current_dir(root.path())
         .args(["prepare", "--no-pr"])
         .output()
@@ -452,7 +452,7 @@ fn prepare_links_the_pull_request_or_commit_that_added_each_fragment() {
     )
     .unwrap();
     let direct = common::commit_all(root.path(), "fix: the reader");
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .current_dir(root.path())
         .env_remove("GITHUB_TOKEN")
         .env_remove("GH_TOKEN")
@@ -495,7 +495,7 @@ fn prepare_pr_without_a_known_base_fails_before_writing() {
         ],
     );
     common::commit_all(root.path(), "chore: start");
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .current_dir(root.path())
         .env("GITHUB_TOKEN", "unused")
         .env_remove("GH_TOKEN")

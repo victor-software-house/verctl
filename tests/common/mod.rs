@@ -60,6 +60,28 @@ pub(crate) fn write_demo(root: &Path) {
     .expect("frag");
 }
 
+/// The verctl binary under test, with the agent-shell colour variables and
+/// every `VERCTL_*` variable removed, so the suite passes in any shell and
+/// every flag comes from argv unless a test sets its variable back on top.
+pub(crate) fn verctl() -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_verctl"));
+    for name in [
+        "CLICOLOR",
+        "CLICOLOR_FORCE",
+        "FORCE_COLOR",
+        "NO_COLOR",
+        "COLORTERM",
+    ] {
+        command.env_remove(name);
+    }
+    for (name, _) in std::env::vars_os() {
+        if name.to_string_lossy().starts_with("VERCTL_") {
+            command.env_remove(name);
+        }
+    }
+    command
+}
+
 /// Run `git` with `args` in `dir` under a fixed identity and no user or system
 /// configuration, and return its trimmed stdout. A failure panics with stderr.
 pub(crate) fn git(dir: &Path, args: &[&str]) -> String {
