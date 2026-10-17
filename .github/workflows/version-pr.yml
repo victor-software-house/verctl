@@ -41,9 +41,15 @@ jobs:
           repositories: ${{ github.event.repository.name }}
           permission-contents: write
           permission-pull-requests: write
+      # verctl enables auto-merge itself, after checking the base requires a
+      # status check and the token is not the job's own. A verctl too old to
+      # read VERCTL_AUTO_MERGE ignores it, and the Version PR waits for a
+      # person to merge it.
       - name: Prepare release
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERCTL_AUTO_MERGE: ${{ vars.VERCTL_RELEASE_HOLD != 'true' }}
+          VERCTL_JOB_TOKEN: ${{ github.token }}
         run: mise run ver prepare --pr
       # The repository variable VERCTL_RELEASE_HOLD=true holds the next release:
       # the Version PR still opens and updates, but never merges itself, so a
@@ -62,10 +68,3 @@ jobs:
           if [ -n "${number}" ] && [ "$(gh pr view "${number}" --repo "${REPO}" --json autoMergeRequest --jq '.autoMergeRequest != null')" = true ]; then
             gh pr merge "${number}" --repo "${REPO}" --disable-auto
           fi
-      - name: Enable auto-merge
-        if: vars.VERCTL_RELEASE_HOLD != 'true'
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          REPO: ${{ github.repository }}
-          BASE: ${{ github.event.repository.default_branch }}
-        run: actions/version-pr/auto-merge.sh

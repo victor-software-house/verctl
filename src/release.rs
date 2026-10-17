@@ -13,8 +13,26 @@ use crate::git::pull_request_number;
 use crate::prepare::PlanEntry;
 use crate::{git, github};
 
-/// The branch the Version PR is pushed to.
-pub const VERSION_BRANCH: &str = "version-packages";
+/// What every Version PR branch starts with. The rest is the base branch, so
+/// each base gets its own Version PR and the name says which one it is.
+pub const VERSION_BRANCH_PREFIX: &str = "verctl/release/";
+
+/// The branch the Version PR into `base` is pushed to:
+/// `verctl/release/<base>`. It is derived, never configured, because the name
+/// is how verctl and its readers recognise a Version PR.
+#[must_use]
+pub fn version_branch(base: &str) -> String {
+    format!("{VERSION_BRANCH_PREFIX}{base}")
+}
+
+/// Whether `branch` is a Version PR branch: [`VERSION_BRANCH_PREFIX`]
+/// followed by a base branch name.
+#[must_use]
+pub fn is_version_branch(branch: &str) -> bool {
+    branch
+        .strip_prefix(VERSION_BRANCH_PREFIX)
+        .is_some_and(|base| !base.is_empty())
+}
 
 /// Auth for `--pr`.
 ///
@@ -508,19 +526,50 @@ pub fn open_or_update_pr(
     version_label: &str,
 ) -> Result<Option<String>> {
     let repo = github::repo(root)?;
-    match git::commit_branch_and_push(root, VERSION_BRANCH, &pr.message, token, &repo, paths)? {
+    let branch = version_branch(&pr.base);
+    match git::commit_branch_and_push(root, &branch, &pr.message, token, &repo, paths)? {
         git::PushOutcome::Empty => return Ok(None),
         git::PushOutcome::Pushed => {}
     }
     let body = pr_body(changelog);
-    if let Some(existing) = github::existing_pr(token, &repo, VERSION_BRANCH)? {
+    if let Some(existing) = github::existing_pr(token, &repo, &branch)? {
         let url = github::update_pr(token, &repo, existing.number, &pr.title, &body)?;
         github::ensure_version_label(token, &repo, existing.number, version_label)?;
         return Ok(Some(url));
     }
-    let created = github::create_pr(token, &repo, &pr.title, VERSION_BRANCH, &pr.base, &body)?;
+    let created = github::create_pr(token, &repo, &pr.title, &branch, &pr.base, &body)?;
     github::ensure_version_label(token, &repo, created.number, version_label)?;
     Ok(Some(created.url))
+}
+
+/// Refuse auto-merge before `prepare --pr` writes anything.
+///
+/// The token must not be the job's own, which the workflow names in
+/// `VERCTL_JOB_TOKEN`: a merge made with `GITHUB_TOKEN` starts no workflow, so
+/// the release after it would never run. And a ruleset on `base` must require
+/// a status check, or GitHub merges the moment auto-merge is on.
+pub fn require_auto_merge(root: &Path, token: &str, base: &str) -> Result<()> {
+    ensure!(
+        non_empty_env("VERCTL_JOB_TOKEN").as_deref() != Some(token),
+        "auto-merge needs a token other than the job's GITHUB_TOKEN, such as a GitHub App token: a merge made with GITHUB_TOKEN starts no workflow, so the release would not run"
+    );
+    let repo = github::repo(root)?;
+    ensure!(
+        github::requires_status_check(token, &repo, base)?,
+        "{base} has no required status check; auto-merge would merge the Version PR at once"
+    );
+    Ok(())
+}
+
+/// Enable auto-merge on the open Version PR into `base`, and return its
+/// number; `None` when no Version PR is open.
+pub fn auto_merge(root: &Path, token: &str, base: &str) -> Result<Option<u64>> {
+    let repo = github::repo(root)?;
+    let Some(pr) = github::existing_pr(token, &repo, &version_branch(base))? else {
+        return Ok(None);
+    };
+    github::enable_auto_merge(token, &repo, pr.number)?;
+    Ok(Some(pr.number))
 }
 
 /// The PR body: the changelog, trimmed, or a stock line when it is empty.

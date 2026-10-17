@@ -604,6 +604,91 @@ async fn pull_author_with(crab: &Octocrab, repo: &Repo, number: u64) -> Result<P
     })
 }
 
+/// Whether a ruleset on `branch` requires a status check, from
+/// `GET /repos/{owner}/{repo}/rules/branches/{branch}`
+/// (<https://docs.github.com/en/rest/repos/rules#get-rules-for-a-branch>).
+///
+/// Auto-merge with no required check merges the moment it is enabled, so it
+/// would gate nothing. Only rulesets count: classic branch protection needs
+/// administration access that a workflow token does not have.
+pub fn requires_status_check(token: &str, repo: &Repo, branch: &str) -> Result<bool> {
+    block(async {
+        let crab = client(token)?;
+        requires_status_check_with(&crab, repo, branch).await
+    })
+}
+
+async fn requires_status_check_with(crab: &Octocrab, repo: &Repo, branch: &str) -> Result<bool> {
+    #[derive(serde::Deserialize)]
+    struct Rule {
+        #[serde(rename = "type")]
+        kind: String,
+    }
+    let route = format!(
+        "/repos/{}/{}/rules/branches/{branch}",
+        repo.owner, repo.name
+    );
+    let rules: Vec<Rule> = crab
+        .get(route, None::<&()>)
+        .await
+        .with_context(|| format!("read the rules on {branch}"))?;
+    Ok(rules
+        .iter()
+        .any(|rule| rule.kind == "required_status_checks"))
+}
+
+/// The GraphQL mutation that turns on auto-merge
+/// (<https://docs.github.com/en/graphql/reference/mutations#enablepullrequestautomerge>).
+const ENABLE_AUTO_MERGE: &str = ctl_core::indoc! {"
+    mutation($pullRequestId: ID!, $commitHeadline: String!, $commitBody: String!) {
+      enablePullRequestAutoMerge(input: {
+        pullRequestId: $pullRequestId,
+        mergeMethod: SQUASH,
+        commitHeadline: $commitHeadline,
+        commitBody: $commitBody
+      }) {
+        clientMutationId
+      }
+    }
+"};
+
+/// Enable auto-merge on pull request `number`, as a squash titled
+/// `<title> (#<number>)` with the description as its body: the commit
+/// GitHub's squash button writes, so the Version PR lands like any other.
+pub fn enable_auto_merge(token: &str, repo: &Repo, number: u64) -> Result<()> {
+    block(async {
+        let crab = client(token)?;
+        enable_auto_merge_with(&crab, repo, number).await
+    })
+}
+
+async fn enable_auto_merge_with(crab: &Octocrab, repo: &Repo, number: u64) -> Result<()> {
+    #[derive(serde::Deserialize)]
+    struct Pull {
+        node_id: String,
+        title: String,
+        body: Option<String>,
+    }
+    let route = format!("/repos/{}/{}/pulls/{number}", repo.owner, repo.name);
+    let pull: Pull = crab
+        .get(route, None::<&()>)
+        .await
+        .with_context(|| format!("read pull request #{number}"))?;
+    let request = serde_json::json!({
+        "query": ENABLE_AUTO_MERGE,
+        "variables": {
+            "pullRequestId": pull.node_id,
+            "commitHeadline": format!("{} (#{number})", pull.title),
+            "commitBody": pull.body.unwrap_or_default(),
+        }
+    });
+    let _: serde_json::Value = crab
+        .graphql(&request)
+        .await
+        .with_context(|| format!("enable auto-merge on pull request #{number}"))?;
+    Ok(())
+}
+
 fn client(token: &str) -> Result<Octocrab> {
     Octocrab::builder()
         .personal_token(token.to_owned())
@@ -715,6 +800,93 @@ mod tests {
     async fn a_deleted_fork_is_a_fork() {
         let author = pull_author_from(serde_json::json!({ "repo": null })).await;
         assert!(author.from_fork);
+    }
+
+    fn rules(body: serde_json::Value) -> Mock {
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/rules/branches/main")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+    }
+
+    #[tokio::test]
+    async fn a_required_check_rule_gates_auto_merge() {
+        let server = MockServer::start().await;
+        rules(serde_json::json!([
+            { "type": "pull_request" },
+            { "type": "required_status_checks", "parameters": {} }
+        ]))
+        .mount(&server)
+        .await;
+        assert!(
+            super::requires_status_check_with(&crab(&server.uri()), &repo(), "main")
+                .await
+                .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn rules_without_a_required_check_do_not_gate_auto_merge() {
+        let server = MockServer::start().await;
+        rules(serde_json::json!([{ "type": "pull_request" }]))
+            .mount(&server)
+            .await;
+        assert!(
+            !super::requires_status_check_with(&crab(&server.uri()), &repo(), "main")
+                .await
+                .unwrap()
+        );
+    }
+
+    fn version_pr() -> Mock {
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/pulls/12")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "number": 12,
+                "node_id": "PR_12",
+                "title": "chore(release): version packages",
+                "body": "## demo 1.0.1"
+            })))
+    }
+
+    #[tokio::test]
+    async fn auto_merge_squashes_under_the_pull_request_title() {
+        let server = MockServer::start().await;
+        version_pr().mount(&server).await;
+        Mock::given(method("POST"))
+            .and(path("/graphql"))
+            .and(body_partial_json(serde_json::json!({
+                "variables": {
+                    "pullRequestId": "PR_12",
+                    "commitHeadline": "chore(release): version packages (#12)",
+                    "commitBody": "## demo 1.0.1"
+                }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "enablePullRequestAutoMerge": { "clientMutationId": null } }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        super::enable_auto_merge_with(&crab(&server.uri()), &repo(), 12)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_graphql_error_fails_auto_merge() {
+        let server = MockServer::start().await;
+        version_pr().mount(&server).await;
+        Mock::given(method("POST"))
+            .and(path("/graphql"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "errors": [{ "message": "Pull request is in clean status" }]
+            })))
+            .mount(&server)
+            .await;
+        let error = super::enable_auto_merge_with(&crab(&server.uri()), &repo(), 12)
+            .await
+            .unwrap_err();
+        assert!(format!("{error:#}").contains("#12"), "{error:#}");
     }
 
     #[test]

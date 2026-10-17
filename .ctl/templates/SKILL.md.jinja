@@ -48,6 +48,12 @@ writing anything when none is set; it never guesses `main`. The title and
 commit message default to `chore(release): version packages`;
 `VERCTL_PR_TITLE` and `VERCTL_COMMIT_MESSAGE`, or the action's `title` and
 `commit-message` inputs, override them, and an empty value is unset.
+The PR comes from `verctl/release/<base>`, derived and never configured;
+`check --versions` exempts that branch locally. `--auto-merge`
+(`VERCTL_AUTO_MERGE`) enables a squash auto-merge, and refuses before any
+write when no ruleset on the base requires a status check, or when the token
+equals `VERCTL_JOB_TOKEN`, the job's own token, whose merge starts no
+workflow.
 
 A new package starts at `0.0.0`. Its first fragment is a `patch`, so its
 first release is `0.0.1`. Moving to `0.1.0` or `1.0.0` is a separate operator

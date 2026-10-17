@@ -7,8 +7,7 @@ use anyhow::{Result, ensure};
 use serde::Serialize;
 
 use crate::config::Config;
-use crate::git;
-use crate::release::VERSION_BRANCH;
+use crate::{git, release};
 
 /// Whether, and why, the version comparison is skipped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,10 +21,11 @@ pub enum Skip {
 }
 
 impl Skip {
-    /// Detect a Version PR from the current branch or the event's label.
+    /// Detect a Version PR from the current branch, when it is a
+    /// `verctl/release/<base>` branch, or from the event's label.
     #[must_use]
     pub fn from_env(root: &Path, config: &Config) -> Self {
-        if git::current_branch(root).as_deref() == Some(VERSION_BRANCH) {
+        if git::current_branch(root).is_some_and(|branch| release::is_version_branch(&branch)) {
             return Self::VersionBranch;
         }
         // Detached Actions checkout: trust the label prepare --pr applied

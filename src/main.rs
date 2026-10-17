@@ -96,6 +96,10 @@ fn versions_for_templates(
 }
 
 fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
+    anyhow::ensure!(
+        !args.auto_merge || args.open_pr(),
+        "--auto-merge needs --pr"
+    );
     let dry_run = args.dry_run();
     let config = Config::load(&args.config)?;
     let fragments = fragment::load_dir(&args.dir)?;
@@ -113,10 +117,12 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
         });
     }
     let target = if args.open_pr() && !dry_run {
-        Some((
-            release::resolve_token()?,
-            release::VersionPr::from_env(root)?,
-        ))
+        let token = release::resolve_token()?;
+        let version_pr = release::VersionPr::from_env(root)?;
+        if args.auto_merge {
+            release::require_auto_merge(root, &token, &version_pr.base)?;
+        }
+        Some((token, version_pr))
     } else {
         None
     };
@@ -192,6 +198,9 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
             &changelog,
             config.prepare.version_label(),
         )?;
+        if args.auto_merge {
+            release::auto_merge(root, token, &version_pr.base)?;
+        }
     }
     Ok(PrepareReport {
         changelog,
@@ -236,26 +245,7 @@ fn preview_report(
     } else {
         Vec::new()
     };
-    let pr = if open_pr {
-        Some(match release::resolve_token() {
-            Ok(token) => match github::repo(root)
-                .and_then(|repo| github::existing_pr(&token, &repo, release::VERSION_BRANCH))
-            {
-                Ok(Some(existing)) => formatdoc!("update {url}", url = existing.url),
-                Ok(None) => formatdoc!("open {branch}", branch = release::VERSION_BRANCH),
-                Err(_) => formatdoc!(
-                    "open or update {branch} (lookup failed)",
-                    branch = release::VERSION_BRANCH
-                ),
-            },
-            Err(_) => formatdoc!(
-                "open or update {branch} (auth not checked)",
-                branch = release::VERSION_BRANCH
-            ),
-        })
-    } else {
-        None
-    };
+    let pr = open_pr.then(|| preview_pr(root));
     Ok(PrepareReport {
         bumps,
         changelog,
@@ -268,6 +258,27 @@ fn preview_report(
             .collect(),
         dry_run: true,
     })
+}
+
+/// What `prepare --pr` would do to the Version PR, as far as a preview can
+/// tell without writing: the branch needs the base, and the lookup needs a
+/// token.
+fn preview_pr(root: &Path) -> String {
+    let Ok(base) = github::base_branch(root) else {
+        return formatdoc!(
+            "open or update {prefix}<base> (base not resolved)",
+            prefix = release::VERSION_BRANCH_PREFIX
+        );
+    };
+    let branch = release::version_branch(&base);
+    let Ok(token) = release::resolve_token() else {
+        return formatdoc!("open or update {branch} (auth not checked)");
+    };
+    match github::repo(root).and_then(|repo| github::existing_pr(&token, &repo, &branch)) {
+        Ok(Some(existing)) => formatdoc!("update {url}", url = existing.url),
+        Ok(None) => formatdoc!("open {branch}"),
+        Err(_) => formatdoc!("open or update {branch} (lookup failed)"),
+    }
 }
 
 fn publish_report(args: &verctl::cli::PublishArgs) -> Result<PublishReport> {

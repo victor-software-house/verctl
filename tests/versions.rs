@@ -346,12 +346,12 @@ fn nested_config_maps_onto_the_git_tree() {
 }
 
 #[test]
-fn current_branch_reads_version_packages() {
+fn current_branch_reads_the_version_branch() {
     let dir = repo_with_origin_main("1.0.0");
-    common::git(dir.path(), &["checkout", "-q", "-b", "version-packages"]);
+    common::git(dir.path(), &["checkout", "-q", "-b", "verctl/release/main"]);
     assert_eq!(
         verctl::git::current_branch(dir.path()).as_deref(),
-        Some("version-packages")
+        Some("verctl/release/main")
     );
 }
 
@@ -361,7 +361,7 @@ fn pull_request_head_ref_is_not_an_exemption() {
     write_crate(dir.path(), "1.0.1");
     let output = check_cmd(dir.path())
         .env("GITHUB_ACTIONS", "true")
-        .env("GITHUB_HEAD_REF", "version-packages")
+        .env("GITHUB_HEAD_REF", "verctl/release/main")
         .output()
         .unwrap();
     assert!(
@@ -420,7 +420,7 @@ fn github_ref_name_is_not_an_exemption() {
     write_crate(dir.path(), "1.0.1");
     let output = check_cmd(dir.path())
         .env("GITHUB_ACTIONS", "true")
-        .env("GITHUB_REF_NAME", "version-packages")
+        .env("GITHUB_REF_NAME", "verctl/release/main")
         .output()
         .unwrap();
     assert!(
@@ -476,12 +476,26 @@ fn configured_version_label_is_the_exemption() {
 }
 
 #[test]
-fn version_packages_branch_cli_is_exempt() {
+fn version_branch_cli_is_exempt() {
     let dir = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
-    common::git(dir.path(), &["checkout", "-q", "-b", "version-packages"]);
+    common::git(dir.path(), &["checkout", "-q", "-b", "verctl/release/main"]);
     let output = check_cmd(dir.path()).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success(), "{stdout}");
     assert!(stdout.contains("version-pr"), "{stdout}");
+}
+
+/// The Changesets branch name is no longer a Version PR: a hand edit there
+/// fails like anywhere else.
+#[test]
+fn old_version_packages_branch_is_not_exempt() {
+    let dir = repo_with_origin_main("1.0.0");
+    write_crate(dir.path(), "1.0.1");
+    common::git(dir.path(), &["checkout", "-q", "-b", "version-packages"]);
+    let output = check_cmd(dir.path()).output().unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("demo"), "{stderr}");
+    assert!(stderr.contains("1.0.1"), "{stderr}");
 }
