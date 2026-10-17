@@ -1,14 +1,17 @@
 //! How a package is published. Cargo and bun are stock recipes.
 //!
 //! Override a `publishers` entry or set `publisher` + `argv` on a
-//! package. Placeholders: `{path}` `{dir}` `{registry}` `{config}`.
-//! [`RELEASE_ONLY`] publishes to no registry.
+//! package. Placeholders: `{path}` `{dir}` `{registry}` `{config}`; a
+//! `query` takes `{path}` `{dir}` `{name}` `{version}`. [`RELEASE_ONLY`]
+//! publishes to no registry.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
+
+use crate::registry::{self, CargoEnv, CargoTarget, RegistryCheck};
 
 /// A publisher recipe: the command to upload a package and where its registry
 /// config lives.
@@ -31,6 +34,12 @@ pub struct PublisherSpec {
     /// no flag.
     #[serde(default)]
     pub registries: BTreeMap<String, String>,
+    /// Asks the registry whether a version is published: it exits zero and
+    /// prints the version when the registry has it. It runs in the package
+    /// directory, where the publisher's registry config is in effect. Unsaid,
+    /// the stock recipe's query applies; an empty list turns the check off,
+    /// leaving the stderr match.
+    pub query: Option<Vec<String>>,
 }
 
 impl PublisherSpec {
@@ -66,6 +75,7 @@ impl PublisherSpec {
                     ("npm".into(), String::new()),
                     ("github".into(), "https://npm.pkg.github.com".into()),
                 ]),
+                query: Some(BUN_QUERY.iter().map(|part| (*part).to_owned()).collect()),
             }),
             _ => None,
         }
@@ -84,6 +94,7 @@ impl PublisherSpec {
             } else {
                 over.registries
             },
+            query: over.query.or(self.query),
         }
     }
 
@@ -177,6 +188,11 @@ fn find_config(manifest: &Path, file_name: &str) -> Option<PathBuf> {
     None
 }
 
+/// The stock bun query. `bun pm view` is an alias of `bun info`, which prints
+/// one property of the selected version and fails when the version does not
+/// exist: <https://bun.com/docs/pm/cli/info>.
+const BUN_QUERY: [&str; 5] = ["bun", "pm", "view", "{name}@{version}", "version"];
+
 /// The publisher name for a package released only on GitHub: a tag and a
 /// Release, with assets when declared, and no registry step. Its argv is
 /// empty, which `publish` reads as "nothing to upload"; every other publisher
@@ -194,16 +210,7 @@ pub fn resolve(
         let noun = spec.noun.clone().unwrap_or_else(|| "package".into());
         return Ok(("release only".into(), noun, Vec::new()));
     }
-    let inferred = spec
-        .path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .and_then(stock_publisher_for_file);
-    let name = spec
-        .publisher
-        .as_deref()
-        .or(inferred)
-        .unwrap_or(spec.name.as_str());
+    let name = publisher_name(spec);
     let mut publisher = match (PublisherSpec::stock(name), config.publishers.get(name)) {
         (Some(stock), Some(over)) => stock.merge(over.clone()),
         (Some(stock), None) => stock,
@@ -238,6 +245,100 @@ pub fn resolve(
     Ok((name.to_owned(), noun, argv))
 }
 
+/// The publisher a package names, or the stock one its manifest file implies,
+/// or a `publishers` entry under the package's own name.
+fn publisher_name(spec: &crate::config::PackageSpec) -> &str {
+    let inferred = spec
+        .path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(stock_publisher_for_file);
+    spec.publisher
+        .as_deref()
+        .or(inferred)
+        .unwrap_or(spec.name.as_str())
+}
+
+/// How `publish` decides whether `version` of the package in `manifest` is
+/// already on its registry.
+///
+/// A package's own `query` wins, then its `publishers` entry's, and an empty
+/// one turns the check off. Otherwise a stock cargo package whose publish
+/// target is crates.io is read from the sparse index, and a stock recipe's
+/// query applies. A cargo package with an overridden command, or with a target
+/// verctl cannot tell, has no check unless it declares `query`: verctl cannot
+/// know the directory such a command runs in, nor the registry it uploads to.
+///
+/// # Errors
+///
+/// Returns an error when the manifest cannot be read.
+pub fn registry_check(
+    config: &crate::config::Config,
+    spec: &crate::config::PackageSpec,
+    root: &Path,
+    version: &str,
+) -> Result<RegistryCheck> {
+    if spec.publisher.as_deref() == Some(RELEASE_ONLY) {
+        return Ok(RegistryCheck::Unchecked);
+    }
+    let name = publisher_name(spec);
+    let over = config.publishers.get(name);
+    let manifest = root.join(&spec.path);
+    let declared = spec
+        .query
+        .as_ref()
+        .or_else(|| over.and_then(|over| over.query.as_ref()));
+    if let Some(argv) = declared {
+        return Ok(query_check(argv, spec, &manifest, version));
+    }
+    let overridden = spec.publish_argv.is_some() || over.is_some_and(|over| over.argv.is_some());
+    if name == "cargo" && !overridden {
+        let target = registry::cargo_target(
+            spec.registry.as_deref(),
+            &manifest,
+            root,
+            &CargoEnv::from_env(),
+        )?;
+        return Ok(match target {
+            CargoTarget::CratesIo => RegistryCheck::CratesIo {
+                name: spec.name.clone(),
+            },
+            CargoTarget::Other | CargoTarget::Unknown => RegistryCheck::Unchecked,
+        });
+    }
+    Ok(PublisherSpec::stock(name)
+        .and_then(|stock| stock.query)
+        .map_or(RegistryCheck::Unchecked, |argv| {
+            query_check(&argv, spec, &manifest, version)
+        }))
+}
+
+fn query_check(
+    argv: &[String],
+    spec: &crate::config::PackageSpec,
+    manifest: &Path,
+    version: &str,
+) -> RegistryCheck {
+    if argv.is_empty() {
+        return RegistryCheck::Unchecked;
+    }
+    let dir = manifest
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
+    let ctx = BTreeMap::from([
+        ("path", manifest.display().to_string()),
+        ("dir", dir.display().to_string()),
+        ("name", spec.name.clone()),
+        ("version", version.to_owned()),
+    ]);
+    RegistryCheck::Query {
+        argv: expand(argv, &ctx),
+        dir,
+    }
+}
+
 fn stock_publisher_for_file(file_name: &str) -> Option<&'static str> {
     match file_name {
         "Cargo.toml" => Some("cargo"),
@@ -252,7 +353,8 @@ mod tests {
 
     use indoc::indoc;
 
-    use super::{PublisherSpec, resolve};
+    use super::{PublisherSpec, registry_check, resolve};
+    use crate::registry::RegistryCheck;
 
     #[test]
     fn stock_cargo_and_bun_are_recipes() {
@@ -311,6 +413,93 @@ mod tests {
             format!("{error:#}").contains("renders an empty command"),
             "{error:#}"
         );
+    }
+
+    fn checks(yaml: &str) -> Vec<RegistryCheck> {
+        let root = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            root.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                name = "demo"
+                version = "0.4.6"
+            "#},
+        )
+        .unwrap();
+        let config = crate::config::Config::parse(yaml).unwrap();
+        config
+            .packages
+            .iter()
+            .map(|spec| registry_check(&config, spec, root.path(), "0.4.6").unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn stock_cargo_bound_for_crates_io_reads_the_index() {
+        let found = checks(indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "});
+        assert_eq!(
+            found,
+            [RegistryCheck::CratesIo {
+                name: "demo".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn an_overridden_cargo_publisher_has_no_check() {
+        let found = checks(indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publish:
+                  - cargo
+                  - publish
+              - name: elsewhere
+                path: Cargo.toml
+                registry: my-registry
+              - name: quiet
+                path: Cargo.toml
+                publisher: none
+        "});
+        assert_eq!(found, vec![RegistryCheck::Unchecked; 3]);
+    }
+
+    #[test]
+    fn a_package_query_wins_and_an_empty_one_turns_the_check_off() {
+        let found = checks(indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                query:
+                  - registry-cli
+                  - '{name}@{version}'
+              - name: off
+                path: Cargo.toml
+                query: []
+        "});
+        let RegistryCheck::Query { argv, .. } = &found[0] else {
+            panic!("expected a query, got {:?}", found[0]);
+        };
+        assert_eq!(argv, &["registry-cli", "demo@0.4.6"]);
+        assert_eq!(found[1], RegistryCheck::Unchecked);
+    }
+
+    #[test]
+    fn stock_bun_queries_the_registry() {
+        let found = checks(indoc! {"
+            packages:
+              - name: web
+                path: package.json
+                publisher: bun
+        "});
+        let RegistryCheck::Query { argv, .. } = &found[0] else {
+            panic!("expected a query, got {:?}", found[0]);
+        };
+        assert_eq!(argv, &["bun", "pm", "view", "web@0.4.6", "version"]);
     }
 
     #[test]

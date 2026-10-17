@@ -13,6 +13,7 @@ use ctl_core::formatdoc;
 use serde::Serialize;
 
 use crate::config::{Config, NAME_PLACEHOLDER};
+use crate::registry::{self, RegistryCheck};
 use crate::{git, github, process, publisher, release};
 
 /// How long one package upload may run.
@@ -119,15 +120,13 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
     prove_version_commit(config, root, &planned)?;
     let token = release::resolve_token()?;
     let mut packages = Vec::new();
-    for entry in &planned.packages {
+    for (spec, entry) in config.packages.iter().zip(&planned.packages) {
         if entry.argv.is_empty() {
             packages.push(PublishLine::from(entry));
             continue;
         }
-        let note = match publish_package(entry)? {
-            status if status.ends_with(" (already)") => Some("already".into()),
-            _ => None,
-        };
+        let check = publisher::registry_check(config, spec, root, &entry.version)?;
+        let note = publish_checked(entry, &check, &registry::LISTING_DELAYS)?;
         packages.push(PublishLine {
             name: entry.name.clone(),
             version: entry.version.clone(),
@@ -157,6 +156,47 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
         releases.push(url);
     }
     Ok(PublishOutcome { packages, releases })
+}
+
+/// Publish one package under its registry check, and return `already` when
+/// the registry had the version.
+///
+/// With a check, the registry decides: a listed version skips the publisher,
+/// and after the publisher runs the version must appear within `delays`. A
+/// publisher that fails saying the version exists counts only when the
+/// registry then lists it, since that is a publish the earlier check missed
+/// while the index lagged. Without a check, a zero exit or that stderr is
+/// enough.
+fn publish_checked(
+    entry: &PublishEntry,
+    check: &RegistryCheck,
+    delays: &[Duration],
+) -> Result<Option<String>> {
+    let already = || Some("already".to_owned());
+    if matches!(check, RegistryCheck::Unchecked) {
+        let status = publish_package(entry)?;
+        return Ok(if status.ends_with(" (already)") {
+            already()
+        } else {
+            None
+        });
+    }
+    let coord = format!("{}@{}", entry.name, entry.version);
+    if check.lists(&entry.version).with_context(|| coord.clone())? {
+        return Ok(already());
+    }
+    match process::run_inherit(&entry.argv, PUBLISH_TIMEOUT) {
+        Ok(()) => {
+            registry::wait_listed(check, &coord, &entry.version, delays)?;
+            Ok(None)
+        }
+        Err(error) if already_published(&format!("{error:#}")) => {
+            registry::wait_listed(check, &coord, &entry.version, delays)
+                .with_context(|| format!("{error:#}"))?;
+            Ok(already())
+        }
+        Err(error) => Err(error).context(coord),
+    }
 }
 
 fn publish_package(entry: &PublishEntry) -> Result<String> {
@@ -279,6 +319,122 @@ mod tests {
 
     use super::{PublishEntry, already_published, tags_for};
     use crate::config::Config;
+
+    #[cfg(unix)]
+    mod checked {
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+        use std::path::{Path, PathBuf};
+        use std::time::Duration;
+
+        use indoc::formatdoc;
+        use tempfile::TempDir;
+
+        use super::super::{PublishEntry, publish_checked};
+        use crate::registry::RegistryCheck;
+
+        const NO_WAIT: [Duration; 2] = [Duration::ZERO, Duration::ZERO];
+
+        fn script(dir: &Path, name: &str, body: &str) -> PathBuf {
+            let path = dir.join(name);
+            fs::write(&path, body).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        }
+
+        /// A publisher that records that it ran, then exits with `code`.
+        fn publisher(dir: &Path, code: u8) -> PublishEntry {
+            let ran = dir.join("published");
+            let path = script(
+                dir,
+                "publisher",
+                &formatdoc! {r#"
+                    #!/bin/sh
+                    touch "{ran}"
+                    exit {code}
+                "#, ran = ran.display()},
+            );
+            PublishEntry {
+                name: "demo".into(),
+                version: "0.4.6".into(),
+                noun: "crate".into(),
+                label: "cargo".into(),
+                argv: vec![path.display().to_string()],
+            }
+        }
+
+        /// A query that prints the version from its `listed_after`-th call on,
+        /// counting calls in a file, and exits non-zero before that.
+        fn query(dir: &Path, listed_after: u32) -> RegistryCheck {
+            let calls = dir.join("calls");
+            let path = script(
+                dir,
+                "query",
+                &formatdoc! {r#"
+                    #!/bin/sh
+                    n=$(($(cat "{calls}" 2>/dev/null || echo 0) + 1))
+                    echo "$n" > "{calls}"
+                    if [ "$n" -ge {listed_after} ]; then
+                      echo 0.4.6
+                      exit 0
+                    fi
+                    exit 1
+                "#, calls = calls.display()},
+            );
+            RegistryCheck::Query {
+                argv: vec![path.display().to_string()],
+                dir: dir.to_path_buf(),
+            }
+        }
+
+        fn ran(dir: &Path) -> bool {
+            dir.join("published").exists()
+        }
+
+        #[test]
+        fn a_listed_version_skips_the_publisher() {
+            let dir = TempDir::new().unwrap();
+            let entry = publisher(dir.path(), 0);
+            let note = publish_checked(&entry, &query(dir.path(), 1), &NO_WAIT).unwrap();
+            assert_eq!(note.as_deref(), Some("already"));
+            assert!(!ran(dir.path()));
+        }
+
+        #[test]
+        fn a_publisher_that_exits_zero_without_publishing_fails() {
+            let dir = TempDir::new().unwrap();
+            let entry = publisher(dir.path(), 0);
+            let error = publish_checked(&entry, &query(dir.path(), 99), &NO_WAIT).unwrap_err();
+            assert!(ran(dir.path()));
+            assert!(format!("{error:#}").contains("demo@0.4.6"), "{error:#}");
+        }
+
+        #[test]
+        fn registry_metadata_that_lags_the_publish_passes() {
+            let dir = TempDir::new().unwrap();
+            let entry = publisher(dir.path(), 0);
+            let note = publish_checked(&entry, &query(dir.path(), 3), &NO_WAIT).unwrap();
+            assert_eq!(note, None);
+            assert!(ran(dir.path()));
+        }
+
+        #[test]
+        fn a_failed_publisher_fails_without_waiting() {
+            let dir = TempDir::new().unwrap();
+            let entry = publisher(dir.path(), 1);
+            let error = publish_checked(&entry, &query(dir.path(), 2), &NO_WAIT).unwrap_err();
+            assert!(format!("{error:#}").contains("demo@0.4.6"), "{error:#}");
+        }
+
+        #[test]
+        fn without_a_check_a_zero_exit_publishes() {
+            let dir = TempDir::new().unwrap();
+            let entry = publisher(dir.path(), 0);
+            let note = publish_checked(&entry, &RegistryCheck::Unchecked, &NO_WAIT).unwrap();
+            assert_eq!(note, None);
+            assert!(ran(dir.path()));
+        }
+    }
 
     fn entry(name: &str, version: &str) -> PublishEntry {
         PublishEntry {

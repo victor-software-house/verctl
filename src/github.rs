@@ -463,7 +463,9 @@ fn client(token: &str) -> Result<Octocrab> {
         .context("GitHub client")
 }
 
-fn block<F, T>(fut: F) -> Result<T>
+/// Run one future to completion on a fresh current-thread runtime, so the
+/// blocking command handlers can call async clients.
+pub(crate) fn block<F, T>(fut: F) -> Result<T>
 where
     F: std::future::Future<Output = Result<T>>,
 {
