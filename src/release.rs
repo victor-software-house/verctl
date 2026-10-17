@@ -508,6 +508,16 @@ fn non_empty_env(name: &str) -> Option<String> {
     env::var(name).ok().filter(|value| !value.is_empty())
 }
 
+/// The Version PR `open_or_update_pr` opened or updated.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct OpenedPr {
+    /// The PR number, which auto-merge acts on.
+    pub number: u64,
+    /// The PR's web URL.
+    pub url: String,
+}
+
 /// Push the Version PR branch and open the PR, or update the open one. `None`
 /// when nothing changed.
 ///
@@ -524,7 +534,7 @@ pub fn open_or_update_pr(
     paths: &[std::path::PathBuf],
     changelog: &str,
     version_label: &str,
-) -> Result<Option<String>> {
+) -> Result<Option<OpenedPr>> {
     let repo = github::repo(root)?;
     let branch = version_branch(&pr.base);
     match git::commit_branch_and_push(root, &branch, &pr.message, token, &repo, paths)? {
@@ -535,11 +545,17 @@ pub fn open_or_update_pr(
     if let Some(existing) = github::existing_pr(token, &repo, &branch)? {
         let url = github::update_pr(token, &repo, existing.number, &pr.title, &body)?;
         github::ensure_version_label(token, &repo, existing.number, version_label)?;
-        return Ok(Some(url));
+        return Ok(Some(OpenedPr {
+            number: existing.number,
+            url,
+        }));
     }
     let created = github::create_pr(token, &repo, &pr.title, &branch, &pr.base, &body)?;
     github::ensure_version_label(token, &repo, created.number, version_label)?;
-    Ok(Some(created.url))
+    Ok(Some(OpenedPr {
+        number: created.number,
+        url: created.url,
+    }))
 }
 
 /// Refuse auto-merge before `prepare --pr` writes anything.
@@ -561,15 +577,17 @@ pub fn require_auto_merge(root: &Path, token: &str, base: &str) -> Result<()> {
     Ok(())
 }
 
-/// Enable auto-merge on the open Version PR into `base`, and return its
-/// number; `None` when no Version PR is open.
-pub fn auto_merge(root: &Path, token: &str, base: &str) -> Result<Option<u64>> {
-    let repo = github::repo(root)?;
-    let Some(pr) = github::existing_pr(token, &repo, &version_branch(base))? else {
-        return Ok(None);
-    };
-    github::enable_auto_merge(token, &repo, pr.number)?;
-    Ok(Some(pr.number))
+/// Enable auto-merge on the Version PR `pr`.
+///
+/// It takes the PR that [`open_or_update_pr`] returned rather than listing
+/// open PRs again, because the list can lag a PR created a moment before.
+///
+/// # Errors
+///
+/// Returns an error when the repository has no GitHub `origin` or GitHub
+/// refuses auto-merge.
+pub fn auto_merge(root: &Path, token: &str, pr: &OpenedPr) -> Result<()> {
+    github::enable_auto_merge(token, &github::repo(root)?, pr.number)
 }
 
 /// The PR body: the changelog, trimmed, or a stock line when it is empty.

@@ -199,7 +199,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     release::consume_fragments(consumed)?;
     let mut pr = None;
     if let Some((token, version_pr)) = &target {
-        pr = release::open_or_update_pr(
+        let opened = release::open_or_update_pr(
             root,
             token,
             version_pr,
@@ -207,9 +207,12 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
             &changelog,
             config.prepare.version_label(),
         )?;
-        if args.auto_merge {
-            release::auto_merge(root, token, &version_pr.base)?;
+        if args.auto_merge
+            && let Some(opened) = &opened
+        {
+            release::auto_merge(root, token, opened)?;
         }
+        pr = opened.map(|opened| opened.url);
     }
     Ok(PrepareReport {
         changelog,
