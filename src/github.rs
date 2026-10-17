@@ -611,6 +611,11 @@ async fn pull_author_with(crab: &Octocrab, repo: &Repo, number: u64) -> Result<P
 /// Auto-merge with no required check merges the moment it is enabled, so it
 /// would gate nothing. Only rulesets count: classic branch protection needs
 /// administration access that a workflow token does not have.
+///
+/// # Errors
+///
+/// Returns an error when the GitHub client cannot be built or the rules
+/// request fails.
 pub fn requires_status_check(token: &str, repo: &Repo, branch: &str) -> Result<bool> {
     block(async {
         let crab = client(token)?;
@@ -655,6 +660,12 @@ const ENABLE_AUTO_MERGE: &str = ctl_core::indoc! {"
 /// Enable auto-merge on pull request `number`, as a squash titled
 /// `<title> (#<number>)` with the description as its body: the commit
 /// GitHub's squash button writes, so the Version PR lands like any other.
+///
+/// # Errors
+///
+/// Returns an error when the pull request cannot be read, or when GitHub
+/// refuses the auto-merge mutation or answers it with an error or a partial
+/// response.
 pub fn enable_auto_merge(token: &str, repo: &Repo, number: u64) -> Result<()> {
     block(async {
         let crab = client(token)?;

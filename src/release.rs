@@ -564,6 +564,12 @@ pub fn open_or_update_pr(
 /// `VERCTL_JOB_TOKEN`: a merge made with `GITHUB_TOKEN` starts no workflow, so
 /// the release after it would never run. And a ruleset on `base` must require
 /// a status check, or GitHub merges the moment auto-merge is on.
+///
+/// # Errors
+///
+/// Returns an error when `token` is the job's own, when the repository has no
+/// GitHub `origin`, when the rules lookup fails, or when no ruleset on `base`
+/// requires a status check.
 pub fn require_auto_merge(root: &Path, token: &str, base: &str) -> Result<()> {
     ensure!(
         non_empty_env("VERCTL_JOB_TOKEN").as_deref() != Some(token),
