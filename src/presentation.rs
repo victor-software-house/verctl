@@ -1,6 +1,6 @@
 use ctl_core::prelude::{Document, Fields, MessageKind, Notice, NoticeLevel, Present, Table};
 use serde::Serialize;
-use verctl::{assets, ci, publish, versions};
+use verctl::{assets, ci, docsrs, publish, versions};
 
 #[derive(Serialize)]
 #[serde(untagged)]
@@ -14,6 +14,7 @@ pub(super) enum Report {
     Pin(PinReport),
     Assets(AssetsReport),
     Ci(CiReport),
+    Docs(DocsReport),
 }
 
 impl Present for Report {
@@ -28,6 +29,7 @@ impl Present for Report {
             Self::Pin(report) => report.present(),
             Self::Assets(report) => report.present(),
             Self::Ci(report) => report.present(),
+            Self::Docs(report) => report.present(),
         }
     }
 
@@ -41,8 +43,38 @@ impl Present for Report {
             | Self::Publish(_)
             | Self::Pin(_)
             | Self::Assets(_)
-            | Self::Ci(_) => MessageKind::Success,
+            | Self::Ci(_)
+            | Self::Docs(_) => MessageKind::Success,
         }
+    }
+}
+
+#[derive(Serialize)]
+pub(super) struct DocsReport {
+    pub(super) crates: Vec<docsrs::DocsLine>,
+}
+
+impl Present for DocsReport {
+    fn present(&self) -> Document {
+        if self.crates.is_empty() {
+            return Document::new().fields(Fields::new().row("no-op", "no crate to check"));
+        }
+        let table = self.crates.iter().fold(
+            Table::new(vec!["name", "version", "docs.rs"]).id_column(0),
+            |table, line| {
+                let status = match line.status {
+                    docsrs::DocsStatus::Built => "built",
+                    docsrs::DocsStatus::Failed => "failed",
+                    docsrs::DocsStatus::Unbuilt => "unbuilt",
+                };
+                table.row(vec![
+                    line.name.clone(),
+                    line.version.clone(),
+                    status.to_owned(),
+                ])
+            },
+        );
+        Document::new().table(table)
     }
 }
 

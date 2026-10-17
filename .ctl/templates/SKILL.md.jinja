@@ -99,6 +99,10 @@ version. `publish --plan` lists every one whose release is incomplete
 `publish` releases only the packages whose version commit is HEAD. Both
 report `nothing to release` when every release is complete.
 
+`docs` waits for docs.rs to build each crates.io library crate released at
+HEAD and fails on a build that failed or never arrived (`--timeout`, minutes,
+default 60).
+
 `publish` asks the registry before and after each publisher: the crates.io
 sparse index for a stock cargo package bound for crates.io, the recipe's
 `query` otherwise. A listed version is `already`; a publisher that exits zero

@@ -26,6 +26,8 @@ struct_marked_non_exhaustive = "warn"
 # VER-066 derives the Version PR branch from its base, which removes
 # `release::VERSION_BRANCH`.
 pub_module_level_const_missing = "warn"
+# VER-066 adds the `docs` command, a new variant of `cli::Command`.
+enum_variant_added = "warn"
 
 [lints.rust]
 unsafe_code = "forbid"
