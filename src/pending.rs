@@ -155,9 +155,7 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
 /// manifests reached that version in different commits, and only the newest
 /// of those has every one of them at the tagged version, so the release and
 /// its tag belong there.
-fn newest_per_tag<'a, S, E>(
-    found: &'a [(S, E, String, VersionCommit)],
-) -> BTreeMap<&'a str, VersionCommit> {
+fn newest_per_tag<S, E>(found: &[(S, E, String, VersionCommit)]) -> BTreeMap<&str, VersionCommit> {
     let mut newest: BTreeMap<&str, VersionCommit> = BTreeMap::new();
     for (_, _, tag, commit) in found {
         newest

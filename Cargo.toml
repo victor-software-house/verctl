@@ -27,6 +27,9 @@ function_parameter_count_changed = "warn"
 # Only verctl's own binary builds them. VER-065 removes these with the rest.
 constructible_struct_adds_field = "warn"
 struct_marked_non_exhaustive = "warn"
+# VER-066 derives the Version PR branch from its base, which removes
+# `release::VERSION_BRANCH`.
+pub_module_level_const_missing = "warn"
 
 [lints.rust]
 unsafe_code = "forbid"
