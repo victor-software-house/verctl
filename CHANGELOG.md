@@ -1,5 +1,11 @@
 # Changelog
 
+## verctl 0.4.6
+
+- `prepare --pr` no longer guesses `main` for the Version PR base. It targets `GITHUB_REF_NAME`, then `VERCTL_DEFAULT_BRANCH`, then the branch `origin/HEAD` names, and fails before writing anything when none is set. An empty `VERCTL_PR_TITLE` or `VERCTL_COMMIT_MESSAGE` now counts as unset. The `version-pr` action defaults `title` and `commit-message` to empty, so verctl's own default applies; a set `title` without a `commit-message` now becomes the commit message too ([#155](https://github.com/victor-software-house/verctl/pull/155)).
+- The crate documentation builds on docs.rs again. The public `process::run_inherit` docs linked to a private constant, which `private_intra_doc_links = "deny"` turns into an error under rustdoc, so every docs.rs build since 0.3.14 failed ([#158](https://github.com/victor-software-house/verctl/pull/158)).
+- Every long option now reads `VERCTL_<LONG>` from the environment, through ctl-core 0.6.21: `VERCTL_CONFIG`, `VERCTL_DRY_RUN`, `VERCTL_FORMAT`, and the rest. A flag on the command line wins over its variable, an empty variable is unset, and `--help` names each variable. The `version-pr`, `publish`, and `asset` actions set these variables and run the bare verb, and their `config` input defaults to empty, which means `.ctl/ver.yaml` ([#159](https://github.com/victor-software-house/verctl/pull/159)).
+
 ## verctl 0.4.5
 
 ### Changed
