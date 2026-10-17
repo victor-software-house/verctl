@@ -107,6 +107,12 @@ package's bump, or when a fragment names a package that is not in `packages`.
 `publisher: none` on a package releases it on GitHub only (tag, Release,
 assets), with no registry upload; use it for private binaries.
 
+`publish` acts on version commits: the commit that set each package's
+version. `publish --plan` lists every one whose release is incomplete
+(registry, tag, Release, assets unless `--skip-assets`), oldest first, and
+`publish` releases only the packages whose version commit is HEAD. Both
+report `nothing to release` when every release is complete.
+
 `publish` asks the registry before and after each publisher: the crates.io
 sparse index for a stock cargo package bound for crates.io, the recipe's
 `query` otherwise. A listed version is `already`; a publisher that exits zero

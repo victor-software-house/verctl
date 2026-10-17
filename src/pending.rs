@@ -110,9 +110,8 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
     } else {
         assets::plan(config, root)?.matrix.include
     };
-    let mut states = Vec::new();
-    let mut releases: BTreeMap<String, ReleaseState> = BTreeMap::new();
-    for (index, (spec, entry)) in config.packages.iter().zip(&planned.packages).enumerate() {
+    let mut found = Vec::new();
+    for (spec, entry) in config.packages.iter().zip(&planned.packages) {
         let driver = spec.resolve(config, root)?;
         let read = |raw: &str| {
             driver
@@ -121,9 +120,15 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
                 .map(|version| version.trim().to_owned())
         };
         let commit = git::version_commit(root, &root.join(&spec.path), &read)?;
-        let tag = tag_of(&planned, entry)?;
+        found.push((spec, entry, tag_of(&planned, entry)?, commit));
+    }
+    let release_commits = newest_per_tag(&found);
+    let mut states = Vec::new();
+    let mut releases: BTreeMap<String, ReleaseState> = BTreeMap::new();
+    for (index, (spec, entry, tag, _)) in found.iter().enumerate() {
+        let commit = release_commits[tag.as_str()].clone();
         let release = match releases.entry(tag.clone()) {
-            Entry::Occupied(found) => found.into_mut(),
+            Entry::Occupied(held) => held.into_mut(),
             Entry::Vacant(slot) => {
                 let state = github::release_state(token, &repo, slot.key())?;
                 slot.insert(state)
@@ -132,10 +137,10 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
         if let Some(named) = &release.tag {
             ensure!(
                 named.eq_ignore_ascii_case(&commit.sha),
-                "tag {tag} names {named}, not {}@{}'s version commit {}",
+                "tag {tag} names {named}, not the version commit {} that releases {}@{}",
+                commit.sha,
                 entry.name,
-                entry.version,
-                commit.sha
+                entry.version
             );
         }
         let listed = registry_lists(config, root, spec, entry, release)?;
@@ -143,6 +148,28 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
         states.push(state_of(entry, commit, listed, release, declared));
     }
     Ok(group(states))
+}
+
+/// The commit that releases each tag: the newest version commit among the
+/// packages under it. A shared `v{version}` tag can cover packages whose
+/// manifests reached that version in different commits, and only the newest
+/// of those has every one of them at the tagged version, so the release and
+/// its tag belong there.
+fn newest_per_tag<'a, S, E>(
+    found: &'a [(S, E, String, VersionCommit)],
+) -> BTreeMap<&'a str, VersionCommit> {
+    let mut newest: BTreeMap<&str, VersionCommit> = BTreeMap::new();
+    for (_, _, tag, commit) in found {
+        newest
+            .entry(tag.as_str())
+            .and_modify(|held| {
+                if commit.depth < held.depth {
+                    *held = commit.clone();
+                }
+            })
+            .or_insert_with(|| commit.clone());
+    }
+    newest
 }
 
 /// The tag `publish` would create for `entry`.
@@ -277,7 +304,8 @@ mod tests {
     use indoc::indoc;
 
     use super::{
-        PackageState, Pending, PendingAsset, PendingPackage, group, state_of, write_github_output,
+        PackageState, Pending, PendingAsset, PendingPackage, group, newest_per_tag, state_of,
+        write_github_output,
     };
     use crate::assets::MatrixTarget;
     use crate::git::VersionCommit;
@@ -329,6 +357,18 @@ mod tests {
             &ReleaseState::default(),
             &[],
         )
+    }
+
+    #[test]
+    fn a_shared_tag_is_released_at_its_newest_version_commit() {
+        let found = vec![
+            ((), (), "v1.0.0".to_owned(), at("old", 3)),
+            ((), (), "v1.0.0".to_owned(), at("new", 1)),
+            ((), (), "app@0.2.1".to_owned(), at("app", 2)),
+        ];
+        let newest = newest_per_tag(&found);
+        assert_eq!(newest["v1.0.0"], at("new", 1));
+        assert_eq!(newest["app@0.2.1"], at("app", 2));
     }
 
     #[test]
