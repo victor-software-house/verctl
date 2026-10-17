@@ -16,6 +16,7 @@ pub mod cli;
 /// The `.ctl/ver.yaml` schema.
 pub mod config;
 pub mod detect;
+pub mod docsrs;
 /// Reading and writing a version in a manifest.
 pub mod driver;
 /// Changeset fragments.

@@ -37,6 +37,7 @@ completion bootstrap.
 | `pin` | — | Rewrite collocated tool pins to the versions on HEAD |
 | `assets` | — | Plan or build native GitHub Release tarballs declared under `assets` |
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
+| `docs` | — | Wait for docs.rs to build each crates.io crate released at HEAD |
 
 Every long option also reads `VERCTL_<LONG>` (`VERCTL_CONFIG`,
 `VERCTL_DRY_RUN`, `VERCTL_FORMAT`): a flag wins over its variable, an empty
@@ -112,6 +113,10 @@ version. `publish --plan` lists every one whose release is incomplete
 (registry, tag, Release, assets unless `--skip-assets`), oldest first, and
 `publish` releases only the packages whose version commit is HEAD. Both
 report `nothing to release` when every release is complete.
+
+`docs` waits for docs.rs to build each crates.io library crate released at
+HEAD and fails on a build that failed or never arrived (`--timeout`, minutes,
+default 60).
 
 `publish` asks the registry before and after each publisher: the crates.io
 sparse index for a stock cargo package bound for crates.io, the recipe's

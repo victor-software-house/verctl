@@ -223,19 +223,18 @@ the run changed anything.
 ### 2.4 The docs.rs build
 
 `verctl docs` takes the packages released at HEAD whose publish target is
-crates.io (section 2.1) and that have a library target as Cargo resolves it
-(a target of a library kind in `cargo metadata --no-deps`, which counts
-`src/lib.rs` found by auto-discovery; docs.rs documents no binary-only
-crate). It checks each such package only when the tag `tags.template` names
-for that package's version at HEAD exists on `origin` and names HEAD: the
-shared `v{version}` tag, or the package's own tag when the template has
-`{name}`. verctl reads it with `git ls-remote --tags origin
-refs/tags/<tag> 'refs/tags/<tag>^{}'`, never from local refs: the `docs`
-job's checkout fetched no tags, and the `publish` job pushed the tag from
-another runner. It matches the full ref name, because ls-remote matches a
-pattern against the tail of a ref, and compares HEAD with the peeled
-`^{}` commit when the tag is annotated, because the plain ref of an
-annotated tag names the tag object. `verctl publish`
+crates.io (section 2.1) and that have a library target as Cargo resolves it:
+an explicit `[lib]` table, or `src/lib.rs` found by target auto-discovery
+unless `package.autolib` is `false`. docs.rs documents no binary-only crate.
+verctl applies Cargo's documented rule itself rather than running
+`cargo metadata`, so the `docs` job needs no Cargo. It checks each such
+package only when the tag `tags.template` names for that package's version
+at HEAD names HEAD on GitHub: the shared `v{version}` tag, or the package's
+own tag when the template has `{name}`. verctl reads the tag through the
+GitHub API, peeling an annotated tag to its commit, never from local refs:
+the `docs` job's checkout fetched no tags, the `publish` job pushed the tag
+from another runner, and the API needs no git credentials in the checkout.
+`verctl publish`
 creates tags only after the registry lists every version (section 2.1), so
 the tag is the record that the publish happened, and no read of a lagging
 index decides it. A crate that reached crates.io while another package
