@@ -234,8 +234,9 @@ comes first.
 release tag names HEAD, polling every 30 seconds for `--timeout` minutes
 (default 60, `VERCTL_TIMEOUT`). It fails naming each crate docs.rs failed
 to build or had not built in time; a failed build stays failed for that
-version, so the fix is the next patch release. It needs a GitHub token to
-read the tag.
+version, so the fix is the next patch release. docs.rs reports a running
+build and a failed one alike, so a failed build fails the job only when
+the timeout runs out. It needs a GitHub token to read the tag.
 
 Tag names come from `tags.template` (default `v{version}`). The
 placeholders are `{version}` and `{name}` — the same vocabulary
