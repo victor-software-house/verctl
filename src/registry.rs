@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use semver::Version;
 use toml_edit::{DocumentMut, Item};
 
@@ -265,10 +265,14 @@ fn index_path(name: &str) -> String {
 ///
 /// # Errors
 ///
-/// Returns an error when `version` is not semver, the request fails, the index
-/// answers with a status other than 200 or 404, or a line in the crate's file
-/// is not a JSON version record.
+/// Returns an error when `name` is not ASCII, `version` is not semver, the
+/// request fails, the index answers with a status other than 200 or 404, or a
+/// line in the crate's file is not a JSON version record.
 pub fn crates_io_lists(base: &str, name: &str, version: &str) -> Result<bool> {
+    ensure!(
+        !name.is_empty() && name.is_ascii(),
+        "{name:?} is not a crates.io crate name"
+    );
     let wanted = Version::parse(version).with_context(|| format!("semver {version:?}"))?;
     let url = format!("{}/{}", base.trim_end_matches('/'), index_path(name));
     let body = crate::github::block(fetch_index(&url))?;
