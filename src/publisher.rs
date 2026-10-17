@@ -381,8 +381,9 @@ pub fn registry_check(
 }
 
 /// A query check whose `{name}` is the name the manifest declares, read only
-/// when the query uses it, and the package's label when the manifest is not
-/// one verctl can read a name from (`pyproject.toml`, a directory).
+/// when the query uses it. A `Cargo.toml` or `package.json` must name its
+/// package, since asking for the label instead could find another package;
+/// any other manifest (`pyproject.toml`, a directory) uses the label.
 fn query_check(
     publisher: &PublisherSpec,
     argv: &[String],
@@ -394,8 +395,12 @@ fn query_check(
     if argv.is_empty() {
         return Ok(RegistryCheck::Unchecked);
     }
-    let name = if argv.iter().any(|part| part.contains("{name}")) {
-        manifest_name(manifest).unwrap_or_else(|_| spec.name.clone())
+    let readable = matches!(
+        manifest.file_name().and_then(|name| name.to_str()),
+        Some("Cargo.toml" | "package.json")
+    );
+    let name = if readable && argv.iter().any(|part| part.contains("{name}")) {
+        manifest_name(manifest)?
     } else {
         spec.name.clone()
     };
@@ -410,7 +415,10 @@ fn query_check(
 /// `name` in `package.json`, which is what the registry knows it by.
 fn manifest_name(manifest: &Path) -> Result<String> {
     let raw = std::fs::read_to_string(manifest).with_context(|| manifest.display().to_string())?;
-    let name = if manifest.extension().is_some_and(|ext| ext == "json") {
+    let name = if manifest
+        .file_name()
+        .is_some_and(|name| name == "package.json")
+    {
         serde_json::from_str::<serde_json::Value>(&raw)
             .with_context(|| manifest.display().to_string())?
             .get("name")
