@@ -90,7 +90,13 @@ workflow declares, which is why they are inputs to nothing else.
    over `commits` with `max-parallel: 1` and `fail-fast: true`, so one run
    releases every pending version commit in history order and stops at the
    first that fails. Each leg checks out its commit and runs
-   `verctl publish`. Concurrency group `verctl-publish`, never cancelled.
+   `verctl publish`. Concurrency group `verctl-publish` with
+   `cancel-in-progress: false`, so a running leg is never cancelled. GitHub
+   keeps one pending job per group, so a leg still waiting when a newer
+   run's leg arrives is cancelled; the newer run planned every incomplete
+   commit itself, so it publishes that commit, and the older run's `propose`
+   is skipped. Workflow-level concurrency would not avoid this (it keeps one
+   pending run the same way) and would make `plan` and `propose` wait too.
 3. `assets` runs after `publish` when `inputs.assets` is true and the matrix
    is not empty, one job per commit and target, each at its commit.
 4. `docs` runs after `publish` finishes, failed or not (`!cancelled()`), when

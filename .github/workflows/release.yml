@@ -160,7 +160,12 @@ jobs:
     permissions:
       contents: write # creates the release tag and the GitHub Release
     # One run releases every pending version commit, oldest first, and stops
-    # at the first that fails. A publish is never cancelled half way.
+    # at the first that fails. A running leg is never cancelled half way.
+    # GitHub keeps one pending job per group, so a leg still waiting when a
+    # newer run's leg arrives is cancelled. Nothing is lost: the newer run
+    # planned every incomplete commit itself, so it publishes the cancelled
+    # leg's commit, and reports a commit the running leg finished as already
+    # done. The older run's propose is skipped; the newer run proposes.
     strategy:
       max-parallel: 1
       fail-fast: true
