@@ -108,19 +108,22 @@ not `changesets/action`. The workflow already has
 
 Do not hand-edit versions. `verctl check --versions` compares each
 declared manifest to the merge-base of HEAD and the default branch.
-It fails when they differ. Exempt only on the `version-packages`
+It fails when they differ. Exempt only on a `verctl/release/<base>`
 branch locally, or when the GitHub event carries the Version PR
 label (`verctl:version` by default, `prepare.version_label`).
 `prepare --pr` applies that label. Not `GITHUB_HEAD_REF`. CI
 does not skip. A fragment-only commit does not change versions.
 
-`auto-merge: true` on `actions/version-pr` enables GitHub auto-merge on the
-Version PR, as a squash titled `<title> (#<number>)` with the PR description
-as body. GitHub merges once the base branch's required checks pass. The action
-fails when no ruleset on the base branch requires a status check, because GitHub would
-merge at once, and when `token` is `GITHUB_TOKEN`, because a merge made with
-it starts no publish workflow. Pass a GitHub App token. Cancel one Version
-PR's auto-merge with `gh pr merge --disable-auto <number>`.
+`prepare --pr --auto-merge` (`VERCTL_AUTO_MERGE`, or `auto-merge: true` on
+`actions/version-pr`) enables GitHub auto-merge on the Version PR, as a
+squash titled `<title> (#<number>)` with the PR description as body. GitHub
+merges once the base branch's required checks pass. Before it writes
+anything, verctl fails when no ruleset on the base branch requires a status
+check, because GitHub would merge at once, and when its token equals
+`VERCTL_JOB_TOKEN` (the action sets it to the job's `GITHUB_TOKEN`), because
+a merge made with that token starts no publish workflow. Pass a GitHub App
+token. Cancel one Version PR's auto-merge with
+`gh pr merge --disable-auto <number>`.
 
 This repo compiles itself: `mise.toml` holds the toolchain, and
 `mise run ver` runs this checkout. `release` is the published
@@ -140,8 +143,8 @@ lock`.
 manifest), and consumes fragments (same as `changeset version`).
 `prepare.after` is one argv run after bumps; `prepare.stage`
 lists extra globs that command may write. Any other dirty path
-fails. `--pr` also opens or force-updates `version-packages` (body is the
-changelog). The PR targets `GITHUB_REF_NAME`, else `VERCTL_DEFAULT_BRANCH`,
+fails. `--pr` also opens or force-updates `verctl/release/<base>` (body is
+the changelog), where `<base>` is the branch the PR targets. The PR targets `GITHUB_REF_NAME`, else `VERCTL_DEFAULT_BRANCH`,
 else the branch `origin/HEAD` names; with none of them, `--pr` fails
 rather than guess `main`. Title and commit message default to
 `chore(release): version packages`; `VERCTL_PR_TITLE` and
@@ -231,7 +234,9 @@ same commit is a no-op.
 
 Happy path after the Version PR merges is
 `victor-software-house/verctl/actions/publish`. It runs when the
-`version-packages` PR is merged. Native tarballs are a second job,
+Version PR from `verctl/release/<base>` is merged. verctl 0.4.5 and older
+pushed `version-packages`; a workflow that tests the head branch accepts
+both until that last Version PR has merged. Native tarballs are a second job,
 only when an `assets` target is declared. `verctl assets` prints the
 matrix; `--build` + `--upload` is `actions/asset`. Publish pushes
 nothing but the tag. `pins` are rewritten by `prepare`, on the
