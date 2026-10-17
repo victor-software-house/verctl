@@ -217,8 +217,17 @@ pub fn run_pending(
                 .any(|package| package.name == entry.name)
         })
         .collect();
-    let entries: Vec<PublishEntry> = selected.iter().map(|(_, entry)| (*entry).clone()).collect();
-    let tags = tags_for(config, &entries)?;
+    let tags: Vec<&TagPlan> = planned
+        .tags
+        .iter()
+        .filter(|tag| {
+            tag.packages.iter().any(|named| {
+                here.packages
+                    .iter()
+                    .any(|package| package.name == named.name)
+            })
+        })
+        .collect();
     let mut packages = Vec::new();
     for (spec, entry) in selected {
         if entry.argv.is_empty() {
@@ -237,7 +246,7 @@ pub fn run_pending(
     let repo = github::repo(root)?;
     let sha = git::head_sha(root)?;
     let mut releases = Vec::new();
-    for tag in &tags {
+    for tag in tags {
         let shipped = tag.packages.iter().any(|entry| {
             !entry.argv.is_empty()
                 && packages
