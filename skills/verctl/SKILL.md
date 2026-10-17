@@ -56,7 +56,9 @@ ungrouped one goes under Changed. Changelog Markdown is rendered with minijinja.
 the pull request or commit that added its fragment. List maintainers and
 Apps in `changelog.internal_authors`; only an unlisted person whose pull
 request comes from a fork gets a byline. Consumers use
-`victor-software-house/verctl/actions/version-pr`, not changesets/action.
+verctl's reusable workflow (`.github/workflows/release.yml`, called from a
+thin caller), not changesets/action; its steps run `mise run ver <verb>`
+with settings in `env:`.
 Do not assemble changelog strings in ad-hoc Rust. Do not add a Node adapter.
 
 `prepare --pr` opens the Version PR against `GITHUB_REF_NAME`, else
