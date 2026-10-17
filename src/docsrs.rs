@@ -48,6 +48,10 @@ pub struct DocsLine {
     pub version: String,
     /// What docs.rs reported.
     pub status: DocsStatus,
+    /// For a crate still unbuilt at the deadline, the error the last poll
+    /// hit, if it hit one: docs.rs was unreachable or answered with a
+    /// server error, so "unbuilt" may mean "could not ask".
+    pub last_error: Option<String>,
 }
 
 /// A crate version to ask docs.rs about.
@@ -69,12 +73,12 @@ struct Wanted {
 /// # Errors
 ///
 /// Returns an error when no token is set, the plan, a manifest, or a tag
-/// cannot be read, a docs.rs request fails, or any crate's build failed or
-/// was still missing when `timeout` ran out.
+/// cannot be read, or any crate's build failed or was still missing when
+/// `timeout` ran out, with the last docs.rs error when polling hit one.
 pub fn run(config: &Config, root: &Path, timeout: Duration) -> Result<Vec<DocsLine>> {
     let token = release::resolve_token()?;
     let wanted = released_crates(config, root, &token)?;
-    let lines = wait_built(DOCS_RS, &wanted, timeout, POLL_EVERY)?;
+    let lines = wait_built(DOCS_RS, &wanted, timeout, POLL_EVERY);
     let bad: Vec<String> = lines
         .iter()
         .filter(|line| line.status != DocsStatus::Built)
@@ -84,7 +88,10 @@ pub fn run(config: &Config, root: &Path, timeout: Duration) -> Result<Vec<DocsLi
                 DocsStatus::Failed => "failed",
                 DocsStatus::Unbuilt => "unbuilt",
             };
-            format!("{}@{} {status}", line.name, line.version)
+            match &line.last_error {
+                Some(error) => format!("{}@{} {status} ({error})", line.name, line.version),
+                None => format!("{}@{} {status}", line.name, line.version),
+            }
         })
         .collect();
     if !bad.is_empty() {
@@ -157,20 +164,23 @@ pub fn has_library(manifest: &Path) -> Result<bool> {
 
 /// Poll docs.rs under `base` for each crate until every one has a status or
 /// `timeout` runs out, pausing `poll` between rounds.
-fn wait_built(
-    base: &str,
-    wanted: &[Wanted],
-    timeout: Duration,
-    poll: Duration,
-) -> Result<Vec<DocsLine>> {
+///
+/// A failed request counts as "not built yet" for that round: over a wait of
+/// up to an hour, one 502 or one slow answer from docs.rs must not fail a
+/// build docs.rs later finishes. The last error stays on the line, so a crate
+/// still unbuilt at the deadline says whether docs.rs could be asked at all.
+fn wait_built(base: &str, wanted: &[Wanted], timeout: Duration, poll: Duration) -> Vec<DocsLine> {
     let deadline = Instant::now() + timeout;
-    let mut remaining: Vec<&Wanted> = wanted.iter().collect();
+    let mut remaining: Vec<(&Wanted, Option<String>)> = wanted
+        .iter()
+        .map(|crate_version| (crate_version, None))
+        .collect();
     let mut lines = Vec::new();
     loop {
         let mut unbuilt = Vec::new();
-        for crate_version in remaining {
-            match status(base, &crate_version.name, &crate_version.version)? {
-                Some(built) => lines.push(DocsLine {
+        for (crate_version, _) in remaining {
+            match status(base, &crate_version.name, &crate_version.version) {
+                Ok(Some(built)) => lines.push(DocsLine {
                     name: crate_version.name.clone(),
                     version: crate_version.version.clone(),
                     status: if built {
@@ -178,8 +188,10 @@ fn wait_built(
                     } else {
                         DocsStatus::Failed
                     },
+                    last_error: None,
                 }),
-                None => unbuilt.push(crate_version),
+                Ok(None) => unbuilt.push((crate_version, None)),
+                Err(error) => unbuilt.push((crate_version, Some(format!("{error:#}")))),
             }
         }
         remaining = unbuilt;
@@ -189,12 +201,17 @@ fn wait_built(
         }
         std::thread::sleep(poll.min(deadline - now));
     }
-    lines.extend(remaining.into_iter().map(|crate_version| DocsLine {
-        name: crate_version.name.clone(),
-        version: crate_version.version.clone(),
-        status: DocsStatus::Unbuilt,
-    }));
-    Ok(lines)
+    lines.extend(
+        remaining
+            .into_iter()
+            .map(|(crate_version, last_error)| DocsLine {
+                name: crate_version.name.clone(),
+                version: crate_version.version.clone(),
+                status: DocsStatus::Unbuilt,
+                last_error,
+            }),
+    );
+    lines
 }
 
 /// docs.rs's build result for one crate version: `None` while it has not
@@ -264,11 +281,9 @@ mod tests {
 
     async fn wait(server: &MockServer, timeout: Duration) -> DocsStatus {
         let base = server.uri();
-        tokio::task::spawn_blocking(move || {
-            wait_built(&base, &demo(), timeout, Duration::ZERO).unwrap()
-        })
-        .await
-        .unwrap()[0]
+        tokio::task::spawn_blocking(move || wait_built(&base, &demo(), timeout, Duration::ZERO))
+            .await
+            .unwrap()[0]
             .status
     }
 
@@ -300,6 +315,27 @@ mod tests {
             .and(path(STATUS))
             .respond_with(ResponseTemplate::new(404))
             .up_to_n_times(2)
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(STATUS))
+            .respond_with(answer(true))
+            .mount(&server)
+            .await;
+        assert_eq!(
+            wait(&server, Duration::from_secs(5)).await,
+            DocsStatus::Built
+        );
+    }
+
+    #[tokio::test]
+    async fn a_server_error_is_retried_until_the_build_arrives() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(STATUS))
+            .respond_with(ResponseTemplate::new(502))
+            .up_to_n_times(1)
             .with_priority(1)
             .mount(&server)
             .await;
