@@ -739,6 +739,26 @@ mod tests {
         assert!(format!("{error:#}").contains("#12"), "{error:#}");
     }
 
+    /// GitHub answers a refused mutation with HTTP 200, a null result, and an
+    /// `errors` array; that is a failure, not a quiet success.
+    #[tokio::test]
+    async fn a_partial_graphql_response_fails_auto_merge() {
+        let server = MockServer::start().await;
+        version_pr().mount(&server).await;
+        Mock::given(method("POST"))
+            .and(path("/graphql"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "enablePullRequestAutoMerge": null },
+                "errors": [{ "message": "Auto merge is not allowed for this repository" }]
+            })))
+            .mount(&server)
+            .await;
+        let error = super::enable_auto_merge_with(&crab(&server.uri()), &repo(), 12)
+            .await
+            .unwrap_err();
+        assert!(format!("{error:#}").contains("#12"), "{error:#}");
+    }
+
     #[test]
     fn rejects_non_github() {
         assert!(parse_remote("https://gitlab.com/acme/app.git").is_err());

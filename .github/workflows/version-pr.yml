@@ -55,7 +55,9 @@ jobs:
       # the Version PR still opens and updates, but never merges itself, so a
       # person merges it when the hold ends. Delete the variable to resume.
       # Auto-merge enabled before the hold survives later pushes, so the hold
-      # also turns it off on the open Version PR.
+      # also turns it off on the open Version PR, from either head branch:
+      # verctl 0.4.5 pushes version-packages, later releases
+      # verctl/release/<base>.
       - name: Hold the release
         if: vars.VERCTL_RELEASE_HOLD == 'true'
         env:
@@ -64,7 +66,9 @@ jobs:
           BASE: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
-          number=$(gh pr list --repo "${REPO}" --head version-packages --base "${BASE}" --state open --json number --jq '.[0].number // empty')
-          if [ -n "${number}" ] && [ "$(gh pr view "${number}" --repo "${REPO}" --json autoMergeRequest --jq '.autoMergeRequest != null')" = true ]; then
-            gh pr merge "${number}" --repo "${REPO}" --disable-auto
-          fi
+          for head in "verctl/release/${BASE}" version-packages; do
+            number=$(gh pr list --repo "${REPO}" --head "${head}" --base "${BASE}" --state open --json number --jq '.[0].number // empty')
+            if [ -n "${number}" ] && [ "$(gh pr view "${number}" --repo "${REPO}" --json autoMergeRequest --jq '.autoMergeRequest != null')" = true ]; then
+              gh pr merge "${number}" --repo "${REPO}" --disable-auto
+            fi
+          done
