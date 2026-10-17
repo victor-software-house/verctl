@@ -50,6 +50,7 @@ pub enum Command {
 
 /// Arguments of `ci`.
 #[derive(Debug, Args)]
+#[non_exhaustive]
 pub struct CiArgs {
     /// Package map. Defaults to .ctl/ver.yaml in the current directory.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
@@ -61,6 +62,7 @@ pub struct CiArgs {
 
 /// Arguments of `publish` and `pin`.
 #[derive(Debug, Args)]
+#[non_exhaustive]
 pub struct PublishArgs {
     /// Package map. Defaults to .ctl/ver.yaml in the current directory.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
@@ -68,10 +70,20 @@ pub struct PublishArgs {
     /// The shared `--dry-run` flag.
     #[command(flatten)]
     pub dry: DryRunArgs,
+    /// List every version commit whose release is incomplete, oldest first,
+    /// and write `commits`, `pending`, and `assets` to `$GITHUB_OUTPUT` when
+    /// it is set. Publishes nothing. `publish` only.
+    #[arg(long)]
+    pub plan: bool,
+    /// Leave declared assets out of the completeness check, for a workflow
+    /// that builds none. `publish` only.
+    #[arg(long)]
+    pub skip_assets: bool,
 }
 
 /// Arguments of `assets`.
 #[derive(Debug, Args)]
+#[non_exhaustive]
 pub struct AssetsArgs {
     /// Package map. Defaults to .ctl/ver.yaml in the current directory.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
@@ -101,6 +113,7 @@ impl PublishArgs {
 
 /// Arguments of `status`.
 #[derive(Debug, Args)]
+#[non_exhaustive]
 pub struct StatusArgs {
     /// Directory of fragments. Defaults to .changeset.
     #[arg(short = 'd', long, default_value = ".changeset", value_hint = clap::ValueHint::DirPath)]
@@ -109,6 +122,7 @@ pub struct StatusArgs {
 
 /// Arguments of `check`.
 #[derive(Debug, Args)]
+#[non_exhaustive]
 pub struct CheckArgs {
     /// Directory of fragments. Defaults to .changeset.
     #[arg(short = 'd', long, default_value = ".changeset", value_hint = clap::ValueHint::DirPath)]
@@ -123,6 +137,7 @@ pub struct CheckArgs {
 
 /// Arguments of `prepare`.
 #[derive(Debug, Args)]
+#[non_exhaustive]
 pub struct PrepareArgs {
     /// Directory of fragments. Defaults to .changeset.
     #[arg(short = 'd', long, default_value = ".changeset", value_hint = clap::ValueHint::DirPath)]

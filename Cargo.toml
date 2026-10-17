@@ -22,6 +22,11 @@ rustdoc-args = ["--cap-lints", "warn"]
 # signature is on crates.io, because the check then compares against it.
 [package.metadata.cargo-semver-checks.lints]
 function_parameter_count_changed = "warn"
+# VER-066 adds flags, so the clap argument structs in `cli` gain fields, and
+# marks those structs `#[non_exhaustive]` so later flags are not breaking.
+# Only verctl's own binary builds them. VER-065 removes these with the rest.
+constructible_struct_adds_field = "warn"
+struct_marked_non_exhaustive = "warn"
 
 [lints.rust]
 unsafe_code = "forbid"

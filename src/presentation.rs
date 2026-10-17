@@ -256,13 +256,58 @@ impl Present for PrepareReport {
 
 #[derive(Serialize)]
 pub(super) struct PublishReport {
+    pub(super) outcome: publish::Outcome,
     pub(super) packages: Vec<publish::PublishLine>,
     pub(super) releases: Vec<String>,
+    /// Incomplete packages left for the run at their own version commit.
+    pub(super) waiting: Vec<ReleaseRow>,
+    /// `--plan`: every incomplete package, at its version commit.
+    pub(super) pending: Vec<ReleaseRow>,
     pub(super) dry_run: bool,
+}
+
+/// A package at the version commit that releases it.
+#[derive(Serialize)]
+pub(super) struct ReleaseRow {
+    pub(super) name: String,
+    pub(super) version: String,
+    pub(super) commit: String,
+}
+
+impl From<&publish::Waiting> for ReleaseRow {
+    fn from(waiting: &publish::Waiting) -> Self {
+        Self {
+            name: waiting.name.clone(),
+            version: waiting.version.clone(),
+            commit: waiting.commit.clone(),
+        }
+    }
+}
+
+fn release_rows(rows: &[ReleaseRow]) -> Table {
+    rows.iter().fold(
+        Table::new(vec!["name", "version", "commit"]).id_column(0),
+        |table, row| {
+            table.row(vec![
+                row.name.clone(),
+                row.version.clone(),
+                row.commit.clone(),
+            ])
+        },
+    )
 }
 
 impl Present for PublishReport {
     fn present(&self) -> Document {
+        match self.outcome {
+            publish::Outcome::NothingToRelease => {
+                return Document::new().fields(Fields::new().row("outcome", "nothing to release"));
+            }
+            publish::Outcome::Released => {}
+        }
+        if !self.pending.is_empty() {
+            return Document::new().table(release_rows(&self.pending));
+        }
         if self.packages.is_empty() && self.releases.is_empty() {
             return Document::new().fields(Fields::new().row("no-op", "nothing to publish"));
         }
@@ -292,6 +337,9 @@ impl Present for PublishReport {
         let mut document = Document::new();
         if !self.packages.is_empty() {
             document = document.table(table);
+        }
+        if !self.waiting.is_empty() {
+            document = document.table(release_rows(&self.waiting));
         }
         if fields.is_empty() {
             document
@@ -367,11 +415,62 @@ impl Present for CiReport {
 mod tests {
     use ctl_core::prelude::{ColorMode, OutputFormat, Stream, View};
     use indoc::formatdoc;
+    use verctl::publish;
 
     use super::{
-        CheckReport, PrepareReport, PublishReport, Report, StatusFragment, StatusPackage,
-        StatusReport,
+        CheckReport, PrepareReport, PublishReport, ReleaseRow, Report, StatusFragment,
+        StatusPackage, StatusReport,
     };
+
+    fn publish_report(outcome: publish::Outcome, pending: Vec<ReleaseRow>) -> Report {
+        Report::Publish(PublishReport {
+            outcome,
+            packages: Vec::new(),
+            releases: Vec::new(),
+            waiting: Vec::new(),
+            pending,
+            dry_run: false,
+        })
+    }
+
+    #[test]
+    fn nothing_to_release_says_so_in_both_shapes() {
+        let report = publish_report(publish::Outcome::NothingToRelease, Vec::new());
+        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+            .width(80)
+            .capture(&report)
+            .expect("pretty");
+        assert_eq!(
+            pretty.text(),
+            formatdoc! {"
+                outcome  nothing to release
+            "},
+        );
+        let json = View::new(OutputFormat::Json, ColorMode::Never)
+            .width(80)
+            .capture(&report)
+            .expect("json");
+        let value: serde_json::Value = serde_json::from_str(json.text()).expect("JSON");
+        assert_eq!(value["outcome"], "nothing-to-release");
+    }
+
+    #[test]
+    fn a_plan_lists_each_package_at_its_version_commit() {
+        let report = publish_report(
+            publish::Outcome::Released,
+            vec![ReleaseRow {
+                name: "core".into(),
+                version: "0.3.1".into(),
+                commit: "aaa".into(),
+            }],
+        );
+        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+            .width(80)
+            .capture(&report)
+            .expect("pretty");
+        assert!(pretty.text().contains("core"), "{}", pretty.text());
+        assert!(pretty.text().contains("aaa"), "{}", pretty.text());
+    }
 
     #[test]
     fn check_report_keeps_pretty_and_json_shapes() {
@@ -424,8 +523,11 @@ mod tests {
     fn release_urls_stay_whole_at_the_fallback_width() {
         let url = "https://github.com/victor-software-house/example-repository/releases/tag/example-package@12.34.56";
         let report = Report::Publish(PublishReport {
+            outcome: publish::Outcome::Released,
             packages: Vec::new(),
             releases: vec![url.into()],
+            waiting: Vec::new(),
+            pending: Vec::new(),
             dry_run: false,
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
@@ -442,8 +544,11 @@ mod tests {
     #[test]
     fn releases_without_packages_have_no_empty_table() {
         let report = Report::Publish(PublishReport {
+            outcome: publish::Outcome::Released,
             packages: Vec::new(),
             releases: vec!["https://example.test/v1".into()],
+            waiting: Vec::new(),
+            pending: Vec::new(),
             dry_run: false,
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
