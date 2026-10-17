@@ -79,6 +79,8 @@ pub struct PendingAsset {
     pub id: String,
     /// The machine labels the job runs on.
     pub labels: Vec<String>,
+    /// The release tag the tarball is uploaded to.
+    pub tag: String,
 }
 
 /// One package's state, before grouping by commit.
@@ -107,10 +109,11 @@ struct PackageState {
 pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> Result<Pending> {
     let planned = publish::plan(config, root)?;
     let repo = github::repo(root)?;
-    let targets = if skip_assets || config.assets.is_none() {
-        Vec::new()
+    let (targets, assets_tag) = if skip_assets || config.assets.is_none() {
+        (Vec::new(), String::new())
     } else {
-        assets::plan(config, root)?.matrix.include
+        let plan = assets::plan(config, root)?;
+        (plan.matrix.include, plan.tag)
     };
     let mut found = Vec::new();
     for (spec, entry) in config.packages.iter().zip(&planned.packages) {
@@ -151,7 +154,7 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
         let declared: &[MatrixTarget] = if index == 0 { &targets } else { &[] };
         states.push(state_of(entry, commit, listed, release, declared));
     }
-    Ok(group(states))
+    Ok(group(states, &assets_tag))
 }
 
 /// The version `driver` reads from one revision of a manifest, or `None` when
@@ -244,8 +247,9 @@ struct AtCommit {
     missing: Vec<MatrixTarget>,
 }
 
-/// Group incomplete packages by version commit, oldest commit first.
-fn group(states: Vec<PackageState>) -> Pending {
+/// Group incomplete packages by version commit, oldest commit first. Assets
+/// belong to the first package, so every asset job uploads to `assets_tag`.
+fn group(states: Vec<PackageState>, assets_tag: &str) -> Pending {
     let mut by_commit: BTreeMap<String, AtCommit> = BTreeMap::new();
     for state in states.into_iter().filter(|state| !state.complete) {
         let slot = by_commit
@@ -268,6 +272,7 @@ fn group(states: Vec<PackageState>) -> Pending {
                 commit: sha.clone(),
                 id: target.id,
                 labels: target.labels,
+                tag: assets_tag.to_owned(),
             }));
         pending.commits.push(PendingCommit {
             sha,
@@ -384,10 +389,13 @@ mod tests {
 
     #[test]
     fn every_incomplete_commit_oldest_first() {
-        let pending = group(vec![
-            incomplete("app", "0.2.1", at("ccc", 0)),
-            incomplete("core", "0.3.1", at("aaa", 2)),
-        ]);
+        let pending = group(
+            vec![
+                incomplete("app", "0.2.1", at("ccc", 0)),
+                incomplete("core", "0.3.1", at("aaa", 2)),
+            ],
+            "v0.4.6",
+        );
         let shas: Vec<&str> = pending.commits.iter().map(|c| c.sha.as_str()).collect();
         assert_eq!(shas, ["aaa", "ccc"]);
         assert_eq!(
@@ -409,7 +417,7 @@ mod tests {
             &finished(&["demo-darwin-arm64.tar.gz", "demo-linux-x64.tar.gz"]),
             &declared,
         );
-        assert!(group(vec![state]).is_empty());
+        assert!(group(vec![state], "v0.4.6").is_empty());
     }
 
     #[test]
@@ -421,7 +429,7 @@ mod tests {
             &finished(&[]),
             &[],
         );
-        assert!(group(vec![state]).is_empty());
+        assert!(group(vec![state], "v0.4.6").is_empty());
     }
 
     #[test]
@@ -434,7 +442,7 @@ mod tests {
             &finished(&["demo-linux-x64.tar.gz"]),
             &declared,
         );
-        let pending = group(vec![state]);
+        let pending = group(vec![state], "v0.4.6");
         assert_eq!(pending.commits.len(), 1);
         assert_eq!(
             pending.assets,
@@ -442,6 +450,7 @@ mod tests {
                 commit: "aaa".into(),
                 id: "darwin-arm64".into(),
                 labels: vec!["darwin-arm64-runner".into()],
+                tag: "v0.4.6".into(),
             }]
         );
     }
@@ -455,14 +464,14 @@ mod tests {
             &finished(&[]),
             &[],
         );
-        assert!(!group(vec![state]).is_empty());
+        assert!(!group(vec![state], "v0.4.6").is_empty());
     }
 
     #[test]
     fn the_plan_writes_commits_pending_and_assets() {
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("output");
-        let pending = group(vec![incomplete("demo", "0.4.6", at("aaa", 1))]);
+        let pending = group(vec![incomplete("demo", "0.4.6", at("aaa", 1))], "v0.4.6");
         write_github_output(&pending, &path).unwrap();
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),

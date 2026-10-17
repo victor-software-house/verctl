@@ -3,7 +3,11 @@
 Stack-agnostic Version PR CLI. Fragments are Changesets YAML.
 Changelogs are minijinja (Jinja2); entries link their pull request and credit
 no maintainer.
-Ship `actions/version-pr`, `actions/publish`, and `actions/asset`.
+Ship the reusable workflow `.github/workflows/release.yml`, and
+`actions/version-pr`, `actions/publish`, and `actions/asset` for
+hand-written workflows. This repository releases through
+`.github/workflows/self-release.yml`, which calls its own reusable workflow
+at the same commit; there `mise run ver` builds the verctl being released.
 `changelog.ts` is not used.
 
 Operator contract: `verctl instructions` (installed with the binary) and
@@ -143,11 +147,10 @@ CHANGELOG. `prepare --pr` is the Version PR. `verctl check --versions`
 compares each manifest to the merge-base of HEAD and the default
 branch. Exempt on a `verctl/release/<base>` branch locally, or when the
 GitHub event has the Version PR label (`verctl:version`). CI does not skip.
-This repository's Version PR workflow asks verctl for auto-merge
-(`VERCTL_AUTO_MERGE`), except while the repository variable
-`VERCTL_RELEASE_HOLD` is `true`: then it does not ask, and turns off
-auto-merge already on the open Version PR, so the release waits for a
-person to merge it. Delete the variable to resume.
+This repository's self-release caller passes `auto-merge: true`, except
+while the repository variable `VERCTL_RELEASE_HOLD` is `true`: then the
+Version PR opens and updates but never merges itself, so the release waits
+for a person to merge it. Delete the variable to resume.
 mise: the repository setup comes from the shared Copier template
 (kind `rust-crate`, layout `crate`); `.copier-answers.yml` records its
 tag and answers. Take a new tag with `copier update --defaults` and
@@ -167,13 +170,15 @@ pending fragments; never edit `check:repo`. This repo's other tasks live in
 stays on hosted runners; `.rumdl.toml` and `.typos.toml` carry local
 exceptions.
 `mise.dev.toml` holds only the hook tools and arms the git hooks on
-`mise install`. CI and the release lanes run `MISE_ENV=ci`.
-`mise.release.toml` is the published tarball. `.miserc.toml`
+`mise install`. CI runs `MISE_ENV=ci`. `self-release.yml` builds
+verctl once per platform in its `build` job and calls `release.yml`
+with `verctl-artifact: verctl` and `MISE_ENV=ci,release`, so every
+release job runs that build; `mise.release.toml` is only a `ver`
+task that runs `verctl` from PATH, with no pin. Build verctl from
+source only there, never in every job. `.miserc.toml`
 defaults local `MISE_ENV` to `dev`. `prepare`
 rewrites `pins` onto the Version PR commit, because the tag names
-that commit and publish pushes nothing but the tag. This repo's own
-bootstrap pin in `mise.release.toml` is deliberately not a `pins`
-entry: it must name a tarball that already exists. Actions run
+that commit and publish pushes nothing but the tag. Actions run
 `verctl` from PATH.
 `publish` is exact-SHA plus a matching per-package CHANGELOG heading.
 Cargo and bun are stock recipes, not the architecture. Do not name
