@@ -256,4 +256,27 @@ mod tests {
             assert!(cli.format.format.is_json(), "{args:?}");
         }
     }
+
+    /// The release workflow sets these and runs the bare verb, so each must
+    /// read its variable at subcommand depth.
+    #[test]
+    fn publish_flags_read_their_variables() {
+        let command = Cli::command();
+        let publish = command.find_subcommand("publish").expect("publish");
+        for (id, variable) in [
+            ("plan", "VERCTL_PLAN"),
+            ("skip_assets", "VERCTL_SKIP_ASSETS"),
+            ("config", "VERCTL_CONFIG"),
+        ] {
+            let arg = publish
+                .get_arguments()
+                .find(|arg| arg.get_id() == id)
+                .unwrap_or_else(|| panic!("{id}"));
+            assert_eq!(
+                arg.get_env(),
+                Some(OsString::from(variable).as_os_str()),
+                "{id}"
+            );
+        }
+    }
 }
