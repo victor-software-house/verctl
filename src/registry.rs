@@ -351,21 +351,33 @@ fn is_exit_failure(error: &anyhow::Error) -> bool {
 
 /// Ask `check` until it lists `version`, pausing for each of `delays` in turn.
 ///
+/// The publish already happened, so a failed check (an index timeout, a 5xx)
+/// counts as "not listed yet" for that round rather than failing the release;
+/// only the last round's error is reported.
+///
 /// # Errors
 ///
-/// Returns an error when a check fails, or when the registry still does not
-/// list `version` after the last pause.
+/// Returns an error when the registry still does not list `version` after the
+/// last pause, carrying the last round's check error when it had one.
 pub fn wait_listed(
     check: &RegistryCheck,
     coord: &str,
     version: &str,
     delays: &[Duration],
 ) -> Result<()> {
+    let mut last_error = None;
     for delay in delays {
         std::thread::sleep(*delay);
-        if check.lists(version)? {
-            return Ok(());
+        match check.lists(version) {
+            Ok(true) => return Ok(()),
+            Ok(false) => last_error = None,
+            Err(error) => last_error = Some(error),
         }
+    }
+    if let Some(error) = last_error {
+        return Err(error.context(format!(
+            "{coord}: the registry check failed after the publish"
+        )));
     }
     bail!("{coord}: the publisher exited zero, but the registry does not list {version}")
 }
@@ -373,13 +385,17 @@ pub fn wait_listed(
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::time::Duration;
 
     use indoc::indoc;
     use tempfile::TempDir;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use super::{CargoEnv, CargoTarget, cargo_target, crates_io_lists, index_path};
+    use super::{
+        CargoEnv, CargoTarget, RegistryCheck, cargo_target, crates_io_lists, index_path,
+        wait_listed,
+    };
 
     #[test]
     fn index_paths_follow_the_cargo_layout() {
@@ -595,5 +611,34 @@ mod tests {
         let broken = crate_dir(PLAIN);
         write_config(&broken.path().join(".cargo"), "config.toml", "[registry\n");
         assert_eq!(target(&broken, None, &no_home()), CargoTarget::Unknown);
+    }
+
+    #[test]
+    fn a_check_that_keeps_failing_is_reported_after_the_last_round() {
+        let dir = TempDir::new().unwrap();
+        let check = RegistryCheck::Query {
+            argv: vec!["verctl-test-no-such-query".to_owned()],
+            dir: dir.path().to_path_buf(),
+        };
+        let error =
+            wait_listed(&check, "demo", "1.0.0", &[Duration::ZERO, Duration::ZERO]).unwrap_err();
+        assert!(
+            format!("{error:#}").starts_with("demo: the registry check failed after the publish"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn a_version_still_unlisted_after_the_last_round_fails() {
+        let dir = TempDir::new().unwrap();
+        let check = RegistryCheck::Query {
+            argv: vec!["false".to_owned()],
+            dir: dir.path().to_path_buf(),
+        };
+        let error = wait_listed(&check, "demo", "1.0.0", &[Duration::ZERO]).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "demo: the publisher exited zero, but the registry does not list 1.0.0"
+        );
     }
 }

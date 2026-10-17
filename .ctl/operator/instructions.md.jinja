@@ -169,8 +169,8 @@ package whose publish target is crates.io (its `registry`, its manifest's
 crates.io sparse index; any other package runs its recipe's `query`
 (stock bun: `bun pm view {name}@{version} version`) in its directory. A
 listed version is `already`, and its publisher does not run. After a
-publish, `publish` asks again for about two minutes and fails unless the
-registry lists the version. A package with no check (`query: []`, or a
+publish, `publish` asks again for about two minutes, counting a failed
+check as not listed yet, and fails unless the registry lists the version. A package with no check (`query: []`, or a
 cargo package with an overridden command or another target and no `query`)
 succeeds on a zero exit or on stderr saying the version exists. GitHub Packages for bun uses a
 nearby `bunfig.toml` as `--config`. One typed report feeds ctl-core pretty,

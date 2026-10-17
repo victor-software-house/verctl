@@ -152,7 +152,10 @@ verctl decides first. When the registry has the version, the package is
 `already` and its publisher does not run. Otherwise verctl runs the publisher,
 then decides again with a bounded backoff (registry metadata can lag a
 publish by a short while), and fails unless the registry lists the version
-within that bound. The bound is a constant with its reason on it. A package
+within that bound. A check that fails during that wait (an index timeout, a
+5xx) counts as not listed for that round, because the upload already
+happened; the last round's error is reported if the bound runs out. The bound
+is a constant with its reason on it. A package
 with no registry check keeps today's rule: the publish succeeds on a zero
 exit, or on stderr that says the version already exists.
 
