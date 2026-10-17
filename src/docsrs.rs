@@ -208,7 +208,7 @@ fn wait_built(base: &str, wanted: &[Wanted], timeout: Duration, poll: Duration) 
                 Ok(Some(false)) => unbuilt.push((crate_version, Pending::Undocumented)),
                 Ok(None) => unbuilt.push((crate_version, Pending::Unlisted)),
                 Err(error) => {
-                    unbuilt.push((crate_version, Pending::Unreachable(format!("{error:#}"))))
+                    unbuilt.push((crate_version, Pending::Unreachable(format!("{error:#}"))));
                 }
             }
         }
