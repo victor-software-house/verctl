@@ -1,14 +1,19 @@
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
-use ctl_core::{ColorLong, DryRunArgs, FormatArgs};
+use ctl_core::{ColorLong, DryRunArgs, EnvPrefix, FormatArgs};
 
 /// Stack-agnostic version PRs from Changesets-format fragments.
+///
+/// `env_prefix` binds every long option, at every depth, to `VERCTL_<LONG>`,
+/// so an action or a CI step sets `env:` and runs the bare verb. A flag on the
+/// command line wins over its variable, and an empty variable is unset.
 #[derive(Debug, Parser)]
 #[command(
     version,
     about = "Stack-agnostic version PRs from Changesets-format fragments",
-    arg_required_else_help = true
+    arg_required_else_help = true,
+    env_prefix = "VERCTL"
 )]
 pub struct Cli {
     /// Output format selection shared by every command.
@@ -153,14 +158,24 @@ impl PrepareArgs {
 
 #[cfg(test)]
 mod tests {
-    use clap::Parser;
+    use std::ffi::OsString;
+
+    use clap::{CommandFactory, FromArgMatches};
 
     use super::{Cli, Command};
+
+    /// Parse as `App` does: variables the command line overrules are unbound
+    /// first, so an ambient `VERCTL_*` cannot change what a test asserts.
+    fn parse(words: &[&str]) -> Result<Cli, clap::Error> {
+        let raw: Vec<OsString> = words.iter().map(OsString::from).collect();
+        let command = ctl_core::flags::env_under_flags(Cli::command(), &raw)?;
+        Cli::from_arg_matches(&command.try_get_matches_from(raw)?)
+    }
 
     fn prepare_from(args: &[&str]) -> super::PrepareArgs {
         let mut words = vec!["verctl", "prepare"];
         words.extend_from_slice(args);
-        match Cli::try_parse_from(words).expect("parse") {
+        match parse(&words).expect("parse") {
             Cli {
                 command: Command::Prepare(args),
                 ..
@@ -200,7 +215,7 @@ mod tests {
 
     #[test]
     fn check_versions_flag_parses() {
-        let cli = Cli::try_parse_from(["verctl", "check", "--versions"]).expect("parse");
+        let cli = parse(&["verctl", "check", "--versions"]).expect("parse");
         let Command::Check(args) = cli.command else {
             panic!("expected check");
         };
@@ -222,7 +237,7 @@ mod tests {
             ["verctl", "status", "--format", "json"].as_slice(),
             ["verctl", "-f", "json", "pin"].as_slice(),
         ] {
-            let cli = Cli::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
+            let cli = parse(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
             assert!(cli.format.format.is_json(), "{args:?}");
         }
     }

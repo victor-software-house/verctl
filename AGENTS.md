@@ -119,6 +119,16 @@ report and never contains ANSI. Packages remain a table (`name` / `version` /
 One token per line. Flag+value stay together (`"--cwd", "packages/pkg"`).
 Do not glue `"bun", "publish", "--tolerate-republish"` onto one line.
 
+## Flags and the environment
+
+The root parser carries ctl-core's `env_prefix = "VERCTL"`, so every long
+option reads `VERCTL_<LONG>`. The actions set `env:` and run
+`exec verctl <verb>`; no action builds argv in bash, and no input restates a
+verctl default. Integration tests start the binary through
+`tests/common::verctl()`, which removes the colour variables and every
+`VERCTL_*` variable; a test that parses `Cli` directly runs
+`ctl_core::flags::env_under_flags` first, as `App` does.
+
 ## Process and mise
 
 `process::run_inherit` for cargo / bun / rustup. No `mise exec --`.
@@ -133,6 +143,10 @@ CHANGELOG. `prepare --pr` is the Version PR. `verctl check --versions`
 compares each manifest to the merge-base of HEAD and the default
 branch. Exempt on `version-packages` locally, or when the GitHub
 event has the Version PR label (`verctl:version`). CI does not skip.
+This repository's Version PR workflow enables auto-merge, except while the
+repository variable `VERCTL_RELEASE_HOLD` is `true`: then it skips that step
+and turns off auto-merge already on the open Version PR, so the release waits
+for a person to merge it. Delete the variable to resume.
 mise: the repository setup comes from the shared Copier template
 (kind `rust-crate`, layout `crate`); `.copier-answers.yml` records its
 tag and answers. Take a new tag with `copier update --defaults` and

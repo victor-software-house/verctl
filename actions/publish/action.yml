@@ -13,9 +13,9 @@ inputs:
     required: false
     default: ${{ github.token }}
   config:
-    description: Path to the declarations file.
+    description: Path to the declarations file. Empty means verctl's default, `.ctl/ver.yaml`.
     required: false
-    default: .ctl/ver.yaml
+    default: ""
   dry-run:
     description: Preview only. Set to `true` to skip cargo/bun/GitHub.
     required: false
@@ -31,10 +31,4 @@ runs:
         VERCTL_CONFIG: ${{ inputs.config }}
         VERCTL_DRY_RUN: ${{ inputs.dry-run }}
         VERCTL_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-      run: |
-        set -euo pipefail
-        extra=()
-        if [ "${VERCTL_DRY_RUN}" = true ]; then
-          extra+=(--dry-run)
-        fi
-        exec verctl publish -c "${VERCTL_CONFIG}" "${extra[@]}"
+      run: exec verctl publish

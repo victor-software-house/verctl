@@ -270,7 +270,8 @@ Example consumer workflow: [`examples/workflows/version-pr.yml`](examples/workfl
 base branch's required checks pass. It needs a ruleset that requires a status check
 on that branch, and a GitHub App token in `token`.
 
-Mise owns tools. Publish uses Actions OIDC, not a PAT.
+Mise owns tools. Publish uses the registry's token secret (for crates.io,
+`CARGO_REGISTRY_TOKEN`) and the workflow's `GITHUB_TOKEN`; no PAT.
 
 A package with `publisher: none` is released on GitHub only: `publish`
 creates its tag and Release, and `assets` its tarballs, with no registry

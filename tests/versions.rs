@@ -70,20 +70,24 @@ fn is_host_actions_key(key: &str) -> bool {
     key == "CI" || key.starts_with("GITHUB_")
 }
 
-/// Everything the child may keep. Split from the environment it reads so the
-/// rule is testable against a planted one: `std::env` cannot be given a
-/// non-Unicode key without `set_var`, and `unsafe_code = "forbid"` rules that
-/// out. `vars()` would panic on such a key, so this never decodes one — a key
-/// we cannot read is not a key we are stripping.
+/// Everything the child may keep: no host Actions key, and nothing
+/// [`common::is_cleared`] strips from every verctl child, since `env_clear`
+/// followed by `envs` would otherwise put those back. Split from the
+/// environment it reads so the rule is testable against a planted one:
+/// `std::env` cannot be given a non-Unicode key without `set_var`, and
+/// `unsafe_code = "forbid"` rules that out. `vars()` would panic on such a key,
+/// so this never decodes one — a key we cannot read is not a key we are
+/// stripping.
 fn inherited(
     vars: impl IntoIterator<Item = (OsString, OsString)>,
 ) -> impl Iterator<Item = (OsString, OsString)> {
-    vars.into_iter()
-        .filter(|(key, _)| !key.to_str().is_some_and(is_host_actions_key))
+    vars.into_iter().filter(|(key, _)| {
+        !key.to_str().is_some_and(is_host_actions_key) && !common::is_cleared(key)
+    })
 }
 
 fn check_cmd(root: &Path) -> std::process::Command {
-    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"));
+    let mut cmd = common::verctl();
     cmd.env_clear()
         .envs(inherited(std::env::vars_os()))
         .current_dir(root)
@@ -243,6 +247,11 @@ fn actions_keys_are_dropped_and_unreadable_keys_survive() {
             OsString::from("/event.json"),
         ),
         (OsString::from("GITHUB_BASE_REF"), OsString::from("main")),
+        (
+            OsString::from("VERCTL_CONFIG"),
+            OsString::from("elsewhere.yaml"),
+        ),
+        (OsString::from("FORCE_COLOR"), OsString::from("3")),
         (opaque.clone(), OsString::from("not utf-8")),
     ];
     let kept: Vec<OsString> = inherited(planted).map(|(key, _)| key).collect();

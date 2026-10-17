@@ -8,7 +8,7 @@ use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
 
 fn publish_stdout(root: &std::path::Path) -> String {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .current_dir(root)
         .args(["publish", "--dry-run", "--color", "never"])
         .output()
@@ -165,7 +165,7 @@ fn dry_run_refuses_differing_versions_without_name() {
         "#},
     )
     .unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .current_dir(root.path())
         .args(["publish", "--dry-run", "--color", "never"])
         .output()
@@ -197,7 +197,7 @@ fn publish_without_changelog_section_fails() {
         "#},
     )
     .unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .current_dir(root.path())
         .args(["publish", "--color", "never"])
         .output()
@@ -239,7 +239,7 @@ fn publish_with_matching_changelog_asks_for_token() {
         "},
     )
     .unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .current_dir(root.path())
         .env_remove("GITHUB_TOKEN")
         .env_remove("GH_TOKEN")
