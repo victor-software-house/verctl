@@ -32,8 +32,8 @@ flag on the command line wins over its variable, and an empty variable is
 unset. `--help` names each one. An action or a CI step sets them in `env:`
 and runs the bare verb; it never rebuilds argv in a shell.
 
-Until a tagged GitHub Release exists, use a local or
-`cargo install --git` build, then `verctl`.
+Install a released tarball through mise
+(`github:victor-software-house/verctl`), or `cargo install verctl`.
 
 ## Fragments
 

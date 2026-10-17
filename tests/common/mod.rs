@@ -4,6 +4,7 @@
     reason = "each test binary uses its own subset of these fixture helpers, which fail fast"
 )]
 
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -60,22 +61,28 @@ pub(crate) fn write_demo(root: &Path) {
     .expect("frag");
 }
 
-/// The verctl binary under test, with the agent-shell colour variables and
-/// every `VERCTL_*` variable removed, so the suite passes in any shell and
-/// every flag comes from argv unless a test sets its variable back on top.
+const COLOUR: [&str; 5] = [
+    "CLICOLOR",
+    "CLICOLOR_FORCE",
+    "FORCE_COLOR",
+    "NO_COLOR",
+    "COLORTERM",
+];
+
+/// Whether no child verctl may inherit `key`: an agent-shell colour variable,
+/// or any `VERCTL_*` flag binding. Stripping them lets the suite pass in any
+/// shell, with every flag coming from argv unless a test sets its variable
+/// back on top. A key that is not UTF-8 is none of these.
+pub(crate) fn is_cleared(key: &OsStr) -> bool {
+    key.to_str()
+        .is_some_and(|key| key.starts_with("VERCTL_") || COLOUR.contains(&key))
+}
+
+/// The verctl binary under test, without any variable [`is_cleared`] names.
 pub(crate) fn verctl() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_verctl"));
-    for name in [
-        "CLICOLOR",
-        "CLICOLOR_FORCE",
-        "FORCE_COLOR",
-        "NO_COLOR",
-        "COLORTERM",
-    ] {
-        command.env_remove(name);
-    }
     for (name, _) in std::env::vars_os() {
-        if name.to_string_lossy().starts_with("VERCTL_") {
+        if is_cleared(&name) {
             command.env_remove(name);
         }
     }
