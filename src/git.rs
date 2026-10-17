@@ -1172,7 +1172,7 @@ mod tests {
         };
         let out = super::commit_branch_and_push(
             dir.path(),
-            "version-packages",
+            "verctl/release/main",
             "chore",
             "unused",
             &repo_id,
@@ -1467,11 +1467,11 @@ mod tests {
             .mount(&server)
             .await;
         let (dir, _) = fixture();
-        git(dir.path(), &["branch", "version-packages"]);
+        git(dir.path(), &["branch", "verctl/release/main"]);
         let url = format!("{}/owner/repo.git", server.uri());
         let token = "verctl-push-token-5f3a9c";
         let error = tokio::task::spawn_blocking(move || {
-            super::push(&dir.path().join(".git"), &url, "version-packages", token)
+            super::push(&dir.path().join(".git"), &url, "verctl/release/main", token)
         })
         .await
         .unwrap()
@@ -1561,7 +1561,7 @@ mod tests {
                     "-g",
                     "-1",
                     "--format=%gn <%ge>",
-                    "refs/heads/version-packages",
+                    "refs/heads/verctl/release/main",
                 ],
             ),
             configured
@@ -1614,9 +1614,16 @@ mod tests {
         let repo = super::discover(dir).unwrap();
         let workdir = super::absolute_workdir(&repo).unwrap();
         let parent = repo.head_commit().unwrap();
-        super::write_commit_on_branch(&repo, &workdir, &parent, "version-packages", "chore", paths)
-            .unwrap()
-            .map(|id| id.to_string())
+        super::write_commit_on_branch(
+            &repo,
+            &workdir,
+            &parent,
+            "verctl/release/main",
+            "chore",
+            paths,
+        )
+        .unwrap()
+        .map(|id| id.to_string())
     }
 
     fn stock() -> Vec<String> {
