@@ -74,6 +74,9 @@ minijinja = { version = "2.24.0", features = ["deserialization", "serde"] }
 octocrab = "0.54.1"
 os_pipe = "1.2.3"
 regex = "1.13.1"
+# The crates.io sparse index and docs.rs reads (VER-066). gix's HTTP transport
+# already builds this version with rustls, so declaring it adds no crate.
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
 semver = "1.0.27"
 tokio = { version = "1.50.0", features = ["rt", "macros", "time", "net"] }
 serde = { version = "1.0.228", features = ["derive"] }

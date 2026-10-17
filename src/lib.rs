@@ -75,6 +75,7 @@ pub mod prepare;
 pub mod process;
 pub mod publish;
 pub mod publisher;
+pub mod registry;
 /// The token for `--pr` and the versions a release will carry.
 pub mod release;
 pub mod runners;

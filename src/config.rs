@@ -147,6 +147,10 @@ pub struct PackageSpec {
     /// Fills the publisher's `{registry}` placeholder and is named in the plan.
     /// Empty means none.
     pub registry: Option<String>,
+    /// Asks the registry whether a version is published, in place of the
+    /// publisher's query or the crates.io index read. Unsaid, the publisher
+    /// decides; an empty list turns the check off for this package.
+    pub query: Option<Vec<String>>,
     /// Package CHANGELOG.md. Defaults to next to the manifest.
     pub changelog: Option<PathBuf>,
     /// Lets this package leave `0.0.0` with a `minor` fragment, so its first

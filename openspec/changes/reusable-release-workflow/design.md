@@ -172,6 +172,14 @@ comment. Override: a `publishers` entry or a package's own `query`, which
 also replaces the crates.io read. Disable: `query: []`, which falls back to
 today's stderr match for that package.
 
+The index read and the docs.rs check (section 2.4) use `reqwest`, declared
+directly as 0.13.5 with `default-features = false` and the `rustls` feature.
+The operator approved the dependency on 2026-10-17. gix's HTTP transport
+already builds that version with rustls, so no crate enters the build.
+octocrab is no substitute: pointed at another host it would send the GitHub
+token there. Starting `curl` would make it a tool every consumer must
+declare.
+
 Alternative: verctl's own clients for every registry, as
 [release-state-machine][rsm] section 3.5 plans. Lost for this slice: each
 authenticated registry protocol is a project, while the crates.io index read
