@@ -152,7 +152,7 @@ while the repository variable `VERCTL_RELEASE_HOLD` is `true`: then the
 Version PR opens and updates but never merges itself, so the release waits
 for a person to merge it. Delete the variable to resume.
 mise: the repository setup comes from the shared Copier template
-(kind `rust-crate`, layout `crate`); `.copier-answers.yml` records its
+(project `rust-crate`, layout `crate`); `.copier-answers.yml` records its
 tag and answers. Take a new tag with `copier update --defaults` and
 check `git diff --check` before committing; the CI job `Template`
 fails when the newest tag would change a file. No local edit survives an
