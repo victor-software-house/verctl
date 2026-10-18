@@ -29,7 +29,7 @@ mr-boxington = "1.24.0"
 jq = "1.8.2"
 # check:local's policy task tests the GitHub workflows with conftest.
 conftest = "0.69.0"
-# The repository checks (mise-tasks/repo.toml).
+# The repository checks (mise-tasks/check/repo.sh).
 taplo = "0.10.0"
 rumdl = "0.2.79"
 typos = "1.51.1"
