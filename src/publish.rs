@@ -518,8 +518,7 @@ mod tests {
     #[cfg(unix)]
     mod checked {
         use std::fs;
-        use std::os::unix::fs::PermissionsExt;
-        use std::path::{Path, PathBuf};
+        use std::path::Path;
         use std::time::Duration;
 
         use indoc::formatdoc;
@@ -530,17 +529,22 @@ mod tests {
 
         const NO_WAIT: [Duration; 2] = [Duration::ZERO, Duration::ZERO];
 
-        fn script(dir: &Path, name: &str, body: &str) -> PathBuf {
+        /// The argv that runs `body` as a shell script written to `name`.
+        ///
+        /// The script runs through `sh` rather than being executed itself:
+        /// tests run in parallel, and a file just written can still be open
+        /// in a child another test forked, so executing it fails with
+        /// `ETXTBSY` (Text file busy).
+        fn script(dir: &Path, name: &str, body: &str) -> Vec<String> {
             let path = dir.join(name);
             fs::write(&path, body).unwrap();
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-            path
+            vec!["sh".to_owned(), path.display().to_string()]
         }
 
         /// A publisher that records that it ran, then exits with `code`.
         fn publisher(dir: &Path, code: u8) -> PublishEntry {
             let ran = dir.join("published");
-            let path = script(
+            let argv = script(
                 dir,
                 "publisher",
                 &formatdoc! {r#"
@@ -554,7 +558,7 @@ mod tests {
                 version: "0.4.6".into(),
                 noun: "crate".into(),
                 label: "cargo".into(),
-                argv: vec![path.display().to_string()],
+                argv,
             }
         }
 
@@ -562,7 +566,7 @@ mod tests {
         /// counting calls in a file, and exits non-zero before that.
         fn query(dir: &Path, listed_after: u32) -> RegistryCheck {
             let calls = dir.join("calls");
-            let path = script(
+            let argv = script(
                 dir,
                 "query",
                 &formatdoc! {r#"
@@ -577,7 +581,7 @@ mod tests {
                 "#, calls = calls.display()},
             );
             RegistryCheck::Query {
-                argv: vec![path.display().to_string()],
+                argv,
                 dir: dir.to_path_buf(),
             }
         }
