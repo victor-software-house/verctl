@@ -5,14 +5,18 @@
 `verctl docs` SHALL poll docs.rs, with a bounded backoff, for each package
 released at HEAD whose publish target is crates.io, that has a library target
 as Cargo resolves it, and whose own release tag for that version exists on
-`origin` and names HEAD, until docs.rs reports the version built. It SHALL exit non-zero, naming the crate, when docs.rs
-reports `doc_status` false, or when the crate is still unbuilt after the
-timeout.
+`origin` and names HEAD, until docs.rs reports `doc_status` true. It SHALL exit non-zero, naming the crate, when the
+timeout runs out while docs.rs still reports `doc_status` false or answers 404.
 
 #### Scenario: A build that failed
 
-- **WHEN** `demo@0.4.6` is released at HEAD with tag `v0.4.6` and docs.rs answers `{"doc_status": false, "version": "0.4.6"}`
+- **WHEN** `demo@0.4.6` is released at HEAD with tag `v0.4.6` and docs.rs still answers `{"doc_status": false, "version": "0.4.6"}` when the timeout runs out
 - **THEN** `verctl docs` exits non-zero and reports `demo@0.4.6` as `failed`
+
+#### Scenario: A running build
+
+- **WHEN** docs.rs answers `{"doc_status": false, "version": "0.4.6"}` for `demo@0.4.6`, then `{"doc_status": true, "version": "0.4.6"}` within the timeout
+- **THEN** `verctl docs` reports `demo@0.4.6` as `built` and exits zero
 
 #### Scenario: A queued build
 

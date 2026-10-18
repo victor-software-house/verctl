@@ -32,10 +32,26 @@ pub const POLL_EVERY: Duration = Duration::from_secs(30);
 pub enum DocsStatus {
     /// docs.rs built the documentation.
     Built,
-    /// docs.rs tried and failed; that version stays without documentation.
+    /// docs.rs still listed the version without documentation when the wait
+    /// ran out: its build failed, and that version stays without
+    /// documentation, or it was still running after the whole wait.
     Failed,
-    /// docs.rs had not built the version when the wait ran out.
+    /// docs.rs had not started a build of the version when the wait ran
+    /// out, or could not be asked.
     Unbuilt,
+}
+
+/// What the last poll learned about a crate docs.rs has not built.
+enum Pending {
+    /// docs.rs answered 404: it has not started a build.
+    Unlisted,
+    /// docs.rs listed the version without documentation: a build that is
+    /// running or that failed. A later failed request keeps this state and
+    /// carries its error, so a request that fails after docs.rs listed the
+    /// version does not turn a failed build into an unbuilt one.
+    Undocumented(Option<String>),
+    /// The request failed, with this error.
+    Unreachable(String),
 }
 
 /// One crate's docs.rs result.
@@ -48,9 +64,10 @@ pub struct DocsLine {
     pub version: String,
     /// What docs.rs reported.
     pub status: DocsStatus,
-    /// For a crate still unbuilt at the deadline, the error the last poll
-    /// hit, if it hit one: docs.rs was unreachable or answered with a
-    /// server error, so "unbuilt" may mean "could not ask".
+    /// For a crate not built at the deadline, the error the last poll hit,
+    /// if it hit one: docs.rs was unreachable or answered with a server
+    /// error, so "unbuilt" may mean "could not ask", and "failed" may mean
+    /// docs.rs could not be asked again after it listed the version.
     pub last_error: Option<String>,
 }
 
@@ -165,33 +182,42 @@ pub fn has_library(manifest: &Path) -> Result<bool> {
 /// Poll docs.rs under `base` for each crate until every one has a status or
 /// `timeout` runs out, pausing `poll` between rounds.
 ///
+/// Only `doc_status: true` ends the wait for a crate. docs.rs answers
+/// `doc_status: false` both while a build runs and after it failed, so a
+/// crate that still answers it at the deadline is `failed`, and one docs.rs
+/// never listed is `unbuilt`.
+///
 /// A failed request counts as "not built yet" for that round: over a wait of
 /// up to an hour, one 502 or one slow answer from docs.rs must not fail a
 /// build docs.rs later finishes. The last error stays on the line, so a crate
 /// still unbuilt at the deadline says whether docs.rs could be asked at all.
 fn wait_built(base: &str, wanted: &[Wanted], timeout: Duration, poll: Duration) -> Vec<DocsLine> {
     let deadline = Instant::now() + timeout;
-    let mut remaining: Vec<(&Wanted, Option<String>)> = wanted
+    let mut remaining: Vec<(&Wanted, Pending)> = wanted
         .iter()
-        .map(|crate_version| (crate_version, None))
+        .map(|crate_version| (crate_version, Pending::Unlisted))
         .collect();
     let mut lines = Vec::new();
     loop {
         let mut unbuilt = Vec::new();
-        for (crate_version, _) in remaining {
+        for (crate_version, previous) in remaining {
             match status(base, &crate_version.name, &crate_version.version) {
-                Ok(Some(built)) => lines.push(DocsLine {
+                Ok(Some(true)) => lines.push(DocsLine {
                     name: crate_version.name.clone(),
                     version: crate_version.version.clone(),
-                    status: if built {
-                        DocsStatus::Built
-                    } else {
-                        DocsStatus::Failed
-                    },
+                    status: DocsStatus::Built,
                     last_error: None,
                 }),
-                Ok(None) => unbuilt.push((crate_version, None)),
-                Err(error) => unbuilt.push((crate_version, Some(format!("{error:#}")))),
+                Ok(Some(false)) => unbuilt.push((crate_version, Pending::Undocumented(None))),
+                Ok(None) => unbuilt.push((crate_version, Pending::Unlisted)),
+                Err(error) => {
+                    let error = format!("{error:#}");
+                    let next = match previous {
+                        Pending::Undocumented(_) => Pending::Undocumented(Some(error)),
+                        Pending::Unlisted | Pending::Unreachable(_) => Pending::Unreachable(error),
+                    };
+                    unbuilt.push((crate_version, next));
+                }
             }
         }
         remaining = unbuilt;
@@ -201,22 +227,30 @@ fn wait_built(base: &str, wanted: &[Wanted], timeout: Duration, poll: Duration) 
         }
         std::thread::sleep(poll.min(deadline - now));
     }
-    lines.extend(
-        remaining
-            .into_iter()
-            .map(|(crate_version, last_error)| DocsLine {
-                name: crate_version.name.clone(),
-                version: crate_version.version.clone(),
-                status: DocsStatus::Unbuilt,
-                last_error,
-            }),
-    );
+    lines.extend(remaining.into_iter().map(|(crate_version, pending)| {
+        let (status, last_error) = match pending {
+            Pending::Undocumented(error) => (DocsStatus::Failed, error),
+            Pending::Unlisted => (DocsStatus::Unbuilt, None),
+            Pending::Unreachable(error) => (DocsStatus::Unbuilt, Some(error)),
+        };
+        DocsLine {
+            name: crate_version.name.clone(),
+            version: crate_version.version.clone(),
+            status,
+            last_error,
+        }
+    }));
     lines
 }
 
-/// docs.rs's build result for one crate version: `None` while it has not
-/// built the version (docs.rs answers 404 until then), otherwise
-/// `doc_status`.
+/// docs.rs's `doc_status` for one crate version, or `None` while docs.rs
+/// answers 404.
+///
+/// docs.rs adds a release when its build starts, and reports `doc_status`
+/// false until the build stores documentation, so `Some(false)` is a running
+/// build or a failed one; the endpoint says nothing else.
+/// <https://github.com/rust-lang/docs.rs/blob/4259a798bb58835b634f4d75c4481f2f17bdb1d5/crates/bin/docs_rs_builder/src/docbuilder/rustwide_builder.rs#L220>
+/// <https://github.com/rust-lang/docs.rs/blob/4259a798bb58835b634f4d75c4481f2f17bdb1d5/crates/bin/docs_rs_web/src/match_release.rs#L107-L109>
 fn status(base: &str, name: &str, version: &str) -> Result<Option<bool>> {
     let url = format!(
         "{}/crate/{name}/{version}/status.json",
@@ -304,9 +338,53 @@ mod tests {
             .respond_with(answer(false))
             .mount(&server)
             .await;
+        assert_eq!(wait(&server, Duration::ZERO).await, DocsStatus::Failed);
+    }
+
+    #[tokio::test]
+    async fn a_listed_build_stays_failed_when_docs_rs_stops_answering() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(STATUS))
+            .respond_with(answer(false))
+            .up_to_n_times(1)
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(STATUS))
+            .respond_with(ResponseTemplate::new(502))
+            .mount(&server)
+            .await;
+        let base = server.uri();
+        let line = tokio::task::spawn_blocking(move || {
+            wait_built(&base, &demo(), Duration::from_millis(200), Duration::ZERO)
+        })
+        .await
+        .unwrap()
+        .remove(0);
+        assert_eq!(line.status, DocsStatus::Failed);
+        assert!(line.last_error.is_some_and(|error| error.contains("502")));
+    }
+
+    #[tokio::test]
+    async fn a_running_build() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(STATUS))
+            .respond_with(answer(false))
+            .up_to_n_times(2)
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(STATUS))
+            .respond_with(answer(true))
+            .mount(&server)
+            .await;
         assert_eq!(
             wait(&server, Duration::from_secs(5)).await,
-            DocsStatus::Failed
+            DocsStatus::Built
         );
     }
 

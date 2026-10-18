@@ -264,44 +264,6 @@ queue:
     notes:
       - 'Operator ruling 2026-10-15 on #155: no deprecated wrapper and no minor bump; the change keeps its fragment, and only the Version PR merge is held until the template migration lands.'
 
-  - id: VER-067
-    title: Read every flag from the environment
-    scope: src/cli.rs, actions, tests, and the env-bound-flags spec
-    outcome: Every verctl option reads VERCTL_<LONG>, and the actions set env and run the bare verb.
-    blocked_by: []
-    acceptance:
-      - Every long option verctl declares, shared flags included, reads VERCTL_<LONG>, with a flag winning over its variable and an empty variable meaning unset.
-      - The version-pr, publish, and asset actions run exec verctl <verb> with settings in env only, and git grep finds no -c "$ in actions.
-      - Integration tests start verctl through one helper that removes the colour variables and every VERCTL_* variable.
-    notes:
-      - OpenSpec change env-bound-flags in openspec/changes/env-bound-flags; it needs ctl-core 0.6.21 (EnvPrefix and env_under_flags).
-
-  - id: VER-068
-    title: Give the crate a docs.rs landing page and errors docs
-    scope: Cargo.toml, src/lib.rs, and the public item docs
-    outcome: verctl builds on docs.rs and its page tells a reader what the crate is and how to use it.
-    blocked_by: []
-    acceptance:
-      - Cargo.toml sets [package.metadata.docs.rs] with all-features = true and rustdoc-args = ["--cap-lints", "warn"].
-      - 'src/lib.rs has no allow of clippy::missing_errors_doc, and every fallible public function has an # Errors section.'
-      - The crate root docs carry a summary, a compiled Quick start doctest, and a Cargo features section.
-    notes:
-      - The docs.rs build itself is proven only after the next release; VER-066 adds the docs job that checks it.
-
-  - id: VER-066
-    title: Ship one reusable release workflow with an idempotent publish
-    scope: .github/workflows/release.yml, publish, prepare --pr, examples, and the reusable-release-workflow spec
-    outcome: A repository releases through one thin caller of verctl's reusable workflow, and every rerun of it is safe.
-    blocked_by: []
-    acceptance:
-      - verctl ships .github/workflows/release.yml on workflow_call, whose inputs turn off the Version PR, publishing, assets, and auto-merge and override runners, config, mise, and secret names, with every default owned by verctl.
-      - verctl publish asks the registry before publishing, acts only at a version commit, and reports nothing to release when every release is complete.
-      - The Version PR branch is verctl/release/<base>, and no source or action file names version-packages; only the migration guide mentions it.
-      - This repository releases through its own caller, and a rerun reports nothing to release.
-    notes:
-      - OpenSpec change reusable-release-workflow in openspec/changes/reusable-release-workflow; it takes slice B of release-state-machine (VER-011) as a patch.
-      - 'Operator decisions 2026-10-15: verctl owns the release workflows as one reusable workflow; every piece optional and overridable per repository with defaults from verctl; the minimal B slice of VER-011 is unpaused; spec reviewed before implementation.'
-
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
@@ -594,6 +556,46 @@ horizon:
       - 'Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.'
 
 archive:
+  - id: VER-068
+    title: Give the crate a docs.rs landing page and errors docs
+    scope: Cargo.toml, src/lib.rs, and the public item docs
+    outcome: verctl builds on docs.rs and its page tells a reader what the crate is and how to use it.
+    notes:
+      - The docs.rs build itself is proven only after the next release; VER-066 adds the docs job that checks it.
+    completed: 2026-10-17T19:54:47
+    evidence:
+      - '#160 merged as 1b1bf46 on 2026-10-17 with its Closes trailer.'
+      - 'docs.rs built verctl 0.4.6: status.json reports doc_status true, and the docs leg of run 39075339999 reported built on rerun.'
+    disposition: completed
+
+  - id: VER-067
+    title: Read every flag from the environment
+    scope: src/cli.rs, actions, tests, and the env-bound-flags spec
+    outcome: Every verctl option reads VERCTL_<LONG>, and the actions set env and run the bare verb.
+    notes:
+      - OpenSpec change env-bound-flags in openspec/changes/env-bound-flags; it needs ctl-core 0.6.21 (EnvPrefix and env_under_flags).
+    completed: 2026-10-17T19:54:47
+    evidence:
+      - '#159 merged as e56ea95 on 2026-10-17 with its Closes trailer; its CI verify passed on the merged head.'
+      - The 0.4.6 release run 39075339999 ran every verb as mise run ver <verb> with settings in env only.
+    disposition: completed
+
+  - id: VER-066
+    title: Ship one reusable release workflow with an idempotent publish
+    scope: .github/workflows/release.yml, publish, prepare --pr, examples, and the reusable-release-workflow spec
+    outcome: A repository releases through one thin caller of verctl's reusable workflow, and every rerun of it is safe.
+    notes:
+      - OpenSpec change reusable-release-workflow in openspec/changes/reusable-release-workflow; it takes slice B of release-state-machine (VER-011) as a patch.
+      - 'Operator decisions 2026-10-15: verctl owns the release workflows as one reusable workflow; every piece optional and overridable per repository with defaults from verctl; the minimal B slice of VER-011 is unpaused; spec reviewed before implementation.'
+    completed: 2026-10-17T19:54:33
+    evidence:
+      - 'Slices merged on 2026-10-17: #162 registry checks, #164 version commits and nothing to release, #165 verctl docs, #161 verctl/release/<base> and auto-merge in Rust, #166 the reusable release.yml and its self-release caller.'
+      - 'Version PR #168 released verctl 0.4.6 through run 39075339999: crates.io lists 0.4.6, tag v0.4.6 names 191aa64, and the Release carries the linux_x64 and macos_arm64 tarballs. The docs leg passed on rerun once docs.rs finished its build.'
+      - The dispatched Self-release run 39076359412 on main printed "outcome  nothing to release" and skipped publish, assets, and docs.
+      - '#171 makes verctl docs keep polling while docs.rs answers doc_status false for a running build; the 0.4.6 docs leg failed on that answer.'
+      - OpenSpec tasks 4.2 (template renders the caller) stays open in the templates repository.
+    disposition: completed
+
   - id: VER-064
     title: Derive Version PR defaults instead of hardcoding them
     scope: release
