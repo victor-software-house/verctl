@@ -21,7 +21,7 @@ deny_licenses:
     reason: webpki-root-certs, the CA roots gix's HTTPS transport verifies against
 deny_skip: []
 feature_sets: []
-kind: rust-crate
+project: rust-crate
 layout: crate
 nightly_fmt: true
 openspec: true
