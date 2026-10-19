@@ -141,14 +141,22 @@ jobs:
           case "${IGNORED}" in
             *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
           esac
+          # An empty entry would name the repository root, so it is skipped.
           IFS=: read -ra paths <<< "${IGNORED}"
-          printf -v joined '%s:' "${paths[@]/#/${GITHUB_WORKSPACE}/}"
+          joined=""
+          for p in "${paths[@]}"; do
+            [ -n "${p}" ] || continue
+            joined+="${GITHUB_WORKSPACE}/${p}:"
+          done
           echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
       - name: Set up mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           version: ${{ inputs.mise-version }}
           cache: true
+          # These jobs install fewer tools than propose, so they keep their
+          # own cache rather than share propose's key.
+          cache_key_prefix: ${{ inputs.mise-ignored-config-paths != '' && 'mise-v1-trimmed' || 'mise-v1' }}
       - run: mise install --locked
       - name: Download this run's verctl build
         if: inputs.verctl-artifact != ''
@@ -212,14 +220,22 @@ jobs:
           case "${IGNORED}" in
             *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
           esac
+          # An empty entry would name the repository root, so it is skipped.
           IFS=: read -ra paths <<< "${IGNORED}"
-          printf -v joined '%s:' "${paths[@]/#/${GITHUB_WORKSPACE}/}"
+          joined=""
+          for p in "${paths[@]}"; do
+            [ -n "${p}" ] || continue
+            joined+="${GITHUB_WORKSPACE}/${p}:"
+          done
           echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
       - name: Set up mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           version: ${{ inputs.mise-version }}
           cache: true
+          # These jobs install fewer tools than propose, so they keep their
+          # own cache rather than share propose's key.
+          cache_key_prefix: ${{ inputs.mise-ignored-config-paths != '' && 'mise-v1-trimmed' || 'mise-v1' }}
       - run: mise install --locked
       - name: Download this run's verctl build
         if: inputs.verctl-artifact != ''
@@ -291,14 +307,22 @@ jobs:
           case "${IGNORED}" in
             *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
           esac
+          # An empty entry would name the repository root, so it is skipped.
           IFS=: read -ra paths <<< "${IGNORED}"
-          printf -v joined '%s:' "${paths[@]/#/${GITHUB_WORKSPACE}/}"
+          joined=""
+          for p in "${paths[@]}"; do
+            [ -n "${p}" ] || continue
+            joined+="${GITHUB_WORKSPACE}/${p}:"
+          done
           echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
       - name: Set up mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           version: ${{ inputs.mise-version }}
           cache: true
+          # These jobs install fewer tools than propose, so they keep their
+          # own cache rather than share propose's key.
+          cache_key_prefix: ${{ inputs.mise-ignored-config-paths != '' && 'mise-v1-trimmed' || 'mise-v1' }}
       - run: mise install --locked
       - name: Download this run's verctl build
         if: inputs.verctl-artifact != ''
@@ -355,14 +379,22 @@ jobs:
           case "${IGNORED}" in
             *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
           esac
+          # An empty entry would name the repository root, so it is skipped.
           IFS=: read -ra paths <<< "${IGNORED}"
-          printf -v joined '%s:' "${paths[@]/#/${GITHUB_WORKSPACE}/}"
+          joined=""
+          for p in "${paths[@]}"; do
+            [ -n "${p}" ] || continue
+            joined+="${GITHUB_WORKSPACE}/${p}:"
+          done
           echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
       - name: Set up mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           version: ${{ inputs.mise-version }}
           cache: true
+          # These jobs install fewer tools than propose, so they keep their
+          # own cache rather than share propose's key.
+          cache_key_prefix: ${{ inputs.mise-ignored-config-paths != '' && 'mise-v1-trimmed' || 'mise-v1' }}
       - run: mise install --locked
       - name: Download this run's verctl build
         if: inputs.verctl-artifact != ''
