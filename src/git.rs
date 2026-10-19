@@ -879,12 +879,12 @@ fn release_candidate_names(
 #[must_use]
 pub fn comparison_branches(event_default: Option<&str>) -> Vec<String> {
     let mut names = Vec::new();
-    let named = [
+    let sources = [
         configured_default_branch(),
         event_default.map(str::to_owned),
         env_base_ref(),
     ];
-    for name in named.into_iter().flatten() {
+    for name in sources.into_iter().flatten() {
         if !name.is_empty() && !names.contains(&name) {
             names.push(name);
         }
