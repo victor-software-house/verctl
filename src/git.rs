@@ -833,17 +833,18 @@ pub fn default_branch_candidates() -> Vec<String> {
     candidate_names(env_base_ref().as_deref())
 }
 
-/// `VERCTL_DEFAULT_BRANCH`, then `event_default` (the event's repository
-/// default branch), then `main` / `master`, then `GITHUB_BASE_REF`: the branch
+/// `VERCTL_DEFAULT_BRANCH`, then the event's repository default branch
+/// ([`crate::github::event_default_branch`]), then `main` / `master`, then
+/// `GITHUB_BASE_REF`: the branch
 /// releases come from, whatever branch a pull request targets. The event's
 /// default names a default branch with another name, which Actions leaves
 /// without `origin/HEAD`; the pull request's base comes last for a run with
 /// neither.
 #[must_use]
-pub fn release_branch_candidates(event_default: Option<&str>) -> Vec<String> {
+pub fn release_branch_candidates() -> Vec<String> {
     release_candidate_names(
         configured_default_branch().as_deref(),
-        event_default,
+        crate::github::event_default_branch().as_deref(),
         env_base_ref().as_deref(),
     )
 }
@@ -871,17 +872,17 @@ fn release_candidate_names(
 }
 
 /// The branches a version comparison fetches when they are missing:
-/// `VERCTL_DEFAULT_BRANCH`, then `event_default` (the event's repository
-/// default branch), then `GITHUB_BASE_REF`. The default branch is fetched
+/// `VERCTL_DEFAULT_BRANCH`, then the event's repository default branch, then
+/// `GITHUB_BASE_REF`. The default branch is fetched
 /// even when the pull request targets another branch, so the released
 /// baseline reads the same branch a full clone would. None is set outside
 /// Actions, so a local run fetches nothing.
 #[must_use]
-pub fn comparison_branches(event_default: Option<&str>) -> Vec<String> {
+pub fn comparison_branches() -> Vec<String> {
     let mut names = Vec::new();
     let sources = [
         configured_default_branch(),
-        event_default.map(str::to_owned),
+        crate::github::event_default_branch(),
         env_base_ref(),
     ];
     for name in sources.into_iter().flatten() {

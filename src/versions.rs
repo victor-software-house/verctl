@@ -152,8 +152,7 @@ pub fn report(root: &Path, config: &Config) -> Result<VersionReport> {
         return report_with(root, config, Skip::VersionBranch, &[], &[]);
     }
     let fetch = git::FetchDefault::from_env();
-    let event_default = crate::github::event_default_branch();
-    for branch in git::comparison_branches(event_default.as_deref()) {
+    for branch in git::comparison_branches() {
         git::ensure_comparable(root, &branch, &fetch)?;
     }
     let report = report_with(
@@ -161,7 +160,7 @@ pub fn report(root: &Path, config: &Config) -> Result<VersionReport> {
         config,
         Skip::None,
         &git::default_branch_candidates(),
-        &git::release_branch_candidates(event_default.as_deref()),
+        &git::release_branch_candidates(),
     )?;
     if report.drifted().is_empty() {
         return Ok(report);
