@@ -48,6 +48,8 @@ The fix in the workflow would mint a GitHub App token with
 `workflows: write` for the publish job. The App the Version PR already uses
 holds `contents: write`, `metadata: read`, and `pull_requests: write`, and no
 `workflows`. Granting it widens what that App can change in every installed
-repository, so it is an operator decision, recorded on VER-072. Until then the
-error and the docs carry the remedy, and the ordering rule in the docs avoids
-the case.
+repository, so it was an operator decision. The operator decided on
+2026-10-19 that no App gets `workflows: write`: a registry-checked package is
+tagged before its uploads instead, in the run that merged the Version PR
+([tag-at-merge](../tag-at-merge/design.md), VER-073). The error and the docs
+still carry the remedy for a package with an unchecked upload.

@@ -385,7 +385,7 @@ fn release_error(error: octocrab::Error, tag: &str, sha: &str) -> anyhow::Error 
     let error = anyhow::Error::new(error).context("create GitHub release");
     if forbidden {
         error.context(format!(
-            "GitHub refused to create {tag} at {sha}. When that commit's .github/workflows differ from the default branch, the Releases API also needs workflows: write, which GITHUB_TOKEN cannot hold; rerun with a token that has it, such as a GitHub App token with workflows: write"
+            "GitHub refused to create {tag} at {sha}. When that commit's .github/workflows differ from the default branch, the Releases API also needs workflows: write, which GITHUB_TOKEN cannot hold; rerun verctl publish at that commit with a token that has it"
         ))
     } else {
         error

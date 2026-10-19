@@ -278,11 +278,16 @@ The first push after the merge opens the Version PR from
 `verctl/release/<base>`.
 
 Adopt the caller when no release is pending, or merge the adoption
-before the Version PR. Each release runs at its version commit: an older
-version commit lacks the `ver` task the reusable workflow runs, and
+before the Version PR. Each release runs at its version commit, and an
+older version commit lacks the `ver` task the reusable workflow runs.
+
 GitHub refuses a Release at a commit whose `.github/workflows` differs
 from the default branch unless the token holds `workflows: write`, which
-`GITHUB_TOKEN` cannot.
+`GITHUB_TOKEN` cannot. So a package whose uploads all have a registry
+check, or that has no upload, gets its tag and Release before its
+uploads, in the run that merged the Version PR, and a rerun after a
+failed upload finds them. A package with an unchecked upload is tagged
+after its upload, since its tag is the record that the upload ran.
 
 ## Actions
 

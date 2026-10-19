@@ -82,16 +82,19 @@ struct Wanted {
 /// for at most `timeout`.
 ///
 /// A crate is checked only when its publish target is crates.io, it has a
-/// library target, and the tag `tags.template` names for its version names
-/// HEAD on GitHub. `publish` creates the tag only after the registry lists
-/// the version, so the tag records that the publish happened; the lookup goes
-/// to GitHub, never to local refs, because a CI checkout fetches no tags.
+/// library target, the tag `tags.template` names for its version names HEAD
+/// on GitHub, and the crates.io index lists the version. `publish` creates a
+/// crates.io package's tag before the upload, so the tag says which commit
+/// released the version and the index says the upload happened; the tag
+/// lookup goes to GitHub, never to local refs, because a CI checkout fetches
+/// no tags.
 ///
 /// # Errors
 ///
-/// Returns an error when no token is set, the plan, a manifest, or a tag
-/// cannot be read, or any crate's build failed or was still missing when
-/// `timeout` ran out, with the last docs.rs error when polling hit one.
+/// Returns an error when no token is set, the plan, a manifest, a tag, or the
+/// crates.io index cannot be read, or any crate's build failed or was still
+/// missing when `timeout` ran out, with the last docs.rs error when polling hit
+/// one.
 pub fn run(config: &Config, root: &Path, timeout: Duration) -> Result<Vec<DocsLine>> {
     let token = release::resolve_token()?;
     let wanted = released_crates(config, root, &token)?;
@@ -130,10 +133,11 @@ fn released_crates(config: &Config, root: &Path, token: &str) -> Result<Vec<Want
         }
         let mut libraries = Vec::new();
         for upload in publisher::uploads(config, spec, root, entry)? {
-            let RegistryCheck::CratesIo { name } = upload.check else {
+            let RegistryCheck::CratesIo { name } = &upload.check else {
                 continue;
             };
-            if has_library(&upload.manifest)? {
+            let name = name.clone();
+            if has_library(&upload.manifest)? && upload.check.lists(&upload.version)? {
                 libraries.push(Wanted {
                     name,
                     version: upload.version,
