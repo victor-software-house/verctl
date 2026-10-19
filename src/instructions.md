@@ -125,6 +125,18 @@ Migrating from `version-pr.yml` and `publish.yml`: add the caller as
 close the open `version-packages` pull request and delete that branch,
 and move any setting the old workflows carried into inputs.
 
+Adopt `release.yml` when no release is pending, or merge the adoption
+before the Version PR. Each release runs at its version commit, and a
+version commit from before the adoption lacks the `ver` task the
+reusable workflow runs, so its publish fails with `no task ver found`.
+
+GitHub refuses to create a Release with 403 "Resource not accessible
+by integration" when the version commit's `.github/workflows` differs
+from the default branch, as after an adoption merged behind the Version
+PR. The Releases API then needs `workflows: write`, which
+`GITHUB_TOKEN` cannot hold; `publish` names that permission. Rerun with
+a token that holds it, such as a GitHub App token.
+
 Do not hand-edit versions. `verctl check --versions` compares each
 declared manifest to the merge-base of HEAD and the default branch.
 It fails when they differ. Exempt only on a `verctl/release/<base>`
@@ -204,7 +216,10 @@ commit subject and does not treat `GITHUB_REF_NAME` as the default
 (that is the branch being pushed). `verctl publish` points `origin/HEAD`
 at `origin/<default>` only when `VERCTL_DEFAULT_BRANCH` is set. It
 fetches that one ref (with history, not at depth 1) only when it is
-missing. GitHub git HTTPS authenticates as `x-access-token`; the token
+missing. With `VERCTL_DEFAULT_BRANCH` set, `publish` and `publish --plan`
+first fetch the whole history of that branch when the clone is shallow,
+so a depth-1 checkout still finds each version commit; without it, a
+shallow clone fails and says to fetch the history. GitHub git HTTPS authenticates as `x-access-token`; the token
 is never in the URL and never sent as Bearer. Locally `git clone`
 already has the ref; otherwise `git remote set-head origin --auto`. How is a `publishers` entry: argv + placeholders.
 Cargo and bun are stock recipes (first-class examples). Override or

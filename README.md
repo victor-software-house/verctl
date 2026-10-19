@@ -277,6 +277,13 @@ To migrate from `version-pr.yml` and `publish.yml`, do it in one pull request:
 The first push after the merge opens the Version PR from
 `verctl/release/<base>`.
 
+Adopt the caller when no release is pending, or merge the adoption
+before the Version PR. Each release runs at its version commit: an older
+version commit lacks the `ver` task the reusable workflow runs, and
+GitHub refuses a Release at a commit whose `.github/workflows` differs
+from the default branch unless the token holds `workflows: write`, which
+`GITHUB_TOKEN` cannot.
+
 ## Actions
 
 These replace `changesets/action`. They are **GitHub Actions, not a
