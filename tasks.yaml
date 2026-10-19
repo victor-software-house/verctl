@@ -339,6 +339,24 @@ queue:
       - 'Self-release runs 39188632481 and 39188754557 both released 2a7b33d (v0.4.8) and each lost one asset race with `already_exists`. The duplicate check text-matched `format!("{error:#}")`, but octocrab 0.54.1 displays `Error::GitHub` as "GitHub", so the code in `GitHubError.errors` never reached it.'
       - Digests cannot decide a duplicate, because two builds of one commit produce different tarballs. No concurrency group on the asset legs; the idempotent upload makes it unnecessary.
 
+  - id: VER-076
+    title: check --versions fetches the branches it compares against
+    scope: src/git.rs, src/github.rs, src/versions.rs, operator docs
+    outcome: >-
+      verctl check --versions compares versions in the depth-1 pull request checkout
+      of actions/checkout, with no fetch-depth set.
+    blocked_by: []
+    acceptance:
+      - In a depth-1 checkout of refs/pull/<n>/merge with no origin/<base>, the check fetches the base with HEAD's parents and compares against HEAD's merge-base with it.
+      - A pull request to a branch other than the default fetches the event's default branch too, so the released baseline matches a full clone.
+      - A full clone that has the ref, and a run that names no branch, fetch nothing.
+      - ctl-core's shared check:versions passes in a pull request Verify job with the default checkout.
+    plan: openspec/changes/check-versions-shallow-checkout/proposal.md
+    notes:
+      - OpenSpec change check-versions-shallow-checkout.
+      - 'Found by ctl-core#149, whose Verify job failed with: cannot resolve the default branch (origin exists but origin/HEAD, origin/main, and origin/master are missing).'
+      - 'Orchestrator decision 2026-10-19: fix it in verctl as publish already does, over a template fetch-depth: 0 on every Verify checkout. Patch bump.'
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all

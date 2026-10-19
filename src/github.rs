@@ -301,6 +301,27 @@ pub fn pull_request_number(raw: &str) -> Option<u64> {
         .as_u64()
 }
 
+/// The repository's default branch named by the Actions event payload, or
+/// `None` without an event.
+#[must_use]
+pub fn event_default_branch() -> Option<String> {
+    let raw = std::fs::read_to_string(env::var("GITHUB_EVENT_PATH").ok()?).ok()?;
+    default_branch_of(&raw)
+}
+
+/// `repository.default_branch` of an event payload, or `None` when it does
+/// not parse or names none.
+#[must_use]
+pub fn default_branch_of(raw: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(raw)
+        .ok()?
+        .get("repository")?
+        .get("default_branch")?
+        .as_str()
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+}
+
 /// Create the label if needed, then apply it to the Version PR.
 ///
 /// An empty `label` does nothing. A label that already exists is not an
@@ -918,6 +939,22 @@ mod tests {
             super::pull_request_number(r#"{"issue":{"number":187}}"#),
             None
         );
+    }
+
+    #[test]
+    fn default_branch_of_reads_the_event_repository() {
+        assert_eq!(
+            super::default_branch_of(
+                r#"{"pull_request":{"number":1},"repository":{"default_branch":"main"}}"#
+            ),
+            Some("main".to_owned())
+        );
+        assert_eq!(
+            super::default_branch_of(r#"{"repository":{"default_branch":""}}"#),
+            None
+        );
+        assert_eq!(super::default_branch_of("{}"), None);
+        assert_eq!(super::default_branch_of("not json"), None);
     }
 
     async fn pull_author_from(head: serde_json::Value) -> super::PullAuthor {

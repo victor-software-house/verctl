@@ -138,15 +138,22 @@ fn on_version_branch(root: &Path) -> bool {
 /// Compare versions on HEAD to the merge-base, skipping per [`Skip::from_env`]
 /// when a version drifted. A local Version PR branch skips before reading
 /// anything. A pull request that changes no version never asks whether it is
-/// a Version PR, so it needs no token and no API.
+/// a Version PR, so it needs no token and no API. On Actions, the base and
+/// default branches are fetched first when the checkout lacks them or is
+/// shallow, as the depth-1 pull request checkout is.
 ///
 /// # Errors
 ///
-/// Returns an error under the conditions of [`report_with`], or when a
-/// version drifted and [`Skip::from_env`] cannot read the pull request.
+/// Returns an error when that fetch fails, under the conditions of
+/// [`report_with`], or when a version drifted and [`Skip::from_env`] cannot
+/// read the pull request.
 pub fn report(root: &Path, config: &Config) -> Result<VersionReport> {
     if on_version_branch(root) {
         return report_with(root, config, Skip::VersionBranch, &[], &[]);
+    }
+    let fetch = git::FetchDefault::from_env();
+    for branch in git::comparison_branches() {
+        git::ensure_comparable(root, &branch, &fetch)?;
     }
     let report = report_with(
         root,

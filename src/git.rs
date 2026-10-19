@@ -521,6 +521,41 @@ pub fn ensure_full_history(root: &Path, branch: &str, fetch: &FetchDefault) -> R
     fetch_one_branch(&repo, branch, fetch, Shallow::undo())
 }
 
+/// Fetch `origin/<branch>` so a merge-base with HEAD can be computed: when the
+/// ref is missing, or when the clone is shallow.
+///
+/// A pull request checkout from `actions/checkout` holds only the depth-1
+/// merge ref, with no `origin/<base>` and a parentless HEAD. Undoing the
+/// boundary sends the parents of every commit the clone marks shallow, HEAD
+/// included, so the walk from HEAD reaches the base branch.
+///
+/// A full clone that has the ref, an empty `branch`, no repository, and no
+/// `origin` remote are each a no-op.
+///
+/// # Errors
+///
+/// Returns an error when the shallow boundary cannot be read, or when the
+/// fetch fails (remote unreachable, credentials rejected, or the branch absent
+/// on the remote).
+pub fn ensure_comparable(root: &Path, branch: &str, fetch: &FetchDefault) -> Result<()> {
+    if branch.is_empty() {
+        return Ok(());
+    }
+    let Some(repo) = repo_covering(root) else {
+        return Ok(());
+    };
+    if !has_origin(&repo) {
+        return Ok(());
+    }
+    let shallow = repo.is_shallow().context("read the shallow boundary")?;
+    let missing = peel_remote(&repo, &format!("refs/remotes/origin/{branch}")).is_none();
+    match (shallow, missing) {
+        (true, _) => fetch_one_branch(&repo, branch, fetch, Shallow::undo()),
+        (false, true) => fetch_one_branch(&repo, branch, fetch, Shallow::NoChange),
+        (false, false) => Ok(()),
+    }
+}
+
 /// Fetches `branch` alone into `origin/<branch>`, through a remote that carries
 /// only that refspec and no tags, so the configured `origin` refspecs cannot
 /// widen the fetch. `shallow` says what happens to a shallow clone's boundary.
@@ -798,17 +833,62 @@ pub fn default_branch_candidates() -> Vec<String> {
     candidate_names(env_base_ref().as_deref())
 }
 
-/// `VERCTL_DEFAULT_BRANCH`, then `main` / `master`, then `GITHUB_BASE_REF`:
-/// the branch releases come from, whatever branch a pull request targets.
-/// The pull request's base comes last so a default branch with another name,
-/// which Actions leaves without `origin/HEAD`, still resolves.
+/// `VERCTL_DEFAULT_BRANCH`, then the event's repository default branch
+/// ([`crate::github::event_default_branch`]), then `main` / `master`, then
+/// `GITHUB_BASE_REF`: the branch
+/// releases come from, whatever branch a pull request targets. The event's
+/// default names a default branch with another name, which Actions leaves
+/// without `origin/HEAD`; the pull request's base comes last for a run with
+/// neither.
 #[must_use]
 pub fn release_branch_candidates() -> Vec<String> {
-    let mut names = candidate_names(configured_default_branch().as_deref());
-    if let Some(base) = env_base_ref()
-        && !names.contains(&base)
+    release_candidate_names(
+        configured_default_branch().as_deref(),
+        crate::github::event_default_branch().as_deref(),
+        env_base_ref().as_deref(),
+    )
+}
+
+fn release_candidate_names(
+    configured: Option<&str>,
+    event_default: Option<&str>,
+    base: Option<&str>,
+) -> Vec<String> {
+    let mut names = Vec::new();
+    for name in [configured, event_default].into_iter().flatten() {
+        if !name.is_empty() && !names.iter().any(|known| known == name) {
+            names.push(name.to_owned());
+        }
+    }
+    for name in candidate_names(None)
+        .into_iter()
+        .chain(base.map(str::to_owned))
     {
-        names.push(base);
+        if !name.is_empty() && !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    names
+}
+
+/// The branches a version comparison fetches when they are missing:
+/// `VERCTL_DEFAULT_BRANCH`, then the event's repository default branch, then
+/// `GITHUB_BASE_REF`. The default branch is fetched
+/// even when the pull request targets another branch, so the released
+/// baseline reads the same branch a full clone would. None is set outside
+/// Actions, so a local run fetches nothing.
+#[must_use]
+pub fn comparison_branches() -> Vec<String> {
+    let mut names = Vec::new();
+    let sources = [
+        configured_default_branch(),
+        crate::github::event_default_branch(),
+        env_base_ref(),
+    ];
+    for name in sources.into_iter().flatten() {
+        if !name.is_empty() && !names.contains(&name) {
+            names.push(name);
+        }
     }
     names
 }
@@ -2229,6 +2309,118 @@ mod tests {
             &["remote", "add", "origin", "file:///nonexistent/verctl"],
         );
         super::ensure_full_history(dir.path(), "main", &super::FetchDefault::Origin).unwrap();
+    }
+
+    /// The `actions/checkout` pull request case: a depth-1 fetch of
+    /// `refs/pull/1/merge`, no `origin/main`, and `main` moved on since the
+    /// merge ref was made, so the merge-base is HEAD's first parent, not the
+    /// tip.
+    #[test]
+    fn a_pull_request_merge_checkout_compares_against_its_merge_base() {
+        let upstream = tempfile::TempDir::new().unwrap();
+        let up = upstream.path();
+        init(up);
+        write_version(up, "0.0.1");
+        commit_all(up, "chore: start");
+        write_version(up, "0.0.2");
+        commit_all(up, "chore(release): version packages");
+        git(up, &["checkout", "-q", "-b", "pr"]);
+        std::fs::write(up.join("README"), "change\n").unwrap();
+        commit_all(up, "docs: change");
+        git(up, &["checkout", "-q", "--detach", "main"]);
+        git(
+            up,
+            &["merge", "-q", "--no-ff", "pr", "-m", "Merge pr into main"],
+        );
+        git(up, &["update-ref", "refs/pull/1/merge", "HEAD"]);
+        git(up, &["checkout", "-q", "main"]);
+        write_version(up, "0.0.3");
+        commit_all(up, "chore(release): version packages");
+
+        let work = tempfile::TempDir::new().unwrap();
+        let dir = work.path();
+        init(dir);
+        let url = format!("file://{}", up.display());
+        git(dir, &["remote", "add", "origin", &url]);
+        git(
+            dir,
+            &[
+                "fetch",
+                "-q",
+                "--depth=1",
+                "origin",
+                "+refs/pull/1/merge:refs/remotes/pull/1/merge",
+            ],
+        );
+        git(
+            dir,
+            &["checkout", "-q", "--detach", "refs/remotes/pull/1/merge"],
+        );
+        assert_eq!(git(dir, &["rev-parse", "--is-shallow-repository"]), "true");
+
+        let manifest = [Path::new("Cargo.toml")];
+        let candidates = ["main".to_owned()];
+        let error = super::files_on_merge_base(dir, &manifest, &candidates).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("fetch the default branch"),
+            "{error:#}"
+        );
+
+        super::ensure_comparable(dir, "main", &super::FetchDefault::Origin).unwrap();
+        let files = super::files_on_merge_base(dir, &manifest, &candidates).unwrap();
+        let base = files[0].as_deref().expect("Cargo.toml at the merge-base");
+        assert_eq!(version_line(base).as_deref(), Some("0.0.2"));
+    }
+
+    #[test]
+    fn release_candidates_put_the_event_default_after_the_configured_branch() {
+        assert_eq!(
+            super::release_candidate_names(None, Some("trunk"), Some("develop")),
+            ["trunk", "main", "master", "develop"]
+        );
+        assert_eq!(
+            super::release_candidate_names(Some("stable"), Some("trunk"), None),
+            ["stable", "trunk", "main", "master"]
+        );
+        assert_eq!(
+            super::release_candidate_names(None, Some("main"), Some("main")),
+            ["main", "master"]
+        );
+        assert_eq!(
+            super::release_candidate_names(None, None, Some("develop")),
+            ["main", "master", "develop"]
+        );
+    }
+
+    #[test]
+    fn a_full_clone_with_the_branch_is_not_fetched_for_a_comparison() {
+        let (dir, sha) = fixture();
+        // An origin that does not exist: a fetch would fail.
+        git(
+            dir.path(),
+            &["remote", "add", "origin", "file:///nonexistent/verctl"],
+        );
+        track(dir.path(), "main", &sha);
+        super::ensure_comparable(dir.path(), "main", &super::FetchDefault::Origin).unwrap();
+    }
+
+    #[test]
+    fn a_full_clone_without_the_branch_fetches_it_for_a_comparison() {
+        let upstream = tempfile::TempDir::new().unwrap();
+        init(upstream.path());
+        let tip = commit_all(upstream.path(), "init");
+
+        let work = tempfile::TempDir::new().unwrap();
+        init(work.path());
+        commit_all(work.path(), "local");
+        let url = format!("file://{}", upstream.path().display());
+        git(work.path(), &["remote", "add", "origin", &url]);
+
+        super::ensure_comparable(work.path(), "main", &super::FetchDefault::Origin).unwrap();
+        assert_eq!(
+            git(work.path(), &["rev-parse", "refs/remotes/origin/main"]),
+            tip
+        );
     }
 
     #[test]
