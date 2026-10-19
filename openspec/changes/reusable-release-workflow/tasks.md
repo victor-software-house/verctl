@@ -35,6 +35,7 @@ change.
   - 2026-10-17 (UTC): `git grep -n '\-c "\$' .github actions` prints nothing on `main` at 191aa64. `self-release.yml` runs `mise run build` only in its `build` job; every job of `release.yml` runs `mise run ver <verb>` with the uploaded build first on PATH. Not done: `ci.yml`'s `plan` job still runs verctl through `cargo run`.
 - [x] 3.3 This repository calls its own workflow, with the `build` job of design section 1.3, and deletes `version-pr.yml` and `publish.yml`; proof: the next Version PR merge on `main` releases through the new workflow and a rerun reports `nothing to release`
   - 2026-10-17 (UTC): merging Version PR [#168][pr-168] released 0.4.6 through [run 39075339999][run-046]: crates.io lists 0.4.6, tag `v0.4.6` names 191aa64, and the Release carries both tarballs. Its `docs` leg passed on rerun (attempt 2). The dispatched [run 39076359412][run-rerun] reported `nothing to release` and skipped publish, assets, and docs.
+- [ ] 3.4 The `mise-ignored-config-paths` input of design section 1.4; proof: zizmor `--pedantic` and the conftest policy pass on the workflow, and session-lake's first release on it installs no root `mise.toml` tool outside `propose`
 
 ## 4. Docs and consumers
 

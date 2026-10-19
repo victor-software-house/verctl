@@ -291,6 +291,22 @@ queue:
       - OpenSpec change tag-at-merge in openspec/changes/tag-at-merge.
       - 'Operator decision 2026-10-19: tag at merge for registry-checked packages; no workflows permission for any App, and no guard until a package with an unchecked real upload exists. It reverses publish-before-tag (VER-011) for registry-checked packages.'
 
+  - id: VER-074
+    title: release.yml input for mise config paths the release jobs ignore
+    scope: >-
+      .github/workflows/release.yml, operator docs,
+      openspec/changes/reusable-release-workflow
+    outcome: >-
+      A caller of the reusable release workflow names mise config files that the
+      plan, publish, assets, and docs jobs skip, so they install only the release tools.
+    blocked_by: []
+    acceptance:
+      - With mise-ignored-config-paths set, plan, publish, assets, and docs set MISE_IGNORED_CONFIG_PATHS to each path resolved against the repository root before mise installs any tool, and propose does not.
+      - With the input empty, no job sets MISE_IGNORED_CONFIG_PATHS.
+      - session-lake's first release on it installs no root mise.toml tool outside propose.
+    notes:
+      - Design section 1.4 and task 3.4 of OpenSpec change reusable-release-workflow.
+
   - id: VER-069
     title: Publish a cargo workspace one member at a time
     scope: src/members.rs, src/publisher.rs, src/publish.rs, src/pending.rs, src/docsrs.rs, src/registry.rs, operator docs

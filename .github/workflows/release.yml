@@ -61,6 +61,14 @@ on:
         description: MISE_ENV for every job.
         type: string
         default: ci
+      mise-ignored-config-paths:
+        description: >-
+          Colon-separated mise config paths, relative to the repository root,
+          that the plan, publish, assets, and docs jobs ignore, so they skip
+          tools only the repository's own tasks need. propose keeps them,
+          because prepare.after runs those tasks. Empty ignores none.
+        type: string
+        default: ""
       verctl-artifact:
         description: >-
           Name prefix of verctl builds uploaded earlier in the calling run,
@@ -123,11 +131,37 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Ignore mise config paths
+        if: inputs.mise-ignored-config-paths != ''
+        env:
+          IGNORED: ${{ inputs.mise-ignored-config-paths }}
+        # Set only when the input is set: mise takes an empty
+        # MISE_IGNORED_CONFIG_PATHS as the list, overriding .miserc.toml.
+        run: |
+          case "${IGNORED}" in
+            *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
+          esac
+          # Each entry is a plain relative path: an empty, ".", or ".."
+          # segment, or a leading or trailing slash, could name the
+          # repository root or a path outside it, so it fails the job.
+          IFS=: read -ra paths <<< "${IGNORED}"
+          joined=""
+          for p in "${paths[@]}"; do
+            case "/${p}/" in
+              *//*|*/./*|*/../*)
+                echo "::error::mise-ignored-config-paths entry '${p}' is not a plain relative path"; exit 1 ;;
+            esac
+            joined+="${GITHUB_WORKSPACE}/${p}:"
+          done
+          echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
       - name: Set up mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           version: ${{ inputs.mise-version }}
           cache: true
+          # These jobs install fewer tools than propose, so they keep their
+          # own cache rather than share propose's key.
+          cache_key_prefix: ${{ inputs.mise-ignored-config-paths != '' && 'mise-v1-trimmed' || 'mise-v1' }}
       - run: mise install --locked
       - name: Download this run's verctl build
         if: inputs.verctl-artifact != ''
@@ -181,11 +215,37 @@ jobs:
           persist-credentials: false
           ref: ${{ matrix.commit }}
           fetch-depth: 0
+      - name: Ignore mise config paths
+        if: inputs.mise-ignored-config-paths != ''
+        env:
+          IGNORED: ${{ inputs.mise-ignored-config-paths }}
+        # Set only when the input is set: mise takes an empty
+        # MISE_IGNORED_CONFIG_PATHS as the list, overriding .miserc.toml.
+        run: |
+          case "${IGNORED}" in
+            *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
+          esac
+          # Each entry is a plain relative path: an empty, ".", or ".."
+          # segment, or a leading or trailing slash, could name the
+          # repository root or a path outside it, so it fails the job.
+          IFS=: read -ra paths <<< "${IGNORED}"
+          joined=""
+          for p in "${paths[@]}"; do
+            case "/${p}/" in
+              *//*|*/./*|*/../*)
+                echo "::error::mise-ignored-config-paths entry '${p}' is not a plain relative path"; exit 1 ;;
+            esac
+            joined+="${GITHUB_WORKSPACE}/${p}:"
+          done
+          echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
       - name: Set up mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           version: ${{ inputs.mise-version }}
           cache: true
+          # These jobs install fewer tools than propose, so they keep their
+          # own cache rather than share propose's key.
+          cache_key_prefix: ${{ inputs.mise-ignored-config-paths != '' && 'mise-v1-trimmed' || 'mise-v1' }}
       - run: mise install --locked
       - name: Download this run's verctl build
         if: inputs.verctl-artifact != ''
@@ -247,11 +307,37 @@ jobs:
           persist-credentials: false
           ref: ${{ matrix.commit }}
           fetch-depth: 0
+      - name: Ignore mise config paths
+        if: inputs.mise-ignored-config-paths != ''
+        env:
+          IGNORED: ${{ inputs.mise-ignored-config-paths }}
+        # Set only when the input is set: mise takes an empty
+        # MISE_IGNORED_CONFIG_PATHS as the list, overriding .miserc.toml.
+        run: |
+          case "${IGNORED}" in
+            *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
+          esac
+          # Each entry is a plain relative path: an empty, ".", or ".."
+          # segment, or a leading or trailing slash, could name the
+          # repository root or a path outside it, so it fails the job.
+          IFS=: read -ra paths <<< "${IGNORED}"
+          joined=""
+          for p in "${paths[@]}"; do
+            case "/${p}/" in
+              *//*|*/./*|*/../*)
+                echo "::error::mise-ignored-config-paths entry '${p}' is not a plain relative path"; exit 1 ;;
+            esac
+            joined+="${GITHUB_WORKSPACE}/${p}:"
+          done
+          echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
       - name: Set up mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           version: ${{ inputs.mise-version }}
           cache: true
+          # These jobs install fewer tools than propose, so they keep their
+          # own cache rather than share propose's key.
+          cache_key_prefix: ${{ inputs.mise-ignored-config-paths != '' && 'mise-v1-trimmed' || 'mise-v1' }}
       - run: mise install --locked
       - name: Download this run's verctl build
         if: inputs.verctl-artifact != ''
@@ -298,11 +384,37 @@ jobs:
           persist-credentials: false
           ref: ${{ matrix.commit }}
           fetch-depth: 0
+      - name: Ignore mise config paths
+        if: inputs.mise-ignored-config-paths != ''
+        env:
+          IGNORED: ${{ inputs.mise-ignored-config-paths }}
+        # Set only when the input is set: mise takes an empty
+        # MISE_IGNORED_CONFIG_PATHS as the list, overriding .miserc.toml.
+        run: |
+          case "${IGNORED}" in
+            *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
+          esac
+          # Each entry is a plain relative path: an empty, ".", or ".."
+          # segment, or a leading or trailing slash, could name the
+          # repository root or a path outside it, so it fails the job.
+          IFS=: read -ra paths <<< "${IGNORED}"
+          joined=""
+          for p in "${paths[@]}"; do
+            case "/${p}/" in
+              *//*|*/./*|*/../*)
+                echo "::error::mise-ignored-config-paths entry '${p}' is not a plain relative path"; exit 1 ;;
+            esac
+            joined+="${GITHUB_WORKSPACE}/${p}:"
+          done
+          echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
       - name: Set up mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           version: ${{ inputs.mise-version }}
           cache: true
+          # These jobs install fewer tools than propose, so they keep their
+          # own cache rather than share propose's key.
+          cache_key_prefix: ${{ inputs.mise-ignored-config-paths != '' && 'mise-v1-trimmed' || 'mise-v1' }}
       - run: mise install --locked
       - name: Download this run's verctl build
         if: inputs.verctl-artifact != ''

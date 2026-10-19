@@ -5,7 +5,7 @@
 verctl SHALL ship `.github/workflows/release.yml` triggered only by
 `workflow_call`. It SHALL declare the inputs `version-pr`, `publish`,
 `assets`, `docs`, `auto-merge`, `config`, `runner`, `mise-version`, `mise-env`,
-`title`, `commit-message`, and `registry-token-env`, and the optional secrets
+`mise-ignored-config-paths`, `title`, `commit-message`, and `registry-token-env`, and the optional secrets
 `app-client-id`, `app-private-key`, and `registry-token`, each with the
 default the design's input table gives. A caller that passes no input SHALL
 get verctl's defaults.
@@ -45,6 +45,24 @@ SHALL default to `false`.
 
 - **WHEN** a caller sets `auto-merge: true` and maps no `app-client-id`
 - **THEN** the `propose` job fails before pushing, naming the App secrets
+
+### Requirement: A caller can keep repository-only mise configs out of the release jobs
+
+When `mise-ignored-config-paths` is set, the `plan`, `publish`, `assets`,
+and `docs` jobs SHALL set `MISE_IGNORED_CONFIG_PATHS` to each listed path
+resolved against the repository root before mise installs any tool. The
+`propose` job SHALL NOT ignore them. When the input is empty, no job SHALL
+set the variable.
+
+#### Scenario: A root config with a Python stack
+
+- **WHEN** a caller sets `mise-ignored-config-paths: mise.toml` and its `mise.release.toml` declares only verctl
+- **THEN** `plan`, `publish`, `assets`, and `docs` install only the tools `mise.release.toml` and the other configs declare, and `propose` installs the root `mise.toml` tools too
+
+#### Scenario: No ignored paths
+
+- **WHEN** a caller leaves `mise-ignored-config-paths` empty and its `.miserc.toml` ignores `tools/mise.toml`
+- **THEN** no job sets `MISE_IGNORED_CONFIG_PATHS`, and mise still ignores `tools/mise.toml`
 
 ### Requirement: One flow on push to the default branch and on dispatch
 
