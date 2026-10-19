@@ -61,6 +61,14 @@ on:
         description: MISE_ENV for every job.
         type: string
         default: ci
+      mise-ignored-config-paths:
+        description: >-
+          Colon-separated mise config paths, relative to the repository root,
+          that the plan, publish, assets, and docs jobs ignore, so they skip
+          tools only the repository's own tasks need. propose keeps them,
+          because prepare.after runs those tasks. Empty ignores none.
+        type: string
+        default: ""
       verctl-artifact:
         description: >-
           Name prefix of verctl builds uploaded earlier in the calling run,
@@ -123,6 +131,19 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Ignore mise config paths
+        if: inputs.mise-ignored-config-paths != ''
+        env:
+          IGNORED: ${{ inputs.mise-ignored-config-paths }}
+        # Set only when the input is set: mise takes an empty
+        # MISE_IGNORED_CONFIG_PATHS as the list, overriding .miserc.toml.
+        run: |
+          case "${IGNORED}" in
+            *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
+          esac
+          IFS=: read -ra paths <<< "${IGNORED}"
+          printf -v joined '%s:' "${paths[@]/#/${GITHUB_WORKSPACE}/}"
+          echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
       - name: Set up mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
@@ -181,6 +202,19 @@ jobs:
           persist-credentials: false
           ref: ${{ matrix.commit }}
           fetch-depth: 0
+      - name: Ignore mise config paths
+        if: inputs.mise-ignored-config-paths != ''
+        env:
+          IGNORED: ${{ inputs.mise-ignored-config-paths }}
+        # Set only when the input is set: mise takes an empty
+        # MISE_IGNORED_CONFIG_PATHS as the list, overriding .miserc.toml.
+        run: |
+          case "${IGNORED}" in
+            *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
+          esac
+          IFS=: read -ra paths <<< "${IGNORED}"
+          printf -v joined '%s:' "${paths[@]/#/${GITHUB_WORKSPACE}/}"
+          echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
       - name: Set up mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
@@ -247,6 +281,19 @@ jobs:
           persist-credentials: false
           ref: ${{ matrix.commit }}
           fetch-depth: 0
+      - name: Ignore mise config paths
+        if: inputs.mise-ignored-config-paths != ''
+        env:
+          IGNORED: ${{ inputs.mise-ignored-config-paths }}
+        # Set only when the input is set: mise takes an empty
+        # MISE_IGNORED_CONFIG_PATHS as the list, overriding .miserc.toml.
+        run: |
+          case "${IGNORED}" in
+            *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
+          esac
+          IFS=: read -ra paths <<< "${IGNORED}"
+          printf -v joined '%s:' "${paths[@]/#/${GITHUB_WORKSPACE}/}"
+          echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
       - name: Set up mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
@@ -298,6 +345,19 @@ jobs:
           persist-credentials: false
           ref: ${{ matrix.commit }}
           fetch-depth: 0
+      - name: Ignore mise config paths
+        if: inputs.mise-ignored-config-paths != ''
+        env:
+          IGNORED: ${{ inputs.mise-ignored-config-paths }}
+        # Set only when the input is set: mise takes an empty
+        # MISE_IGNORED_CONFIG_PATHS as the list, overriding .miserc.toml.
+        run: |
+          case "${IGNORED}" in
+            *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
+          esac
+          IFS=: read -ra paths <<< "${IGNORED}"
+          printf -v joined '%s:' "${paths[@]/#/${GITHUB_WORKSPACE}/}"
+          echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
       - name: Set up mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
