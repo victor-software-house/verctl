@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.4.10
+
+- `verctl publish` now works in a shallow clone. With `VERCTL_DEFAULT_BRANCH` set, it fetches the whole history of that branch before looking for the commit that set each version, so a depth-1 checkout no longer fails with "the clone is shallow". Without the variable, the error now names it. When GitHub refuses to create a Release with 403, the error now says why: the release commit's `.github/workflows` differs from the default branch, so the Releases API also needs `workflows: write`, which `GITHUB_TOKEN` cannot hold. The operator instructions now say to adopt the release workflow only when no release is pending ([#180](https://github.com/victor-software-house/verctl/pull/180)).
+
 ## verctl 0.4.9
 
 - An asset upload that GitHub refuses because the release already has a complete asset of that name now reports `already` instead of failing. Two release runs for the same commit both build every asset, so the run that uploads second used to fail after a release that was in fact complete. The duplicate check read the error's text, which never contained GitHub's `already_exists` code; it now reads the code from the response. When the other run is still sending the asset, the upload waits up to a minute for it to finish. An asset whose earlier upload broke off still fails, with a message to delete it and rerun ([#177](https://github.com/victor-software-house/verctl/pull/177)).
