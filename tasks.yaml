@@ -273,7 +273,7 @@ queue:
     blocked_by: []
     acceptance:
       - An upload refused with GitHub's 422 `already_exists` code, for an asset the release lists as `uploaded`, returns `already <name>`.
-      - An asset of that name in any other state fails and says to delete it and rerun.
+      - An asset of that name in another state is re-read for up to a minute, since another run may still be sending it; one that never reaches `uploaded` fails and says to delete it and rerun.
       - Any other upload failure still fails.
     notes:
       - 'Self-release runs 39188632481 and 39188754557 both released 2a7b33d (v0.4.8) and each lost one asset race with `already_exists`. The duplicate check text-matched `format!("{error:#}")`, but octocrab 0.54.1 displays `Error::GitHub` as "GitHub", so the code in `GitHubError.errors` never reached it.'

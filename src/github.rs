@@ -507,8 +507,8 @@ struct AssetName {
 ///
 /// Returns an error when `tarball` has no UTF-8 file name or cannot be read,
 /// the GitHub client cannot be built, the release for `tag` does not exist,
-/// the asset of that name exists but its upload never completed, or the
-/// upload fails for a reason other than a duplicate asset.
+/// the asset of that name exists but its upload does not complete within a
+/// minute, or the upload fails for a reason other than a duplicate asset.
 pub fn upload_release_asset(token: &str, repo: &Repo, tag: &str, tarball: &Path) -> Result<String> {
     let name = tarball
         .file_name()
@@ -519,9 +519,16 @@ pub fn upload_release_asset(token: &str, repo: &Repo, tag: &str, tarball: &Path)
         bytes::Bytes::from(std::fs::read(tarball).with_context(|| tarball.display().to_string())?);
     block(async {
         let crab = client(token)?;
-        upload_release_asset_with(&crab, repo, tag, &name, body).await
+        upload_release_asset_with(&crab, repo, tag, &name, body, &UPLOAD_SETTLE_DELAYS).await
     })
 }
+
+/// How long an upload refused as a duplicate waits for the other upload to
+/// finish. GitHub lists an asset as soon as its upload starts, in a state
+/// other than `uploaded`, and a tarball of a few megabytes uploads in seconds,
+/// so a minute covers a run that lost the race while the winner was still
+/// sending.
+const UPLOAD_SETTLE_DELAYS: [std::time::Duration; 12] = [std::time::Duration::from_secs(5); 12];
 
 /// The part of a Release an upload reads.
 #[derive(serde::Deserialize)]
@@ -557,6 +564,7 @@ async fn upload_release_asset_with(
     tag: &str,
     name: &str,
     body: bytes::Bytes,
+    settle: &[std::time::Duration],
 ) -> Result<String> {
     let release = upload_target(crab, repo, tag).await?;
     let uploaded = crab
@@ -573,22 +581,29 @@ async fn upload_release_asset_with(
         // version and the target, and the tag fixes the commit, so a complete
         // asset of that name is this asset.
         Err(error) if is_already_exists(&error) => {
-            let release = upload_target(crab, repo, tag).await?;
-            let asset = release
-                .assets
-                .iter()
-                .find(|asset| asset.name == name)
-                .with_context(|| {
-                    format!(
-                        "GitHub reports asset {name} exists, but release {tag} does not list it"
-                    )
-                })?;
-            ensure!(
-                asset.state == "uploaded",
-                "release {tag} has asset {name} in state {:?}, not uploaded; delete the asset and rerun",
-                asset.state
-            );
-            Ok(format!("already {name}"))
+            let mut delays = settle.iter();
+            loop {
+                let release = upload_target(crab, repo, tag).await?;
+                let asset = release
+                    .assets
+                    .iter()
+                    .find(|asset| asset.name == name)
+                    .with_context(|| {
+                        format!(
+                            "GitHub reports asset {name} exists, but release {tag} does not list it"
+                        )
+                    })?;
+                if asset.state == "uploaded" {
+                    return Ok(format!("already {name}"));
+                }
+                let Some(delay) = delays.next() else {
+                    bail!(
+                        "release {tag} has asset {name} in state {:?}, not uploaded, after waiting for another upload to finish; delete the asset and rerun",
+                        asset.state
+                    );
+                };
+                tokio::time::sleep(*delay).await;
+            }
         }
         Err(error) => Err(error).context("upload release asset"),
     }
@@ -1277,7 +1292,7 @@ mod tests {
         assert!(url.contains(TAG), "{url}");
     }
 
-    fn upload_target_json(assets: serde_json::Value) -> Mock {
+    fn upload_target_json(assets: &serde_json::Value) -> Mock {
         Mock::given(method("GET"))
             .and(path(format!("/repos/{OWNER}/{NAME}/releases/tags/{TAG}")))
             .respond_with(
@@ -1319,6 +1334,7 @@ mod tests {
             TAG,
             "app_1.0.0_linux_x64.tar.gz",
             bytes::Bytes::from_static(b"tarball"),
+            &[std::time::Duration::ZERO; 2],
         )
         .await
     }
@@ -1326,7 +1342,31 @@ mod tests {
     #[tokio::test]
     async fn an_asset_another_run_uploaded_is_already_done() {
         let server = MockServer::start().await;
-        upload_target_json(serde_json::json!([
+        upload_target_json(&serde_json::json!([
+            { "name": "app_1.0.0_linux_x64.tar.gz", "state": "uploaded" }
+        ]))
+        .mount(&server)
+        .await;
+        release_by_id(&server.uri()).mount(&server).await;
+        upload_refused(422, already_exists()).mount(&server).await;
+        assert_eq!(
+            upload(&server).await.unwrap(),
+            "already app_1.0.0_linux_x64.tar.gz"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_duplicate_waits_for_the_other_upload_to_finish() {
+        let server = MockServer::start().await;
+        // The read before the upload and the first read after the refusal see
+        // the other run still sending.
+        upload_target_json(&serde_json::json!([
+            { "name": "app_1.0.0_linux_x64.tar.gz", "state": "starter" }
+        ]))
+        .up_to_n_times(2)
+        .mount(&server)
+        .await;
+        upload_target_json(&serde_json::json!([
             { "name": "app_1.0.0_linux_x64.tar.gz", "state": "uploaded" }
         ]))
         .mount(&server)
@@ -1342,7 +1382,7 @@ mod tests {
     #[tokio::test]
     async fn an_asset_whose_upload_broke_off_fails() {
         let server = MockServer::start().await;
-        upload_target_json(serde_json::json!([
+        upload_target_json(&serde_json::json!([
             { "name": "app_1.0.0_linux_x64.tar.gz", "state": "starter" }
         ]))
         .mount(&server)
@@ -1356,7 +1396,7 @@ mod tests {
     #[tokio::test]
     async fn another_validation_failure_fails_the_upload() {
         let server = MockServer::start().await;
-        upload_target_json(serde_json::json!([]))
+        upload_target_json(&serde_json::json!([]))
             .mount(&server)
             .await;
         release_by_id(&server.uri()).mount(&server).await;
