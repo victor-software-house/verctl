@@ -251,12 +251,7 @@ pub fn run_pending(
     let packages = match (rest, refused) {
         (Ok(packages), None) => packages,
         (Ok(_), Some(early)) => return Err(early),
-        (Err(later), None) => return Err(later),
-        // Both are reported, so the refused Release is not lost behind
-        // the later failure.
-        (Err(later), Some(early)) => {
-            return Err(later.context(format!("{early:#}; then the run failed")));
-        }
+        (Err(later), early) => return Err(after_refusal(later, early)),
     };
     Ok(PublishRun {
         outcome: Outcome::Released,
@@ -287,10 +282,19 @@ fn open_early(
             Err(error) if github::is_release_refused(&error) => {
                 refused.get_or_insert(error);
             }
-            Err(error) => return Err(error),
+            Err(error) => return Err(after_refusal(error, refused)),
         }
     }
     Ok((releases, refused))
+}
+
+/// `error`, carrying a deferred Release refusal when there is one, so the
+/// refusal is not lost behind a later failure.
+fn after_refusal(error: anyhow::Error, refused: Option<anyhow::Error>) -> anyhow::Error {
+    match refused {
+        Some(early) => error.context(format!("{early:#}; then the run failed")),
+        None => error,
+    }
 }
 
 /// Run every upload, and return each package's line with the names of the
