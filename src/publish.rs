@@ -248,26 +248,7 @@ pub fn run_pending(
             }
         }
     }
-    let mut packages = Vec::new();
-    let mut shipped_packages = Vec::new();
-    for (entry, uploads) in uploads {
-        if entry.argv.is_empty() {
-            packages.push(PublishLine::from(entry));
-            continue;
-        }
-        for upload in uploads {
-            let note = publish_checked(&upload, &registry::LISTING_DELAYS)?;
-            if note.is_none() {
-                shipped_packages.push(entry.name.clone());
-            }
-            packages.push(PublishLine {
-                name: upload.name,
-                version: upload.version,
-                via: entry.label.clone(),
-                note,
-            });
-        }
-    }
+    let (packages, shipped_packages) = run_uploads(uploads)?;
     for tag in after {
         let shipped = tag
             .packages
@@ -285,6 +266,34 @@ pub fn run_pending(
         published: PublishOutcome { packages, releases },
         waiting,
     })
+}
+
+/// Run every upload, and return each package's line with the names of the
+/// packages that shipped in this run.
+fn run_uploads(
+    uploads: Vec<(&PublishEntry, Vec<Upload>)>,
+) -> Result<(Vec<PublishLine>, Vec<String>)> {
+    let mut packages = Vec::new();
+    let mut shipped = Vec::new();
+    for (entry, uploads) in uploads {
+        if entry.argv.is_empty() {
+            packages.push(PublishLine::from(entry));
+            continue;
+        }
+        for upload in uploads {
+            let note = publish_checked(&upload, &registry::LISTING_DELAYS)?;
+            if note.is_none() {
+                shipped.push(entry.name.clone());
+            }
+            packages.push(PublishLine {
+                name: upload.name,
+                version: upload.version,
+                via: entry.label.clone(),
+                note,
+            });
+        }
+    }
+    Ok((packages, shipped))
 }
 
 /// Whether `tag` is created before the uploads: when no package under it
