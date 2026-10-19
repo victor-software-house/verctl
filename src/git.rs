@@ -833,17 +833,39 @@ pub fn default_branch_candidates() -> Vec<String> {
     candidate_names(env_base_ref().as_deref())
 }
 
-/// `VERCTL_DEFAULT_BRANCH`, then `main` / `master`, then `GITHUB_BASE_REF`:
-/// the branch releases come from, whatever branch a pull request targets.
-/// The pull request's base comes last so a default branch with another name,
-/// which Actions leaves without `origin/HEAD`, still resolves.
+/// `VERCTL_DEFAULT_BRANCH`, then `event_default` (the event's repository
+/// default branch), then `main` / `master`, then `GITHUB_BASE_REF`: the branch
+/// releases come from, whatever branch a pull request targets. The event's
+/// default names a default branch with another name, which Actions leaves
+/// without `origin/HEAD`; the pull request's base comes last for a run with
+/// neither.
 #[must_use]
-pub fn release_branch_candidates() -> Vec<String> {
-    let mut names = candidate_names(configured_default_branch().as_deref());
-    if let Some(base) = env_base_ref()
-        && !names.contains(&base)
+pub fn release_branch_candidates(event_default: Option<&str>) -> Vec<String> {
+    release_candidate_names(
+        configured_default_branch().as_deref(),
+        event_default,
+        env_base_ref().as_deref(),
+    )
+}
+
+fn release_candidate_names(
+    configured: Option<&str>,
+    event_default: Option<&str>,
+    base: Option<&str>,
+) -> Vec<String> {
+    let mut names = Vec::new();
+    for name in [configured, event_default].into_iter().flatten() {
+        if !name.is_empty() && !names.iter().any(|known| known == name) {
+            names.push(name.to_owned());
+        }
+    }
+    for name in candidate_names(None)
+        .into_iter()
+        .chain(base.map(str::to_owned))
     {
-        names.push(base);
+        if !name.is_empty() && !names.contains(&name) {
+            names.push(name);
+        }
     }
     names
 }
@@ -2347,6 +2369,26 @@ mod tests {
         let files = super::files_on_merge_base(dir, &manifest, &candidates).unwrap();
         let base = files[0].as_deref().expect("Cargo.toml at the merge-base");
         assert_eq!(version_line(base).as_deref(), Some("0.0.2"));
+    }
+
+    #[test]
+    fn release_candidates_put_the_event_default_after_the_configured_branch() {
+        assert_eq!(
+            super::release_candidate_names(None, Some("trunk"), Some("develop")),
+            ["trunk", "main", "master", "develop"]
+        );
+        assert_eq!(
+            super::release_candidate_names(Some("stable"), Some("trunk"), None),
+            ["stable", "trunk", "main", "master"]
+        );
+        assert_eq!(
+            super::release_candidate_names(None, Some("main"), Some("main")),
+            ["main", "master"]
+        );
+        assert_eq!(
+            super::release_candidate_names(None, None, Some("develop")),
+            ["main", "master", "develop"]
+        );
     }
 
     #[test]
