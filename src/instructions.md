@@ -26,6 +26,7 @@ completion bootstrap.
 | `assets` | — | Plan or build native GitHub Release tarballs declared under `assets` |
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
 | `docs` | — | Wait for docs.rs to build each crates.io crate released at HEAD |
+| `semver` | — | Check the API of each crates.io crate whose next release is a patch |
 
 Every long option also reads `VERCTL_<LONG>`: `VERCTL_CONFIG`,
 `VERCTL_DRY_RUN`, `VERCTL_FORMAT`, and so on, with `-` turned into `_`. A
@@ -151,10 +152,16 @@ that commit with a token that holds it.
 Do not hand-edit versions. `verctl check --versions` compares each
 declared manifest to the merge-base of HEAD and the default branch.
 It fails when they differ. Exempt only on a `verctl/release/<base>`
-branch locally, or when the GitHub event carries the Version PR
-label (`verctl:version` by default, `prepare.version_label`).
-`prepare --pr` applies that label. Not `GITHUB_HEAD_REF`. CI
-does not skip. A fragment-only commit does not change versions.
+branch locally, or when the pull request of the GitHub event is a
+Version PR: its head repository is this repository, and its head branch
+is `verctl/release/<base>` for the base it targets. When a version
+differs, the check reads all three through the API, so the job needs
+`GITHUB_TOKEN` with `pull-requests: read`; a pull request that changes
+no version reads nothing. Labels, title, and body are never read, and
+neither is `GITHUB_HEAD_REF`. CI does not skip. A fragment-only commit
+does not change versions. A version the default branch carries at its
+merge-base with HEAD is not a hand edit either, so merging the default
+branch into another branch passes.
 
 `prepare --pr --auto-merge` (`VERCTL_AUTO_MERGE`, or `auto-merge: true` on
 `actions/version-pr`) enables GitHub auto-merge on the Version PR, as a
@@ -271,6 +278,18 @@ to build or had not built in time; a failed build stays failed for that
 version, so the fix is the next patch release. docs.rs reports a running
 build and a failed one alike, so a failed build fails the job only when
 the timeout runs out. It needs a GitHub token to read the tag.
+
+`semver` checks the public API of each crates.io crate whose next
+release is a patch: patch is the default bump, and a real API break
+bumps the minor. It runs `cargo semver-checks --release-type minor`
+against the baseline cargo-semver-checks picks, so only a break fails.
+It skips a crate whose package has a pending `minor` or `major`
+fragment, whose manifest's major.minor differs from that baseline (the
+Version PR already moved it), or that has no release on crates.io. A
+workspace package counts once per publishing member. The rule covers
+0.x: a crate at 1.0 or later fails the run, since reaching 1.0 is an
+operator decision that revisits the rule. It needs `cargo-semver-checks`
+on PATH and reads the crates.io index.
 
 Tag names come from `tags.template` (default `v{version}`). The
 placeholders are `{version}` and `{name}` — the same vocabulary

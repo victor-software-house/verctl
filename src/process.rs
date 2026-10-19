@@ -39,9 +39,11 @@ pub fn run_limited(argv: &[String], env: &[(&str, &str)], timeout: Duration) -> 
 /// The most stderr [`run_inherit`] keeps for its error message.
 const STDERR_TAIL: usize = 64 * 1024;
 
-/// Inherit stdout and stream stderr so Actions show cargo/bun as they run.
-/// The last 64 KiB of stderr also go into the error, so a caller such as
-/// `publish` can tell an already-published version apart.
+/// Stream the command's stdout and stderr to this process's stderr, so
+/// Actions show cargo/bun as they run while stdout holds only verctl's own
+/// report, which `--format json` keeps parseable. The last 64 KiB of that
+/// output also go into the error, so a caller such as `publish` can tell an
+/// already-published version apart.
 ///
 /// # Errors
 ///
@@ -52,7 +54,9 @@ const STDERR_TAIL: usize = 64 * 1024;
 pub fn run_inherit(argv: &[String], timeout: Duration) -> Result<()> {
     ensure!(!argv.is_empty(), "driver argv is empty");
     let (stderr_r, stderr_w) = os_pipe::pipe().context("command stderr pipe")?;
+    // duct applies the outer redirect first, so stdout joins the pipe.
     let handle = duct::cmd(&argv[0], &argv[1..])
+        .stdout_to_stderr()
         .stderr_file(stderr_w)
         .unchecked()
         .start()
@@ -347,6 +351,21 @@ mod tests {
             message.contains("already exists on crates.io index"),
             "{message}"
         );
+    }
+
+    #[test]
+    fn a_command_writes_its_stdout_to_stderr() {
+        let error = run_inherit(
+            &[
+                "sh".into(),
+                "-c".into(),
+                "echo 'lint failed: function_missing'; exit 1".into(),
+            ],
+            Duration::from_secs(5),
+        )
+        .expect_err("failure");
+        let message = format!("{error:#}");
+        assert!(message.contains("function_missing"), "{message}");
     }
 
     #[test]

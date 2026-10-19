@@ -1,15 +1,17 @@
 name: CI
 
 on:
-  # The Version PR is opened, then labeled. The version check reads the
-  # label from the event, so adding or removing a label starts a run too.
+  # The version check knows the Version PR by its head repository, head
+  # branch, and base, read through the API when it runs, so no label event
+  # needs a run. Changing a pull request's base starts no run: re-run the
+  # workflow by hand after retargeting one.
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
 
 permissions:
   contents: read
+  pull-requests: read # the version check reads the pull request
 
 env:
   GIT_CONFIG_COUNT: "1"
@@ -74,6 +76,8 @@ jobs:
       - name: Cache builds with mbx
         uses: jdx/mr-boxington-action@47ce49b32025d93a7a2f4570815afaa2b7092240 # v1.7.2
       - name: Verify
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: mise run verify
       - name: Advisories
         run: mise run deny:advisories

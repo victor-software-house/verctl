@@ -347,8 +347,10 @@ visible record.
 
 `prepare --pr` commits on `verctl/release/<base>`, where `<base>` is the
 branch the Version PR targets. `check --versions` exempts any branch named
-`verctl/release/<base>` locally; the `verctl:version` label exemption in CI
-stays. The branch is derived, not configured.
+`verctl/release/<base>` locally, and in CI a pull request with that head
+branch, this repository as its head repository, and `<base>` as its current
+base ([release-state-machine][rsm] section 2.1). The branch is derived, not
+configured.
 
 Alternative: a configurable branch name. Lost: the name identifies the Version
 PR, and [release-state-machine][rsm] section 2.3 already chose the derived

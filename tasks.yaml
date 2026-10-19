@@ -110,18 +110,6 @@ queue:
     notes:
       - "2026-08-19, raised on PR #44 and deliberately not acted on there. `templates.source` defaults to `.ctl/templates`, verctl renders every tracked `*.jinja` under it, and `.ctl/` is shared — so once a second ctl CLI serves files, verctl would render its templates too: an unknown name fails the whole Version PR, and one that only reads `versions[…]` gets written to the other tool's target. Nothing collides today, because no other ctl CLI renders anything, which is why this is a row and not a fix. Scoping the directory to `.ctl/templates/ver/` is the obvious answer and is exactly what VER-025 ruled out (\"shared rather than namespaced, because a template already declares its own target\"), so it is Victor's to reverse, not this row's to assume. The other shape is a template declaring its owning tool, which keeps the directory shared and pays for it with one more export."
 
-  - id: VER-029
-    title: The Version PR exemption must not race its own label
-    scope: verctl
-    outcome: The Version PR's own CI passes the hand-edit guard on the first run, without anyone reopening it.
-    blocked_by: []
-    acceptance:
-      - A freshly opened Version PR is exempt on its first CI run, proven on a real release rather than by reading the code.
-      - The exemption still refuses a hand edit on an ordinary PR, and GITHUB_HEAD_REF is still not an exemption.
-      - Whatever carries the signal is written down where the guard reads it, so the next reader does not rediscover the race.
-    notes:
-      - '2026-08-20, hit on the v0.1.1 release and measured, not inferred. The Version PR''s own CI failed `check --versions` with "verctl 0.1.0 -> 0.1.1", the exact hand edit the guard exists to catch, on the commit `prepare` had just written. `github::event_labels` reads `pull_request.labels` out of `GITHUB_EVENT_PATH`, and that payload is a snapshot taken when the event fired — but `prepare --pr` opens the PR and then applies `verctl:version` in a second call, so the `opened` payload carries an empty label list. Proof: closing and reopening PR #48 fired a fresh event and the same job printed `exempt · version-pr`, with nothing else changed. The PR carried the label the whole time. Not a new break — v0.1.0''s Version PR passed, which is what a race looks like. Do not "fix" it by trusting the branch name: `GITHUB_HEAD_REF` is deliberately not an exemption (VER-012), because a contributor can name a branch anything. Candidates worth weighing rather than one assumed here: have `prepare --pr` create the PR with the label already on it if the API allows, add `labeled` to the workflow''s `pull_request` types so the label itself triggers a run, or have the guard ask the API for the PR''s current labels instead of reading a stale payload.'
-
   - id: VER-030
     title: The example catalog teaches one pin, not two
     scope: verctl
@@ -306,6 +294,23 @@ queue:
       - session-lake's first release on it installs no root mise.toml tool outside propose.
     notes:
       - Design section 1.4 and task 3.4 of OpenSpec change reusable-release-workflow.
+
+  - id: VER-075
+    title: "verctl semver: cargo-semver-checks at the release type the pending release allows"
+    scope: >-
+      src/semver_check.rs, src/registry.rs, src/cli.rs, src/main.rs,
+      src/presentation.rs, operator docs
+    outcome: >-
+      verctl semver fails a crates.io crate whose next release is a patch when its
+      public API breaks, and skips a crate whose next release already moves the minor.
+    blocked_by: []
+    acceptance:
+      - A crate whose pending fragments are at most patch, at the baseline's major.minor, is checked with cargo semver-checks --release-type minor against its crates.io baseline.
+      - A crate is skipped when a pending fragment for its package is minor or major, when its manifest's major.minor differs from the baseline, or when crates.io has no release of it.
+      - A crate at 1.0 or later fails the run, naming the rule.
+    notes:
+      - OpenSpec change semver-release-type in openspec/changes/semver-release-type.
+      - ctl-core's shared semver task calls mise run ver semver; a repository that does not serve the ver task runs its own verctl.
 
   - id: VER-069
     title: Publish a cargo workspace one member at a time
@@ -626,6 +631,18 @@ horizon:
       - 'Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.'
 
 archive:
+  - id: VER-029
+    title: The Version PR exemption must not race its own label
+    scope: verctl
+    outcome: The Version PR's own CI passes the hand-edit guard on the first run, without anyone reopening it.
+    notes:
+      - '2026-08-20, hit on the v0.1.1 release and measured, not inferred. The Version PR''s own CI failed `check --versions` with "verctl 0.1.0 -> 0.1.1", the exact hand edit the guard exists to catch, on the commit `prepare` had just written. `github::event_labels` reads `pull_request.labels` out of `GITHUB_EVENT_PATH`, and that payload is a snapshot taken when the event fired — but `prepare --pr` opens the PR and then applies `verctl:version` in a second call, so the `opened` payload carries an empty label list. Proof: closing and reopening PR #48 fired a fresh event and the same job printed `exempt · version-pr`, with nothing else changed. The PR carried the label the whole time. Not a new break — v0.1.0''s Version PR passed, which is what a race looks like. Do not "fix" it by trusting the branch name: `GITHUB_HEAD_REF` is deliberately not an exemption (VER-012), because a contributor can name a branch anything. Candidates worth weighing rather than one assumed here: have `prepare --pr` create the PR with the label already on it if the API allows, add `labeled` to the workflow''s `pull_request` types so the label itself triggers a run, or have the guard ask the API for the PR''s current labels instead of reading a stale payload.'
+    completed: 2026-10-19T10:01:31
+    evidence:
+      - https://github.com/victor-software-house/verctl/pull/188
+      - check --versions knows the Version PR by head repository, head branch verctl/release/<base>, and current base, read through the API; CI drops the labeled and unlabeled triggers. The first-run proof comes with the first Version PR after the next minor release.
+    disposition: completed
+
   - id: VER-065
     title: Hold the VER-064 release until the template migration, then drop its semver override
     scope: release, .github/workflows/version-pr.yml, Cargo.toml

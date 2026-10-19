@@ -8,16 +8,16 @@ use verctl::cli::{CheckArgs, Cli, Command, PrepareArgs, PublishArgs, StatusArgs}
 use verctl::config::{self, Config};
 use verctl::fragment::{self, Bump};
 use verctl::{
-    assets, ci, docsrs, git, github, pending, pins, prepare, process, publish, release, templates,
-    versions,
+    assets, ci, docsrs, git, github, pending, pins, prepare, process, publish, release,
+    semver_check, templates, versions,
 };
 
 mod presentation;
 
 use presentation::{
     AssetsReport, CheckReport, CiReport, DocsReport, InstructionsReport, PinReport, PrepareBump,
-    PrepareReport, PublishReport, ReleaseRow, Report, StatusFragment, StatusPackage, StatusReport,
-    VersionCheckReport,
+    PrepareReport, PublishReport, ReleaseRow, Report, SemverReport, StatusFragment, StatusPackage,
+    StatusReport, VersionCheckReport,
 };
 
 const INSTRUCTIONS: &str = include_str!("instructions.md");
@@ -41,7 +41,16 @@ fn execute(cli: Cli) -> Result<Report> {
         Command::Assets(args) => assets_report(&args).map(Report::Assets),
         Command::Ci(args) => ci_report(&args).map(Report::Ci),
         Command::Docs(args) => docs_report(&args).map(Report::Docs),
+        Command::Semver(args) => semver_report(&args).map(Report::Semver),
     }
+}
+
+fn semver_report(args: &verctl::cli::SemverArgs) -> Result<SemverReport> {
+    let config = Config::load(&args.config)?;
+    let fragments = fragment::load_dir(&args.dir)?;
+    Ok(SemverReport {
+        crates: semver_check::run(&config, &config::root_of(&args.config), &fragments)?,
+    })
 }
 
 fn docs_report(args: &verctl::cli::DocsArgs) -> Result<DocsReport> {
