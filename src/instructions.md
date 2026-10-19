@@ -154,9 +154,10 @@ declared manifest to the merge-base of HEAD and the default branch.
 It fails when they differ. Exempt only on a `verctl/release/<base>`
 branch locally, or when the pull request of the GitHub event is a
 Version PR: its head repository is this repository, and its head branch
-is `verctl/release/<base>` for the base it targets. The check reads all
-three through the API when it runs, so the job needs `GITHUB_TOKEN` with
-`pull-requests: read`. Labels, title, and body are never read, and
+is `verctl/release/<base>` for the base it targets. When a version
+differs, the check reads all three through the API, so the job needs
+`GITHUB_TOKEN` with `pull-requests: read`; a pull request that changes
+no version reads nothing. Labels, title, and body are never read, and
 neither is `GITHUB_HEAD_REF`. CI does not skip. A fragment-only commit
 does not change versions. A version the default branch carries at its
 merge-base with HEAD is not a hand edit either, so merging the default
