@@ -12,6 +12,7 @@ Compile, format, lint, and test tasks run in pull request CI with
 - [ ] 2.1 `skip_reason` skips a minor fragment, a moved minor, and an unpublished crate, and fails at 1.0; proof: the tests in `src/semver_check.rs` pass in CI
 - [ ] 2.2 `verctl semver` runs one check per remaining crate and fails naming each break; proof: code review of `semver_check::run`
 - [ ] 2.3 Running `verctl semver` in a consumer at 0.0.z reports its crates checked at `--release-type minor`; proof: a run on a released consumer after this ships
+- [ ] 2.4 `plan` leaves out a crate `checkable` rejects: no library target as `docsrs::has_library` resolves it, or a proc-macro, read from its manifest; proof: `only_a_library_that_is_not_a_proc_macro_is_checkable` passes in CI, and shrub's semver step, which failed on its binary crate `shrub`, passes on this release
 
 ## 3. Docs
 

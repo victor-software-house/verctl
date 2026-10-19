@@ -24,7 +24,9 @@ A patch: it adds a verb and changes no existing behaviour.
    2. It skips the crate when its manifest's major.minor differs from the
       crates.io baseline, because the Version PR already moved it.
    3. It skips a crate with no release on crates.io.
-   4. Otherwise it runs `cargo semver-checks --release-type minor` against
+   4. It leaves out a crate with no library target, which has no API.
+      cargo-semver-checks fails when asked to check only such a crate.
+   5. Otherwise it runs `cargo semver-checks --release-type minor` against
       that baseline, which fails only on a break.
 2. A crate at 1.0 or later fails the run. No family crate is at 1.0, and
    reaching 1.0 is the operator's decision, which revisits the rule.
