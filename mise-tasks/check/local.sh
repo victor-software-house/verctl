@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-#MISE description="Workflow policy, the version guard, and pending fragments"
-#MISE depends=["policy", "versions", "fragments"]
+#MISE description="Workflow policy and pending fragments"
+#MISE depends=["policy", "fragments"]
 # The repository's own checks. check:repo runs check:local in parallel with
 # the shared checks, so a repository replaces this body, or adds #MISE
 # depends, with its own checks. A starter: the template writes this file
