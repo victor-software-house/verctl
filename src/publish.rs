@@ -13,6 +13,7 @@ use ctl_core::formatdoc;
 use serde::Serialize;
 
 use crate::config::{Config, NAME_PLACEHOLDER};
+use crate::publisher::Upload;
 use crate::registry::{self, RegistryCheck};
 use crate::{git, github, pending, process, publisher, release};
 
@@ -178,19 +179,7 @@ pub fn run_pending(
 ) -> Result<PublishRun> {
     let planned = plan(config, root)?;
     if dry_run {
-        let releases = planned
-            .tags
-            .iter()
-            .map(|tag| formatdoc!("would create {tag}", tag = tag.tag))
-            .collect();
-        return Ok(PublishRun {
-            outcome: Outcome::Released,
-            published: PublishOutcome {
-                packages: planned.packages.iter().map(PublishLine::from).collect(),
-                releases,
-            },
-            waiting: Vec::new(),
-        });
+        return dry_run_plan(config, root, &planned);
     }
     prove_version_commit(config, root, &planned)?;
     let token = release::resolve_token()?;
@@ -229,30 +218,33 @@ pub fn run_pending(
         })
         .collect();
     let mut packages = Vec::new();
+    let mut shipped_packages = Vec::new();
     for (spec, entry) in selected {
         if entry.argv.is_empty() {
             packages.push(PublishLine::from(entry));
             continue;
         }
-        let check = publisher::registry_check(config, spec, root, &entry.version)?;
-        let note = publish_checked(entry, &check, &registry::LISTING_DELAYS)?;
-        packages.push(PublishLine {
-            name: entry.name.clone(),
-            version: entry.version.clone(),
-            via: entry.label.clone(),
-            note,
-        });
+        for upload in publisher::uploads(config, spec, root, entry)? {
+            let note = publish_checked(&upload, &registry::LISTING_DELAYS)?;
+            if note.is_none() {
+                shipped_packages.push(entry.name.clone());
+            }
+            packages.push(PublishLine {
+                name: upload.name,
+                version: upload.version,
+                via: entry.label.clone(),
+                note,
+            });
+        }
     }
     let repo = github::repo(root)?;
     let sha = git::head_sha(root)?;
     let mut releases = Vec::new();
     for tag in tags {
-        let shipped = tag.packages.iter().any(|entry| {
-            !entry.argv.is_empty()
-                && packages
-                    .iter()
-                    .any(|line| line.name == entry.name && line.note.is_none())
-        });
+        let shipped = tag
+            .packages
+            .iter()
+            .any(|entry| shipped_packages.contains(&entry.name));
         let notes = release::notes_for(
             config,
             root,
@@ -268,6 +260,33 @@ pub fn run_pending(
         outcome: Outcome::Released,
         published: PublishOutcome { packages, releases },
         waiting,
+    })
+}
+
+/// What a dry run would publish: every package, a workspace package as its
+/// members in publish order, and every tag. It asks no registry.
+fn dry_run_plan(config: &Config, root: &Path, planned: &PublishPlan) -> Result<PublishRun> {
+    let releases = planned
+        .tags
+        .iter()
+        .map(|tag| formatdoc!("would create {tag}", tag = tag.tag))
+        .collect();
+    let mut packages = Vec::new();
+    for (spec, entry) in config.packages.iter().zip(&planned.packages) {
+        match publisher::workspace_members(config, spec, root)? {
+            Some(members) => packages.extend(members.into_iter().map(|member| PublishLine {
+                name: member.name,
+                version: member.version,
+                via: entry.label.clone(),
+                note: None,
+            })),
+            None => packages.push(PublishLine::from(entry)),
+        }
+    }
+    Ok(PublishRun {
+        outcome: Outcome::Released,
+        published: PublishOutcome { packages, releases },
+        waiting: Vec::new(),
     })
 }
 
@@ -303,54 +322,74 @@ fn at_head<'a>(
     Ok((here, waiting))
 }
 
-/// Publish one package under its registry check, and return `already` when
-/// the registry had the version.
+/// Run one upload under its registry check, and return `already` when the
+/// registry had the version.
 ///
 /// With a check, the registry decides: a listed version skips the publisher,
 /// and after the publisher runs the version must appear within `delays`. A
 /// publisher that fails saying the version exists counts only when the
 /// registry then lists it, since that is a publish the earlier check missed
 /// while the index lagged. Without a check, a zero exit or that stderr is
-/// enough.
-fn publish_checked(
-    entry: &PublishEntry,
-    check: &RegistryCheck,
-    delays: &[Duration],
-) -> Result<Option<String>> {
+/// enough. A publisher stopped by a registry rate limit fails with the time
+/// the registry gives for the next attempt (see [`rate_limited`]).
+fn publish_checked(upload: &Upload, delays: &[Duration]) -> Result<Option<String>> {
     let already = || Some("already".to_owned());
-    if matches!(check, RegistryCheck::Unchecked) {
-        let status = publish_package(entry)?;
-        return Ok(if status.ends_with(" (already)") {
-            already()
-        } else {
-            None
-        });
-    }
-    let coord = format!("{}@{}", entry.name, entry.version);
-    if check.lists(&entry.version).with_context(|| coord.clone())? {
+    let check = &upload.check;
+    let coord = format!("{}@{}", upload.name, upload.version);
+    if !matches!(check, RegistryCheck::Unchecked)
+        && check
+            .lists(&upload.version)
+            .with_context(|| coord.clone())?
+    {
         return Ok(already());
     }
-    match process::run_inherit(&entry.argv, PUBLISH_TIMEOUT) {
-        Ok(()) => {
-            registry::wait_listed(check, &coord, &entry.version, delays)?;
-            Ok(None)
+    let Err(error) = process::run_inherit(&upload.argv, PUBLISH_TIMEOUT) else {
+        if !matches!(check, RegistryCheck::Unchecked) {
+            registry::wait_listed(check, &coord, &upload.version, delays)?;
         }
-        Err(error) if already_published(&format!("{error:#}")) => {
-            registry::wait_listed(check, &coord, &entry.version, delays)
-                .with_context(|| format!("{error:#}"))?;
-            Ok(already())
+        return Ok(None);
+    };
+    let message = format!("{error:#}");
+    if already_published(&message) {
+        if !matches!(check, RegistryCheck::Unchecked) {
+            registry::wait_listed(check, &coord, &upload.version, delays)
+                .with_context(|| message.clone())?;
         }
-        Err(error) => Err(error).context(coord),
+        return Ok(already());
     }
+    if let Some(limit) = rate_limited(&message) {
+        bail!(
+            "{coord}: the registry's rate limit stopped the publish ({limit}). Nothing was tagged. Rerun the publish then: it skips every crate the registry already lists."
+        );
+    }
+    Err(error).context(coord)
 }
 
-fn publish_package(entry: &PublishEntry) -> Result<String> {
-    let coord = format!("{}@{}", entry.name, entry.version);
-    match process::run_inherit(&entry.argv, PUBLISH_TIMEOUT) {
-        Ok(()) => Ok(coord),
-        Err(error) if already_published(&format!("{error:#}")) => Ok(format!("{coord} (already)")),
-        Err(error) => Err(error).context(coord),
+/// What a registry said when it refused an upload for its rate limit: the
+/// time it gives after "try again after", or the status alone. `None` when
+/// `message` is no rate limit.
+///
+/// crates.io answers with status 429 and "Please try again after <time> or
+/// email help@crates.io": <https://crates.io/docs/rate-limits>.
+fn rate_limited(message: &str) -> Option<String> {
+    let lower = message.to_ascii_lowercase();
+    if !lower.contains("too many requests") {
+        return None;
     }
+    let marker = "try again after ";
+    let Some(at) = lower.find(marker) else {
+        return Some("429 Too Many Requests".to_owned());
+    };
+    let rest = &message[at + marker.len()..];
+    let end = [" or email", "\n"]
+        .iter()
+        .filter_map(|stop| rest.find(stop))
+        .min()
+        .unwrap_or(rest.len());
+    Some(format!(
+        "try again after {}",
+        rest[..end].trim().trim_end_matches('.')
+    ))
 }
 
 impl From<&PublishEntry> for PublishLine {
@@ -521,13 +560,22 @@ mod tests {
         use std::path::Path;
         use std::time::Duration;
 
-        use indoc::formatdoc;
+        use indoc::{formatdoc, indoc};
         use tempfile::TempDir;
 
-        use super::super::{PublishEntry, publish_checked};
+        use super::super::{publish_checked, rate_limited};
+        use crate::publisher::Upload;
         use crate::registry::RegistryCheck;
 
         const NO_WAIT: [Duration; 2] = [Duration::ZERO, Duration::ZERO];
+
+        /// What crates.io prints for a new crate over its burst.
+        const RATE_LIMITED: &str = indoc! {"
+            error: failed to publish demo v0.4.6 to registry at https://crates.io
+
+            Caused by:
+              the remote server responded with an error (status 429 Too Many Requests): You have published too many new crates in a short period of time. Please try again after Sat, 19 Oct 2026 01:23:45 GMT or email help@crates.io to have your limit increased.
+        "};
 
         /// The argv that runs `body` as a shell script written to `name`.
         ///
@@ -541,24 +589,28 @@ mod tests {
             vec!["sh".to_owned(), path.display().to_string()]
         }
 
-        /// A publisher that records that it ran, then exits with `code`.
-        fn publisher(dir: &Path, code: u8) -> PublishEntry {
+        /// An upload under `check` whose publisher records that it ran,
+        /// prints `stderr`, then exits with `code`.
+        fn upload(dir: &Path, code: u8, stderr: &str, check: RegistryCheck) -> Upload {
             let ran = dir.join("published");
+            let said = dir.join("stderr");
+            fs::write(&said, stderr).unwrap();
             let argv = script(
                 dir,
                 "publisher",
                 &formatdoc! {r#"
                     #!/bin/sh
                     touch "{ran}"
+                    cat "{said}" >&2
                     exit {code}
-                "#, ran = ran.display()},
+                "#, ran = ran.display(), said = said.display()},
             );
-            PublishEntry {
+            Upload {
                 name: "demo".into(),
                 version: "0.4.6".into(),
-                noun: "crate".into(),
-                label: "cargo".into(),
+                manifest: dir.join("Cargo.toml"),
                 argv,
+                check,
             }
         }
 
@@ -593,8 +645,8 @@ mod tests {
         #[test]
         fn a_listed_version_skips_the_publisher() {
             let dir = TempDir::new().unwrap();
-            let entry = publisher(dir.path(), 0);
-            let note = publish_checked(&entry, &query(dir.path(), 1), &NO_WAIT).unwrap();
+            let check = query(dir.path(), 1);
+            let note = publish_checked(&upload(dir.path(), 0, "", check), &NO_WAIT).unwrap();
             assert_eq!(note.as_deref(), Some("already"));
             assert!(!ran(dir.path()));
         }
@@ -602,8 +654,8 @@ mod tests {
         #[test]
         fn a_publisher_that_exits_zero_without_publishing_fails() {
             let dir = TempDir::new().unwrap();
-            let entry = publisher(dir.path(), 0);
-            let error = publish_checked(&entry, &query(dir.path(), 99), &NO_WAIT).unwrap_err();
+            let check = query(dir.path(), 99);
+            let error = publish_checked(&upload(dir.path(), 0, "", check), &NO_WAIT).unwrap_err();
             assert!(ran(dir.path()));
             assert!(format!("{error:#}").contains("demo@0.4.6"), "{error:#}");
         }
@@ -611,8 +663,8 @@ mod tests {
         #[test]
         fn registry_metadata_that_lags_the_publish_passes() {
             let dir = TempDir::new().unwrap();
-            let entry = publisher(dir.path(), 0);
-            let note = publish_checked(&entry, &query(dir.path(), 3), &NO_WAIT).unwrap();
+            let check = query(dir.path(), 3);
+            let note = publish_checked(&upload(dir.path(), 0, "", check), &NO_WAIT).unwrap();
             assert_eq!(note, None);
             assert!(ran(dir.path()));
         }
@@ -620,18 +672,42 @@ mod tests {
         #[test]
         fn a_failed_publisher_fails_without_waiting() {
             let dir = TempDir::new().unwrap();
-            let entry = publisher(dir.path(), 1);
-            let error = publish_checked(&entry, &query(dir.path(), 2), &NO_WAIT).unwrap_err();
+            let check = query(dir.path(), 2);
+            let error = publish_checked(&upload(dir.path(), 1, "", check), &NO_WAIT).unwrap_err();
             assert!(format!("{error:#}").contains("demo@0.4.6"), "{error:#}");
         }
 
         #[test]
         fn without_a_check_a_zero_exit_publishes() {
             let dir = TempDir::new().unwrap();
-            let entry = publisher(dir.path(), 0);
-            let note = publish_checked(&entry, &RegistryCheck::Unchecked, &NO_WAIT).unwrap();
+            let upload = upload(dir.path(), 0, "", RegistryCheck::Unchecked);
+            let note = publish_checked(&upload, &NO_WAIT).unwrap();
             assert_eq!(note, None);
             assert!(ran(dir.path()));
+        }
+
+        #[test]
+        fn a_rate_limit_names_the_crate_and_the_retry_time() {
+            let dir = TempDir::new().unwrap();
+            let check = query(dir.path(), 99);
+            let upload = upload(dir.path(), 101, RATE_LIMITED, check);
+            let error = publish_checked(&upload, &NO_WAIT).unwrap_err();
+            let message = format!("{error:#}");
+            assert!(message.contains("demo@0.4.6"), "{message}");
+            assert!(
+                message.contains("try again after Sat, 19 Oct 2026 01:23:45 GMT)"),
+                "{message}"
+            );
+            assert!(message.contains("Nothing was tagged"), "{message}");
+        }
+
+        #[test]
+        fn a_rate_limit_without_a_time_still_says_so() {
+            assert_eq!(
+                rate_limited("status 429 Too Many Requests").as_deref(),
+                Some("429 Too Many Requests")
+            );
+            assert_eq!(rate_limited("error: token is required"), None);
         }
     }
 

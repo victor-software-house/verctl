@@ -117,7 +117,8 @@ pub fn run(config: &Config, root: &Path, timeout: Duration) -> Result<Vec<DocsLi
     Ok(lines)
 }
 
-/// The crates.io library crates whose release tag names HEAD.
+/// The crates.io library crates whose release tag names HEAD, each library
+/// member of a workspace package included.
 fn released_crates(config: &Config, root: &Path, token: &str) -> Result<Vec<Wanted>> {
     let head = git::head_sha(root)?;
     let planned = publish::plan(config, root)?;
@@ -127,12 +128,19 @@ fn released_crates(config: &Config, root: &Path, token: &str) -> Result<Vec<Want
         if entry.argv.is_empty() {
             continue;
         }
-        let RegistryCheck::CratesIo { name } =
-            publisher::registry_check(config, spec, root, &entry.version)?
-        else {
-            continue;
-        };
-        if !has_library(&root.join(&spec.path))? {
+        let mut libraries = Vec::new();
+        for upload in publisher::uploads(config, spec, root, entry)? {
+            let RegistryCheck::CratesIo { name } = upload.check else {
+                continue;
+            };
+            if has_library(&upload.manifest)? {
+                libraries.push(Wanted {
+                    name,
+                    version: upload.version,
+                });
+            }
+        }
+        if libraries.is_empty() {
             continue;
         }
         let Some(tag) = planned
@@ -144,10 +152,7 @@ fn released_crates(config: &Config, root: &Path, token: &str) -> Result<Vec<Want
         };
         let state = github::release_state(token, &repo, &tag.tag)?;
         if state.tag.is_some_and(|sha| sha.eq_ignore_ascii_case(&head)) {
-            wanted.push(Wanted {
-                name,
-                version: entry.version.clone(),
-            });
+            wanted.extend(libraries);
         }
     }
     Ok(wanted)

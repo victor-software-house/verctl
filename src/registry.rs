@@ -155,16 +155,48 @@ pub fn cargo_target(
     let Ok(document) = raw.parse::<DocumentMut>() else {
         return Ok(CargoTarget::Unknown);
     };
-    match manifest_publish(&document) {
-        CargoTarget::CratesIo => {}
-        other @ (CargoTarget::Other | CargoTarget::Unknown) => return Ok(other),
+    Ok(with_default(manifest_publish(&document), cwd, env))
+}
+
+/// Where the stock cargo publisher would publish a workspace member, from the
+/// `publish` list `cargo metadata` resolves for it: `None` when the member
+/// names no registry, which allows any.
+///
+/// It agrees with [`cargo_target`]: crates.io only when the package's
+/// `registry` is unset, empty, or `crates-io`, the list is absent or names
+/// only `crates-io`, and the `registry.default` Cargo resolves for `cwd` is
+/// unset or `crates-io`.
+#[must_use]
+pub fn cargo_member_target(
+    package_registry: Option<&str>,
+    publish: Option<&[String]>,
+    cwd: &Path,
+    env: &CargoEnv,
+) -> CargoTarget {
+    if package_registry.is_some_and(|registry| !registry.is_empty() && registry != CRATES_IO) {
+        return CargoTarget::Other;
     }
-    Ok(match registry_default(cwd, env) {
+    let listed = match publish {
+        None => CargoTarget::CratesIo,
+        Some([only]) if only == CRATES_IO => CargoTarget::CratesIo,
+        Some(_) => CargoTarget::Other,
+    };
+    with_default(listed, cwd, env)
+}
+
+/// `manifest`, the target the manifest's own `publish` allows, narrowed by the
+/// `registry.default` Cargo resolves for `cwd`.
+fn with_default(manifest: CargoTarget, cwd: &Path, env: &CargoEnv) -> CargoTarget {
+    match manifest {
+        CargoTarget::CratesIo => {}
+        other @ (CargoTarget::Other | CargoTarget::Unknown) => return other,
+    }
+    match registry_default(cwd, env) {
         DefaultRegistry::Unset => CargoTarget::CratesIo,
         DefaultRegistry::Named(name) if name == CRATES_IO => CargoTarget::CratesIo,
         DefaultRegistry::Named(_) => CargoTarget::Other,
         DefaultRegistry::Unknown => CargoTarget::Unknown,
-    })
+    }
 }
 
 /// What the manifest's `package.publish` says.

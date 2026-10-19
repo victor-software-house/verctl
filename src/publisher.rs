@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 
+use crate::members;
 use crate::registry::{self, CargoEnv, CargoTarget, RegistryCheck};
 
 /// A publisher recipe: the command to upload a package and where its registry
@@ -394,6 +395,116 @@ pub fn registry_check(
     }
 }
 
+/// One upload `publish` runs: a package, or one member of a workspace package.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Upload {
+    /// The package name, or the member's crate name.
+    pub name: String,
+    /// The version it uploads.
+    pub version: String,
+    /// Its manifest.
+    pub manifest: PathBuf,
+    /// The upload command.
+    pub argv: Vec<String>,
+    /// How `publish` asks whether the version is already published.
+    pub check: RegistryCheck,
+}
+
+/// The uploads that publish `entry`, in the order they run.
+///
+/// A workspace package (see [`workspace_members`]) runs one
+/// `cargo publish --package <member>` per member that publishes, in
+/// dependency order, each checked against its own target. Any other package
+/// runs its one upload command under [`registry_check`].
+///
+/// # Errors
+///
+/// Returns an error when [`workspace_members`] or [`registry_check`] fails.
+pub fn uploads(
+    config: &crate::config::Config,
+    spec: &crate::config::PackageSpec,
+    root: &Path,
+    entry: &crate::publish::PublishEntry,
+) -> Result<Vec<Upload>> {
+    let manifest = root.join(&spec.path);
+    let Some(members) = workspace_members(config, spec, root)? else {
+        return Ok(vec![Upload {
+            name: entry.name.clone(),
+            version: entry.version.clone(),
+            manifest,
+            check: registry_check(config, spec, root, &entry.version)?,
+            argv: entry.argv.clone(),
+        }]);
+    };
+    let (_, base) = cargo_recipe(config).render("cargo", &manifest, spec.registry.as_deref())?;
+    let env = CargoEnv::from_env();
+    Ok(members
+        .into_iter()
+        .map(|member| {
+            let mut argv = base.clone();
+            argv.extend(["--package".to_owned(), member.name.clone()]);
+            let target = registry::cargo_member_target(
+                spec.registry.as_deref(),
+                member.publish.as_deref(),
+                root,
+                &env,
+            );
+            let check = match target {
+                CargoTarget::CratesIo => RegistryCheck::CratesIo {
+                    name: member.name.clone(),
+                },
+                CargoTarget::Other | CargoTarget::Unknown => RegistryCheck::Unchecked,
+            };
+            Upload {
+                name: member.name,
+                version: member.version,
+                manifest: member.manifest,
+                argv,
+                check,
+            }
+        })
+        .collect())
+}
+
+/// The members a workspace package publishes, in publish order, or `None`
+/// when the package is not one.
+///
+/// A workspace package uses the stock cargo publisher, overrides neither the
+/// upload command nor the `query` on the package or on `publishers.cargo`, and
+/// points `path` at a virtual workspace manifest, whose root names no crate
+/// to publish. Declaring `publish` on the package runs that one command
+/// instead.
+///
+/// # Errors
+///
+/// Returns an error when the manifest cannot be read or parsed, or when
+/// [`members::members`] fails.
+pub fn workspace_members(
+    config: &crate::config::Config,
+    spec: &crate::config::PackageSpec,
+    root: &Path,
+) -> Result<Option<Vec<members::Member>>> {
+    let over = config.publishers.get("cargo");
+    let overridden = spec.publish_argv.is_some()
+        || spec.query.is_some()
+        || over.is_some_and(|over| over.argv.is_some() || over.query.is_some());
+    let manifest = root.join(&spec.path);
+    if publisher_name(spec) != "cargo" || overridden || !members::is_virtual(&manifest)? {
+        return Ok(None);
+    }
+    members::members(&manifest).map(Some)
+}
+
+/// The stock cargo recipe under any `publishers.cargo` entry.
+fn cargo_recipe(config: &crate::config::Config) -> PublisherSpec {
+    let stock = PublisherSpec::stock("cargo").unwrap_or_default();
+    match config.publishers.get("cargo") {
+        Some(over) => stock.merge(over.clone()),
+        None => stock,
+    }
+}
+
 /// A query check whose `{name}` is the name the manifest declares, read only
 /// when the query uses it. A `Cargo.toml` or `package.json` must name its
 /// package, since asking for the label instead could find another package;
@@ -699,6 +810,111 @@ mod tests {
                 name: "demo".into()
             }]
         );
+    }
+
+    /// A virtual workspace with one library member and one tool crate.
+    fn workspace() -> tempfile::TempDir {
+        let root = tempfile::TempDir::new().unwrap();
+        let write = |path: &str, body: &str| {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        };
+        write(
+            "Cargo.toml",
+            indoc! {r#"
+                [workspace]
+                resolver = "3"
+                members = ["core", "xtask"]
+
+                [workspace.package]
+                version = "0.0.2"
+                edition = "2024"
+            "#},
+        );
+        write(
+            "core/Cargo.toml",
+            indoc! {r#"
+                [package]
+                name = "demo-core"
+                version.workspace = true
+                edition.workspace = true
+            "#},
+        );
+        write("core/src/lib.rs", "");
+        write(
+            "xtask/Cargo.toml",
+            indoc! {r#"
+                [package]
+                name = "xtask"
+                version = "0.1.0"
+                edition.workspace = true
+                publish = false
+            "#},
+        );
+        write("xtask/src/main.rs", "fn main() {}");
+        root
+    }
+
+    fn uploads_for(yaml: &str, root: &Path) -> Vec<super::Upload> {
+        let config = crate::config::Config::parse(yaml).unwrap();
+        let spec = &config.packages[0];
+        let (label, noun, argv) = resolve(&config, spec, &root.join(&spec.path)).unwrap();
+        let entry = crate::publish::PublishEntry {
+            name: spec.name.clone(),
+            version: "0.0.2".into(),
+            noun,
+            label,
+            argv,
+        };
+        super::uploads(&config, spec, root, &entry).unwrap()
+    }
+
+    #[test]
+    fn a_virtual_workspace_uploads_each_member_against_the_index() {
+        let root = workspace();
+        let found = uploads_for(
+            indoc! {"
+                packages:
+                  - name: demo
+                    path: Cargo.toml
+            "},
+            root.path(),
+        );
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].name, "demo-core");
+        assert_eq!(found[0].version, "0.0.2");
+        assert_eq!(
+            found[0].check,
+            RegistryCheck::CratesIo {
+                name: "demo-core".into()
+            }
+        );
+        assert_eq!(
+            found[0].argv[found[0].argv.len() - 2..],
+            ["--package", "demo-core"]
+        );
+    }
+
+    #[test]
+    fn an_overridden_workspace_upload_stays_one_command() {
+        let root = workspace();
+        let found = uploads_for(
+            indoc! {"
+                packages:
+                  - name: demo
+                    path: Cargo.toml
+                    publish:
+                      - cargo
+                      - publish
+                      - --workspace
+            "},
+            root.path(),
+        );
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].name, "demo");
+        assert_eq!(found[0].argv, ["cargo", "publish", "--workspace"]);
+        assert_eq!(found[0].check, RegistryCheck::Unchecked);
     }
 
     #[test]
