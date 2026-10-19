@@ -51,6 +51,84 @@ fn dry_run_lists_one_cargo_crate() {
     assert_eq!(publish_stdout(root.path()), expected);
 }
 
+/// A package at a virtual workspace manifest publishes each member that
+/// publishes, dependencies first, and leaves out `publish = false`.
+#[test]
+fn dry_run_lists_workspace_members_in_publish_order() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    let write = |path: &str, body: &str| {
+        let path = root.path().join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, body).unwrap();
+    };
+    write(
+        "Cargo.toml",
+        indoc! {r#"
+            [workspace]
+            resolver = "3"
+            members = ["app", "core", "xtask"]
+
+            [workspace.package]
+            version = "0.0.2"
+            edition = "2024"
+        "#},
+    );
+    write(
+        "app/Cargo.toml",
+        indoc! {r#"
+            [package]
+            name = "demo-app"
+            version.workspace = true
+            edition.workspace = true
+
+            [dependencies]
+            demo-core = { version = "=0.0.2", path = "../core" }
+        "#},
+    );
+    write("app/src/main.rs", "fn main() {}");
+    write(
+        "core/Cargo.toml",
+        indoc! {r#"
+            [package]
+            name = "demo-core"
+            version.workspace = true
+            edition.workspace = true
+        "#},
+    );
+    write("core/src/lib.rs", "");
+    write(
+        "xtask/Cargo.toml",
+        indoc! {r#"
+            [package]
+            name = "xtask"
+            version = "0.1.0"
+            edition.workspace = true
+            publish = false
+        "#},
+    );
+    write("xtask/src/main.rs", "fn main() {}");
+    let expected = formatdoc! {"
+        ┌───────────┬─────────┬───────┐
+        │ name      ┆ version ┆ via   │
+        ╞═══════════╪═════════╪═══════╡
+        │ demo-core ┆ 0.0.2   ┆ cargo │
+        │ demo-app  ┆ 0.0.2   ┆ cargo │
+        └───────────┴─────────┴───────┘
+
+        release  would create v0.0.2
+        dry-run  nothing published
+    "};
+    assert_eq!(publish_stdout(root.path()), expected);
+}
+
 /// A private binary with `publish = false` releases on GitHub only.
 #[test]
 fn dry_run_lists_a_release_only_package() {

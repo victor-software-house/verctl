@@ -264,6 +264,20 @@ queue:
     notes:
       - 'Operator ruling 2026-10-15 on #155: no deprecated wrapper and no minor bump; the change keeps its fragment, and only the Version PR merge is held until the template migration lands.'
 
+  - id: VER-069
+    title: Publish a cargo workspace one member at a time
+    scope: src/members.rs, src/publisher.rs, src/publish.rs, src/pending.rs, src/docsrs.rs, src/registry.rs, operator docs
+    outcome: A package at a virtual workspace manifest publishes each member in dependency order under its own index check, so a release that stops partway, including at a crates.io rate limit, finishes on rerun and is never tagged early.
+    blocked_by: []
+    acceptance:
+      - '`verctl publish --dry-run` lists a virtual workspace''s publishing members, dependencies first, and leaves out `publish = false`.'
+      - Each member runs `cargo publish --locked --manifest-path <path> --package <member>` under its own timeout, and a member the crates.io index lists is reported `already` without running.
+      - A 429 from the registry exits non-zero, names the member and the retry time, and creates no tag or Release.
+      - The package counts as published only when every member is listed, and `verctl docs` waits for every library member.
+    notes:
+      - OpenSpec change cargo-workspace-publish in openspec/changes/cargo-workspace-publish; it takes decisions 9 and 10 of release-state-machine (VER-011) as a patch, closing gap W11 for cargo workspaces.
+      - 'Orchestrator decision 2026-10-18: implement this in verctl, over a per-repository publish task (rejected: it duplicates verctl logic) and a crates.io limit exception (not needed). Patch bump only.'
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all

@@ -196,9 +196,10 @@ fn tag_of(planned: &publish::PublishPlan, entry: &PublishEntry) -> Result<String
         .with_context(|| format!("no release tag for {}", entry.name))
 }
 
-/// Whether the registry has `entry`'s version. A package with no registry, or
-/// with no check, counts as listed once its tag exists: `publish` creates the
-/// tag only after the upload, so the tag is the record.
+/// Whether the registry has `entry`'s version: for a workspace package, every
+/// member's. A package with no registry, or an upload with no check, counts as
+/// listed once its tag exists: `publish` creates the tag only after the
+/// upload, so the tag is the record.
 fn registry_lists(
     config: &Config,
     root: &Path,
@@ -209,12 +210,18 @@ fn registry_lists(
     if entry.argv.is_empty() {
         return Ok(true);
     }
-    match publisher::registry_check(config, spec, root, &entry.version)? {
-        RegistryCheck::Unchecked => Ok(release.tag.is_some()),
-        check @ (RegistryCheck::CratesIo { .. } | RegistryCheck::Query { .. }) => {
-            check.lists(&entry.version)
+    for upload in publisher::uploads(config, spec, root, entry)? {
+        let listed = match &upload.check {
+            RegistryCheck::Unchecked => release.tag.is_some(),
+            check @ (RegistryCheck::CratesIo { .. } | RegistryCheck::Query { .. }) => {
+                check.lists(&upload.version)?
+            }
+        };
+        if !listed {
+            return Ok(false);
         }
     }
+    Ok(true)
 }
 
 fn state_of(

@@ -223,7 +223,14 @@ listed version is `already`, and its publisher does not run. After a
 publish, `publish` asks again for about two minutes, counting a failed
 check as not listed yet, and fails unless the registry lists the version. A package with no check (`query: []`, or a
 package with an overridden command, or a cargo package with another target, and no `query`)
-succeeds on a zero exit or on stderr saying the version exists. GitHub Packages for bun uses a
+succeeds on a zero exit or on stderr saying the version exists. A stock
+cargo package whose `path` is a virtual workspace manifest (a `[workspace]`
+table and no `[package]`) publishes each workspace member that publishes,
+dependencies first, as `cargo publish --package <member>`, each checked
+against the index on its own; `publish` on the package runs that one command
+instead. A registry rate limit (status 429) stops the run before any tag and
+names the crate and the time the registry gives; a rerun then skips every
+member the index lists. GitHub Packages for bun uses a
 nearby `bunfig.toml` as `--config`. One typed report feeds ctl-core pretty,
 colorless, and JSON output; tests pass `--color never`. JSON is never
 coloured, whatever `CLICOLOR_FORCE` or `FORCE_COLOR` say, and a parse
@@ -231,7 +238,8 @@ error under `--format json` is a JSON error even when the bad argument
 comes first.
 
 `docs` waits for docs.rs to build each crates.io library crate whose
-release tag names HEAD, polling every 30 seconds for `--timeout` minutes
+release tag names HEAD, each library member of a workspace package
+included, polling every 30 seconds for `--timeout` minutes
 (default 60, `VERCTL_TIMEOUT`). It fails naming each crate docs.rs failed
 to build or had not built in time; a failed build stays failed for that
 version, so the fix is the next patch release. docs.rs reports a running
