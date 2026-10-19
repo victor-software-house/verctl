@@ -105,18 +105,23 @@ pub fn run(config: &Config, root: &Path, fragments: &[Fragment]) -> Result<Vec<S
                 "--release-type",
                 "minor",
             ]);
-            line.decision = if process::run_inherit(&argv, CHECK_TIMEOUT).is_ok() {
-                Decision::Passed
-            } else {
-                failed.push(format!("{}@{}", line.name, line.version));
-                Decision::Failed
+            line.decision = match process::run_inherit(&argv, CHECK_TIMEOUT) {
+                Ok(()) => Decision::Passed,
+                Err(error) => {
+                    // The full output is already on stderr; the first line
+                    // says whether the tool exited, timed out, or never ran.
+                    let error = format!("{error:#}");
+                    let cause = error.lines().next().unwrap_or_default();
+                    failed.push(format!("{}@{} ({cause})", line.name, line.version));
+                    Decision::Failed
+                }
             };
         }
         lines.push(line);
     }
     if !failed.is_empty() {
         bail!(
-            "cargo semver-checks found a break in {}, whose next release is a patch; add a minor fragment if the break is intended",
+            "cargo semver-checks did not pass for {}. A failed lint is an API break in a crate whose next release is a patch: add a minor fragment if it is intended. Any other failure is the tool's, shown above",
             failed.join(", ")
         );
     }
