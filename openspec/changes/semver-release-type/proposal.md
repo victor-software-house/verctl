@@ -13,7 +13,7 @@ Cargo's rules every 0.0.z release may break, so nothing enforces the rule
 there. On a 0.y.z crate it assumes a minor release, which happens to match
 the rule only while no minor fragment is pending.
 
-Queue row: VER-074.
+Queue row: VER-075.
 A patch: it adds a verb and changes no existing behaviour.
 
 ## What changes
