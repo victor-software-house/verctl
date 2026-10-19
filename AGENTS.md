@@ -146,7 +146,10 @@ Never hand-edit versions or
 CHANGELOG. `prepare --pr` is the Version PR. `verctl check --versions`
 compares each manifest to the merge-base of HEAD and the default
 branch. Exempt on a `verctl/release/<base>` branch locally, or when the
-GitHub event has the Version PR label (`verctl:version`). CI does not skip.
+GitHub event's pull request has this repository as its head repository and
+`verctl/release/<base>` as its head branch for its current base, read
+through the API. A version the default branch carries at its merge-base
+with HEAD is not a hand edit. CI does not skip.
 This repository's self-release caller passes `auto-merge: true`, except
 while the repository variable `VERCTL_RELEASE_HOLD` is `true`: then the
 Version PR opens and updates but never merges itself, so the release waits
@@ -188,9 +191,8 @@ A breaking library change (one `cargo semver-checks` fails as a patch)
 targets the `next` branch, which carries the next minor release. After
 each release from `main`, merge `main` into `next` through a PR with a
 merge commit, so `next` drops the consumed fragments and builds on the
-released version. Label that PR `verctl:version`: it carries a version
-`main` already released, which the version check would otherwise read as
-a hand edit against `next`.
+released version. The version check accepts the versions that PR brings,
+because `main` carries them at its merge-base with HEAD.
 
 ## Git
 

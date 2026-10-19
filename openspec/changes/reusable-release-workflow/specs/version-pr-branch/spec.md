@@ -19,9 +19,10 @@ the pull request from that branch. No configuration SHALL name the branch.
 ### Requirement: Readers of the branch follow it
 
 `verctl check --versions` SHALL exempt a local branch named
-`verctl/release/<base>` instead of `version-packages`, and SHALL keep the
-`verctl:version` label exemption in CI. Auto-merge SHALL find the Version PR
-by the derived branch.
+`verctl/release/<base>` instead of `version-packages`, and in CI SHALL exempt
+a pull request whose head repository is the repository, whose head branch is
+`verctl/release/<base>`, and whose current base is `<base>`, read through the
+API. Auto-merge SHALL find the Version PR by the derived branch.
 
 #### Scenario: Checking versions on the Version PR branch
 

@@ -17,6 +17,8 @@ use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
 use verctl::config::Config;
 use verctl::versions::{self, Skip};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const ORIGIN: &str = "https://github.com/victor-software-house/verctl.git";
 
@@ -58,13 +60,15 @@ fn load(root: &Path) -> Config {
     Config::load(&root.join(verctl::config::FILE)).unwrap()
 }
 
+/// The check of a pull request into `main`: its base is the default branch.
 fn check(root: &Path, skip: Skip) -> anyhow::Result<versions::VersionReport> {
-    versions::require_with(root, &load(root), skip, &versions::stock_candidates())
+    let stock = versions::stock_candidates();
+    versions::require_with(root, &load(root), skip, &stock, &stock)
 }
 
 /// Isolate from the host Actions event. Version PR CI sets
-/// `GITHUB_EVENT_PATH` to a labeled payload; leaking that into these
-/// processes would exempt a hand-edit. Callers that need a var set it
+/// `GITHUB_EVENT_PATH` and a token; leaking them into these processes would
+/// exempt a hand-edit. Callers that need a var set it
 /// after this helper.
 fn is_host_actions_key(key: &str) -> bool {
     key == "CI" || key.starts_with("GITHUB_")
@@ -337,6 +341,7 @@ fn nested_config_maps_onto_the_git_tree() {
         &Config::load(&dir.path().join("crates/demo").join(verctl::config::FILE)).unwrap(),
         Skip::None,
         &versions::stock_candidates(),
+        &versions::stock_candidates(),
     )
     .unwrap_err();
     assert!(
@@ -371,25 +376,92 @@ fn pull_request_head_ref_is_not_an_exemption() {
     );
 }
 
-#[test]
-fn pull_request_version_label_is_exempt() {
-    let dir = repo_with_origin_main("1.0.0");
-    write_crate(dir.path(), "1.0.1");
-    let event = dir.path().join("event.json");
+/// A GitHub API that answers pull request 7 with its head repository, head
+/// branch, and base.
+async fn pull_api(head_repo: &str, head_ref: &str, base_ref: &str) -> MockServer {
+    let server = MockServer::start().await;
+    let body = serde_json::json!({
+        "id": 1,
+        "number": 7,
+        "url": "https://api.github.com/repos/owner/demo/pulls/7",
+        "locked": false,
+        "labels": [{"id": 1, "node_id": "L", "url": "https://api.github.com/l", "name": "verctl:version", "color": "ffffff", "default": false}],
+        "head": {
+            "ref": head_ref,
+            "sha": "0000000000000000000000000000000000000001",
+            "repo": {"id": 2, "name": "demo", "full_name": head_repo, "url": format!("https://api.github.com/repos/{head_repo}")}
+        },
+        "base": {"ref": base_ref, "sha": "0000000000000000000000000000000000000002"}
+    });
+    Mock::given(method("GET"))
+        .and(path("/repos/owner/demo/pulls/7"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(body))
+        .mount(&server)
+        .await;
+    server
+}
+
+/// `check --versions` as the CI job of pull request 7 runs it, with the pull
+/// request read from `server`. The payload claims a Version PR, which the
+/// check must not trust.
+fn pull_request_cmd(root: &Path, server: &MockServer) -> std::process::Command {
+    let event = root.join("event.json");
     fs::write(
         &event,
-        r#"{"pull_request":{"labels":[{"name":"verctl:version"}]}}"#,
+        r#"{"pull_request":{"number":7,"labels":[{"name":"verctl:version"}],"head":{"ref":"verctl/release/main"},"base":{"ref":"main"}}}"#,
     )
     .unwrap();
-    let output = check_cmd(dir.path())
-        .env("GITHUB_ACTIONS", "true")
+    let mut cmd = check_cmd(root);
+    cmd.env("GITHUB_ACTIONS", "true")
         .env("GITHUB_EVENT_PATH", &event)
-        .output()
-        .unwrap();
+        .env("GITHUB_REPOSITORY", "owner/demo")
+        .env("GITHUB_API_URL", server.uri())
+        .env("GITHUB_TOKEN", "token");
+    cmd
+}
+
+/// Whether `check --versions` passes for pull request 7 as `server` describes
+/// it, with a hand-edited version.
+fn pull_request_passes(server: &MockServer) -> bool {
+    let dir = repo_with_origin_main("1.0.0");
+    write_crate(dir.path(), "1.0.1");
+    let output = pull_request_cmd(dir.path(), server).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(output.status.success(), "{stdout}{stderr}");
-    assert!(stdout.contains("version-pr"), "{stdout}");
+    assert_eq!(
+        output.status.success(),
+        stdout.contains("version-pr"),
+        "{stdout}{stderr}"
+    );
+    output.status.success()
+}
+
+#[tokio::test]
+async fn the_version_pr_identity_is_exempt() {
+    let server = pull_api("owner/demo", "verctl/release/main", "main").await;
+    assert!(pull_request_passes(&server));
+}
+
+#[tokio::test]
+async fn a_version_branch_from_a_fork_is_not_an_exemption() {
+    let server = pull_api("fork/demo", "verctl/release/main", "main").await;
+    assert!(!pull_request_passes(&server));
+}
+
+/// A base changed after opening no longer matches the head branch, whatever
+/// the event payload said.
+#[tokio::test]
+async fn a_retargeted_version_pr_is_not_an_exemption() {
+    let server = pull_api("owner/demo", "verctl/release/main", "next").await;
+    assert!(!pull_request_passes(&server));
+}
+
+/// Labels are never read: the Version PR label on an ordinary branch exempts
+/// nothing.
+#[tokio::test]
+async fn a_labeled_ordinary_pull_request_is_not_an_exemption() {
+    let server = pull_api("owner/demo", "feat/bump", "main").await;
+    assert!(!pull_request_passes(&server));
 }
 
 #[test]
@@ -430,49 +502,84 @@ fn github_ref_name_is_not_an_exemption() {
     );
 }
 
-#[test]
-fn configured_version_label_is_the_exemption() {
+/// A repository whose `main` released 1.0.1 after `next` branched from it at
+/// 1.0.0, with both branches tracked on `origin` and HEAD on `next`.
+fn repo_with_next() -> TempDir {
     let dir = repo_with_origin_main("1.0.0");
+    common::git(dir.path(), &["checkout", "-q", "-b", "next"]);
+    fs::write(dir.path().join("next.txt"), "next\n").unwrap();
+    let next = common::commit_all(dir.path(), "next work");
+    common::git(
+        dir.path(),
+        &["update-ref", "refs/remotes/origin/next", &next],
+    );
+    common::git(dir.path(), &["checkout", "-q", "main"]);
     write_crate(dir.path(), "1.0.1");
-    fs::write(
-        dir.path().join(verctl::config::FILE),
-        indoc! {"
-            prepare:
-              version_label: ship-it
+    let main = common::commit_all(dir.path(), "release 1.0.1");
+    common::git(
+        dir.path(),
+        &["update-ref", "refs/remotes/origin/main", &main],
+    );
+    common::git(dir.path(), &["checkout", "-q", "next"]);
+    dir
+}
 
-            packages:
-              - name: demo
-                path: Cargo.toml
-        "},
+/// The check of a pull request into `next`.
+fn check_next(root: &Path) -> anyhow::Result<versions::VersionReport> {
+    versions::require_with(
+        root,
+        &load(root),
+        Skip::None,
+        &verctl::git::default_branch_candidates_from(Some("next")),
+        &versions::stock_candidates(),
     )
-    .unwrap();
-    let default_event = dir.path().join("default.json");
-    fs::write(
-        &default_event,
-        r#"{"pull_request":{"labels":[{"name":"verctl:version"}]}}"#,
-    )
-    .unwrap();
-    let defaulted = check_cmd(dir.path())
-        .env("GITHUB_EVENT_PATH", &default_event)
+}
+
+/// Merging `main` into `next` brings 1.0.1 along, which `main` released.
+#[test]
+fn merging_main_into_next_is_not_a_hand_edit() {
+    let dir = repo_with_next();
+    common::git(dir.path(), &["merge", "-q", "--no-edit", "main"]);
+    let report = check_next(dir.path()).unwrap();
+    assert_eq!(report.rows[0].remote.as_deref(), Some("1.0.0"));
+    assert_eq!(report.rows[0].released.as_deref(), Some("1.0.1"));
+}
+
+/// Typing the version `main` released, without its history, is a hand edit.
+#[test]
+fn a_hand_edit_on_next_fails() {
+    let dir = repo_with_next();
+    write_crate(dir.path(), "1.0.1");
+    let err = check_next(dir.path()).unwrap_err();
+    assert!(
+        format!("{err:#}").contains("demo 1.0.0 -> 1.0.1"),
+        "{err:#}"
+    );
+}
+
+/// Actions leaves `origin/HEAD` unset, so a default branch named `trunk`
+/// resolves from the pull request's base for both merge-bases.
+#[test]
+fn a_pull_request_into_trunk_resolves_both_merge_bases() {
+    let dir = TempDir::new().unwrap();
+    common::init(dir.path());
+    write_crate(dir.path(), "1.0.0");
+    let sha = common::commit_all(dir.path(), "init");
+    common::git(dir.path(), &["remote", "add", "origin", ORIGIN]);
+    common::git(
+        dir.path(),
+        &["update-ref", "refs/remotes/origin/trunk", &sha],
+    );
+    let output = check_cmd(dir.path())
+        .env("GITHUB_ACTIONS", "true")
+        .env("GITHUB_BASE_REF", "trunk")
         .output()
         .unwrap();
     assert!(
-        !defaulted.status.success(),
-        "default label must not exempt when version_label is ship-it"
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    let event = dir.path().join("event.json");
-    fs::write(
-        &event,
-        r#"{"pull_request":{"labels":[{"name":"ship-it"}]}}"#,
-    )
-    .unwrap();
-    let output = check_cmd(dir.path())
-        .env("GITHUB_EVENT_PATH", &event)
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success(), "{stdout}");
-    assert!(stdout.contains("version-pr"), "{stdout}");
 }
 
 #[test]

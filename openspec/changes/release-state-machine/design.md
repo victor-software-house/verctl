@@ -171,6 +171,15 @@ exits non-zero before pushing to the proposal branch, names every such match
 to close, and opens no second one. `check` reads all three from the API when it runs, never from the event
 payload. Title, body, and labels are never read.
 
+A version the release branch already carries is not a hand edit on another
+base. `check` also reads each manifest at the merge-base of HEAD and the
+release branch (`origin/<default>`), and accepts a version equal to that one.
+Merging the release branch into `next` brings its released versions along,
+and passes without any identity. Typing the same version without that history
+still fails, because the merge-base with the release branch then predates the
+release. A pull request into the release branch has one merge-base, so its
+check is unchanged.
+
 ### 2.2 Identity and content are both required
 
 `check` applies two independent rules to every pull request:

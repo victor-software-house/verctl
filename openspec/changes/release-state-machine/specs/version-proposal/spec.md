@@ -88,11 +88,24 @@ request that is not a Version PR SHALL fail when it changes a manifest version
 or adds a CHANGELOG section; it may add or remove fragments. Any pull request
 that changes whether a package publishes SHALL fail unless it adds a fragment
 for that package.
+A manifest version equal to that package's version at the merge-base of HEAD
+and the release branch SHALL NOT count as changed, whatever the pull request's
+base.
 
 #### Scenario: A hand-edited version on a feature branch
 
 - **WHEN** a pull request from branch `fix/typo` changes `Cargo.toml` from `0.3.0` to `0.3.1`
 - **THEN** `verctl check` exits non-zero and its error names `demo 0.3.0 -> 0.3.1` and the branch
+
+#### Scenario: The release branch merged into next
+
+- **WHEN** a pull request into `next` merges `main`, which released `0.3.1` after `next` branched at `0.3.0`
+- **THEN** `verctl check` exits zero
+
+#### Scenario: The released version typed on next
+
+- **WHEN** a pull request into `next` changes `Cargo.toml` from `0.3.0` to `0.3.1` without merging `main`
+- **THEN** `verctl check` exits non-zero and its error names `demo 0.3.0 -> 0.3.1`
 
 #### Scenario: Publishing turned on without a fragment
 
