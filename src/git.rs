@@ -798,11 +798,19 @@ pub fn default_branch_candidates() -> Vec<String> {
     candidate_names(env_base_ref().as_deref())
 }
 
-/// `VERCTL_DEFAULT_BRANCH` then `main` / `master`: the branch releases come
-/// from, whatever branch a pull request targets.
+/// `VERCTL_DEFAULT_BRANCH`, then `main` / `master`, then `GITHUB_BASE_REF`:
+/// the branch releases come from, whatever branch a pull request targets.
+/// The pull request's base comes last so a default branch with another name,
+/// which Actions leaves without `origin/HEAD`, still resolves.
 #[must_use]
 pub fn release_branch_candidates() -> Vec<String> {
-    candidate_names(configured_default_branch().as_deref())
+    let mut names = candidate_names(configured_default_branch().as_deref());
+    if let Some(base) = env_base_ref()
+        && !names.contains(&base)
+    {
+        names.push(base);
+    }
+    names
 }
 
 /// Like `default_branch_candidates`, with the base ref passed in instead of

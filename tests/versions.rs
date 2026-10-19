@@ -557,6 +557,31 @@ fn a_hand_edit_on_next_fails() {
     );
 }
 
+/// Actions leaves `origin/HEAD` unset, so a default branch named `trunk`
+/// resolves from the pull request's base for both merge-bases.
+#[test]
+fn a_pull_request_into_trunk_resolves_both_merge_bases() {
+    let dir = TempDir::new().unwrap();
+    common::init(dir.path());
+    write_crate(dir.path(), "1.0.0");
+    let sha = common::commit_all(dir.path(), "init");
+    common::git(dir.path(), &["remote", "add", "origin", ORIGIN]);
+    common::git(
+        dir.path(),
+        &["update-ref", "refs/remotes/origin/trunk", &sha],
+    );
+    let output = check_cmd(dir.path())
+        .env("GITHUB_ACTIONS", "true")
+        .env("GITHUB_BASE_REF", "trunk")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
 fn version_branch_cli_is_exempt() {
     let dir = repo_with_origin_main("1.0.0");
