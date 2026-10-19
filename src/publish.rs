@@ -236,9 +236,17 @@ pub fn run_pending(
         .partition(|tag| tags_before_upload(tag, &uploads));
     let repo = github::repo(root)?;
     let mut releases = Vec::new();
+    // A refused early tag still lets the uploads run, so a rerun with a token
+    // that can create it has only the tag left to do. The run fails at the end.
+    let mut refused = None;
     for tag in before {
         // This run releases the tag at HEAD, so an existing tag must name it.
-        releases.push(open_release(config, root, &token, &repo, tag, &head, true)?);
+        match open_release(config, root, &token, &repo, tag, &head, true) {
+            Ok(url) => releases.push(url),
+            Err(error) => {
+                refused.get_or_insert(error);
+            }
+        }
     }
     let mut packages = Vec::new();
     let mut shipped_packages = Vec::new();
@@ -268,6 +276,9 @@ pub fn run_pending(
         releases.push(open_release(
             config, root, &token, &repo, tag, &head, shipped,
         )?);
+    }
+    if let Some(error) = refused {
+        return Err(error);
     }
     Ok(PublishRun {
         outcome: Outcome::Released,

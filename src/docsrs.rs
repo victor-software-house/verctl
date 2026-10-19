@@ -136,12 +136,14 @@ fn released_crates(config: &Config, root: &Path, token: &str) -> Result<Vec<Want
             let RegistryCheck::CratesIo { name } = &upload.check else {
                 continue;
             };
-            let name = name.clone();
-            if has_library(&upload.manifest)? && upload.check.lists(&upload.version)? {
-                libraries.push(Wanted {
-                    name,
-                    version: upload.version,
-                });
+            if has_library(&upload.manifest)? {
+                libraries.push((
+                    upload.check.clone(),
+                    Wanted {
+                        name: name.clone(),
+                        version: upload.version,
+                    },
+                ));
             }
         }
         if libraries.is_empty() {
@@ -155,8 +157,14 @@ fn released_crates(config: &Config, root: &Path, token: &str) -> Result<Vec<Want
             continue;
         };
         let state = github::release_state(token, &repo, &tag.tag)?;
-        if state.tag.is_some_and(|sha| sha.eq_ignore_ascii_case(&head)) {
-            wanted.extend(libraries);
+        if !state.tag.is_some_and(|sha| sha.eq_ignore_ascii_case(&head)) {
+            continue;
+        }
+        // Only a release at HEAD asks the index, one request per library.
+        for (check, library) in libraries {
+            if check.lists(&library.version)? {
+                wanted.push(library);
+            }
         }
     }
     Ok(wanted)
