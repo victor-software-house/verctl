@@ -293,9 +293,9 @@ fragment, whose manifest's major.minor differs from that baseline (the
 Version PR already moved it), or that has no release on crates.io. A
 crate with no library target has no API, so it is left out, as
 cargo-semver-checks leaves it. A workspace package counts once per
-publishing member. The rule covers
-0.x: a crate at 1.0 or later fails the run, since reaching 1.0 is an
-operator decision that revisits the rule. It needs `cargo-semver-checks`
+publishing member. The rule covers 0.x: a crate with a library target
+at 1.0 or later fails the run, since reaching 1.0 is an operator
+decision that revisits the rule. It needs `cargo-semver-checks`
 on PATH and reads the crates.io index.
 
 Tag names come from `tags.template` (default `v{version}`). The

@@ -47,9 +47,10 @@ crates.io.
 
 ### Requirement: A crate with no library target is left out
 
-`verctl semver` SHALL leave out a crates.io crate whose package has no
-`lib`, `rlib`, `dylib`, `cdylib`, or `staticlib` target, the targets
-cargo-semver-checks checks, and SHALL run no check for it.
+`verctl semver` SHALL leave out a crates.io crate whose manifest has no
+library target as Cargo resolves it, an explicit `[lib]` table or an
+auto-discovered `src/lib.rs`, and SHALL run no check for it. Such a crate
+has no API, so the 1.0 rule below does not apply to it.
 
 #### Scenario: A binary member of a workspace package
 
@@ -58,8 +59,8 @@ cargo-semver-checks checks, and SHALL run no check for it.
 
 ### Requirement: A crate at 1.0 fails
 
-`verctl semver` SHALL fail when a crates.io crate's manifest version is 1.0
-or later, naming the crate and that the rule covers 0.x only.
+`verctl semver` SHALL fail when a crates.io crate with a library target has
+a manifest version of 1.0 or later, naming the crate and that the rule covers 0.x only.
 
 #### Scenario: A 1.0 crate
 

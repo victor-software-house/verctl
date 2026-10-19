@@ -64,26 +64,6 @@ pub fn is_virtual(manifest: &Path) -> Result<bool> {
 /// its JSON, or when the dependencies that order publishes form a cycle, which
 /// cargo cannot publish (<https://github.com/rust-lang/cargo/issues/4242>).
 pub fn members(manifest: &Path) -> Result<Vec<Member>> {
-    let metadata: Metadata =
-        serde_json::from_str(&metadata(manifest)?).context("cargo metadata output")?;
-    in_publish_order(&metadata)
-}
-
-/// Whether the package `name`, in the workspace of `manifest`, has a target
-/// cargo-semver-checks can check. A crate with only binaries has no API.
-///
-/// # Errors
-///
-/// Returns an error when `cargo metadata` fails or prints something other than
-/// its JSON, or when it lists no package `name`.
-pub fn has_library(manifest: &Path, name: &str) -> Result<bool> {
-    let metadata: TargetMetadata =
-        serde_json::from_str(&metadata(manifest)?).context("cargo metadata output")?;
-    library_in(&metadata, name).with_context(|| manifest.display().to_string())
-}
-
-/// `cargo metadata --no-deps` for the workspace of `manifest`.
-fn metadata(manifest: &Path) -> Result<String> {
     let path = manifest.display().to_string();
     let argv = process::argv(&[
         "cargo",
@@ -94,42 +74,9 @@ fn metadata(manifest: &Path) -> Result<String> {
         "--manifest-path",
         &path,
     ]);
-    process::run_limited(&argv, &[], METADATA_TIMEOUT)
-}
-
-/// The target kinds cargo-semver-checks 0.51.0 checks
-/// (`is_lib_like_checkable_target`): `lib` and the explicit crate types
-/// besides `proc-macro`.
-const LIBRARY_KINDS: [&str; 5] = ["lib", "rlib", "dylib", "cdylib", "staticlib"];
-
-/// The parts of `cargo metadata --format-version 1` [`has_library`] reads.
-#[derive(Deserialize)]
-struct TargetMetadata {
-    packages: Vec<TargetPackage>,
-}
-
-#[derive(Deserialize)]
-struct TargetPackage {
-    name: String,
-    targets: Vec<Target>,
-}
-
-#[derive(Deserialize)]
-struct Target {
-    kind: Vec<String>,
-}
-
-fn library_in(metadata: &TargetMetadata, name: &str) -> Result<bool> {
-    let package = metadata
-        .packages
-        .iter()
-        .find(|package| package.name == name)
-        .ok_or_else(|| anyhow::anyhow!("cargo metadata lists no package {name}"))?;
-    Ok(package
-        .targets
-        .iter()
-        .flat_map(|target| &target.kind)
-        .any(|kind| LIBRARY_KINDS.contains(&kind.as_str())))
+    let raw = process::run_limited(&argv, &[], METADATA_TIMEOUT)?;
+    let metadata: Metadata = serde_json::from_str(&raw).context("cargo metadata output")?;
+    in_publish_order(&metadata)
 }
 
 /// The parts of `cargo metadata --format-version 1` this module reads.
@@ -282,9 +229,7 @@ mod tests {
     use indoc::indoc;
     use tempfile::TempDir;
 
-    use super::{
-        Metadata, TargetMetadata, has_library, in_publish_order, is_virtual, library_in, members,
-    };
+    use super::{Metadata, in_publish_order, is_virtual, members};
 
     fn names(json: &str) -> Vec<String> {
         let metadata: Metadata = serde_json::from_str(json).unwrap();
@@ -361,30 +306,6 @@ mod tests {
         assert!(format!("{error:#}").contains("a -> b -> a"), "{error:#}");
     }
 
-    #[test]
-    fn only_library_like_targets_have_an_api() {
-        let metadata: TargetMetadata = serde_json::from_str(indoc! {r#"
-            {
-              "packages": [
-                {"name": "cli", "targets": [{"kind": ["bin"]}, {"kind": ["test"]}]},
-                {"name": "both", "targets": [{"kind": ["lib"]}, {"kind": ["bin"]}]},
-                {"name": "typed", "targets": [{"kind": ["rlib", "cdylib"]}]},
-                {"name": "derive", "targets": [{"kind": ["proc-macro"]}]}
-              ]
-            }
-        "#})
-        .unwrap();
-        assert!(!library_in(&metadata, "cli").unwrap());
-        assert!(library_in(&metadata, "both").unwrap());
-        assert!(library_in(&metadata, "typed").unwrap());
-        assert!(!library_in(&metadata, "derive").unwrap());
-        let error = library_in(&metadata, "missing").unwrap_err();
-        assert!(
-            format!("{error:#}").contains("no package missing"),
-            "{error:#}"
-        );
-    }
-
     /// The real `cargo metadata` resolves member globs, inherited versions,
     /// and `publish = false`.
     #[test]
@@ -450,7 +371,5 @@ mod tests {
             .map(|member| (member.name.as_str(), member.version.as_str()))
             .collect();
         assert_eq!(shown, [("demo-core", "0.0.2"), ("demo-app", "0.0.2")]);
-        assert!(has_library(&manifest, "demo-core").unwrap());
-        assert!(!has_library(&root.path().join("crates/app/Cargo.toml"), "xtask").unwrap());
     }
 }

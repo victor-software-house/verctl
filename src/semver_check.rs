@@ -9,7 +9,8 @@
 //! only: at 1.0 a break needs a major release, and reaching 1.0 is an
 //! operator decision that revisits the rule, so a crate at 1.0 or later
 //! fails the run. A crate with no library target has no API to check, so it
-//! gets no row, as cargo-semver-checks itself skips it.
+//! gets no row, as cargo-semver-checks itself skips it, and the 1.0 rule,
+//! which is about API breaks, does not apply to it.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -21,7 +22,7 @@ use serde::Serialize;
 use crate::config::Config;
 use crate::fragment::{Bump, Fragment};
 use crate::registry::{self, RegistryCheck};
-use crate::{members, process, publish, publisher};
+use crate::{docsrs, process, publish, publisher};
 
 /// How long one crate's check may run. It builds the rustdoc of the current
 /// crate and of its baseline, so it sits as high as a cold test build.
@@ -141,7 +142,7 @@ fn plan(config: &Config, root: &Path, fragments: &[Fragment]) -> Result<Vec<Plan
             let RegistryCheck::CratesIo { name } = &upload.check else {
                 continue;
             };
-            if !members::has_library(&upload.manifest, name)? {
+            if !docsrs::has_library(&upload.manifest)? {
                 continue;
             }
             let version = Version::parse(&upload.version)
