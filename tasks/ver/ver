@@ -4,7 +4,7 @@
 # template, never this file.
 #MISE description="Run the verctl version-PR CLI"
 #MISE dir="{{cwd}}"
-#MISE tools = { "github:victor-software-house/verctl" = "0.5.2" }
+#MISE tools = { "github:victor-software-house/verctl" = "0.5.3" }
 #MISE raw=true
 #MISE raw_args=true
 #USAGE mount "mise run --quiet ver -- --usage-spec=ver"
