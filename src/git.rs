@@ -251,8 +251,9 @@ pub fn version_commit(
     loop {
         ensure!(
             !boundary.contains(&commit.id().detach()),
-            "cannot find the commit that set {} to {wanted}: the clone is shallow; fetch the full history, or set VERCTL_DEFAULT_BRANCH so verctl fetches it",
-            rel.display()
+            "cannot find the commit that set {} to {wanted}: the clone is shallow; fetch the full history{}",
+            rel.display(),
+            shallow_hint()
         );
         let Some(parent) = commit.parent_ids().next() else {
             break;
@@ -318,7 +319,8 @@ pub fn tagged_commit(
         }
         ensure!(
             !boundary.contains(&commit.id().detach()),
-            "cannot find tagged commit {sha}: the clone is shallow; fetch the full history, or set VERCTL_DEFAULT_BRANCH so verctl fetches it"
+            "cannot find tagged commit {sha}: the clone is shallow; fetch the full history{}",
+            shallow_hint()
         );
         let Some(parent) = commit.parent_ids().next() else {
             return Ok(None);
@@ -477,6 +479,17 @@ pub fn ensure_origin_head(root: &Path, branch: &str, fetch: &FetchDefault) -> Re
     ))
     .context("point origin/HEAD at the default branch")?;
     Ok(())
+}
+
+/// Points at `VERCTL_DEFAULT_BRANCH` only while it is unset: once set,
+/// [`ensure_full_history`] has run, and a commit still past the boundary is
+/// not on the default branch.
+fn shallow_hint() -> &'static str {
+    if configured_default_branch().is_some() {
+        ""
+    } else {
+        ", or set VERCTL_DEFAULT_BRANCH so verctl fetches it"
+    }
 }
 
 /// Fetch the whole history of `origin/<branch>` when the clone is shallow.
