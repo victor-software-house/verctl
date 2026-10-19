@@ -81,7 +81,7 @@ which it skipped.
 ## 5. Rate limit
 
 crates.io answers a publish over its limit with status 429 and a message that
-says "Please try again after <time>". When an upload fails that way, verctl
+says `Please try again after <time>`. When an upload fails that way, verctl
 stops and exits non-zero with an error that names the member and that time,
 and says that a rerun then skips every member the index lists. The tag and
 Release loop never runs, so no tag exists until every member is listed.
