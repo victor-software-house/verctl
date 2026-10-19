@@ -65,6 +65,7 @@ override.
 | `runner` | string | `["ubuntu-latest"]` | JSON label list for the `plan`, `publish`, and `propose` jobs; asset jobs take their runners from `.ctl/ver.yaml` |
 | `mise-version` | string | the version verctl's own CI runs | the mise that installs the caller's tools, including verctl |
 | `mise-env` | string | `ci` | `MISE_ENV` for every job |
+| `mise-ignored-config-paths` | string | `""` | colon-separated mise config paths, relative to the repository root, that `plan`, `publish`, `assets`, and `docs` ignore (section 1.4); empty ignores none |
 | `verctl-artifact` | string | `""` | for verctl's own release: each job downloads the build `<prefix>-<runner.os>-<runner.arch>` uploaded earlier in the calling run and puts it first on PATH; empty runs the verctl the caller pins (section 1.3) |
 | `title` | string | `""` | Version PR title; empty means `chore(release): version packages` |
 | `commit-message` | string | `""` | Version PR commit message; empty means the title |
@@ -155,6 +156,32 @@ always runs its pin. verctl's CI `plan` job still runs `cargo run` for
 `verctl ci`; moving it to a pinned verctl needs a pin outside the served
 task, which the Version PR rewrites to a version not yet published, and is
 left to a follow-up.
+
+### 1.4 Ignored mise config paths
+
+A repository's root `mise.toml` can declare tools only its own tasks need,
+such as a Python stack with a `uv sync` postinstall. The release jobs run
+only verctl and the publisher, so installing that stack in each of them
+costs minutes and can fail on tools the release never starts.
+`mise-ignored-config-paths` names those files. A step before
+`jdx/mise-action` resolves each path against `GITHUB_WORKSPACE` and writes
+`MISE_IGNORED_CONFIG_PATHS` to `GITHUB_ENV`, so the action and every later
+step skip them. The paths are made absolute because mise resolves a
+relative entry against the cwd only since jdx/mise#12169 (August 2026), and
+a caller may pin an older `mise-version`.
+
+Each entry must be a plain relative path: an entry with an empty, `.`, or `..` segment, or a leading or trailing slash, fails the job, since it could name the repository root or a path outside it. The
+jobs that ignore files install fewer tools than `propose`, so they take
+the mise-action cache prefix `mise-v1-trimmed` and never share its cache.
+
+The step runs only when the input is set. mise reads the variable whenever
+it is present, so an empty value would replace the ignored paths a
+repository's `.miserc.toml` declares.
+
+`propose` keeps every config: `prepare.after` runs the repository's own
+tasks, such as a version sync, which may need those tools. An asset build
+that needs a toolchain from an ignored file names it in its own task, for
+example `mise -C cli x -- cargo build`.
 
 ## 2. Idempotent publish
 

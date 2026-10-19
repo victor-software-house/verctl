@@ -92,10 +92,15 @@ commit, publishes each in history order, builds the assets each Release
 lacks, waits for docs.rs, then opens or updates the Version PR. Every
 input is optional and defaults to verctl's: `version-pr`, `publish`,
 `assets`, `docs`, `auto-merge`, `config`, `runner`, `mise-version`,
-`mise-env`, `title`, `commit-message`, `registry-token-env`, and
+`mise-env`, `mise-ignored-config-paths`, `title`, `commit-message`,
+`registry-token-env`, and
 `verctl-artifact` (verctl's own release only: each job runs a verctl
 build from the calling run); secrets `app-client-id`, `app-private-key`,
-`registry-token`. Steps set `env:` and
+`registry-token`. `mise-ignored-config-paths` takes colon-separated
+config paths relative to the repository root, such as `mise.toml`, that
+every job but propose ignores, so they install only the release tools;
+propose keeps them because `prepare.after` runs the repository's tasks.
+Steps set `env:` and
 run `mise run ver <verb>`, so a caller serves the `ver` task. Without the
 App secrets the Version PR is opened with `GITHUB_TOKEN`, which needs the
 setting "Allow GitHub Actions to create and approve pull requests", and
