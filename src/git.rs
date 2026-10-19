@@ -12,6 +12,7 @@ use gix::objs::tree::EntryKind;
 use gix::refs::Target;
 use gix::refs::transaction::{PreviousValue, RefEdit};
 use gix::remote::Direction;
+use gix::remote::fetch::Shallow;
 use gix::sec::identity::Account;
 use gix::sec::trust::{DefaultForLevel, Mapping};
 use gix::sec::{Permission, Trust};
@@ -250,8 +251,9 @@ pub fn version_commit(
     loop {
         ensure!(
             !boundary.contains(&commit.id().detach()),
-            "cannot find the commit that set {} to {wanted}: the clone is shallow; fetch the full history",
-            rel.display()
+            "cannot find the commit that set {} to {wanted}: the clone is shallow; fetch the full history{}",
+            rel.display(),
+            shallow_hint()
         );
         let Some(parent) = commit.parent_ids().next() else {
             break;
@@ -317,7 +319,8 @@ pub fn tagged_commit(
         }
         ensure!(
             !boundary.contains(&commit.id().detach()),
-            "cannot find tagged commit {sha}: the clone is shallow; fetch the full history"
+            "cannot find tagged commit {sha}: the clone is shallow; fetch the full history{}",
+            shallow_hint()
         );
         let Some(parent) = commit.parent_ids().next() else {
             return Ok(None);
@@ -458,7 +461,7 @@ pub fn ensure_origin_head(root: &Path, branch: &str, fetch: &FetchDefault) -> Re
     }
     let remote_ref = format!("refs/remotes/origin/{branch}");
     if peel_remote(&repo, &remote_ref).is_none() {
-        fetch_one_branch(&repo, branch, fetch)?;
+        fetch_one_branch(&repo, branch, fetch, Shallow::NoChange)?;
     }
     ensure!(
         peel_remote(&repo, &remote_ref).is_some(),
@@ -478,10 +481,55 @@ pub fn ensure_origin_head(root: &Path, branch: &str, fetch: &FetchDefault) -> Re
     Ok(())
 }
 
+/// Points at `VERCTL_DEFAULT_BRANCH` only while it is unset: once set,
+/// [`ensure_full_history`] has run, and a commit still past the boundary is
+/// not on the default branch.
+fn shallow_hint() -> &'static str {
+    if configured_default_branch().is_some() {
+        ""
+    } else {
+        ", or set VERCTL_DEFAULT_BRANCH so verctl fetches it"
+    }
+}
+
+/// Fetch the whole history of `origin/<branch>` when the clone is shallow.
+///
+/// A depth-1 checkout, the default of `actions/checkout`, ends at a commit
+/// with no parents, so finding the commit that set a version, finding a tag's
+/// commit, and proving HEAD is on the default branch all stop at the boundary.
+/// Fetching the default branch without a depth limit removes that boundary for
+/// every commit on it, the version commit included.
+///
+/// A clone that is not shallow, an empty `branch`, no repository, and no
+/// `origin` remote are each a no-op; the walks then report the boundary.
+///
+/// # Errors
+///
+/// Returns an error when the shallow boundary cannot be read, or when the
+/// fetch fails (remote unreachable, credentials rejected, or the branch absent
+/// on the remote).
+pub fn ensure_full_history(root: &Path, branch: &str, fetch: &FetchDefault) -> Result<()> {
+    if branch.is_empty() {
+        return Ok(());
+    }
+    let Some(repo) = repo_covering(root) else {
+        return Ok(());
+    };
+    if !has_origin(&repo) || !repo.is_shallow().context("read the shallow boundary")? {
+        return Ok(());
+    }
+    fetch_one_branch(&repo, branch, fetch, Shallow::undo())
+}
+
 /// Fetches `branch` alone into `origin/<branch>`, through a remote that carries
 /// only that refspec and no tags, so the configured `origin` refspecs cannot
-/// widen the fetch.
-fn fetch_one_branch(repo: &gix::Repository, branch: &str, fetch: &FetchDefault) -> Result<()> {
+/// widen the fetch. `shallow` says what happens to a shallow clone's boundary.
+fn fetch_one_branch(
+    repo: &gix::Repository,
+    branch: &str,
+    fetch: &FetchDefault,
+    shallow: Shallow,
+) -> Result<()> {
     let spec = format!("+refs/heads/{branch}:refs/remotes/origin/{branch}");
     let url = match fetch {
         FetchDefault::Origin => origin_url_of(repo)?,
@@ -504,6 +552,7 @@ fn fetch_one_branch(repo: &gix::Repository, branch: &str, fetch: &FetchDefault) 
                 gix::remote::ref_map::Options::default(),
             )
             .with_context(|| format!("git fetch {spec}"))?
+            .with_shallow(shallow)
             .receive(gix::progress::Discard, &interrupt),
         FetchDefault::GitHub { token, .. } => connection
             .with_credentials(github_credentials(token))
@@ -512,6 +561,7 @@ fn fetch_one_branch(repo: &gix::Repository, branch: &str, fetch: &FetchDefault) 
                 gix::remote::ref_map::Options::default(),
             )
             .with_context(|| format!("git fetch {spec}"))?
+            .with_shallow(shallow)
             .receive(gix::progress::Discard, &interrupt),
     }
     .with_context(|| format!("git fetch {spec}"))?;
@@ -2124,6 +2174,46 @@ mod tests {
             ),
             "refs/remotes/origin/main"
         );
+    }
+
+    #[test]
+    fn a_shallow_clone_gets_the_history_that_set_the_version() {
+        let upstream = tempfile::TempDir::new().unwrap();
+        init(upstream.path());
+        write_version(upstream.path(), "0.0.1");
+        commit_all(upstream.path(), "chore: start");
+        write_version(upstream.path(), "0.0.2");
+        let set = commit_all(upstream.path(), "chore(release): version packages");
+        std::fs::write(upstream.path().join("README"), "later\n").unwrap();
+        commit_all(upstream.path(), "docs: later");
+
+        let parent = tempfile::TempDir::new().unwrap();
+        let url = format!("file://{}", upstream.path().display());
+        git(
+            parent.path(),
+            &["clone", "-q", "--depth", "1", &url, "work"],
+        );
+        let work = parent.path().join("work");
+        let manifest = work.join("Cargo.toml");
+        let error = version_commit(&work, &manifest, &version_line).unwrap_err();
+        assert!(format!("{error:#}").contains("shallow"), "{error:#}");
+
+        super::ensure_full_history(&work, "main", &super::FetchDefault::Origin).unwrap();
+        let found = version_commit(&work, &manifest, &version_line).unwrap();
+        assert_eq!(found, VersionCommit { sha: set, depth: 1 });
+    }
+
+    #[test]
+    fn a_full_clone_is_not_fetched_again() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        commit_all(dir.path(), "init");
+        // An origin that does not exist: a fetch would fail.
+        git(
+            dir.path(),
+            &["remote", "add", "origin", "file:///nonexistent/verctl"],
+        );
+        super::ensure_full_history(dir.path(), "main", &super::FetchDefault::Origin).unwrap();
     }
 
     #[test]

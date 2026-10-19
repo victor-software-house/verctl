@@ -181,6 +181,7 @@ pub fn run_pending(
     if dry_run {
         return dry_run_plan(config, root, &planned);
     }
+    full_history(root)?;
     prove_version_commit(config, root, &planned)?;
     let token = release::resolve_token()?;
     let pending = pending::pending(config, root, &token, skip_assets)?;
@@ -400,6 +401,19 @@ impl From<&PublishEntry> for PublishLine {
             via: entry.label.clone(),
             note: None,
         }
+    }
+}
+
+/// Remove a shallow clone's boundary before any history walk: verctl owns the
+/// fetch, so a depth-1 checkout still finds its version commit.
+///
+/// # Errors
+///
+/// Returns an error when [`git::ensure_full_history`] fails.
+pub fn full_history(root: &Path) -> Result<()> {
+    match git::configured_default_branch() {
+        Some(branch) => git::ensure_full_history(root, &branch, &git::FetchDefault::from_env()),
+        None => Ok(()),
     }
 }
 

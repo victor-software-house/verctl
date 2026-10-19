@@ -317,6 +317,7 @@ fn publish_plan_report(
     config: &Config,
     root: &std::path::Path,
 ) -> Result<PublishReport> {
+    publish::full_history(root)?;
     let token = release::resolve_token()?;
     let pending = pending::pending(config, root, &token, args.skip_assets)?;
     if let Some(path) = std::env::var_os("GITHUB_OUTPUT").filter(|path| !path.is_empty()) {

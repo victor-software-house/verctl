@@ -262,6 +262,20 @@ queue:
     notes:
       - 'VER-064 (#155) added an unquoted `: ` to the version-pr `title` description, so v0.4.6 to v0.4.8 shipped an action that GitHub refuses ("Mapping values are not allowed in this context"). Found in shrub run 39190679995. actionlint reads only workflows, so nothing caught it.'
 
+  - id: VER-072
+    title: Release from shallow clones and drifted workflow trees
+    scope: src/git.rs, src/publish.rs, src/main.rs, src/github.rs, operator docs
+    outcome: A depth-1 checkout releases without a manual fetch, and a Release GitHub refuses for a missing workflows permission says so and how to fix it.
+    blocked_by: []
+    acceptance:
+      - With `VERCTL_DEFAULT_BRANCH` set, `publish` and `publish --plan` fetch the whole history of that branch when the clone is shallow; without it the shallow error names the variable.
+      - A 403 on Release creation is matched on the typed status and names `workflows: write`, the commit, and that `GITHUB_TOKEN` cannot hold it.
+      - The operator instructions and README say to adopt `release.yml` only when no release is pending, or to merge the adoption before the Version PR.
+    notes:
+      - OpenSpec change release-from-shallow-and-drifted-trees.
+      - 'Evidence from a consumer adoption: shallow clone in run 39195633667, 403 "Resource not accessible by integration" after every crate published in run 39198937088, "no task ver found" in run 39196692461.'
+      - 'Operator decision pending (2026-10-19): the Version PR App holds contents, metadata, and pull_requests, and no workflows, so release.yml keeps GITHUB_TOKEN for publish. Granting workflows: write to that App would let the publish job mint a token that can create these Releases.'
+
   - id: VER-069
     title: Publish a cargo workspace one member at a time
     scope: src/members.rs, src/publisher.rs, src/publish.rs, src/pending.rs, src/docsrs.rs, src/registry.rs, operator docs

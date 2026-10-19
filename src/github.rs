@@ -366,9 +366,30 @@ async fn ensure_release_with(
         .target_commitish(sha)
         .send()
         .await
-        .context("create GitHub release")?;
+        .map_err(|error| release_error(error, tag, sha))?;
     require_tag_at(crab, repo, tag, sha).await?;
     Ok(release.html_url.to_string())
+}
+
+/// Names the cause of GitHub's 403 for a new Release. Creating a Release
+/// takes `contents: write`, plus `workflows: write` when the commit the tag
+/// would name has a `.github/workflows` tree that differs from the default
+/// branch; the refusal's `X-Accepted-GitHub-Permissions` header lists both
+/// sets. An Actions `GITHUB_TOKEN` can never hold `workflows`, so releasing
+/// an older version commit fails once a later commit changes a workflow.
+fn release_error(error: octocrab::Error, tag: &str, sha: &str) -> anyhow::Error {
+    let forbidden = matches!(
+        &error,
+        octocrab::Error::GitHub { source, .. } if source.status_code.as_u16() == 403
+    );
+    let error = anyhow::Error::new(error).context("create GitHub release");
+    if forbidden {
+        error.context(format!(
+            "GitHub refused to create {tag} at {sha}. When that commit's .github/workflows differ from the default branch, the Releases API also needs workflows: write, which GITHUB_TOKEN cannot hold; rerun with a token that has it, such as a GitHub App token with workflows: write"
+        ))
+    } else {
+        error
+    }
 }
 
 async fn require_tag_at(crab: &Octocrab, repo: &Repo, tag: &str, sha: &str) -> Result<()> {
@@ -1189,6 +1210,34 @@ mod tests {
         .await
         .unwrap();
         assert!(url.contains(TAG), "{url}");
+    }
+
+    #[tokio::test]
+    async fn a_forbidden_release_names_the_workflows_permission() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        Mock::given(method("POST"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases")))
+            .respond_with(ResponseTemplate::new(403).set_body_json(serde_json::json!({
+                "message": "Resource not accessible by integration",
+                "documentation_url": "https://docs.github.com/rest/releases/releases#create-a-release"
+            })))
+            .mount(&server)
+            .await;
+        let error = super::ensure_release_with(
+            &crab(&server.uri()),
+            &repo(),
+            TAG,
+            TAG,
+            "notes",
+            PUBLISHED,
+            true,
+        )
+        .await
+        .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains("workflows: write"), "{message}");
+        assert!(message.contains(PUBLISHED), "{message}");
     }
 
     #[tokio::test]
