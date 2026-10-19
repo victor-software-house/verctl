@@ -291,6 +291,23 @@ queue:
       - OpenSpec change tag-at-merge in openspec/changes/tag-at-merge.
       - 'Operator decision 2026-10-19: tag at merge for registry-checked packages; no workflows permission for any App, and no guard until a package with an unchecked real upload exists. It reverses publish-before-tag (VER-011) for registry-checked packages.'
 
+  - id: VER-075
+    title: "verctl semver: cargo-semver-checks at the release type the pending release allows"
+    scope: >-
+      src/semver_check.rs, src/registry.rs, src/cli.rs, src/main.rs,
+      src/presentation.rs, operator docs
+    outcome: >-
+      verctl semver fails a crates.io crate whose next release is a patch when its
+      public API breaks, and skips a crate whose next release already moves the minor.
+    blocked_by: []
+    acceptance:
+      - A crate whose pending fragments are at most patch, at the baseline's major.minor, is checked with cargo semver-checks --release-type minor against its crates.io baseline.
+      - A crate is skipped when a pending fragment for its package is minor or major, when its manifest's major.minor differs from the baseline, or when crates.io has no release of it.
+      - A crate at 1.0 or later fails the run, naming the rule.
+    notes:
+      - OpenSpec change semver-release-type in openspec/changes/semver-release-type.
+      - ctl-core's shared semver task calls mise run ver semver; a repository that does not serve the ver task runs its own verctl.
+
   - id: VER-069
     title: Publish a cargo workspace one member at a time
     scope: src/members.rs, src/publisher.rs, src/publish.rs, src/pending.rs, src/docsrs.rs, src/registry.rs, operator docs
