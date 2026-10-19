@@ -179,28 +179,7 @@ pub fn run_pending(
 ) -> Result<PublishRun> {
     let planned = plan(config, root)?;
     if dry_run {
-        let releases = planned
-            .tags
-            .iter()
-            .map(|tag| formatdoc!("would create {tag}", tag = tag.tag))
-            .collect();
-        let mut packages = Vec::new();
-        for (spec, entry) in config.packages.iter().zip(&planned.packages) {
-            match publisher::workspace_members(config, spec, root)? {
-                Some(members) => packages.extend(members.into_iter().map(|member| PublishLine {
-                    name: member.name,
-                    version: member.version,
-                    via: entry.label.clone(),
-                    note: None,
-                })),
-                None => packages.push(PublishLine::from(entry)),
-            }
-        }
-        return Ok(PublishRun {
-            outcome: Outcome::Released,
-            published: PublishOutcome { packages, releases },
-            waiting: Vec::new(),
-        });
+        return dry_run_plan(config, root, &planned);
     }
     prove_version_commit(config, root, &planned)?;
     let token = release::resolve_token()?;
@@ -281,6 +260,33 @@ pub fn run_pending(
         outcome: Outcome::Released,
         published: PublishOutcome { packages, releases },
         waiting,
+    })
+}
+
+/// What a dry run would publish: every package, a workspace package as its
+/// members in publish order, and every tag. It asks no registry.
+fn dry_run_plan(config: &Config, root: &Path, planned: &PublishPlan) -> Result<PublishRun> {
+    let releases = planned
+        .tags
+        .iter()
+        .map(|tag| formatdoc!("would create {tag}", tag = tag.tag))
+        .collect();
+    let mut packages = Vec::new();
+    for (spec, entry) in config.packages.iter().zip(&planned.packages) {
+        match publisher::workspace_members(config, spec, root)? {
+            Some(members) => packages.extend(members.into_iter().map(|member| PublishLine {
+                name: member.name,
+                version: member.version,
+                via: entry.label.clone(),
+                note: None,
+            })),
+            None => packages.push(PublishLine::from(entry)),
+        }
+    }
+    Ok(PublishRun {
+        outcome: Outcome::Released,
+        published: PublishOutcome { packages, releases },
+        waiting: Vec::new(),
     })
 }
 
