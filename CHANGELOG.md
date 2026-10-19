@@ -1,5 +1,10 @@
 # Changelog
 
+## verctl 0.5.0
+
+- `verctl semver` checks the API of each crates.io crate whose next release is a patch with `cargo semver-checks --release-type minor`, so only a break fails. It skips a crate whose package has a pending minor fragment or whose minor the Version PR already moved, and fails on a crate at 1.0 or later ([#183](https://github.com/victor-software-house/verctl/pull/183)).
+- `check --versions` knows a Version PR by its head repository, its head branch `verctl/release/<base>`, and its current base, read through the API, and no longer reads the `verctl:version` label. The Version PR's first CI run passes without a `labeled` trigger; when a version differs, the CI job needs `GITHUB_TOKEN` with `pull-requests: read`, and a pull request that changes no version reads no API. A version the default branch carries at its merge-base with HEAD is not a hand edit, so merging the default branch into another branch passes. `Skip::from_env` takes no config and returns a `Result`, `report_with` and `require_with` take the default-branch candidates, `VersionRow` gains `released`, and the payload label readers are removed ([#188](https://github.com/victor-software-house/verctl/pull/188)).
+
 ## verctl 0.4.12
 
 - The reusable `release.yml` takes `mise-ignored-config-paths`: colon-separated mise config paths, relative to the repository root, that every job but `propose` ignores, so the release jobs skip tools only the repository's own tasks need ([#184](https://github.com/victor-software-house/verctl/pull/184)).
