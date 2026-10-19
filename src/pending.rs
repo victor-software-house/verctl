@@ -198,8 +198,9 @@ fn tag_of(planned: &publish::PublishPlan, entry: &PublishEntry) -> Result<String
 
 /// Whether the registry has `entry`'s version: for a workspace package, every
 /// member's. A package with no registry, or an upload with no check, counts as
-/// listed once its tag exists: `publish` creates the tag only after the
-/// upload, so the tag is the record.
+/// listed once its tag exists: `publish` creates the tag of a package with an
+/// unchecked upload only after the upload, so the tag is the record. A tag
+/// with only checked uploads is created first and records nothing.
 fn registry_lists(
     config: &Config,
     root: &Path,

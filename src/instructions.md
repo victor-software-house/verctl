@@ -132,10 +132,16 @@ reusable workflow runs, so its publish fails with `no task ver found`.
 
 GitHub refuses to create a Release with 403 "Resource not accessible
 by integration" when the version commit's `.github/workflows` differs
-from the default branch, as after an adoption merged behind the Version
-PR. The Releases API then needs `workflows: write`, which
-`GITHUB_TOKEN` cannot hold; `publish` names that permission. Rerun with
-a token that holds it, such as a GitHub App token.
+from the default branch. The Releases API then needs `workflows: write`,
+which `GITHUB_TOKEN` cannot hold. So `publish` creates the tag and
+Release of a package whose uploads all have a registry check, or that
+has no upload, before its uploads: the run that merged the Version PR
+creates them while HEAD is the default branch tip, and a rerun after a
+failed upload finds them. A package with an unchecked upload is tagged
+after its upload, because its tag is the record that the upload ran; a
+merge that changes a workflow while its release is pending brings the
+403 back, and `publish` names the permission. Rerun `verctl publish` at
+that commit with a token that holds it.
 
 Do not hand-edit versions. `verctl check --versions` compares each
 declared manifest to the merge-base of HEAD and the default branch.

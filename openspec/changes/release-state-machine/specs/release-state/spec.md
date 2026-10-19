@@ -57,8 +57,10 @@ the first failed transition without attempting anything that depends on it.
 
 ### Requirement: Publish precedes tag, and tags land on the release commit
 
-verctl SHALL create a tag only after every publishing package the tag names
-is published,
+verctl SHALL create a tag that names a package with an unchecked upload only
+after every publishing package the tag names is published, SHALL create a tag
+whose packages all have a registry check before their uploads, as the
+tag-at-merge change specifies,
 SHALL create it at the release commit, SHALL push all ready tags of a run in one
 atomic push, and SHALL treat an existing tag that peels to another commit as a
 conflict that stops every transition for that package.

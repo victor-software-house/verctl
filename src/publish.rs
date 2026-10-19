@@ -1,4 +1,4 @@
-//! Publish the versions already on HEAD, then open a GitHub Release.
+//! Publish the versions already on HEAD and open a GitHub Release.
 //!
 //! How each package is published comes from `[publishers.*]`. Cargo and
 //! bun are stock recipes, not the only stacks. How tags are named comes
@@ -160,6 +160,10 @@ pub struct Waiting {
 /// Release the packages whose version commit is HEAD and whose release is
 /// incomplete, and report nothing to release when every release is complete.
 ///
+/// A tag whose packages all have a registry check, or no upload, gets its tag
+/// and Release before any upload; any other tag gets them after its uploads
+/// (see [`tags_before_upload`]).
+///
 /// A run on any other commit with an incomplete release fails before any side
 /// effect and names the version commits, so a later commit can never tag one
 /// that was never published. With `skip_assets`, declared assets do not count
@@ -218,17 +222,97 @@ pub fn run_pending(
             })
         })
         .collect();
+    let mut uploads = Vec::new();
+    for (spec, entry) in &selected {
+        let runs = if entry.argv.is_empty() {
+            Vec::new()
+        } else {
+            publisher::uploads(config, spec, root, entry)?
+        };
+        uploads.push((*entry, runs));
+    }
+    let (before, after): (Vec<&TagPlan>, Vec<&TagPlan>) = tags
+        .into_iter()
+        .partition(|tag| tags_before_upload(tag, &uploads));
+    let repo = github::repo(root)?;
+    let (mut releases, refused) = open_early(config, root, &token, &repo, &before, &head)?;
+    let rest = run_uploads(uploads).and_then(|(packages, shipped_packages)| {
+        for tag in after {
+            let shipped = tag
+                .packages
+                .iter()
+                .any(|entry| shipped_packages.contains(&entry.name));
+            releases.push(open_release(
+                config, root, &token, &repo, tag, &head, shipped,
+            )?);
+        }
+        Ok(packages)
+    });
+    let packages = match (rest, refused) {
+        (Ok(packages), None) => packages,
+        (Ok(_), Some(early)) => return Err(early),
+        (Err(later), early) => return Err(after_refusal(later, early)),
+    };
+    Ok(PublishRun {
+        outcome: Outcome::Released,
+        published: PublishOutcome { packages, releases },
+        waiting,
+    })
+}
+
+/// Open the Releases of the tags created before the uploads, at `head`. An
+/// existing tag must name it. GitHub refusing one for a missing permission
+/// is returned beside the URLs rather than stopping the run, so the uploads
+/// still run and a rerun with a token that has it has only the Release left
+/// to do. Any other failure, such as a tag that names another commit, stops
+/// the run here.
+fn open_early(
+    config: &Config,
+    root: &Path,
+    token: &str,
+    repo: &github::Repo,
+    tags: &[&TagPlan],
+    head: &str,
+) -> Result<(Vec<String>, Option<anyhow::Error>)> {
+    let mut releases = Vec::new();
+    let mut refused = None;
+    for tag in tags {
+        match open_release(config, root, token, repo, tag, head, true) {
+            Ok(url) => releases.push(url),
+            Err(error) if github::is_release_refused(&error) => {
+                refused.get_or_insert(error);
+            }
+            Err(error) => return Err(after_refusal(error, refused)),
+        }
+    }
+    Ok((releases, refused))
+}
+
+/// `error`, carrying a deferred Release refusal when there is one, so the
+/// refusal is not lost behind a later failure.
+fn after_refusal(error: anyhow::Error, refused: Option<anyhow::Error>) -> anyhow::Error {
+    match refused {
+        Some(early) => error.context(format!("{early:#}; then the run failed")),
+        None => error,
+    }
+}
+
+/// Run every upload, and return each package's line with the names of the
+/// packages that shipped in this run.
+fn run_uploads(
+    uploads: Vec<(&PublishEntry, Vec<Upload>)>,
+) -> Result<(Vec<PublishLine>, Vec<String>)> {
     let mut packages = Vec::new();
-    let mut shipped_packages = Vec::new();
-    for (spec, entry) in selected {
+    let mut shipped = Vec::new();
+    for (entry, uploads) in uploads {
         if entry.argv.is_empty() {
             packages.push(PublishLine::from(entry));
             continue;
         }
-        for upload in publisher::uploads(config, spec, root, entry)? {
+        for upload in uploads {
             let note = publish_checked(&upload, &registry::LISTING_DELAYS)?;
             if note.is_none() {
-                shipped_packages.push(entry.name.clone());
+                shipped.push(entry.name.clone());
             }
             packages.push(PublishLine {
                 name: upload.name,
@@ -238,30 +322,45 @@ pub fn run_pending(
             });
         }
     }
-    let repo = github::repo(root)?;
-    let sha = git::head_sha(root)?;
-    let mut releases = Vec::new();
-    for tag in tags {
-        let shipped = tag
-            .packages
-            .iter()
-            .any(|entry| shipped_packages.contains(&entry.name));
-        let notes = release::notes_for(
-            config,
-            root,
-            tag.packages
+    Ok((packages, shipped))
+}
+
+/// Whether `tag` is created before the uploads: when no package under it
+/// uploads without a registry check. Completion then comes from the registry,
+/// so a tag created first claims nothing, and the run that merged the Version
+/// PR creates it while HEAD is still the default branch tip. A rerun at that
+/// commit after a later merge changed `.github/workflows` would otherwise need
+/// `workflows: write` to create the Release, which `GITHUB_TOKEN` cannot hold.
+/// An unchecked upload has only its tag as the record that it ran, so its tag
+/// still follows the upload.
+fn tags_before_upload(tag: &TagPlan, uploads: &[(&PublishEntry, Vec<Upload>)]) -> bool {
+    !uploads.iter().any(|(entry, uploads)| {
+        tag.packages.iter().any(|named| named.name == entry.name)
+            && uploads
                 .iter()
-                .map(|entry| (entry.name.as_str(), entry.version.as_str())),
-        );
-        let url =
-            github::ensure_release(&token, &repo, &tag.tag, &tag.title, &notes, &sha, shipped)?;
-        releases.push(url);
-    }
-    Ok(PublishRun {
-        outcome: Outcome::Released,
-        published: PublishOutcome { packages, releases },
-        waiting,
+                .any(|upload| matches!(upload.check, RegistryCheck::Unchecked))
     })
+}
+
+/// Create the GitHub Release for `tag` at `sha`, or confirm it exists, with
+/// the CHANGELOG sections of its packages as the body.
+fn open_release(
+    config: &Config,
+    root: &Path,
+    token: &str,
+    repo: &github::Repo,
+    tag: &TagPlan,
+    sha: &str,
+    shipped: bool,
+) -> Result<String> {
+    let notes = release::notes_for(
+        config,
+        root,
+        tag.packages
+            .iter()
+            .map(|entry| (entry.name.as_str(), entry.version.as_str())),
+    );
+    github::ensure_release(token, repo, &tag.tag, &tag.title, &notes, sha, shipped)
 }
 
 /// What a dry run would publish: every package, a workspace package as its
@@ -565,6 +664,75 @@ mod tests {
             assert_eq!(waiting.len(), 1);
             assert_eq!(waiting[0].name, "core");
             assert_eq!(waiting[0].commit, "aaa");
+        }
+    }
+
+    mod tag_order {
+        use std::path::PathBuf;
+
+        use super::super::{PublishEntry, TagPlan, tags_before_upload};
+        use super::entry;
+        use crate::publisher::Upload;
+        use crate::registry::RegistryCheck;
+
+        fn upload(name: &str, check: RegistryCheck) -> Upload {
+            Upload {
+                name: name.into(),
+                version: "0.4.0".into(),
+                manifest: PathBuf::from("Cargo.toml"),
+                argv: vec!["true".into()],
+                check,
+            }
+        }
+
+        fn tag(packages: &[&PublishEntry]) -> TagPlan {
+            TagPlan {
+                tag: "v0.4.0".into(),
+                title: "v0.4.0".into(),
+                packages: packages.iter().map(|&entry| entry.clone()).collect(),
+            }
+        }
+
+        #[test]
+        fn a_crates_io_package_is_tagged_before_its_upload() {
+            let demo = entry("demo", "0.4.0");
+            let uploads = vec![(
+                &demo,
+                vec![upload(
+                    "demo",
+                    RegistryCheck::CratesIo {
+                        name: "demo".into(),
+                    },
+                )],
+            )];
+            assert!(tags_before_upload(&tag(&[&demo]), &uploads));
+        }
+
+        #[test]
+        fn a_release_only_package_is_tagged_first() {
+            let mut app = entry("app", "0.4.0");
+            app.argv.clear();
+            assert!(tags_before_upload(&tag(&[&app]), &[(&app, Vec::new())]));
+        }
+
+        #[test]
+        fn an_unchecked_upload_keeps_its_shared_tag_after_the_uploads() {
+            let demo = entry("demo", "0.4.0");
+            let tool = entry("tool", "0.4.0");
+            let uploads = vec![
+                (
+                    &demo,
+                    vec![upload(
+                        "demo",
+                        RegistryCheck::CratesIo {
+                            name: "demo".into(),
+                        },
+                    )],
+                ),
+                (&tool, vec![upload("tool", RegistryCheck::Unchecked)]),
+            ];
+            assert!(!tags_before_upload(&tag(&[&demo, &tool]), &uploads));
+            assert!(tags_before_upload(&tag(&[&demo]), &uploads));
         }
     }
 

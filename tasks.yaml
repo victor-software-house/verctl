@@ -21,7 +21,7 @@ queue:
       - 'verctl writes no lockfile: `Cargo.lock`, `bun.lock`, and `mise.lock` change only through cargo, bun, and mise, and verctl only reads them to check agreement.'
       - A Version PR is identified by its head repository, its head branch `verctl/release/<base>`, and its base; `check` also requires its diff to equal the version step applied to its base, and no label is read.
       - Release state is derived from facts on every run, and a rerun of `verctl release` after a partial failure finishes the release and reports each completed transition as `already`.
-      - Publish precedes the tag, tags land on the release commit in one atomic push, and a Release with assets stays a draft until every asset is uploaded.
+      - Publish precedes the tag for a package with an unchecked upload, a registry-checked package is tagged before its uploads (VER-073), tags land on the release commit in one atomic push, and a Release with assets stays a draft until every asset is uploaded.
       - Cargo and Bun are built-in providers; a package can replace one block with a step, and another stack can declare a whole ecosystem from steps.
       - A step is a mise task or an argv that changes only its declared `writes`, and a step that runs after a release declares a `check`.
       - "Bun packages publish through `bun pm pack` and verctl's own npm registry client, with `auth: oidc` and provenance available, and bun-release is archived."
@@ -269,12 +269,27 @@ queue:
     blocked_by: []
     acceptance:
       - With `VERCTL_DEFAULT_BRANCH` set, `publish` and `publish --plan` fetch the whole history of that branch when the clone is shallow; without it the shallow error names the variable.
-      - A 403 on Release creation is matched on the typed status and names `workflows: write`, the commit, and that `GITHUB_TOKEN` cannot hold it.
+      - 'A 403 on Release creation is matched on the typed status and names `workflows: write`, the commit, and that `GITHUB_TOKEN` cannot hold it.'
       - The operator instructions and README say to adopt `release.yml` only when no release is pending, or to merge the adoption before the Version PR.
     notes:
       - OpenSpec change release-from-shallow-and-drifted-trees.
       - 'Evidence from a consumer adoption: shallow clone in run 39195633667, 403 "Resource not accessible by integration" after every crate published in run 39198937088, "no task ver found" in run 39196692461.'
-      - 'Operator decision pending (2026-10-19): the Version PR App holds contents, metadata, and pull_requests, and no workflows, so release.yml keeps GITHUB_TOKEN for publish. Granting workflows: write to that App would let the publish job mint a token that can create these Releases.'
+      - 'Operator decision 2026-10-19: no App gets workflows: write, and release.yml keeps GITHUB_TOKEN for publish. A registry-checked package is tagged in the Version PR merge run instead, before its uploads (VER-073), so a retry creates no tag GitHub would check.'
+
+  - id: VER-073
+    title: Tag at merge for registry-checked packages
+    scope: src/publish.rs, src/docsrs.rs, src/pending.rs, src/github.rs, operator docs
+    outcome: >-
+      A release whose upload fails retries at its version commit without creating a
+      tag or Release, so a later workflow change cannot make GitHub refuse it.
+    blocked_by: []
+    acceptance:
+      - A tag whose packages all have a registry check, or no upload, gets its tag and Release before any upload in the publish run.
+      - A tag with an unchecked upload gets its tag and Release after the uploads, as before.
+      - verctl docs waits only for crates the crates.io index lists, so a tag created before a failed upload does not start a docs.rs wait.
+    notes:
+      - OpenSpec change tag-at-merge in openspec/changes/tag-at-merge.
+      - 'Operator decision 2026-10-19: tag at merge for registry-checked packages; no workflows permission for any App, and no guard until a package with an unchecked real upload exists. It reverses publish-before-tag (VER-011) for registry-checked packages.'
 
   - id: VER-069
     title: Publish a cargo workspace one member at a time
@@ -599,11 +614,6 @@ archive:
     title: Hold the VER-064 release until the template migration, then drop its semver override
     scope: release, .github/workflows/version-pr.yml, Cargo.toml
     outcome: VER-064 reaches crates.io only in the patch release after the template migration, and neither the hold nor the override outlives that release.
-    blocked_by: []
-    acceptance:
-      - While the repository variable VERCTL_RELEASE_HOLD is true, the Version PR on main opens and updates but never enables auto-merge.
-      - After the template migration merges, the operator merges the Version PR, and VERCTL_RELEASE_HOLD is deleted.
-      - Once the release that carries VER-064 is on crates.io, the [package.metadata.cargo-semver-checks.lints] table leaves Cargo.toml and mise run semver passes without it.
     notes:
       - 'Operator ruling 2026-10-15 on #155: no deprecated wrapper and no minor bump; the change keeps its fragment, and only the Version PR merge is held until the template migration lands.'
       - 'Operator decision 2026-10-18, asked through the orchestrator: the template migration (#173) has landed, so the hold is lifted and Version PR #172 merges by hand.'
