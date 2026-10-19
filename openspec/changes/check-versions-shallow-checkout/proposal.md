@@ -14,12 +14,13 @@ A patch: it changes behaviour only for runs that fail today, and adds no configu
 
 ## What changes
 
-1. Before comparing, `check --versions` fetches each of `VERCTL_DEFAULT_BRANCH` and `GITHUB_BASE_REF` that is set, when `origin/<branch>` is missing or the clone is shallow.
+1. Before comparing, `check --versions` fetches each of `VERCTL_DEFAULT_BRANCH`, the event payload's `repository.default_branch`, and `GITHUB_BASE_REF` that is set, when `origin/<branch>` is missing or the clone is shallow.
 2. A shallow clone is fetched with its boundary undone, so the server also sends the parents of HEAD and the merge-base can be computed.
-3. A full clone that has the ref fetches nothing, and a run outside Actions sets neither variable, so it fetches nothing.
-4. The fetch uses `GITHUB_TOKEN` and `GITHUB_REPOSITORY` when both are set, as `publish` does, and `origin` otherwise.
+3. The default branch is fetched even when a pull request targets another branch, so the released baseline reads the branch a full clone would.
+4. A full clone that has the ref fetches nothing, and a run outside Actions names no branch, so it fetches nothing.
+5. The fetch uses `GITHUB_TOKEN` and `GITHUB_REPOSITORY` when both are set, as `publish` does, and `origin` otherwise.
 
 ## Impact
 
-1. `src/git.rs` and `src/versions.rs`.
+1. `src/git.rs`, `src/github.rs`, and `src/versions.rs`.
 2. `src/instructions.md`, `.ctl/operator/instructions.md.jinja`, and `AGENTS.md`.

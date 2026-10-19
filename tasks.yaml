@@ -341,14 +341,15 @@ queue:
 
   - id: VER-076
     title: check --versions fetches the branches it compares against
-    scope: src/git.rs, src/versions.rs, operator docs
+    scope: src/git.rs, src/github.rs, src/versions.rs, operator docs
     outcome: >-
       verctl check --versions compares versions in the depth-1 pull request checkout
       of actions/checkout, with no fetch-depth set.
     blocked_by: []
     acceptance:
       - In a depth-1 checkout of refs/pull/<n>/merge with no origin/<base>, the check fetches the base with HEAD's parents and compares against HEAD's merge-base with it.
-      - A full clone that has the ref, and a run with neither VERCTL_DEFAULT_BRANCH nor GITHUB_BASE_REF set, fetch nothing.
+      - A pull request to a branch other than the default fetches the event's default branch too, so the released baseline matches a full clone.
+      - A full clone that has the ref, and a run that names no branch, fetch nothing.
       - ctl-core's shared check:versions passes in a pull request Verify job with the default checkout.
     plan: openspec/changes/check-versions-shallow-checkout/proposal.md
     notes:

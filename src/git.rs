@@ -849,15 +849,23 @@ pub fn release_branch_candidates() -> Vec<String> {
 }
 
 /// The branches a version comparison fetches when they are missing:
-/// `VERCTL_DEFAULT_BRANCH`, then `GITHUB_BASE_REF`. Neither is set outside
+/// `VERCTL_DEFAULT_BRANCH`, then `event_default` (the event's repository
+/// default branch), then `GITHUB_BASE_REF`. The default branch is fetched
+/// even when the pull request targets another branch, so the released
+/// baseline reads the same branch a full clone would. None is set outside
 /// Actions, so a local run fetches nothing.
 #[must_use]
-pub fn comparison_branches() -> Vec<String> {
-    let mut names: Vec<String> = configured_default_branch().into_iter().collect();
-    if let Some(base) = env_base_ref()
-        && !names.contains(&base)
-    {
-        names.push(base);
+pub fn comparison_branches(event_default: Option<&str>) -> Vec<String> {
+    let mut names = Vec::new();
+    let named = [
+        configured_default_branch(),
+        event_default.map(str::to_owned),
+        env_base_ref(),
+    ];
+    for name in named.into_iter().flatten() {
+        if !name.is_empty() && !names.contains(&name) {
+            names.push(name);
+        }
     }
     names
 }

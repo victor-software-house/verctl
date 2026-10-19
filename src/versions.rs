@@ -152,7 +152,7 @@ pub fn report(root: &Path, config: &Config) -> Result<VersionReport> {
         return report_with(root, config, Skip::VersionBranch, &[], &[]);
     }
     let fetch = git::FetchDefault::from_env();
-    for branch in git::comparison_branches() {
+    for branch in git::comparison_branches(crate::github::event_default_branch().as_deref()) {
         git::ensure_comparable(root, &branch, &fetch)?;
     }
     let report = report_with(

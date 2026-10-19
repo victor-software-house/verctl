@@ -162,9 +162,9 @@ neither is `GITHUB_HEAD_REF`. CI does not skip. A fragment-only commit
 does not change versions. A version the default branch carries at its
 merge-base with HEAD is not a hand edit either, so merging the default
 branch into another branch passes.
-On Actions the check first fetches `GITHUB_BASE_REF` and
-`VERCTL_DEFAULT_BRANCH`, with their whole history, when the checkout
-lacks them or is shallow, so the depth-1 pull request checkout of
+On Actions the check first fetches `VERCTL_DEFAULT_BRANCH`, the
+event's default branch, and `GITHUB_BASE_REF`, with their whole history,
+when the checkout lacks them or is shallow, so the depth-1 pull request checkout of
 `actions/checkout` needs no `fetch-depth`. A full clone that has them
 fetches nothing.
 
