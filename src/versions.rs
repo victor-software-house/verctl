@@ -130,20 +130,32 @@ impl VersionReport {
     }
 }
 
-/// Compare versions on HEAD to the merge-base, skipping per [`Skip::from_env`].
+/// Compare versions on HEAD to the merge-base, skipping per [`Skip::from_env`]
+/// when a version drifted. A pull request that changes no version never asks
+/// whether it is a Version PR, so it needs no token and no API.
 ///
 /// # Errors
 ///
-/// Returns an error under the conditions of [`report_with`], or when
-/// [`Skip::from_env`] cannot read the pull request.
+/// Returns an error under the conditions of [`report_with`], or when a
+/// version drifted and [`Skip::from_env`] cannot read the pull request.
 pub fn report(root: &Path, config: &Config) -> Result<VersionReport> {
-    report_with(
+    let report = report_with(
         root,
         config,
-        Skip::from_env(root)?,
+        Skip::None,
         &git::default_branch_candidates(),
         &git::release_branch_candidates(),
-    )
+    )?;
+    if report.drifted().is_empty() {
+        return Ok(report);
+    }
+    Ok(match Skip::from_env(root)?.label() {
+        Some(label) => VersionReport {
+            skip: Some(label.into()),
+            rows: Vec::new(),
+        },
+        None => report,
+    })
 }
 
 /// [`report`] with the skip given, and the candidates for the pull request's

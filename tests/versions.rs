@@ -436,6 +436,29 @@ fn pull_request_passes(server: &MockServer) -> bool {
     output.status.success()
 }
 
+/// An ordinary pull request that changes no version reads no API, so it
+/// passes without a token.
+#[test]
+fn a_pull_request_that_changes_no_version_reads_no_api() {
+    let dir = repo_with_origin_main("1.0.0");
+    let event = dir.path().join("event.json");
+    fs::write(&event, r#"{"pull_request":{"number":7}}"#).unwrap();
+    let output = check_cmd(dir.path())
+        .env("GITHUB_ACTIONS", "true")
+        .env("GITHUB_EVENT_PATH", &event)
+        .env("GITHUB_REPOSITORY", "owner/demo")
+        .env("GITHUB_API_URL", "http://127.0.0.1:9")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{stdout}{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!stdout.contains("version-pr"), "{stdout}");
+}
+
 #[tokio::test]
 async fn the_version_pr_identity_is_exempt() {
     let server = pull_api("owner/demo", "verctl/release/main", "main").await;
