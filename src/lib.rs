@@ -82,6 +82,8 @@ pub mod registry;
 /// The token for `--pr` and the versions a release will carry.
 pub mod release;
 pub mod runners;
+/// cargo-semver-checks at the release type the pending release allows.
+pub mod semver_check;
 pub mod templates;
 pub mod versions;
 

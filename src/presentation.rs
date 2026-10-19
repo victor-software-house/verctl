@@ -1,6 +1,6 @@
 use ctl_core::prelude::{Document, Fields, MessageKind, Notice, NoticeLevel, Present, Table};
 use serde::Serialize;
-use verctl::{assets, ci, docsrs, publish, versions};
+use verctl::{assets, ci, docsrs, publish, semver_check, versions};
 
 #[derive(Serialize)]
 #[serde(untagged)]
@@ -15,6 +15,7 @@ pub(super) enum Report {
     Assets(AssetsReport),
     Ci(CiReport),
     Docs(DocsReport),
+    Semver(SemverReport),
 }
 
 impl Present for Report {
@@ -30,6 +31,7 @@ impl Present for Report {
             Self::Assets(report) => report.present(),
             Self::Ci(report) => report.present(),
             Self::Docs(report) => report.present(),
+            Self::Semver(report) => report.present(),
         }
     }
 
@@ -44,7 +46,8 @@ impl Present for Report {
             | Self::Pin(_)
             | Self::Assets(_)
             | Self::Ci(_)
-            | Self::Docs(_) => MessageKind::Success,
+            | Self::Docs(_)
+            | Self::Semver(_) => MessageKind::Success,
         }
     }
 }
@@ -71,6 +74,38 @@ impl Present for DocsReport {
                     line.name.clone(),
                     line.version.clone(),
                     status.to_owned(),
+                ])
+            },
+        );
+        Document::new().table(table)
+    }
+}
+
+#[derive(Serialize)]
+pub(super) struct SemverReport {
+    pub(super) crates: Vec<semver_check::SemverLine>,
+}
+
+impl Present for SemverReport {
+    fn present(&self) -> Document {
+        if self.crates.is_empty() {
+            return Document::new().fields(Fields::new().row("no-op", "no crates.io crate"));
+        }
+        let table = self.crates.iter().fold(
+            Table::new(vec!["name", "version", "baseline", "semver"]).id_column(0),
+            |table, line| {
+                let decision = match line.decision {
+                    semver_check::Decision::Passed => "passed",
+                    semver_check::Decision::Failed => "failed",
+                    semver_check::Decision::MinorPending => "skipped: minor fragment",
+                    semver_check::Decision::VersionMoved => "skipped: minor moved",
+                    semver_check::Decision::Unpublished => "skipped: unpublished",
+                };
+                table.row(vec![
+                    line.name.clone(),
+                    line.version.clone(),
+                    line.baseline.clone().unwrap_or_else(|| "-".into()),
+                    decision.to_owned(),
                 ])
             },
         );

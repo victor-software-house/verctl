@@ -48,6 +48,20 @@ pub enum Command {
     Ci(CiArgs),
     /// Wait for docs.rs to build each crates.io crate released at HEAD.
     Docs(DocsArgs),
+    /// Check the API of each crates.io crate whose next release is a patch.
+    Semver(SemverArgs),
+}
+
+/// Arguments of `semver`.
+#[derive(Debug, Args)]
+#[non_exhaustive]
+pub struct SemverArgs {
+    /// Directory of fragments. Defaults to .changeset.
+    #[arg(short = 'd', long, default_value = ".changeset", value_hint = clap::ValueHint::DirPath)]
+    pub dir: PathBuf,
+    /// Package map. Defaults to .ctl/ver.yaml in the current directory.
+    #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
+    pub config: PathBuf,
 }
 
 /// Arguments of `docs`.

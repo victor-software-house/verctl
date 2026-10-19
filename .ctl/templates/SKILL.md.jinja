@@ -111,6 +111,11 @@ report `nothing to release` when every release is complete.
 HEAD and fails on a build that failed or never arrived (`--timeout`, minutes,
 default 60).
 
+`semver` runs `cargo semver-checks --release-type minor` on each crates.io
+crate whose next release is a patch, so only an API break fails, and skips a
+crate with a pending `minor` fragment or a minor the Version PR already moved.
+A crate at 1.0 or later fails: the rule covers 0.x.
+
 `publish` asks the registry before and after each publisher: the crates.io
 sparse index for a stock cargo package bound for crates.io, the recipe's
 `query` otherwise. A listed version is `already`; a publisher that exits zero

@@ -323,10 +323,51 @@ pub fn crates_io_lists(base: &str, name: &str, version: &str) -> Result<bool> {
     Ok(false)
 }
 
-/// One line of a crate's index file. Only `vers` matters here.
+/// The release cargo-semver-checks compares `current` of `name` against: the
+/// highest version in the crates.io index under `base` that is at most
+/// `current`, is not a pre-release, and is not yanked, or else the highest
+/// version at most `current`. `None` when the index has no such version.
+///
+/// This is cargo-semver-checks 0.51.0's own choice (`choose_baseline_version`
+/// in `src/rustdoc_gen.rs`), so a decision made from it holds for the
+/// baseline the check reads.
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`crates_io_lists`].
+pub fn crates_io_baseline(base: &str, name: &str, current: &Version) -> Result<Option<Version>> {
+    ensure!(
+        !name.is_empty() && name.is_ascii(),
+        "{name:?} is not a crates.io crate name"
+    );
+    let url = format!("{}/{}", base.trim_end_matches('/'), index_path(name));
+    let Some(body) = crate::github::block(fetch_index(&url))? else {
+        return Ok(None);
+    };
+    let mut released = Vec::new();
+    for line in body.lines().filter(|line| !line.trim().is_empty()) {
+        let record: IndexRecord = serde_json::from_str(line)
+            .with_context(|| format!("crates.io index line for {name}"))?;
+        if let Ok(vers) = Version::parse(&record.vers)
+            && vers <= *current
+        {
+            released.push((vers, record.yanked));
+        }
+    }
+    released.sort();
+    let stable = released
+        .iter()
+        .rev()
+        .find(|(vers, yanked)| vers.pre.is_empty() && !yanked);
+    Ok(stable.or(released.last()).map(|(vers, _)| vers.clone()))
+}
+
+/// One line of a crate's index file.
 #[derive(serde::Deserialize)]
 struct IndexRecord {
     vers: String,
+    #[serde(default)]
+    yanked: bool,
 }
 
 /// The crate's index file, or `None` when the index has no such crate.
@@ -425,8 +466,8 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{
-        CargoEnv, CargoTarget, RegistryCheck, cargo_target, crates_io_lists, index_path,
-        wait_listed,
+        CargoEnv, CargoTarget, RegistryCheck, cargo_target, crates_io_baseline, crates_io_lists,
+        index_path, wait_listed,
     };
 
     #[test]
@@ -483,6 +524,51 @@ mod tests {
     #[tokio::test]
     async fn a_crate_name_with_capitals_reads_the_lowercased_file() {
         assert!(lists(Some(DEMO), "Demo", "0.4.5").await);
+    }
+
+    async fn baseline(body: Option<&str>, current: &str) -> Option<String> {
+        let server = MockServer::start().await;
+        let response = body.map_or_else(
+            || ResponseTemplate::new(404),
+            |body| ResponseTemplate::new(200).set_body_string(body),
+        );
+        Mock::given(method("GET"))
+            .and(path(format!("/{}", index_path("demo"))))
+            .respond_with(response)
+            .mount(&server)
+            .await;
+        let base = server.uri();
+        let current = semver::Version::parse(current).unwrap();
+        tokio::task::spawn_blocking(move || crates_io_baseline(&base, "demo", &current))
+            .await
+            .unwrap()
+            .unwrap()
+            .map(|version| version.to_string())
+    }
+
+    const RELEASES: &str = indoc! {r#"
+        {"name":"demo","vers":"0.4.4","deps":[],"cksum":"00","features":{},"yanked":false}
+        {"name":"demo","vers":"0.4.5","deps":[],"cksum":"00","features":{},"yanked":true}
+        {"name":"demo","vers":"0.4.6-rc.1","deps":[],"cksum":"00","features":{},"yanked":false}
+        {"name":"demo","vers":"0.5.0","deps":[],"cksum":"00","features":{},"yanked":false}
+    "#};
+
+    #[tokio::test]
+    async fn the_baseline_is_the_newest_stable_release_up_to_the_current_version() {
+        assert_eq!(
+            baseline(Some(RELEASES), "0.4.6").await.as_deref(),
+            Some("0.4.4")
+        );
+        assert_eq!(
+            baseline(Some(RELEASES), "0.5.0").await.as_deref(),
+            Some("0.5.0")
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unpublished_crate_has_no_baseline() {
+        assert_eq!(baseline(None, "0.0.1").await, None);
+        assert_eq!(baseline(Some(RELEASES), "0.4.3").await, None);
     }
 
     fn crate_dir(manifest: &str) -> TempDir {

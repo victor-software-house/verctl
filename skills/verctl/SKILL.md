@@ -38,6 +38,7 @@ completion bootstrap.
 | `assets` | — | Plan or build native GitHub Release tarballs declared under `assets` |
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
 | `docs` | — | Wait for docs.rs to build each crates.io crate released at HEAD |
+| `semver` | — | Check the API of each crates.io crate whose next release is a patch |
 
 Every long option also reads `VERCTL_<LONG>` (`VERCTL_CONFIG`,
 `VERCTL_DRY_RUN`, `VERCTL_FORMAT`): a flag wins over its variable, an empty
@@ -125,6 +126,11 @@ report `nothing to release` when every release is complete.
 `docs` waits for docs.rs to build each crates.io library crate released at
 HEAD and fails on a build that failed or never arrived (`--timeout`, minutes,
 default 60).
+
+`semver` runs `cargo semver-checks --release-type minor` on each crates.io
+crate whose next release is a patch, so only an API break fails, and skips a
+crate with a pending `minor` fragment or a minor the Version PR already moved.
+A crate at 1.0 or later fails: the rule covers 0.x.
 
 `publish` asks the registry before and after each publisher: the crates.io
 sparse index for a stock cargo package bound for crates.io, the recipe's
