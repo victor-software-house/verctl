@@ -1,5 +1,10 @@
 # Changelog
 
+## verctl 0.4.9
+
+- An asset upload that GitHub refuses because the release already has a complete asset of that name now reports `already` instead of failing. Two release runs for the same commit both build every asset, so the run that uploads second used to fail after a release that was in fact complete. The duplicate check read the error's text, which never contained GitHub's `already_exists` code; it now reads the code from the response. When the other run is still sending the asset, the upload waits up to a minute for it to finish. An asset whose earlier upload broke off still fails, with a message to delete it and rerun ([#177](https://github.com/victor-software-house/verctl/pull/177)).
+- The Version PR action loads again. A colon followed by a space in its `title` input description made the file invalid YAML, so GitHub failed every workflow that used the action at "Set up job", from v0.4.6 on ([#178](https://github.com/victor-software-house/verctl/pull/178)).
+
 ## verctl 0.4.8
 
 - A cargo package at a virtual workspace manifest publishes each workspace member that publishes, dependencies first, with `cargo publish --package <member>` under its own crates.io index check. A rerun after a partial release uploads only the members still missing, and a registry rate limit stops the run before any tag, naming the crate and the time to retry. Before this, such a repository overrode the upload with `cargo publish --workspace`, which cannot resume, and a rerun could tag a release whose later crates were never uploaded ([#174](https://github.com/victor-software-house/verctl/pull/174)).
