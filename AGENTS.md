@@ -149,7 +149,8 @@ branch. Exempt on a `verctl/release/<base>` branch locally, or when the
 GitHub event's pull request has this repository as its head repository and
 `verctl/release/<base>` as its head branch for its current base, read
 through the API. A version the default branch carries at its merge-base
-with HEAD is not a hand edit. CI does not skip.
+with HEAD is not a hand edit. On Actions the check fetches the base and
+default branches when the checkout lacks them or is shallow. CI does not skip.
 This repository's self-release caller passes `auto-merge: true`, except
 while the repository variable `VERCTL_RELEASE_HOLD` is `true`: then the
 Version PR opens and updates but never merges itself, so the release waits
