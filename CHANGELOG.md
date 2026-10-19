@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.4.12
+
+- The reusable `release.yml` takes `mise-ignored-config-paths`: colon-separated mise config paths, relative to the repository root, that every job but `propose` ignores, so the release jobs skip tools only the repository's own tasks need ([#184](https://github.com/victor-software-house/verctl/pull/184)).
+
 ## verctl 0.4.11
 
 - `publish` creates the tag and GitHub Release of a package whose uploads all have a registry check, or that has no upload, before its uploads, so a retry after a failed upload creates no tag that GitHub would refuse for a later workflow change. `docs` waits only for crates the crates.io index lists ([#182](https://github.com/victor-software-house/verctl/pull/182)).
