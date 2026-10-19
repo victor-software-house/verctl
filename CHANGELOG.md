@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.5.1
+
+- `verctl check --versions` works in the depth-1 pull request checkout of `actions/checkout`. On Actions it first fetches `VERCTL_DEFAULT_BRANCH`, the event's default branch, and `GITHUB_BASE_REF` with their whole history when the checkout lacks them or is shallow, HEAD's parents included, so the merge-base can be computed. A full clone that has them fetches nothing ([#194](https://github.com/victor-software-house/verctl/pull/194)).
+
 ## verctl 0.5.0
 
 - `verctl semver` checks the API of each crates.io crate whose next release is a patch with `cargo semver-checks --release-type minor`, so only a break fails. It skips a crate whose package has a pending minor fragment or whose minor the Version PR already moved, and fails on a crate at 1.0 or later ([#183](https://github.com/victor-software-house/verctl/pull/183)).
