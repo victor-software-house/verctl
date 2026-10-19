@@ -236,42 +236,69 @@ pub fn create_pr(
     })
 }
 
-/// Label GitHub recorded on this `pull_request` event. Not `GITHUB_HEAD_REF`.
-#[must_use]
-pub fn event_labels() -> Vec<String> {
+/// Whether the pull request of this `pull_request` event is a Version PR by
+/// the identity of the release-state-machine design §2.1: its head repository
+/// is this repository, and its head branch is `verctl/release/<base>` for the
+/// base it targets now. All three are read through the API when the check
+/// runs, never from the event payload, because a base can change after the
+/// event and a label applied after opening is missing from the `opened`
+/// payload. Title, body, and labels are never read. Not `GITHUB_HEAD_REF`.
+/// Without an event, or for an event that is not a pull request's, it is
+/// `false`.
+///
+/// # Errors
+///
+/// Returns an error when the event names a pull request but no token is set,
+/// `GITHUB_REPOSITORY` is not `owner/name`, or GitHub cannot read the pull
+/// request.
+pub fn pull_request_is_version_pr() -> Result<bool> {
     let Ok(path) = env::var("GITHUB_EVENT_PATH") else {
-        return Vec::new();
+        return Ok(false);
     };
     let Ok(raw) = std::fs::read_to_string(path) else {
-        return Vec::new();
+        return Ok(false);
     };
-    labels_from_event(&raw)
+    let Some(number) = pull_request_number(&raw) else {
+        return Ok(false);
+    };
+    let token = crate::release::env_token().context(
+        "the version check reads the pull request and needs GITHUB_TOKEN with pull-requests: read",
+    )?;
+    let slug = env::var("GITHUB_REPOSITORY").unwrap_or_default();
+    let repo = parse_slug(&slug)?;
+    block(async move {
+        let mut builder = Octocrab::builder().personal_token(token);
+        // Actions names its API; a test points it at a mock server.
+        if let Ok(base) = env::var("GITHUB_API_URL")
+            && !base.is_empty()
+        {
+            builder = builder.base_uri(base).context("GITHUB_API_URL")?;
+        }
+        let crab = builder.build().context("GitHub client")?;
+        let pr = crab
+            .pulls(&repo.owner, &repo.name)
+            .get(number)
+            .await
+            .with_context(|| format!("read pull request #{number}"))?;
+        let same_repo = pr
+            .head
+            .repo
+            .as_ref()
+            .and_then(|head| head.full_name.as_deref())
+            .is_some_and(|name| name.eq_ignore_ascii_case(&slug));
+        Ok(same_repo && pr.head.ref_field == crate::release::version_branch(&pr.base.ref_field))
+    })
 }
 
-/// Whether the `pull_request` event carries the label `name`.
+/// The pull request number of a `pull_request` event payload, or `None` when
+/// it does not parse or is another event's.
 #[must_use]
-pub fn event_has_label(name: &str) -> bool {
-    event_labels().iter().any(|label| label == name)
-}
-
-/// Label names in a `pull_request` event payload; empty when it does not parse
-/// or has none.
-#[must_use]
-pub fn labels_from_event(raw: &str) -> Vec<String> {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
-        return Vec::new();
-    };
-    value
-        .get("pull_request")
-        .and_then(|node| node.get("labels"))
-        .and_then(|labels| labels.as_array())
-        .map(|labels| {
-            labels
-                .iter()
-                .filter_map(|label| label.get("name")?.as_str().map(str::to_owned))
-                .collect()
-        })
-        .unwrap_or_default()
+pub fn pull_request_number(raw: &str) -> Option<u64> {
+    serde_json::from_str::<serde_json::Value>(raw)
+        .ok()?
+        .get("pull_request")?
+        .get("number")?
+        .as_u64()
 }
 
 /// Create the label if needed, then apply it to the Version PR.
@@ -880,24 +907,16 @@ mod tests {
     }
 
     #[test]
-    fn labels_from_event_reads_pull_request() {
-        let raw = r#"{
-            "pull_request": {
-                "labels": [
-                    {"name": "verctl:version"},
-                    {"name": "do-not-merge"}
-                ]
-            }
-        }"#;
+    fn pull_request_number_reads_only_a_pull_request_event() {
         assert_eq!(
-            super::labels_from_event(raw),
-            vec!["verctl:version", "do-not-merge"]
+            super::pull_request_number(r#"{"pull_request":{"number":187,"labels":[]}}"#),
+            Some(187)
         );
-        assert_eq!(super::labels_from_event("{}"), Vec::<String>::new());
-        assert_eq!(super::labels_from_event("not json"), Vec::<String>::new());
+        assert_eq!(super::pull_request_number("{}"), None);
+        assert_eq!(super::pull_request_number("not json"), None);
         assert_eq!(
-            super::labels_from_event(r#"{"issue":{"labels":[{"name":"verctl:version"}]}}"#),
-            Vec::<String>::new()
+            super::pull_request_number(r#"{"issue":{"number":187}}"#),
+            None
         );
     }
 

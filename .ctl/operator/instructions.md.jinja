@@ -128,10 +128,15 @@ that commit with a token that holds it.
 Do not hand-edit versions. `verctl check --versions` compares each
 declared manifest to the merge-base of HEAD and the default branch.
 It fails when they differ. Exempt only on a `verctl/release/<base>`
-branch locally, or when the GitHub event carries the Version PR
-label (`verctl:version` by default, `prepare.version_label`).
-`prepare --pr` applies that label. Not `GITHUB_HEAD_REF`. CI
-does not skip. A fragment-only commit does not change versions.
+branch locally, or when the pull request of the GitHub event is a
+Version PR: its head repository is this repository, and its head branch
+is `verctl/release/<base>` for the base it targets. The check reads all
+three through the API when it runs, so the job needs `GITHUB_TOKEN` with
+`pull-requests: read`. Labels, title, and body are never read, and
+neither is `GITHUB_HEAD_REF`. CI does not skip. A fragment-only commit
+does not change versions. A version the default branch carries at its
+merge-base with HEAD is not a hand edit either, so merging the default
+branch into another branch passes.
 
 `prepare --pr --auto-merge` (`VERCTL_AUTO_MERGE`, or `auto-merge: true` on
 `actions/version-pr`) enables GitHub auto-merge on the Version PR, as a

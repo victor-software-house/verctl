@@ -798,6 +798,13 @@ pub fn default_branch_candidates() -> Vec<String> {
     candidate_names(env_base_ref().as_deref())
 }
 
+/// `VERCTL_DEFAULT_BRANCH` then `main` / `master`: the branch releases come
+/// from, whatever branch a pull request targets.
+#[must_use]
+pub fn release_branch_candidates() -> Vec<String> {
+    candidate_names(configured_default_branch().as_deref())
+}
+
 /// Like `default_branch_candidates`, with the base ref passed in instead of
 /// read from the environment.
 #[must_use]

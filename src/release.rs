@@ -50,7 +50,8 @@ pub fn resolve_token() -> Result<String> {
     )
 }
 
-fn env_token() -> Option<String> {
+/// `GITHUB_TOKEN`, else `GH_TOKEN`, when set to a non-empty value.
+pub(crate) fn env_token() -> Option<String> {
     for key in ["GITHUB_TOKEN", "GH_TOKEN"] {
         if let Ok(value) = env::var(key)
             && !value.is_empty()

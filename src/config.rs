@@ -800,8 +800,9 @@ pub struct Prepare {
     /// Collect gitignored paths that match `stage`. Off by default.
     #[serde(default)]
     pub stage_ignored: bool,
-    /// Label `prepare --pr` applies. `check --versions` trusts this
-    /// on the GitHub event, not `GITHUB_HEAD_REF`.
+    /// Label `prepare --pr` applies, for readers of the pull request list.
+    /// `check --versions` never reads it: a Version PR is known by its head
+    /// repository, head branch, and base.
     pub version_label: Option<String>,
 }
 
