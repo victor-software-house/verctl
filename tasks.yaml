@@ -252,18 +252,6 @@ queue:
       - 'Decision (operator, 2026-10-12): render the reference as a short (#N) and credit no maintainer by default; credit outside contributors only. OpenSpec change changelog-references.'
       - 'Follow-up (2026-10-12): the author lookup credited the owner on Version PR #118, so it is removed and no entry carries a byline; VER-054 adds the explicit list on next.'
 
-  - id: VER-065
-    title: Hold the VER-064 release until the template migration, then drop its semver override
-    scope: release, .github/workflows/version-pr.yml, Cargo.toml
-    outcome: VER-064 reaches crates.io only in the patch release after the template migration, and neither the hold nor the override outlives that release.
-    blocked_by: []
-    acceptance:
-      - While the repository variable VERCTL_RELEASE_HOLD is true, the Version PR on main opens and updates but never enables auto-merge.
-      - After the template migration merges, the operator merges the Version PR, and VERCTL_RELEASE_HOLD is deleted.
-      - Once the release that carries VER-064 is on crates.io, the [package.metadata.cargo-semver-checks.lints] table leaves Cargo.toml and mise run semver passes without it.
-    notes:
-      - 'Operator ruling 2026-10-15 on #155: no deprecated wrapper and no minor bump; the change keeps its fragment, and only the Version PR merge is held until the template migration lands.'
-
   - id: VER-069
     title: Publish a cargo workspace one member at a time
     scope: src/members.rs, src/publisher.rs, src/publish.rs, src/pending.rs, src/docsrs.rs, src/registry.rs, operator docs
@@ -570,6 +558,26 @@ horizon:
       - 'Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.'
 
 archive:
+  - id: VER-065
+    title: Hold the VER-064 release until the template migration, then drop its semver override
+    scope: release, .github/workflows/version-pr.yml, Cargo.toml
+    outcome: VER-064 reaches crates.io only in the patch release after the template migration, and neither the hold nor the override outlives that release.
+    blocked_by: []
+    acceptance:
+      - While the repository variable VERCTL_RELEASE_HOLD is true, the Version PR on main opens and updates but never enables auto-merge.
+      - After the template migration merges, the operator merges the Version PR, and VERCTL_RELEASE_HOLD is deleted.
+      - Once the release that carries VER-064 is on crates.io, the [package.metadata.cargo-semver-checks.lints] table leaves Cargo.toml and mise run semver passes without it.
+    notes:
+      - 'Operator ruling 2026-10-15 on #155: no deprecated wrapper and no minor bump; the change keeps its fragment, and only the Version PR merge is held until the template migration lands.'
+      - 'Operator decision 2026-10-18, asked through the orchestrator: the template migration (#173) has landed, so the hold is lifted and Version PR #172 merges by hand.'
+    completed: 2026-10-18T23:02:06
+    evidence:
+      - 'Template v0.0.26 merged as #173 (8e180b1); Version PR #172 then merged by hand as a5502fe on 2026-10-18.'
+      - 'crates.io lists verctl 0.4.7, which carries VER-064, and tag v0.4.7 names a5502fe.'
+      - VERCTL_RELEASE_HOLD is deleted; gh variable list for the repository prints nothing.
+      - This pull request removes the [package.metadata.cargo-semver-checks.lints] table, and its CI semver step passes against 0.4.7.
+    disposition: completed
+
   - id: VER-068
     title: Give the crate a docs.rs landing page and errors docs
     scope: Cargo.toml, src/lib.rs, and the public item docs

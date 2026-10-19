@@ -14,26 +14,6 @@ categories = ["command-line-utilities", "development-tools"]
 all-features = true
 rustdoc-args = ["--cap-lints", "warn"]
 
-# Patch releases carry API changes that cargo-semver-checks reports as
-# breaking against 0.4.5, by the operator's ruling, so these lints warn
-# instead of failing. They still print each finding. VER-065 removes this
-# table once a release with these changes is on crates.io, because the check
-# then compares against it.
-# `function_parameter_count_changed`: `release::open_or_update_pr` takes the
-# resolved Version PR instead of a title and a message (VER-064).
-[package.metadata.cargo-semver-checks.lints]
-function_parameter_count_changed = "warn"
-# VER-066 adds flags, so the clap argument structs in `cli` gain fields, and
-# marks those structs `#[non_exhaustive]` so later flags are not breaking.
-# Only verctl's own binary builds them. VER-065 removes these with the rest.
-constructible_struct_adds_field = "warn"
-struct_marked_non_exhaustive = "warn"
-# VER-066 derives the Version PR branch from its base, which removes
-# `release::VERSION_BRANCH`.
-pub_module_level_const_missing = "warn"
-# VER-066 adds the `docs` command, a new variant of `cli::Command`.
-enum_variant_added = "warn"
-
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "deny"
