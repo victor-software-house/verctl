@@ -16,7 +16,7 @@ inputs:
     required: false
     default: ""
   title:
-    description: Version PR title. Empty means verctl's default, `chore(release): version packages`.
+    description: Version PR title. Empty means verctl's default.
     required: false
     default: ""
   commit-message:

@@ -1,6 +1,7 @@
 //! The publish action must not fetch. `verctl publish` owns that, with tests.
 //! The Version PR action leaves the title and commit message to verctl.
 //! Every action passes settings as `VERCTL_*` variables and runs the bare verb.
+//! Every action is YAML that GitHub can load.
 
 const ACTION: &str = include_str!("../actions/publish/action.yml");
 const VERSION_PR: &str = include_str!("../actions/version-pr/action.yml");
@@ -51,5 +52,22 @@ fn actions_set_variables_and_run_the_bare_verb() {
         assert!(!action.contains("extra=("), "{action}");
         assert!(!action.contains("-c \""), "{action}");
         assert!(!action.contains("default: .ctl/ver.yaml"), "{action}");
+    }
+}
+
+/// GitHub refuses an action whose metadata is not YAML, and actionlint reads
+/// only workflows. An unquoted `: ` in a description made the Version PR
+/// action fail at "Set up job" in every consumer of v0.4.6 to v0.4.8.
+#[test]
+fn every_action_is_yaml() {
+    for (name, action) in [
+        ("actions/publish/action.yml", ACTION),
+        ("actions/version-pr/action.yml", VERSION_PR),
+        ("actions/asset/action.yml", ASSET),
+    ] {
+        let parsed: serde_json::Value = ctl_core::input::Input::new(name, action)
+            .parse()
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert!(parsed["runs"].is_object(), "{name}: {parsed}");
     }
 }
