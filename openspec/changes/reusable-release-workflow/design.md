@@ -170,7 +170,7 @@ step skip them. The paths are made absolute because mise resolves a
 relative entry against the cwd only since jdx/mise#12169 (August 2026), and
 a caller may pin an older `mise-version`.
 
-An empty entry is skipped, since it would name the repository root. The
+An empty or `.` entry is skipped, since it would name the repository root, and an input that names no file fails the job. The
 jobs that ignore files install fewer tools than `propose`, so they take
 the mise-action cache prefix `mise-v1-trimmed` and never share its cache.
 
