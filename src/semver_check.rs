@@ -8,7 +8,8 @@
 //! bumps the minor may break it, so `semver` skips it. The rule covers 0.x
 //! only: at 1.0 a break needs a major release, and reaching 1.0 is an
 //! operator decision that revisits the rule, so a crate at 1.0 or later
-//! fails the run.
+//! fails the run. A crate with no library target has no API to check, so it
+//! gets no row, as cargo-semver-checks itself skips it.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -20,7 +21,7 @@ use serde::Serialize;
 use crate::config::Config;
 use crate::fragment::{Bump, Fragment};
 use crate::registry::{self, RegistryCheck};
-use crate::{process, publish, publisher};
+use crate::{members, process, publish, publisher};
 
 /// How long one crate's check may run. It builds the rustdoc of the current
 /// crate and of its baseline, so it sits as high as a cold test build.
@@ -74,7 +75,7 @@ struct Planned {
 /// A package's next release is a patch unless a fragment in `fragments`
 /// bumps it further, or its manifest's major.minor already differs from the
 /// crates.io baseline. A workspace package counts once per publishing
-/// member.
+/// member, and a crate with no library target is left out.
 ///
 /// # Errors
 ///
@@ -140,6 +141,9 @@ fn plan(config: &Config, root: &Path, fragments: &[Fragment]) -> Result<Vec<Plan
             let RegistryCheck::CratesIo { name } = &upload.check else {
                 continue;
             };
+            if !members::has_library(&upload.manifest, name)? {
+                continue;
+            }
             let version = Version::parse(&upload.version)
                 .with_context(|| format!("{name}: semver {:?}", upload.version))?;
             let baseline = registry::crates_io_baseline(registry::CRATES_IO_INDEX, name, &version)?;

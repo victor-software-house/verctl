@@ -45,6 +45,17 @@ crates.io.
 - **WHEN** the package at a virtual `Cargo.toml` has members `demo-core` (0.0.2 on crates.io) and `demo-cli` (never published)
 - **THEN** `verctl semver` checks `demo-core` and reports `demo-cli` as `unpublished`
 
+### Requirement: A crate with no library target is left out
+
+`verctl semver` SHALL leave out a crates.io crate whose package has no
+`lib`, `rlib`, `dylib`, `cdylib`, or `staticlib` target, the targets
+cargo-semver-checks checks, and SHALL run no check for it.
+
+#### Scenario: A binary member of a workspace package
+
+- **WHEN** the package at a virtual `Cargo.toml` has members `demo-core` (a library, 0.0.2 on crates.io) and `demo` (only `src/main.rs`, 0.0.2 on crates.io)
+- **THEN** `verctl semver` checks `demo-core`, runs no check for `demo`, and passes
+
 ### Requirement: A crate at 1.0 fails
 
 `verctl semver` SHALL fail when a crates.io crate's manifest version is 1.0
