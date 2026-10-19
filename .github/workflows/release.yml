@@ -141,18 +141,18 @@ jobs:
           case "${IGNORED}" in
             *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
           esac
-          # An empty or "." entry would name the repository root, so it is
-          # skipped, and an input that names no file fails rather than set
-          # an empty list.
+          # Each entry is a plain relative path: an empty, ".", or ".."
+          # segment, or a leading or trailing slash, could name the
+          # repository root or a path outside it, so it fails the job.
           IFS=: read -ra paths <<< "${IGNORED}"
           joined=""
           for p in "${paths[@]}"; do
-            case "${p}" in ""|.|./) continue ;; esac
+            case "/${p}/" in
+              *//*|*/./*|*/../*)
+                echo "::error::mise-ignored-config-paths entry '${p}' is not a plain relative path"; exit 1 ;;
+            esac
             joined+="${GITHUB_WORKSPACE}/${p}:"
           done
-          if [ -z "${joined}" ]; then
-            echo "::error::mise-ignored-config-paths names no config file"; exit 1
-          fi
           echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
       - name: Set up mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
@@ -225,18 +225,18 @@ jobs:
           case "${IGNORED}" in
             *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
           esac
-          # An empty or "." entry would name the repository root, so it is
-          # skipped, and an input that names no file fails rather than set
-          # an empty list.
+          # Each entry is a plain relative path: an empty, ".", or ".."
+          # segment, or a leading or trailing slash, could name the
+          # repository root or a path outside it, so it fails the job.
           IFS=: read -ra paths <<< "${IGNORED}"
           joined=""
           for p in "${paths[@]}"; do
-            case "${p}" in ""|.|./) continue ;; esac
+            case "/${p}/" in
+              *//*|*/./*|*/../*)
+                echo "::error::mise-ignored-config-paths entry '${p}' is not a plain relative path"; exit 1 ;;
+            esac
             joined+="${GITHUB_WORKSPACE}/${p}:"
           done
-          if [ -z "${joined}" ]; then
-            echo "::error::mise-ignored-config-paths names no config file"; exit 1
-          fi
           echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
       - name: Set up mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
@@ -317,18 +317,18 @@ jobs:
           case "${IGNORED}" in
             *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
           esac
-          # An empty or "." entry would name the repository root, so it is
-          # skipped, and an input that names no file fails rather than set
-          # an empty list.
+          # Each entry is a plain relative path: an empty, ".", or ".."
+          # segment, or a leading or trailing slash, could name the
+          # repository root or a path outside it, so it fails the job.
           IFS=: read -ra paths <<< "${IGNORED}"
           joined=""
           for p in "${paths[@]}"; do
-            case "${p}" in ""|.|./) continue ;; esac
+            case "/${p}/" in
+              *//*|*/./*|*/../*)
+                echo "::error::mise-ignored-config-paths entry '${p}' is not a plain relative path"; exit 1 ;;
+            esac
             joined+="${GITHUB_WORKSPACE}/${p}:"
           done
-          if [ -z "${joined}" ]; then
-            echo "::error::mise-ignored-config-paths names no config file"; exit 1
-          fi
           echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
       - name: Set up mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
@@ -394,18 +394,18 @@ jobs:
           case "${IGNORED}" in
             *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
           esac
-          # An empty or "." entry would name the repository root, so it is
-          # skipped, and an input that names no file fails rather than set
-          # an empty list.
+          # Each entry is a plain relative path: an empty, ".", or ".."
+          # segment, or a leading or trailing slash, could name the
+          # repository root or a path outside it, so it fails the job.
           IFS=: read -ra paths <<< "${IGNORED}"
           joined=""
           for p in "${paths[@]}"; do
-            case "${p}" in ""|.|./) continue ;; esac
+            case "/${p}/" in
+              *//*|*/./*|*/../*)
+                echo "::error::mise-ignored-config-paths entry '${p}' is not a plain relative path"; exit 1 ;;
+            esac
             joined+="${GITHUB_WORKSPACE}/${p}:"
           done
-          if [ -z "${joined}" ]; then
-            echo "::error::mise-ignored-config-paths names no config file"; exit 1
-          fi
           echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
       - name: Set up mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
