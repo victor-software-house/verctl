@@ -291,7 +291,7 @@ queue:
       - OpenSpec change tag-at-merge in openspec/changes/tag-at-merge.
       - 'Operator decision 2026-10-19: tag at merge for registry-checked packages; no workflows permission for any App, and no guard until a package with an unchecked real upload exists. It reverses publish-before-tag (VER-011) for registry-checked packages.'
 
-  - id: VER-075
+  - id: VER-074
     title: release.yml input for mise config paths the release jobs ignore
     scope: >-
       .github/workflows/release.yml, operator docs,
