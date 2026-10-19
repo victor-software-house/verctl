@@ -57,8 +57,10 @@ the first failed transition without attempting anything that depends on it.
 
 ### Requirement: Publish precedes tag, and tags land on the release commit
 
-verctl SHALL create a tag only after every publishing package the tag names
-is published,
+verctl SHALL create a tag that names a package with an unchecked upload only
+after every publishing package the tag names is published, SHALL create a tag
+whose packages all have a registry check before their uploads, as the
+tag-at-merge change specifies,
 SHALL create it at the release commit, SHALL push all ready tags of a run in one
 atomic push, and SHALL treat an existing tag that peels to another commit as a
 conflict that stops every transition for that package.
@@ -107,16 +109,11 @@ that is missing, and run no transition for it.
 ### Requirement: A release that does not publish completes without a registry
 
 A package does not publish when it declares `publish = false` or
-`"private": true`, or uses a declared ecosystem with no publish block. verctl
-SHALL decide whether a release publishes from the package's manifest and
-`.ctl/ver.yaml` at its release commit only. A later change of that setting
-SHALL apply from the next version: a version merged while its package
-published SHALL be published even if `publish = false` or `"private": true`
-lands before the release runs, and verctl SHALL offer no way to cancel it. A
-release that does not publish SHALL have no publish transition. Without `assets`, verctl
-SHALL treat it as `released` once it is merged and SHALL create no tag and no
-Release for it. With `assets`, it SHALL be tagged and released like any other
-package.
+`"private": true`, or uses a declared ecosystem with no publish block. A
+release that does not publish SHALL have no publish transition. Without
+`assets`, verctl SHALL treat it as `released` once it is merged and SHALL
+create no tag and no Release for it. With `assets`, it SHALL be tagged and
+released like any other package.
 
 #### Scenario: A bumped tool crate
 
@@ -124,6 +121,14 @@ package.
 - **THEN** `verctl status` reports `xtask@0.1.1` as `released`
 - **AND** `verctl release` creates no tag and no Release for `xtask`
 - **AND** a later `verctl propose` is not blocked by `xtask`
+
+### Requirement: Whether a release publishes is decided at its release commit
+
+verctl SHALL decide whether a release publishes from the package's manifest
+and `.ctl/ver.yaml` at its release commit only. A later change of that setting
+SHALL apply from the next version: a version merged while its package
+published SHALL be published even if `publish = false` or `"private": true`
+lands before the release runs, and verctl SHALL offer no way to cancel it.
 
 #### Scenario: A tool crate starts to publish without a bump
 

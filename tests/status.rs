@@ -4,7 +4,6 @@
 mod common;
 
 use std::fs;
-use std::process::Command;
 
 use common::demo_root;
 use indoc::indoc;
@@ -27,7 +26,7 @@ fn status_lists_mixed_packages() {
         "#},
     )
     .expect("write");
-    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .args(["status", "--color", "never", "-d"])
         .arg(&dir)
         .output()
@@ -61,7 +60,7 @@ fn status_json_uses_the_same_report_without_ansi() {
         "},
     )
     .expect("write");
-    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .args(["status", "--format", "json", "--color", "always", "-d"])
         .arg(&dir)
         .output()
@@ -78,7 +77,7 @@ fn status_json_uses_the_same_report_without_ansi() {
 #[test]
 fn quiet_suppresses_only_successful_pretty_status() {
     let root = TempDir::new().expect("tempdir");
-    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .args(["status", "--quiet", "-d"])
         .arg(root.path().join("missing"))
         .output()
@@ -94,7 +93,7 @@ fn json_errors_use_stdout_and_one_envelope() {
     let dir = root.path().join(".changeset");
     fs::create_dir_all(&dir).expect("dir");
     fs::write(dir.join("bad.md"), "nope").expect("write");
-    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .args(["check", "--format", "json", "-d"])
         .arg(&dir)
         .output()
@@ -126,7 +125,7 @@ fn json_output_holds_no_escape_byte_under_forced_colour() {
         &["--format=json", "nosuchverb"],
     ];
     for args in cases {
-        let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+        let output = common::verctl()
             .current_dir(root.path())
             .args(args)
             .env("CLICOLOR_FORCE", "1")
@@ -148,7 +147,7 @@ fn json_output_holds_no_escape_byte_under_forced_colour() {
 
 #[test]
 fn instructions_preserve_the_installed_markdown() {
-    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .arg("instructions")
         .output()
         .expect("spawn");
@@ -172,7 +171,7 @@ fn check_fails_closed_on_bad_fragment() {
         "},
     )
     .expect("write");
-    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .args(["check", "-d"])
         .arg(&dir)
         .output()
@@ -187,7 +186,7 @@ fn check_fails_closed_on_bad_fragment() {
 #[test]
 fn prepare_cli_writes_cargo() {
     let root = demo_root();
-    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .current_dir(root.path())
         .args(["prepare"])
         .output()
@@ -204,7 +203,7 @@ fn prepare_cli_writes_cargo() {
 #[test]
 fn prepare_dry_run_writes_nothing() {
     let root = demo_root();
-    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .current_dir(root.path())
         .args(["prepare", "-n", "--color", "never"])
         .output()
@@ -234,7 +233,7 @@ fn prepare_dry_run_writes_nothing() {
 #[test]
 fn prepare_pr_preview_needs_no_auth_and_writes_nothing() {
     let root = demo_root();
-    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .current_dir(root.path())
         .env_remove("GITHUB_TOKEN")
         .env_remove("GH_TOKEN")
@@ -249,7 +248,7 @@ fn prepare_pr_preview_needs_no_auth_and_writes_nothing() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("bump.md"), "{stdout}");
     assert!(stdout.contains("consume"), "{stdout}");
-    assert!(stdout.contains("version-packages"), "{stdout}");
+    assert!(stdout.contains("verctl/release/"), "{stdout}");
     let cargo = fs::read_to_string(root.path().join("Cargo.toml")).expect("read");
     assert!(cargo.contains("version = \"1.0.0\""), "{cargo}");
     assert!(root.path().join(".changeset/bump.md").exists());
@@ -258,7 +257,7 @@ fn prepare_pr_preview_needs_no_auth_and_writes_nothing() {
 #[test]
 fn prepare_no_pr_still_writes() {
     let root = demo_root();
-    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .current_dir(root.path())
         .args(["prepare", "--no-pr"])
         .output()
@@ -292,7 +291,7 @@ fn prepare_pr_noops_without_fragments() {
         "#},
     )
     .expect("cargo");
-    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .current_dir(root.path())
         .env_remove("GITHUB_TOKEN")
         .env_remove("GH_TOKEN")
@@ -312,7 +311,7 @@ fn prepare_pr_noops_without_fragments() {
 #[test]
 fn prepare_pr_fails_closed_without_github_auth() {
     let root = demo_root();
-    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .env_remove("GITHUB_TOKEN")
         .env_remove("GH_TOKEN")
         .current_dir(root.path())
@@ -327,10 +326,7 @@ fn prepare_pr_fails_closed_without_github_auth() {
 #[test]
 fn help_has_short_and_long() {
     for args in [["-h"].as_slice(), ["--help"].as_slice()] {
-        let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
-            .args(args)
-            .output()
-            .expect("spawn");
+        let output = common::verctl().args(args).output().expect("spawn");
         assert!(
             output.status.success(),
             "{}",
@@ -343,7 +339,7 @@ fn help_has_short_and_long() {
         assert!(stdout.contains("-V"), "{stdout}");
         assert!(stdout.contains("--version"), "{stdout}");
     }
-    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .args(["prepare", "-h"])
         .output()
         .expect("spawn");
@@ -357,7 +353,7 @@ fn help_has_short_and_long() {
 #[test]
 fn check_ok_when_dir_missing() {
     let root = TempDir::new().expect("tempdir");
-    let output = Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .args(["check", "--color", "never", "-d"])
         .arg(root.path().join("missing"))
         .output()
@@ -370,6 +366,42 @@ fn check_ok_when_dir_missing() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("ok"), "{stdout}");
     assert!(stdout.contains("0 fragment(s)"), "{stdout}");
+}
+
+#[test]
+fn auto_merge_needs_pr() {
+    let root = demo_root();
+    let output = common::verctl()
+        .current_dir(root.path())
+        .args(["prepare", "--auto-merge", "--color", "never"])
+        .output()
+        .expect("spawn");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("--auto-merge needs --pr"), "{stderr}");
+    let cargo = fs::read_to_string(root.path().join("Cargo.toml")).expect("read");
+    assert!(cargo.contains("version = \"1.0.0\""), "{cargo}");
+}
+
+/// A merge made with the job's own token starts no workflow, so auto-merge
+/// with it is refused before a manifest moves or a fragment is consumed.
+#[test]
+fn auto_merge_refuses_the_job_token_before_writing() {
+    let root = demo_root();
+    let output = common::verctl()
+        .current_dir(root.path())
+        .env("GITHUB_TOKEN", "job-token")
+        .env("VERCTL_JOB_TOKEN", "job-token")
+        .env("GITHUB_REF_NAME", "main")
+        .args(["prepare", "--pr", "--auto-merge", "--color", "never"])
+        .output()
+        .expect("spawn");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("starts no workflow"), "{stderr}");
+    let cargo = fs::read_to_string(root.path().join("Cargo.toml")).expect("read");
+    assert!(cargo.contains("version = \"1.0.0\""), "{cargo}");
+    assert!(root.path().join(".changeset/bump.md").exists());
 }
 
 #[test]
@@ -395,7 +427,7 @@ fn check_refuses_what_prepare_refuses() {
     let changes = root.path().join(".changeset");
     fs::create_dir_all(&changes).expect("dir");
     let check = || {
-        Command::new(env!("CARGO_BIN_EXE_verctl"))
+        common::verctl()
             .current_dir(root.path())
             .args(["check", "--color", "never"])
             .output()
@@ -432,5 +464,51 @@ fn check_refuses_what_prepare_refuses() {
         passed.status.success(),
         "{}",
         String::from_utf8_lossy(&passed.stderr)
+    );
+}
+
+/// Every long option reads `VERCTL_<LONG>`: the environment alone selects
+/// JSON, and a flag on the command line wins over its variable.
+#[test]
+fn verctl_format_selects_json_and_the_flag_wins() {
+    let root = demo_root();
+    let output = common::verctl()
+        .current_dir(root.path())
+        .args(["status"])
+        .env("VERCTL_FORMAT", "json")
+        .output()
+        .expect("spawn");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice::<serde_json::Value>(&output.stdout)
+        .unwrap_or_else(|error| panic!("stdout is not JSON: {error}"));
+    let output = common::verctl()
+        .current_dir(root.path())
+        .args(["status", "--format", "pretty"])
+        .env("VERCTL_FORMAT", "json")
+        .output()
+        .expect("spawn");
+    assert!(output.status.success());
+    assert!(serde_json::from_slice::<serde_json::Value>(&output.stdout).is_err());
+}
+
+/// A composite action sets `VERCTL_CONFIG` to `""` for an input it was not
+/// given; verctl reads that as unset and uses `.ctl/ver.yaml`.
+#[test]
+fn an_empty_verctl_config_means_the_default() {
+    let root = demo_root();
+    let output = common::verctl()
+        .current_dir(root.path())
+        .args(["prepare", "--dry-run", "--format", "json"])
+        .env("VERCTL_CONFIG", "")
+        .output()
+        .expect("spawn");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
     );
 }

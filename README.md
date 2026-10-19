@@ -250,6 +250,45 @@ output rather than an assumption. Both also write a matrix for
 `plan` job emits the labels and the real jobs consume them
 ([`examples/workflows/ci.yml`](examples/workflows/ci.yml)).
 
+## Release workflow
+
+A repository releases through one thin caller of verctl's reusable workflow
+([`examples/workflows/release.yml`](examples/workflows/release.yml)). It
+triggers on push to the default branch and on `workflow_dispatch`, and runs
+one flow:
+
+1. `plan` lists every version commit whose release is incomplete.
+2. `publish` releases each, oldest first, at its own commit.
+3. `assets` builds the tarballs each Release lacks.
+4. `docs` waits for docs.rs to build each released crate.
+5. `propose` opens or updates the Version PR.
+
+Every job is safe to rerun. A run with nothing pending reports `nothing to
+release`. Every input is optional and defaults to verctl's, so a caller passes
+only what differs. Steps set `env:` and run `mise run ver <verb>`, so the
+caller serves the `ver` task and pins verctl in its mise config.
+
+To migrate from `version-pr.yml` and `publish.yml`, do it in one pull request:
+
+1. Add the caller as `.github/workflows/release.yml`.
+2. Delete both old workflows.
+3. Close the open `version-packages` pull request and delete that branch.
+
+The first push after the merge opens the Version PR from
+`verctl/release/<base>`.
+
+Adopt the caller when no release is pending, or merge the adoption
+before the Version PR. Each release runs at its version commit, and an
+older version commit lacks the `ver` task the reusable workflow runs.
+
+GitHub refuses a Release at a commit whose `.github/workflows` differs
+from the default branch unless the token holds `workflows: write`, which
+`GITHUB_TOKEN` cannot. So a package whose uploads all have a registry
+check, or that has no upload, gets its tag and Release before its
+uploads, in the run that merged the Version PR, and a rerun after a
+failed upload finds them. A package with an unchecked upload is tagged
+after its upload, since its tag is the record that the upload ran.
+
 ## Actions
 
 These replace `changesets/action`. They are **GitHub Actions, not a
@@ -264,13 +303,17 @@ never on the command line or in a URL. There is no local token setup.
 | [`actions/publish`](actions/publish/action.yml) | Run after that PR merges |
 | [`actions/asset`](actions/asset/action.yml) | Build and attach one native target |
 
-Example consumer workflow: [`examples/workflows/version-pr.yml`](examples/workflows/version-pr.yml).
+For a hand-written workflow, use these actions; most repositories call the
+reusable workflow instead.
 
-`actions/version-pr` takes `auto-merge: true` to merge the Version PR once the
-base branch's required checks pass. It needs a ruleset that requires a status check
-on that branch, and a GitHub App token in `token`.
+The Version PR comes from `verctl/release/<base>`, one per base branch.
+`actions/version-pr` takes `auto-merge: true` (`prepare --pr --auto-merge`)
+to merge the Version PR once the base branch's required checks pass. It
+needs a ruleset that requires a status check on that branch, and a GitHub
+App token in `token`; verctl checks both before it writes anything.
 
-Mise owns tools. Publish uses Actions OIDC, not a PAT.
+Mise owns tools. Publish uses the registry's token secret (for crates.io,
+`CARGO_REGISTRY_TOKEN`) and the workflow's `GITHUB_TOKEN`; no PAT.
 
 A package with `publisher: none` is released on GitHub only: `publish`
 creates its tag and Release, and `assets` its tarballs, with no registry

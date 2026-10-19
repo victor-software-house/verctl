@@ -2,13 +2,13 @@
 
 ### Requirement: Every concern has one key
 
-`.ctl/ver.yaml` SHALL declare each concern in exactly one place: the release
-branch in `branch`, registries in `registries` named once and listed by name
-from `packages[].registry`, ecosystems in `ecosystems` listed by name from
+`.ctl/ver.yaml` SHALL declare each concern in exactly one place: the branch in
+`branch`, registries in `registries` named once and listed by name from
+`packages[].registry`, ecosystems in `ecosystems` listed by name from
 `packages[].ecosystem`, steps in `steps` listed by name from `at` and the
 blocks that use them, the tag shape in `tags`, the Version PR text in
-`proposal`, native binaries in `packages[].assets`, and served files in
-`templates`. No key SHALL exist whose only effect is printed output.
+`proposal`, binaries in `packages[].assets`, and served files in `templates`.
+No key SHALL exist whose only effect is printed output.
 
 #### Scenario: Defaults for a single crate
 

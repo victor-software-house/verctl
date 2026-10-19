@@ -1,4 +1,4 @@
-//! Publish the versions already on HEAD, then open a GitHub Release.
+//! Publish the versions already on HEAD and open a GitHub Release.
 //!
 //! How each package is published comes from `[publishers.*]`. Cargo and
 //! bun are stock recipes, not the only stacks. How tags are named comes
@@ -13,7 +13,9 @@ use ctl_core::formatdoc;
 use serde::Serialize;
 
 use crate::config::{Config, NAME_PLACEHOLDER};
-use crate::{git, github, process, publisher, release};
+use crate::publisher::Upload;
+use crate::registry::{self, RegistryCheck};
+use crate::{git, github, pending, process, publisher, release};
 
 /// How long one package upload may run.
 pub const PUBLISH_TIMEOUT: Duration = Duration::from_mins(10);
@@ -78,6 +80,13 @@ pub struct PublishLine {
 }
 
 /// Resolve each package's version, upload command, and the tags to release.
+///
+/// # Errors
+///
+/// Returns an error when a package's version driver cannot be resolved, its
+/// manifest cannot be read, or the driver finds no version in it. It also
+/// fails when no publisher resolves for a package (see
+/// [`publisher::resolve`]) or when [`tags_for`] rejects the packages.
 pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
     let mut packages = Vec::new();
     for spec in &config.packages {
@@ -103,69 +112,384 @@ pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
 }
 
 /// Publish each package, then open a Release per tag. A dry run only plans.
+///
+/// This is [`run_pending`] with assets counted toward completeness.
+///
+/// # Errors
+///
+/// Returns an error when [`run_pending`] fails.
 pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome> {
+    Ok(run_pending(config, root, dry_run, false)?.published)
+}
+
+/// Whether a publish run found anything to release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Outcome {
+    /// Every package's registry entry, tag, Release, and counted assets
+    /// already exist, so the run did nothing.
+    NothingToRelease,
+    /// The run released the packages whose version commit is HEAD.
+    Released,
+}
+
+/// What a publish run did, and what it left for another version commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct PublishRun {
+    /// Whether there was anything to release.
+    pub outcome: Outcome,
+    /// The packages and Releases this run handled.
+    pub published: PublishOutcome,
+    /// Incomplete packages whose version commit is not HEAD.
+    pub waiting: Vec<Waiting>,
+}
+
+/// An incomplete package left for the run at its own version commit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+pub struct Waiting {
+    /// Package name.
+    pub name: String,
+    /// Version at HEAD.
+    pub version: String,
+    /// The version commit that releases it.
+    pub commit: String,
+}
+
+/// Release the packages whose version commit is HEAD and whose release is
+/// incomplete, and report nothing to release when every release is complete.
+///
+/// A tag whose packages all have a registry check, or no upload, gets its tag
+/// and Release before any upload; any other tag gets them after its uploads
+/// (see [`tags_before_upload`]).
+///
+/// A run on any other commit with an incomplete release fails before any side
+/// effect and names the version commits, so a later commit can never tag one
+/// that was never published. With `skip_assets`, declared assets do not count
+/// toward completeness. A dry run plans every package and asks nothing.
+///
+/// # Errors
+///
+/// Returns an error when the plan cannot be resolved, a changelog lacks the
+/// heading for a package version, HEAD is not on the default branch, no token
+/// is set, a registry or GitHub lookup fails, HEAD is not the version commit
+/// of an incomplete release, or a publisher, tag, or Release step fails.
+pub fn run_pending(
+    config: &Config,
+    root: &Path,
+    dry_run: bool,
+    skip_assets: bool,
+) -> Result<PublishRun> {
     let planned = plan(config, root)?;
     if dry_run {
-        let releases = planned
-            .tags
-            .iter()
-            .map(|tag| formatdoc!("would create {tag}", tag = tag.tag))
-            .collect();
-        return Ok(PublishOutcome {
-            packages: planned.packages.iter().map(PublishLine::from).collect(),
-            releases,
-        });
+        return dry_run_plan(config, root, &planned);
     }
+    full_history(root)?;
     prove_version_commit(config, root, &planned)?;
     let token = release::resolve_token()?;
+    let pending = pending::pending(config, root, &token, skip_assets)?;
+    if pending.is_empty() {
+        return Ok(PublishRun {
+            outcome: Outcome::NothingToRelease,
+            published: PublishOutcome {
+                packages: Vec::new(),
+                releases: Vec::new(),
+            },
+            waiting: Vec::new(),
+        });
+    }
+    let head = git::head_sha(root)?;
+    let (here, waiting) = at_head(&pending, &head)?;
+    let selected: Vec<(&crate::config::PackageSpec, &PublishEntry)> = config
+        .packages
+        .iter()
+        .zip(&planned.packages)
+        .filter(|(_, entry)| {
+            here.packages
+                .iter()
+                .any(|package| package.name == entry.name)
+        })
+        .collect();
+    let tags: Vec<&TagPlan> = planned
+        .tags
+        .iter()
+        .filter(|tag| {
+            tag.packages.iter().any(|named| {
+                here.packages
+                    .iter()
+                    .any(|package| package.name == named.name)
+            })
+        })
+        .collect();
+    let mut uploads = Vec::new();
+    for (spec, entry) in &selected {
+        let runs = if entry.argv.is_empty() {
+            Vec::new()
+        } else {
+            publisher::uploads(config, spec, root, entry)?
+        };
+        uploads.push((*entry, runs));
+    }
+    let (before, after): (Vec<&TagPlan>, Vec<&TagPlan>) = tags
+        .into_iter()
+        .partition(|tag| tags_before_upload(tag, &uploads));
+    let repo = github::repo(root)?;
+    let (mut releases, refused) = open_early(config, root, &token, &repo, &before, &head)?;
+    let rest = run_uploads(uploads).and_then(|(packages, shipped_packages)| {
+        for tag in after {
+            let shipped = tag
+                .packages
+                .iter()
+                .any(|entry| shipped_packages.contains(&entry.name));
+            releases.push(open_release(
+                config, root, &token, &repo, tag, &head, shipped,
+            )?);
+        }
+        Ok(packages)
+    });
+    let packages = match (rest, refused) {
+        (Ok(packages), None) => packages,
+        (Ok(_), Some(early)) => return Err(early),
+        (Err(later), early) => return Err(after_refusal(later, early)),
+    };
+    Ok(PublishRun {
+        outcome: Outcome::Released,
+        published: PublishOutcome { packages, releases },
+        waiting,
+    })
+}
+
+/// Open the Releases of the tags created before the uploads, at `head`. An
+/// existing tag must name it. GitHub refusing one for a missing permission
+/// is returned beside the URLs rather than stopping the run, so the uploads
+/// still run and a rerun with a token that has it has only the Release left
+/// to do. Any other failure, such as a tag that names another commit, stops
+/// the run here.
+fn open_early(
+    config: &Config,
+    root: &Path,
+    token: &str,
+    repo: &github::Repo,
+    tags: &[&TagPlan],
+    head: &str,
+) -> Result<(Vec<String>, Option<anyhow::Error>)> {
+    let mut releases = Vec::new();
+    let mut refused = None;
+    for tag in tags {
+        match open_release(config, root, token, repo, tag, head, true) {
+            Ok(url) => releases.push(url),
+            Err(error) if github::is_release_refused(&error) => {
+                refused.get_or_insert(error);
+            }
+            Err(error) => return Err(after_refusal(error, refused)),
+        }
+    }
+    Ok((releases, refused))
+}
+
+/// `error`, carrying a deferred Release refusal when there is one, so the
+/// refusal is not lost behind a later failure.
+fn after_refusal(error: anyhow::Error, refused: Option<anyhow::Error>) -> anyhow::Error {
+    match refused {
+        Some(early) => error.context(format!("{early:#}; then the run failed")),
+        None => error,
+    }
+}
+
+/// Run every upload, and return each package's line with the names of the
+/// packages that shipped in this run.
+fn run_uploads(
+    uploads: Vec<(&PublishEntry, Vec<Upload>)>,
+) -> Result<(Vec<PublishLine>, Vec<String>)> {
     let mut packages = Vec::new();
-    for entry in &planned.packages {
+    let mut shipped = Vec::new();
+    for (entry, uploads) in uploads {
         if entry.argv.is_empty() {
             packages.push(PublishLine::from(entry));
             continue;
         }
-        let note = match publish_package(entry)? {
-            status if status.ends_with(" (already)") => Some("already".into()),
-            _ => None,
-        };
-        packages.push(PublishLine {
-            name: entry.name.clone(),
-            version: entry.version.clone(),
-            via: entry.label.clone(),
-            note,
-        });
+        for upload in uploads {
+            let note = publish_checked(&upload, &registry::LISTING_DELAYS)?;
+            if note.is_none() {
+                shipped.push(entry.name.clone());
+            }
+            packages.push(PublishLine {
+                name: upload.name,
+                version: upload.version,
+                via: entry.label.clone(),
+                note,
+            });
+        }
     }
-    let repo = github::repo(root)?;
-    let sha = git::head_sha(root)?;
-    let mut releases = Vec::new();
-    for tag in &planned.tags {
-        let shipped = tag.packages.iter().any(|entry| {
-            !entry.argv.is_empty()
-                && packages
-                    .iter()
-                    .any(|line| line.name == entry.name && line.note.is_none())
-        });
-        let notes = release::notes_for(
-            config,
-            root,
-            tag.packages
-                .iter()
-                .map(|entry| (entry.name.as_str(), entry.version.as_str())),
-        );
-        let url =
-            github::ensure_release(&token, &repo, &tag.tag, &tag.title, &notes, &sha, shipped)?;
-        releases.push(url);
-    }
-    Ok(PublishOutcome { packages, releases })
+    Ok((packages, shipped))
 }
 
-fn publish_package(entry: &PublishEntry) -> Result<String> {
-    let coord = format!("{}@{}", entry.name, entry.version);
-    match process::run_inherit(&entry.argv, PUBLISH_TIMEOUT) {
-        Ok(()) => Ok(coord),
-        Err(error) if already_published(&format!("{error:#}")) => Ok(format!("{coord} (already)")),
-        Err(error) => Err(error).context(coord),
+/// Whether `tag` is created before the uploads: when no package under it
+/// uploads without a registry check. Completion then comes from the registry,
+/// so a tag created first claims nothing, and the run that merged the Version
+/// PR creates it while HEAD is still the default branch tip. A rerun at that
+/// commit after a later merge changed `.github/workflows` would otherwise need
+/// `workflows: write` to create the Release, which `GITHUB_TOKEN` cannot hold.
+/// An unchecked upload has only its tag as the record that it ran, so its tag
+/// still follows the upload.
+fn tags_before_upload(tag: &TagPlan, uploads: &[(&PublishEntry, Vec<Upload>)]) -> bool {
+    !uploads.iter().any(|(entry, uploads)| {
+        tag.packages.iter().any(|named| named.name == entry.name)
+            && uploads
+                .iter()
+                .any(|upload| matches!(upload.check, RegistryCheck::Unchecked))
+    })
+}
+
+/// Create the GitHub Release for `tag` at `sha`, or confirm it exists, with
+/// the CHANGELOG sections of its packages as the body.
+fn open_release(
+    config: &Config,
+    root: &Path,
+    token: &str,
+    repo: &github::Repo,
+    tag: &TagPlan,
+    sha: &str,
+    shipped: bool,
+) -> Result<String> {
+    let notes = release::notes_for(
+        config,
+        root,
+        tag.packages
+            .iter()
+            .map(|entry| (entry.name.as_str(), entry.version.as_str())),
+    );
+    github::ensure_release(token, repo, &tag.tag, &tag.title, &notes, sha, shipped)
+}
+
+/// What a dry run would publish: every package, a workspace package as its
+/// members in publish order, and every tag. It asks no registry.
+fn dry_run_plan(config: &Config, root: &Path, planned: &PublishPlan) -> Result<PublishRun> {
+    let releases = planned
+        .tags
+        .iter()
+        .map(|tag| formatdoc!("would create {tag}", tag = tag.tag))
+        .collect();
+    let mut packages = Vec::new();
+    for (spec, entry) in config.packages.iter().zip(&planned.packages) {
+        match publisher::workspace_members(config, spec, root)? {
+            Some(members) => packages.extend(members.into_iter().map(|member| PublishLine {
+                name: member.name,
+                version: member.version,
+                via: entry.label.clone(),
+                note: None,
+            })),
+            None => packages.push(PublishLine::from(entry)),
+        }
     }
+    Ok(PublishRun {
+        outcome: Outcome::Released,
+        published: PublishOutcome { packages, releases },
+        waiting: Vec::new(),
+    })
+}
+
+/// The pending commit at `head`, and every incomplete package left for another
+/// version commit. A `head` that releases nothing fails, naming the commits
+/// that do, before anything is published.
+fn at_head<'a>(
+    pending: &'a pending::Pending,
+    head: &str,
+) -> Result<(&'a pending::PendingCommit, Vec<Waiting>)> {
+    let waiting: Vec<Waiting> = pending
+        .commits
+        .iter()
+        .filter(|commit| !commit.sha.eq_ignore_ascii_case(head))
+        .flat_map(|commit| {
+            commit.packages.iter().map(|package| Waiting {
+                name: package.name.clone(),
+                version: package.version.clone(),
+                commit: commit.sha.clone(),
+            })
+        })
+        .collect();
+    let Some(here) = pending.at(head) else {
+        let named: Vec<String> = waiting
+            .iter()
+            .map(|left| format!("{}@{} at {}", left.name, left.version, left.commit))
+            .collect();
+        bail!(
+            "HEAD {head} is not the version commit of an incomplete release; publish at the version commit of {}",
+            named.join(", ")
+        );
+    };
+    Ok((here, waiting))
+}
+
+/// Run one upload under its registry check, and return `already` when the
+/// registry had the version.
+///
+/// With a check, the registry decides: a listed version skips the publisher,
+/// and after the publisher runs the version must appear within `delays`. A
+/// publisher that fails saying the version exists counts only when the
+/// registry then lists it, since that is a publish the earlier check missed
+/// while the index lagged. Without a check, a zero exit or that stderr is
+/// enough. A publisher stopped by a registry rate limit fails with the time
+/// the registry gives for the next attempt (see [`rate_limited`]).
+fn publish_checked(upload: &Upload, delays: &[Duration]) -> Result<Option<String>> {
+    let already = || Some("already".to_owned());
+    let check = &upload.check;
+    let coord = format!("{}@{}", upload.name, upload.version);
+    if !matches!(check, RegistryCheck::Unchecked)
+        && check
+            .lists(&upload.version)
+            .with_context(|| coord.clone())?
+    {
+        return Ok(already());
+    }
+    let Err(error) = process::run_inherit(&upload.argv, PUBLISH_TIMEOUT) else {
+        if !matches!(check, RegistryCheck::Unchecked) {
+            registry::wait_listed(check, &coord, &upload.version, delays)?;
+        }
+        return Ok(None);
+    };
+    let message = format!("{error:#}");
+    if already_published(&message) {
+        if !matches!(check, RegistryCheck::Unchecked) {
+            registry::wait_listed(check, &coord, &upload.version, delays)
+                .with_context(|| message.clone())?;
+        }
+        return Ok(already());
+    }
+    if let Some(limit) = rate_limited(&message) {
+        bail!(
+            "{coord}: the registry's rate limit stopped the publish ({limit}). Nothing was tagged. Rerun the publish then: it skips every crate the registry already lists."
+        );
+    }
+    Err(error).context(coord)
+}
+
+/// What a registry said when it refused an upload for its rate limit: the
+/// time it gives after "try again after", or the status alone. `None` when
+/// `message` is no rate limit.
+///
+/// crates.io answers with status 429 and "Please try again after <time> or
+/// email help@crates.io": <https://crates.io/docs/rate-limits>.
+fn rate_limited(message: &str) -> Option<String> {
+    let lower = message.to_ascii_lowercase();
+    if !lower.contains("too many requests") {
+        return None;
+    }
+    let marker = "try again after ";
+    let Some(at) = lower.find(marker) else {
+        return Some("429 Too Many Requests".to_owned());
+    };
+    let rest = &message[at + marker.len()..];
+    let end = [" or email", "\n"]
+        .iter()
+        .filter_map(|stop| rest.find(stop))
+        .min()
+        .unwrap_or(rest.len());
+    Some(format!(
+        "try again after {}",
+        rest[..end].trim().trim_end_matches('.')
+    ))
 }
 
 impl From<&PublishEntry> for PublishLine {
@@ -176,6 +500,19 @@ impl From<&PublishEntry> for PublishLine {
             via: entry.label.clone(),
             note: None,
         }
+    }
+}
+
+/// Remove a shallow clone's boundary before any history walk: verctl owns the
+/// fetch, so a depth-1 checkout still finds its version commit.
+///
+/// # Errors
+///
+/// Returns an error when [`git::ensure_full_history`] fails.
+pub fn full_history(root: &Path) -> Result<()> {
+    match git::configured_default_branch() {
+        Some(branch) => git::ensure_full_history(root, &branch, &git::FetchDefault::from_env()),
+        None => Ok(()),
     }
 }
 
@@ -209,6 +546,13 @@ fn already_published(message: &str) -> bool {
 /// A template without `{name}` names one tag for the whole release and refuses
 /// when the packages do not share one version. A template with `{name}` names
 /// one tag per package and refuses when two packages would render the same tag.
+///
+/// # Errors
+///
+/// Returns an error when `packages` is empty, when a template without
+/// `{name}` meets more than one version, when a template with `{name}`
+/// renders the same tag for two packages, or when the template cannot be
+/// rendered.
 pub fn tags_for(config: &Config, packages: &[PublishEntry]) -> Result<Vec<TagPlan>> {
     ensure!(
         !packages.is_empty(),
@@ -279,6 +623,275 @@ mod tests {
 
     use super::{PublishEntry, already_published, tags_for};
     use crate::config::Config;
+
+    mod head {
+        use super::super::at_head;
+        use crate::pending::{Pending, PendingCommit, PendingPackage};
+
+        fn pending() -> Pending {
+            let package = |name: &str, version: &str| PendingPackage {
+                name: name.into(),
+                version: version.into(),
+            };
+            Pending {
+                commits: vec![
+                    PendingCommit {
+                        sha: "aaa".into(),
+                        packages: vec![package("core", "0.3.1")],
+                    },
+                    PendingCommit {
+                        sha: "ccc".into(),
+                        packages: vec![package("app", "0.2.1")],
+                    },
+                ],
+                assets: Vec::new(),
+            }
+        }
+
+        #[test]
+        fn head_moved_past_the_release_names_the_version_commit() {
+            let error = at_head(&pending(), "bbb").unwrap_err();
+            let message = format!("{error:#}");
+            assert!(message.contains("core@0.3.1 at aaa"), "{message}");
+            assert!(message.contains("app@0.2.1 at ccc"), "{message}");
+        }
+
+        #[test]
+        fn another_package_pending_at_an_older_commit_waits() {
+            let pending = pending();
+            let (here, waiting) = at_head(&pending, "ccc").unwrap();
+            assert_eq!(here.packages[0].name, "app");
+            assert_eq!(waiting.len(), 1);
+            assert_eq!(waiting[0].name, "core");
+            assert_eq!(waiting[0].commit, "aaa");
+        }
+    }
+
+    mod tag_order {
+        use std::path::PathBuf;
+
+        use super::super::{PublishEntry, TagPlan, tags_before_upload};
+        use super::entry;
+        use crate::publisher::Upload;
+        use crate::registry::RegistryCheck;
+
+        fn upload(name: &str, check: RegistryCheck) -> Upload {
+            Upload {
+                name: name.into(),
+                version: "0.4.0".into(),
+                manifest: PathBuf::from("Cargo.toml"),
+                argv: vec!["true".into()],
+                check,
+            }
+        }
+
+        fn tag(packages: &[&PublishEntry]) -> TagPlan {
+            TagPlan {
+                tag: "v0.4.0".into(),
+                title: "v0.4.0".into(),
+                packages: packages.iter().map(|&entry| entry.clone()).collect(),
+            }
+        }
+
+        #[test]
+        fn a_crates_io_package_is_tagged_before_its_upload() {
+            let demo = entry("demo", "0.4.0");
+            let uploads = vec![(
+                &demo,
+                vec![upload(
+                    "demo",
+                    RegistryCheck::CratesIo {
+                        name: "demo".into(),
+                    },
+                )],
+            )];
+            assert!(tags_before_upload(&tag(&[&demo]), &uploads));
+        }
+
+        #[test]
+        fn a_release_only_package_is_tagged_first() {
+            let mut app = entry("app", "0.4.0");
+            app.argv.clear();
+            assert!(tags_before_upload(&tag(&[&app]), &[(&app, Vec::new())]));
+        }
+
+        #[test]
+        fn an_unchecked_upload_keeps_its_shared_tag_after_the_uploads() {
+            let demo = entry("demo", "0.4.0");
+            let tool = entry("tool", "0.4.0");
+            let uploads = vec![
+                (
+                    &demo,
+                    vec![upload(
+                        "demo",
+                        RegistryCheck::CratesIo {
+                            name: "demo".into(),
+                        },
+                    )],
+                ),
+                (&tool, vec![upload("tool", RegistryCheck::Unchecked)]),
+            ];
+            assert!(!tags_before_upload(&tag(&[&demo, &tool]), &uploads));
+            assert!(tags_before_upload(&tag(&[&demo]), &uploads));
+        }
+    }
+
+    #[cfg(unix)]
+    mod checked {
+        use std::fs;
+        use std::path::Path;
+        use std::time::Duration;
+
+        use indoc::{formatdoc, indoc};
+        use tempfile::TempDir;
+
+        use super::super::{publish_checked, rate_limited};
+        use crate::publisher::Upload;
+        use crate::registry::RegistryCheck;
+
+        const NO_WAIT: [Duration; 2] = [Duration::ZERO, Duration::ZERO];
+
+        /// What crates.io prints for a new crate over its burst.
+        const RATE_LIMITED: &str = indoc! {"
+            error: failed to publish demo v0.4.6 to registry at https://crates.io
+
+            Caused by:
+              the remote server responded with an error (status 429 Too Many Requests): You have published too many new crates in a short period of time. Please try again after Sat, 19 Oct 2026 01:23:45 GMT or email help@crates.io to have your limit increased.
+        "};
+
+        /// The argv that runs `body` as a shell script written to `name`.
+        ///
+        /// The script runs through `sh` rather than being executed itself:
+        /// tests run in parallel, and a file just written can still be open
+        /// in a child another test forked, so executing it fails with
+        /// `ETXTBSY` (Text file busy).
+        fn script(dir: &Path, name: &str, body: &str) -> Vec<String> {
+            let path = dir.join(name);
+            fs::write(&path, body).unwrap();
+            vec!["sh".to_owned(), path.display().to_string()]
+        }
+
+        /// An upload under `check` whose publisher records that it ran,
+        /// prints `stderr`, then exits with `code`.
+        fn upload(dir: &Path, code: u8, stderr: &str, check: RegistryCheck) -> Upload {
+            let ran = dir.join("published");
+            let said = dir.join("stderr");
+            fs::write(&said, stderr).unwrap();
+            let argv = script(
+                dir,
+                "publisher",
+                &formatdoc! {r#"
+                    #!/bin/sh
+                    touch "{ran}"
+                    cat "{said}" >&2
+                    exit {code}
+                "#, ran = ran.display(), said = said.display()},
+            );
+            Upload {
+                name: "demo".into(),
+                version: "0.4.6".into(),
+                manifest: dir.join("Cargo.toml"),
+                argv,
+                check,
+            }
+        }
+
+        /// A query that prints the version from its `listed_after`-th call on,
+        /// counting calls in a file, and exits non-zero before that.
+        fn query(dir: &Path, listed_after: u32) -> RegistryCheck {
+            let calls = dir.join("calls");
+            let argv = script(
+                dir,
+                "query",
+                &formatdoc! {r#"
+                    #!/bin/sh
+                    n=$(($(cat "{calls}" 2>/dev/null || echo 0) + 1))
+                    echo "$n" > "{calls}"
+                    if [ "$n" -ge {listed_after} ]; then
+                      echo 0.4.6
+                      exit 0
+                    fi
+                    exit 1
+                "#, calls = calls.display()},
+            );
+            RegistryCheck::Query {
+                argv,
+                dir: dir.to_path_buf(),
+            }
+        }
+
+        fn ran(dir: &Path) -> bool {
+            dir.join("published").exists()
+        }
+
+        #[test]
+        fn a_listed_version_skips_the_publisher() {
+            let dir = TempDir::new().unwrap();
+            let check = query(dir.path(), 1);
+            let note = publish_checked(&upload(dir.path(), 0, "", check), &NO_WAIT).unwrap();
+            assert_eq!(note.as_deref(), Some("already"));
+            assert!(!ran(dir.path()));
+        }
+
+        #[test]
+        fn a_publisher_that_exits_zero_without_publishing_fails() {
+            let dir = TempDir::new().unwrap();
+            let check = query(dir.path(), 99);
+            let error = publish_checked(&upload(dir.path(), 0, "", check), &NO_WAIT).unwrap_err();
+            assert!(ran(dir.path()));
+            assert!(format!("{error:#}").contains("demo@0.4.6"), "{error:#}");
+        }
+
+        #[test]
+        fn registry_metadata_that_lags_the_publish_passes() {
+            let dir = TempDir::new().unwrap();
+            let check = query(dir.path(), 3);
+            let note = publish_checked(&upload(dir.path(), 0, "", check), &NO_WAIT).unwrap();
+            assert_eq!(note, None);
+            assert!(ran(dir.path()));
+        }
+
+        #[test]
+        fn a_failed_publisher_fails_without_waiting() {
+            let dir = TempDir::new().unwrap();
+            let check = query(dir.path(), 2);
+            let error = publish_checked(&upload(dir.path(), 1, "", check), &NO_WAIT).unwrap_err();
+            assert!(format!("{error:#}").contains("demo@0.4.6"), "{error:#}");
+        }
+
+        #[test]
+        fn without_a_check_a_zero_exit_publishes() {
+            let dir = TempDir::new().unwrap();
+            let upload = upload(dir.path(), 0, "", RegistryCheck::Unchecked);
+            let note = publish_checked(&upload, &NO_WAIT).unwrap();
+            assert_eq!(note, None);
+            assert!(ran(dir.path()));
+        }
+
+        #[test]
+        fn a_rate_limit_names_the_crate_and_the_retry_time() {
+            let dir = TempDir::new().unwrap();
+            let check = query(dir.path(), 99);
+            let upload = upload(dir.path(), 101, RATE_LIMITED, check);
+            let error = publish_checked(&upload, &NO_WAIT).unwrap_err();
+            let message = format!("{error:#}");
+            assert!(message.contains("demo@0.4.6"), "{message}");
+            assert!(
+                message.contains("try again after Sat, 19 Oct 2026 01:23:45 GMT)"),
+                "{message}"
+            );
+            assert!(message.contains("Nothing was tagged"), "{message}");
+        }
+
+        #[test]
+        fn a_rate_limit_without_a_time_still_says_so() {
+            assert_eq!(
+                rate_limited("status 429 Too Many Requests").as_deref(),
+                Some("429 Too Many Requests")
+            );
+            assert_eq!(rate_limited("error: token is required"), None);
+        }
+    }
 
     fn entry(name: &str, version: &str) -> PublishEntry {
         PublishEntry {

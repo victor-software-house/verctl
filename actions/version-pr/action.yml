@@ -12,17 +12,17 @@ inputs:
     required: false
     default: ${{ github.token }}
   config:
-    description: Path to the declarations file.
+    description: Path to the declarations file. Empty means verctl's default, `.ctl/ver.yaml`.
     required: false
-    default: .ctl/ver.yaml
+    default: ""
   title:
-    description: Version PR title.
+    description: Version PR title. Empty means verctl's default.
     required: false
-    default: "chore(release): version packages"
+    default: ""
   commit-message:
-    description: Commit message on the Version PR.
+    description: Commit message on the Version PR. Empty means the title.
     required: false
-    default: "chore(release): version packages"
+    default: ""
   dry-run:
     description: Preview only. Set to `true` to write nothing.
     required: false
@@ -36,18 +36,13 @@ inputs:
       administration access that the token does not have.
       Requires `token` other than GITHUB_TOKEN, such as a GitHub App token: a
       merge made with GITHUB_TOKEN starts no workflow, so publish would not run.
+      verctl checks both before it writes anything.
     required: false
     default: "false"
 
 runs:
   using: composite
   steps:
-    - name: Refuse auto-merge with GITHUB_TOKEN
-      if: inputs.auto-merge == 'true' && inputs.dry-run != 'true' && inputs.token == github.token
-      shell: bash
-      run: |
-        echo "::error::auto-merge needs a token other than GITHUB_TOKEN; a merge made with GITHUB_TOKEN starts no publish workflow"
-        exit 1
     - name: Prepare release
       shell: bash
       env:
@@ -56,18 +51,6 @@ runs:
         VERCTL_DRY_RUN: ${{ inputs.dry-run }}
         VERCTL_PR_TITLE: ${{ inputs.title }}
         VERCTL_COMMIT_MESSAGE: ${{ inputs.commit-message }}
-      run: |
-        set -euo pipefail
-        extra=()
-        if [ "${VERCTL_DRY_RUN}" = true ]; then
-          extra+=(--dry-run)
-        fi
-        exec verctl prepare --pr -c "${VERCTL_CONFIG}" "${extra[@]}"
-    - name: Enable auto-merge
-      if: inputs.auto-merge == 'true' && inputs.dry-run != 'true'
-      shell: bash
-      env:
-        GH_TOKEN: ${{ inputs.token }}
-        REPO: ${{ github.repository }}
-        BASE: ${{ github.event.repository.default_branch }}
-      run: ${{ github.action_path }}/auto-merge.sh
+        VERCTL_AUTO_MERGE: ${{ inputs.auto-merge }}
+        VERCTL_JOB_TOKEN: ${{ github.token }}
+      run: exec verctl prepare --pr

@@ -10,6 +10,11 @@ use crate::fragment::Bump;
 /// `0.0.0`, with or without a pre-release or build suffix, because a new
 /// package releases `0.0.1` first; opening at `0.1.0` is the operator's call,
 /// recorded as `first_minor` on the package.
+///
+/// # Errors
+///
+/// Returns an error when `current` is not a semver version, or when the bump
+/// is one of the two refused above.
 pub fn apply(current: &str, bump: Bump, first_minor: bool) -> Result<String> {
     if bump == Bump::None {
         return Ok(current.to_owned());

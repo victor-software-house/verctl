@@ -4,8 +4,8 @@
 
 With `auto-merge: true`, `actions/version-pr` SHALL enable GitHub auto-merge
 on the open Version PR after opening or updating it, as a squash whose
-subject is the PR title followed by ` (#<number>)` and whose body is the PR
-description. With `auto-merge` unset or `false`, it SHALL not change the
+subject is the PR title followed by a space and `(#<number>)` and whose body
+is the PR description. With `auto-merge` unset or `false`, it SHALL not change the
 Version PR's merge state.
 
 #### Scenario: Opted in with a required check

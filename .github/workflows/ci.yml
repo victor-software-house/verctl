@@ -41,13 +41,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up mise
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           version: 2026.10.9
           cache: true
       - run: mise install --locked
       - name: Cache builds with mbx
-        uses: jdx/mr-boxington-action@9df1d4b18b2147788a7ee7a2c7b84ecf62fd89d3 # v1.5.0
+        uses: jdx/mr-boxington-action@47ce49b32025d93a7a2f4570815afaa2b7092240 # v1.7.2
       - name: Plan validation jobs
         id: plan
         run: mise run ver ci --github-output "$GITHUB_OUTPUT"
@@ -66,13 +66,13 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - name: Set up mise
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           version: 2026.10.9
           cache: true
       - run: mise install --locked
       - name: Cache builds with mbx
-        uses: jdx/mr-boxington-action@9df1d4b18b2147788a7ee7a2c7b84ecf62fd89d3 # v1.5.0
+        uses: jdx/mr-boxington-action@47ce49b32025d93a7a2f4570815afaa2b7092240 # v1.7.2
       - name: Verify
         run: mise run verify
       - name: Advisories
@@ -91,6 +91,9 @@ jobs:
           && !(github.head_ref == 'next'
           && github.event.pull_request.head.repo.full_name == github.repository)
         run: mise run semver
+      # Builds the package crates.io would receive.
+      - name: Package
+        run: mise x -- cargo package --locked --all-features
 
   template:
     name: Template
@@ -104,9 +107,10 @@ jobs:
         with:
           persist-credentials: false
       # Mints a token from the vsh-templates-reader App, installs only uv and
-      # python, and fails when the newest template tag would change a file.
+      # python from mise.template.toml, and fails when the newest template tag
+      # would change the repository.
       - name: Check the template version
-        uses: victor-software-house/ctl-core/.github/actions/copier-check@4c178e81817f4040de9c2e66ccc9aac3172cb1a9 # main, 2026-10-13
+        uses: victor-software-house/ctl-core/.github/actions/copier-check@1fc4bc9acf3e8ec64eb8433837da5f720c295e93 # main, 2026-10-15
         with:
           client-id: ${{ secrets.TEMPLATES_APP_CLIENT_ID }}
           private-key: ${{ secrets.TEMPLATES_APP_PRIVATE_KEY }}

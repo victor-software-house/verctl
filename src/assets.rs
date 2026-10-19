@@ -119,6 +119,14 @@ const STOCK_BINARY: &str = "target/{triple}/release/{bin}";
 
 /// Resolves the declared targets, the first package's version, and its release
 /// tag.
+///
+/// # Errors
+///
+/// Returns an error when a declared runner is invalid, the config declares no
+/// packages, the first package's manifest cannot be read or its version
+/// parsed, or the tag template cannot be rendered. It also fails when an asset
+/// target names an undeclared runner, or is outside the built-in set without
+/// declaring `runner`, `os`, `arch`, and `triple`.
 pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
     runners::declared(config)?;
     let package = config
@@ -177,6 +185,11 @@ struct GithubMatrix {
 
 /// Appends `has_assets`, `tag`, and the GitHub-facing matrix to the step output
 /// file `path`.
+///
+/// # Errors
+///
+/// Returns an error when the matrix cannot be encoded as JSON, or when the
+/// file at `path` cannot be opened or written.
 pub fn write_github_output(plan: &AssetsPlan, path: &Path) -> Result<()> {
     let matrix = GithubMatrix {
         include: plan
@@ -208,6 +221,13 @@ fn formatdoc_output(plan: &AssetsPlan, matrix: &str) -> String {
 }
 
 /// Builds the target `id` and packs its binary into a tarball under `root`.
+///
+/// # Errors
+///
+/// Returns an error when `id` is not a target in `plan`, when the prepare,
+/// build, or `tar` command cannot run, times out, or exits unsuccessfully, or
+/// when the release binary is missing after the build. It also fails when a
+/// path is not valid UTF-8.
 pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
     let target = plan
         .matrix
@@ -246,6 +266,12 @@ pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
 }
 
 /// Uploads `tarball` to the release `tag` and returns the asset's download URL.
+///
+/// # Errors
+///
+/// Returns an error when neither `GITHUB_TOKEN` nor `GH_TOKEN` is set, when
+/// the GitHub repository cannot be determined, or when the upload fails, as
+/// described for [`crate::github::upload_release_asset`].
 pub fn upload(root: &Path, tag: &str, tarball: &Path) -> Result<String> {
     let token = crate::release::resolve_token()?;
     let repo = github::repo(root)?;

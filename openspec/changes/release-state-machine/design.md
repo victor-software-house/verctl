@@ -137,8 +137,12 @@ Rules that hold across all transitions:
    The next run starts from the facts.
 3. `release` handles the oldest unreleased release commit first, then the
    next. It never reads "the release" from HEAD.
-4. Publish happens before tag. A tag never claims a version the registry does
-   not have.
+4. Publish happens before tag for a package with an unchecked upload, whose
+   tag is the record that the upload ran. A package whose uploads all have a
+   registry check is tagged first, in the run that merged the Version PR,
+   because the registry, not the tag, records the upload, and a rerun at an
+   older commit could not create the tag without `workflows: write`
+   ([tag-at-merge](../tag-at-merge/design.md)).
 5. verctl never decides one fact from another. A published version does not
    imply a tag, and a tag does not imply a Release.
 

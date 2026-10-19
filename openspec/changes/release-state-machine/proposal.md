@@ -37,7 +37,9 @@ step refreshes lockfiles itself, and the report field `next` becomes `after`.
    release commit in branch history, lockfile agreement, the registry, the tag,
    the GitHub Release, and its assets. No state file, label, or event payload.
 2. Every transition is guarded and repeatable: `propose`, `publish`, `tag`,
-   `release`, `asset`, `finalize`. Publish precedes tag; tags land on the
+   `release`, `asset`, `finalize`. Publish precedes tag for a package with
+   an unchecked upload, and a registry-checked package is tagged first
+   ([tag-at-merge](../tag-at-merge/proposal.md)); tags land on the
    release commit in one atomic push; a release with assets is a draft until
    they are all uploaded.
 3. A Version PR is identified by its head repository and its head branch

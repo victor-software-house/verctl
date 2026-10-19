@@ -13,14 +13,37 @@ use crate::git::pull_request_number;
 use crate::prepare::PlanEntry;
 use crate::{git, github};
 
-/// The branch the Version PR is pushed to.
-pub const VERSION_BRANCH: &str = "version-packages";
+/// What every Version PR branch starts with. The rest is the base branch, so
+/// each base gets its own Version PR and the name says which one it is.
+pub const VERSION_BRANCH_PREFIX: &str = "verctl/release/";
+
+/// The branch the Version PR into `base` is pushed to:
+/// `verctl/release/<base>`. It is derived, never configured, because the name
+/// is how verctl and its readers recognise a Version PR.
+#[must_use]
+pub fn version_branch(base: &str) -> String {
+    format!("{VERSION_BRANCH_PREFIX}{base}")
+}
+
+/// Whether `branch` is a Version PR branch: [`VERSION_BRANCH_PREFIX`]
+/// followed by a base branch name.
+#[must_use]
+pub fn is_version_branch(branch: &str) -> bool {
+    branch
+        .strip_prefix(VERSION_BRANCH_PREFIX)
+        .is_some_and(|base| !base.is_empty())
+}
 
 /// Auth for `--pr`.
 ///
 /// The token is the one the environment already has (`GITHUB_TOKEN` in
 /// Actions). We do not call `gh` and we do not use the logged-in
 /// account. Local `--pr` is recovery when that same token is in the env.
+///
+/// # Errors
+///
+/// Returns an error when neither `GITHUB_TOKEN` nor `GH_TOKEN` is set to a
+/// non-empty value.
 pub fn resolve_token() -> Result<String> {
     env_token().context(
         "prepare --pr needs GITHUB_TOKEN (Actions sets it; locally export the same token — not `gh`)",
@@ -94,6 +117,11 @@ pub fn contributing_fragments<'a>(
 }
 
 /// Delete the fragment files once a Version PR has consumed them.
+///
+/// # Errors
+///
+/// Returns an error naming the first fragment file that cannot be deleted.
+/// Fragments before it are already gone.
 pub fn consume_fragments<'a, I>(fragments: I) -> Result<()>
 where
     I: IntoIterator<Item = &'a Fragment>,
@@ -125,6 +153,12 @@ enum Origin {
 /// subject). With a token, the pull request author is credited when
 /// [`credits`] says so; a failed lookup credits no one, so a maintainer is
 /// never named by accident.
+///
+/// # Errors
+///
+/// Returns an error when the history walk that finds the commit adding a
+/// fragment fails, as [`git::added_by`] describes. A missing GitHub `origin`
+/// is not an error and yields empty origins.
 pub fn origins(
     root: &Path,
     token: Option<&str>,
@@ -181,12 +215,21 @@ pub fn credits(changelog: &crate::config::Changelog, author: &github::PullAuthor
 }
 
 /// [`changelog_sections_with`] with no references.
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`changelog_sections_with`].
 pub fn changelog_sections(plan: &[PlanEntry], fragments: &[Fragment]) -> Result<String> {
     changelog_sections_with(plan, fragments, &Origins::default())
 }
 
 /// One `## name version` section per plan entry, each fragment a bullet that
 /// links where it came from when `origins` knows.
+///
+/// # Errors
+///
+/// Returns an error when a fragment's entry cannot be rendered, or when no
+/// fragment names a plan entry's package, leaving that section without a body.
 pub fn changelog_sections_with(
     plan: &[PlanEntry],
     fragments: &[Fragment],
@@ -265,6 +308,10 @@ fn group_entries(entries: &[(Option<Group>, String)]) -> String {
 }
 
 /// [`write_changelogs_with`] with no references.
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`write_changelogs_with`].
 pub fn write_changelogs(
     config: &crate::config::Config,
     root: &Path,
@@ -275,6 +322,15 @@ pub fn write_changelogs(
 }
 
 /// Prepend each plan entry's section to its package CHANGELOG.md.
+///
+/// Returns the changelog paths written.
+///
+/// # Errors
+///
+/// Returns an error when a plan entry names a package missing from the
+/// config, when its section cannot be built (see
+/// [`changelog_sections_with`]), or when its changelog cannot be read or
+/// written. Changelogs before the failing one are already written.
 pub fn write_changelogs_with(
     config: &crate::config::Config,
     root: &Path,
@@ -346,6 +402,12 @@ pub fn notes_for<'a>(
 }
 
 /// Fail unless every package version has a changelog heading.
+///
+/// # Errors
+///
+/// Returns an error when a package is missing from the config, or when any
+/// package's changelog is unreadable or has no `## name version` or
+/// `## version` heading for it. The latter error lists every such package.
 pub fn require_changelog_versions<'a>(
     config: &crate::config::Config,
     root: &Path,
@@ -370,6 +432,13 @@ pub fn require_changelog_versions<'a>(
 }
 
 /// Add a changelog section above the existing entries, keeping the title.
+///
+/// A missing file is created with a `# Changelog` title.
+///
+/// # Errors
+///
+/// Returns an error, naming `path`, when the file exists but cannot be read,
+/// or when it cannot be written.
 pub fn prepend_changelog(path: &Path, section: &str) -> Result<()> {
     match fs::read_to_string(path) {
         Ok(existing) => {
@@ -398,32 +467,133 @@ pub fn prepend_changelog(path: &Path, section: &str) -> Result<()> {
     }
 }
 
+/// What the Version PR is called and which branch it targets.
+///
+/// Resolved before `prepare` writes anything, so a run that cannot tell its
+/// base fails with the tree untouched.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VersionPr {
+    /// `VERCTL_PR_TITLE`; unset or empty means `chore(release): version
+    /// packages`.
+    pub title: String,
+    /// `VERCTL_COMMIT_MESSAGE`; unset or empty means the title.
+    pub message: String,
+    /// The branch [`github::base_branch`] names.
+    pub base: String,
+}
+
+impl VersionPr {
+    /// Read the title and message from the environment and resolve the base.
+    ///
+    /// An empty variable counts as unset: a composite action passes an input
+    /// it was not given as `""`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when no base branch can be resolved, as
+    /// [`github::base_branch`] describes.
+    pub fn from_env(root: &Path) -> Result<Self> {
+        let title = non_empty_env("VERCTL_PR_TITLE")
+            .unwrap_or_else(|| "chore(release): version packages".into());
+        let message = non_empty_env("VERCTL_COMMIT_MESSAGE").unwrap_or_else(|| title.clone());
+        Ok(Self {
+            title,
+            message,
+            base: github::base_branch(root)?,
+        })
+    }
+}
+
+fn non_empty_env(name: &str) -> Option<String> {
+    env::var(name).ok().filter(|value| !value.is_empty())
+}
+
+/// The Version PR `open_or_update_pr` opened or updated.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct OpenedPr {
+    /// The PR number, which auto-merge acts on.
+    pub number: u64,
+    /// The PR's web URL.
+    pub url: String,
+}
+
 /// Push the Version PR branch and open the PR, or update the open one. `None`
 /// when nothing changed.
+///
+/// # Errors
+///
+/// Returns an error when the GitHub repository cannot be resolved, when the
+/// branch cannot be committed or pushed (see [`git::commit_branch_and_push`]),
+/// or when looking up, updating, or creating the pull request, or applying
+/// `version_label`, fails. A failure after the push leaves the branch pushed.
 pub fn open_or_update_pr(
     root: &Path,
     token: &str,
-    title: &str,
-    message: &str,
+    pr: &VersionPr,
     paths: &[std::path::PathBuf],
     changelog: &str,
     version_label: &str,
-) -> Result<Option<String>> {
+) -> Result<Option<OpenedPr>> {
     let repo = github::repo(root)?;
-    match git::commit_branch_and_push(root, VERSION_BRANCH, message, token, &repo, paths)? {
+    let branch = version_branch(&pr.base);
+    match git::commit_branch_and_push(root, &branch, &pr.message, token, &repo, paths)? {
         git::PushOutcome::Empty => return Ok(None),
         git::PushOutcome::Pushed => {}
     }
     let body = pr_body(changelog);
-    if let Some(existing) = github::existing_pr(token, &repo, VERSION_BRANCH)? {
-        let url = github::update_pr(token, &repo, existing.number, title, &body)?;
+    if let Some(existing) = github::existing_pr(token, &repo, &branch)? {
+        let url = github::update_pr(token, &repo, existing.number, &pr.title, &body)?;
         github::ensure_version_label(token, &repo, existing.number, version_label)?;
-        return Ok(Some(url));
+        return Ok(Some(OpenedPr {
+            number: existing.number,
+            url,
+        }));
     }
-    let base = github::base_branch(root);
-    let created = github::create_pr(token, &repo, title, VERSION_BRANCH, &base, &body)?;
+    let created = github::create_pr(token, &repo, &pr.title, &branch, &pr.base, &body)?;
     github::ensure_version_label(token, &repo, created.number, version_label)?;
-    Ok(Some(created.url))
+    Ok(Some(OpenedPr {
+        number: created.number,
+        url: created.url,
+    }))
+}
+
+/// Refuse auto-merge before `prepare --pr` writes anything.
+///
+/// The token must not be the job's own, which the workflow names in
+/// `VERCTL_JOB_TOKEN`: a merge made with `GITHUB_TOKEN` starts no workflow, so
+/// the release after it would never run. And a ruleset on `base` must require
+/// a status check, or GitHub merges the moment auto-merge is on.
+///
+/// # Errors
+///
+/// Returns an error when `token` is the job's own, when the repository has no
+/// GitHub `origin`, when the rules lookup fails, or when no ruleset on `base`
+/// requires a status check.
+pub fn require_auto_merge(root: &Path, token: &str, base: &str) -> Result<()> {
+    ensure!(
+        non_empty_env("VERCTL_JOB_TOKEN").as_deref() != Some(token),
+        "auto-merge needs a token other than the job's GITHUB_TOKEN, such as a GitHub App token: a merge made with GITHUB_TOKEN starts no workflow, so the release would not run"
+    );
+    let repo = github::repo(root)?;
+    ensure!(
+        github::requires_status_check(token, &repo, base)?,
+        "{base} has no required status check; auto-merge would merge the Version PR at once"
+    );
+    Ok(())
+}
+
+/// Enable auto-merge on the Version PR `pr`.
+///
+/// It takes the PR that [`open_or_update_pr`] returned rather than listing
+/// open PRs again, because the list can lag a PR created a moment before.
+///
+/// # Errors
+///
+/// Returns an error when the repository has no GitHub `origin` or GitHub
+/// refuses auto-merge.
+pub fn auto_merge(root: &Path, token: &str, pr: &OpenedPr) -> Result<()> {
+    github::enable_auto_merge(token, &github::repo(root)?, pr.number)
 }
 
 /// The PR body: the changelog, trimmed, or a stock line when it is empty.

@@ -13,9 +13,9 @@ inputs:
     required: false
     default: ${{ github.token }}
   config:
-    description: Path to the declarations file.
+    description: Path to the declarations file. Empty means verctl's default, `.ctl/ver.yaml`.
     required: false
-    default: .ctl/ver.yaml
+    default: ""
   target:
     description: Name of an `[assets.NAME]` table (`darwin-arm64`, `linux-x64`).
     required: true
@@ -31,8 +31,6 @@ runs:
       env:
         GITHUB_TOKEN: ${{ inputs.token }}
         VERCTL_CONFIG: ${{ inputs.config }}
-        VERCTL_TARGET: ${{ inputs.target }}
+        VERCTL_BUILD: ${{ inputs.target }}
         VERCTL_TAG: ${{ inputs.tag }}
-      run: |
-        set -euo pipefail
-        exec verctl assets -c "${VERCTL_CONFIG}" --build "${VERCTL_TARGET}" --upload --tag "${VERCTL_TAG}"
+      run: exec verctl assets --upload

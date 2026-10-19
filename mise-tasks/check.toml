@@ -1,3 +1,2 @@
 # The shared verify from ctl-core depends on check:features and check:repo by name.
 "check:features" = { description = "Type-check the crate with no features beyond its defaults", run = "cargo check --all-targets --no-default-features" }
-"check:repo" = { description = "Workflow policy, the version guard, and pending fragments", depends = ["policy", "versions", "fragments"] }

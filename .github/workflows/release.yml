@@ -1,0 +1,389 @@
+name: Release
+
+# verctl's reusable release workflow. A repository calls it from a thin caller
+# that triggers on push to the default branch and on workflow_dispatch:
+#
+#   jobs:
+#     release:
+#       uses: victor-software-house/verctl/.github/workflows/release.yml@<sha>
+#       secrets:
+#         app-client-id: ${{ secrets.CHANGESET_VERSION_APP_CLIENT_ID }}
+#         app-private-key: ${{ secrets.CHANGESET_VERSION_APP_PRIVATE_KEY }}
+#         registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+#
+# One flow: plan every incomplete version commit, publish each in history
+# order, build the assets its Release lacks, check docs.rs, then open or
+# update the Version PR. Every job is safe to rerun, and every step sets its
+# settings in env and runs `mise run ver <verb>`: the served task execs the
+# verctl the caller pins. verctl's own release passes verctl-artifact instead,
+# so each job runs the verctl that run built once for its platform.
+
+on:
+  workflow_call:
+    inputs:
+      version-pr:
+        description: Open or update the Version PR. false skips the propose job.
+        type: boolean
+        default: true
+      publish:
+        description: Publish, tag, and release. false skips the publish job.
+        type: boolean
+        default: true
+      assets:
+        description: >-
+          Build the assets .ctl/ver.yaml declares. false skips the assets
+          matrix and leaves assets out of the completeness check.
+        type: boolean
+        default: true
+      docs:
+        description: Wait for docs.rs to build each released crate.
+        type: boolean
+        default: true
+      auto-merge:
+        description: Enable auto-merge on the Version PR. Needs the App secrets.
+        type: boolean
+        default: false
+      config:
+        description: Path to the declarations file. Empty means .ctl/ver.yaml.
+        type: string
+        default: ""
+      runner:
+        description: >-
+          JSON label list for the plan, publish, docs, and propose jobs. Asset
+          jobs take their runners from .ctl/ver.yaml.
+        type: string
+        default: '["ubuntu-latest"]'
+      mise-version:
+        description: The mise that installs the caller's tools, verctl included.
+        type: string
+        default: 2026.10.9
+      mise-env:
+        description: MISE_ENV for every job.
+        type: string
+        default: ci
+      verctl-artifact:
+        description: >-
+          Name prefix of verctl builds uploaded earlier in the calling run,
+          for verctl's own release. Each job downloads
+          <prefix>-<runner.os>-<runner.arch> and puts it first on PATH, so the
+          caller's ver task must run verctl from PATH with no pin of its own.
+          Empty uses the verctl the caller's ver task pins.
+        type: string
+        default: ""
+      title:
+        description: Version PR title. Empty means verctl's default.
+        type: string
+        default: ""
+      commit-message:
+        description: Version PR commit message. Empty means the title.
+        type: string
+        default: ""
+      registry-token-env:
+        description: The variable the registry-token secret is exported as.
+        type: string
+        default: CARGO_REGISTRY_TOKEN
+    secrets:
+      app-client-id:
+        description: >-
+          GitHub App client id for the Version PR. Without it the Version PR is
+          opened with GITHUB_TOKEN, so its own CI does not start.
+        required: false
+      app-private-key:
+        description: The GitHub App's private key.
+        required: false
+      registry-token:
+        description: >-
+          Registry token for the publisher, exported as registry-token-env.
+          Without it the publisher uses whatever credential its config finds.
+        required: false
+
+permissions: {}
+
+env:
+  MISE_ENV: ${{ inputs.mise-env }}
+  VERCTL_CONFIG: ${{ inputs.config }}
+
+jobs:
+  plan:
+    name: Plan the release
+    # A dispatch from another branch runs nothing: plan never releases a
+    # commit outside the default branch, and propose never derives
+    # verctl/release/<feature>.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ${{ fromJson(inputs.runner) }}
+    permissions:
+      contents: read # reads history; tags and Releases are read through the API
+    outputs:
+      commits: ${{ steps.plan.outputs.commits }}
+      pending: ${{ steps.plan.outputs.pending }}
+      assets: ${{ steps.plan.outputs.assets }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Set up mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          version: ${{ inputs.mise-version }}
+          cache: true
+      - run: mise install --locked
+      - name: Download this run's verctl build
+        if: inputs.verctl-artifact != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.verctl-artifact }}-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/verctl-build
+      - name: Put this run's verctl build first on PATH
+        if: inputs.verctl-artifact != ''
+        env:
+          BUILD_DIR: ${{ runner.temp }}/verctl-build
+        run: |
+          chmod +x "${BUILD_DIR}/verctl"
+          echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
+      - name: Plan
+        id: plan
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERCTL_PLAN: "true"
+          VERCTL_SKIP_ASSETS: ${{ !inputs.assets }}
+        run: mise run ver publish
+
+  publish:
+    name: Publish ${{ matrix.commit }}
+    needs: plan
+    if: >-
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      inputs.publish && needs.plan.outputs.pending == 'true'
+    runs-on: ${{ fromJson(inputs.runner) }}
+    permissions:
+      contents: write # creates the release tag and the GitHub Release
+    # One run releases every pending version commit, oldest first, and stops
+    # at the first that fails. A running leg is never cancelled half way.
+    # GitHub keeps one pending job per group, so a leg still waiting when a
+    # newer run's leg arrives is cancelled. Nothing is lost: the newer run
+    # planned every incomplete commit itself, so it publishes the cancelled
+    # leg's commit, and reports a commit the running leg finished as already
+    # done. The older run's propose is skipped; the newer run proposes.
+    strategy:
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        commit: ${{ fromJson(needs.plan.outputs.commits) }}
+    concurrency:
+      group: verctl-publish-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out the version commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ matrix.commit }}
+          fetch-depth: 0
+      - name: Set up mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          version: ${{ inputs.mise-version }}
+          cache: true
+      - run: mise install --locked
+      - name: Download this run's verctl build
+        if: inputs.verctl-artifact != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.verctl-artifact }}-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/verctl-build
+      - name: Put this run's verctl build first on PATH
+        if: inputs.verctl-artifact != ''
+        env:
+          BUILD_DIR: ${{ runner.temp }}/verctl-build
+        run: |
+          chmod +x "${BUILD_DIR}/verctl"
+          echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
+      - name: Publish
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERCTL_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          VERCTL_SKIP_ASSETS: ${{ !inputs.assets }}
+          REGISTRY_TOKEN: ${{ secrets.registry-token }}
+          REGISTRY_TOKEN_ENV: ${{ inputs.registry-token-env }}
+        # The token is exported under the caller's chosen name with a shell
+        # builtin, so it never reaches a process's argv or a file.
+        run: |
+          if [ -n "${REGISTRY_TOKEN}" ]; then
+            case "${REGISTRY_TOKEN_ENV}" in
+              ''|[0-9]*|*[!A-Za-z0-9_]*)
+                echo "::error::registry-token-env is not a variable name: ${REGISTRY_TOKEN_ENV}"
+                exit 1
+                ;;
+            esac
+            export "${REGISTRY_TOKEN_ENV}=${REGISTRY_TOKEN}"
+          fi
+          unset REGISTRY_TOKEN
+          exec mise run ver publish
+
+  assets:
+    name: ${{ matrix.id }} at ${{ matrix.commit }}
+    needs: [plan, publish]
+    # !cancelled() keeps a skipped publish from skipping this job too: without
+    # a status function GitHub adds success(), which is false once a needed
+    # job was skipped.
+    if: >-
+      !cancelled() &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      needs.plan.result == 'success' &&
+      inputs.assets && fromJson(needs.plan.outputs.assets).include[0] != null &&
+      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ${{ matrix.labels }}
+    permissions:
+      contents: write # uploads the tarball to the GitHub Release
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.assets) }}
+    steps:
+      - name: Check out the version commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ matrix.commit }}
+          fetch-depth: 0
+      - name: Set up mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          version: ${{ inputs.mise-version }}
+          cache: true
+      - run: mise install --locked
+      - name: Download this run's verctl build
+        if: inputs.verctl-artifact != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.verctl-artifact }}-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/verctl-build
+      - name: Put this run's verctl build first on PATH
+        if: inputs.verctl-artifact != ''
+        env:
+          BUILD_DIR: ${{ runner.temp }}/verctl-build
+        run: |
+          chmod +x "${BUILD_DIR}/verctl"
+          echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
+      - name: Build and upload
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERCTL_BUILD: ${{ matrix.id }}
+          VERCTL_UPLOAD: "true"
+          VERCTL_TAG: ${{ matrix.tag }}
+        run: mise run ver assets
+
+  docs:
+    name: docs.rs at ${{ matrix.commit }}
+    needs: [plan, publish]
+    # Runs after publish whatever its outcome, so a commit released before a
+    # later leg failed is still checked; a commit whose tag is missing has
+    # nothing to check. It never holds the Version PR back.
+    if: >-
+      !cancelled() &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      inputs.docs && needs.plan.outputs.pending == 'true'
+    runs-on: ${{ fromJson(inputs.runner) }}
+    permissions:
+      contents: read # reads the release tag through the API
+    strategy:
+      fail-fast: false
+      matrix:
+        commit: ${{ fromJson(needs.plan.outputs.commits) }}
+    steps:
+      - name: Check out the version commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ matrix.commit }}
+          fetch-depth: 0
+      - name: Set up mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          version: ${{ inputs.mise-version }}
+          cache: true
+      - run: mise install --locked
+      - name: Download this run's verctl build
+        if: inputs.verctl-artifact != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.verctl-artifact }}-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/verctl-build
+      - name: Put this run's verctl build first on PATH
+        if: inputs.verctl-artifact != ''
+        env:
+          BUILD_DIR: ${{ runner.temp }}/verctl-build
+        run: |
+          chmod +x "${BUILD_DIR}/verctl"
+          echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
+      - name: Wait for docs.rs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: mise run ver docs
+
+  propose:
+    name: Open or update the Version PR
+    needs: [plan, publish]
+    # A failed publish holds the next Version PR back, so the failure is
+    # fixed before another version lands on top of it.
+    if: >-
+      !cancelled() &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      inputs.version-pr &&
+      needs.plan.result == 'success' &&
+      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ${{ fromJson(inputs.runner) }}
+    permissions:
+      contents: write # pushes verctl/release/<base> when no App token is minted
+      pull-requests: write # opens the Version PR when no App token is minted
+    concurrency:
+      group: verctl-propose-${{ github.repository }}
+      cancel-in-progress: true
+    env:
+      HAS_APP: ${{ secrets.app-client-id != '' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Set up mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          version: ${{ inputs.mise-version }}
+          cache: true
+      - run: mise install --locked
+      - name: Download this run's verctl build
+        if: inputs.verctl-artifact != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.verctl-artifact }}-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/verctl-build
+      - name: Put this run's verctl build first on PATH
+        if: inputs.verctl-artifact != ''
+        env:
+          BUILD_DIR: ${{ runner.temp }}/verctl-build
+        run: |
+          chmod +x "${BUILD_DIR}/verctl"
+          echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
+      - name: Mint the Version PR token
+        id: app-token
+        if: env.HAS_APP == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.app-client-id }}
+          private-key: ${{ secrets.app-private-key }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Prepare the Version PR
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          VERCTL_JOB_TOKEN: ${{ github.token }}
+          VERCTL_PR: "true"
+          VERCTL_AUTO_MERGE: ${{ inputs.auto-merge }}
+          VERCTL_PR_TITLE: ${{ inputs.title }}
+          VERCTL_COMMIT_MESSAGE: ${{ inputs.commit-message }}
+        run: mise run ver prepare

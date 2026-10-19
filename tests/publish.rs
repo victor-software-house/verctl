@@ -8,7 +8,7 @@ use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
 
 fn publish_stdout(root: &std::path::Path) -> String {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .current_dir(root)
         .args(["publish", "--dry-run", "--color", "never"])
         .output()
@@ -46,6 +46,84 @@ fn dry_run_lists_one_cargo_crate() {
         └──────┴─────────┴───────┘
 
         release  would create v0.0.1
+        dry-run  nothing published
+    "};
+    assert_eq!(publish_stdout(root.path()), expected);
+}
+
+/// A package at a virtual workspace manifest publishes each member that
+/// publishes, dependencies first, and leaves out `publish = false`.
+#[test]
+fn dry_run_lists_workspace_members_in_publish_order() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    let write = |path: &str, body: &str| {
+        let path = root.path().join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, body).unwrap();
+    };
+    write(
+        "Cargo.toml",
+        indoc! {r#"
+            [workspace]
+            resolver = "3"
+            members = ["app", "core", "xtask"]
+
+            [workspace.package]
+            version = "0.0.2"
+            edition = "2024"
+        "#},
+    );
+    write(
+        "app/Cargo.toml",
+        indoc! {r#"
+            [package]
+            name = "demo-app"
+            version.workspace = true
+            edition.workspace = true
+
+            [dependencies]
+            demo-core = { version = "=0.0.2", path = "../core" }
+        "#},
+    );
+    write("app/src/main.rs", "fn main() {}");
+    write(
+        "core/Cargo.toml",
+        indoc! {r#"
+            [package]
+            name = "demo-core"
+            version.workspace = true
+            edition.workspace = true
+        "#},
+    );
+    write("core/src/lib.rs", "");
+    write(
+        "xtask/Cargo.toml",
+        indoc! {r#"
+            [package]
+            name = "xtask"
+            version = "0.1.0"
+            edition.workspace = true
+            publish = false
+        "#},
+    );
+    write("xtask/src/main.rs", "fn main() {}");
+    let expected = formatdoc! {"
+        ┌───────────┬─────────┬───────┐
+        │ name      ┆ version ┆ via   │
+        ╞═══════════╪═════════╪═══════╡
+        │ demo-core ┆ 0.0.2   ┆ cargo │
+        │ demo-app  ┆ 0.0.2   ┆ cargo │
+        └───────────┴─────────┴───────┘
+
+        release  would create v0.0.2
         dry-run  nothing published
     "};
     assert_eq!(publish_stdout(root.path()), expected);
@@ -165,7 +243,7 @@ fn dry_run_refuses_differing_versions_without_name() {
         "#},
     )
     .unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .current_dir(root.path())
         .args(["publish", "--dry-run", "--color", "never"])
         .output()
@@ -197,7 +275,7 @@ fn publish_without_changelog_section_fails() {
         "#},
     )
     .unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .current_dir(root.path())
         .args(["publish", "--color", "never"])
         .output()
@@ -239,7 +317,7 @@ fn publish_with_matching_changelog_asks_for_token() {
         "},
     )
     .unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .current_dir(root.path())
         .env_remove("GITHUB_TOKEN")
         .env_remove("GH_TOKEN")
