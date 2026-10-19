@@ -1,4 +1,4 @@
-# verctl checks its own release with the verctl this checkout builds.
-"versions" = { description = "Fail if manifest versions differ from the default branch", run = "cargo run -- check --versions" }
+# verctl checks its own release with the verctl this checkout builds. The
+# shared check:versions and semver run `mise run ver`, which is this checkout.
 "fragments" = { description = "Fail on a pending fragment prepare would refuse", run = "cargo run -- check" }
 "ver" = { description = "Run verctl from this checkout", run = "cargo run --" }
