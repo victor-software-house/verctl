@@ -32,7 +32,7 @@ impl Skip {
     ///
     /// [`github::pull_request_is_version_pr`]: crate::github::pull_request_is_version_pr
     pub fn from_env(root: &Path) -> Result<Self> {
-        if git::current_branch(root).is_some_and(|branch| release::is_version_branch(&branch)) {
+        if on_version_branch(root) {
             return Ok(Self::VersionBranch);
         }
         // Detached Actions checkout: the pull request's head repository, head
@@ -130,15 +130,24 @@ impl VersionReport {
     }
 }
 
+/// Whether HEAD is on a `verctl/release/<base>` branch.
+fn on_version_branch(root: &Path) -> bool {
+    git::current_branch(root).is_some_and(|branch| release::is_version_branch(&branch))
+}
+
 /// Compare versions on HEAD to the merge-base, skipping per [`Skip::from_env`]
-/// when a version drifted. A pull request that changes no version never asks
-/// whether it is a Version PR, so it needs no token and no API.
+/// when a version drifted. A local Version PR branch skips before reading
+/// anything. A pull request that changes no version never asks whether it is
+/// a Version PR, so it needs no token and no API.
 ///
 /// # Errors
 ///
 /// Returns an error under the conditions of [`report_with`], or when a
 /// version drifted and [`Skip::from_env`] cannot read the pull request.
 pub fn report(root: &Path, config: &Config) -> Result<VersionReport> {
+    if on_version_branch(root) {
+        return report_with(root, config, Skip::VersionBranch, &[], &[]);
+    }
     let report = report_with(
         root,
         config,
