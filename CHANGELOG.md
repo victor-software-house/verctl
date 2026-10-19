@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.4.7
+
+- `verctl docs` keeps waiting while docs.rs builds a crate. docs.rs reports `doc_status: false` both while a build runs and after it failed, and `docs` used to fail the release on the first such answer. A crate now fails only when the timeout runs out while docs.rs still reports no documentation ([#171](https://github.com/victor-software-house/verctl/pull/171)).
+
 ## verctl 0.4.6
 
 - The docs.rs page builds again and has a real landing page: a quick start, how a release flows through the modules, and the crate's features. docs.rs renders with `--cap-lints warn`, so a lint that only its newer nightly fires no longer fails the build. Every fallible public function documents when it returns an error ([#160](https://github.com/victor-software-house/verctl/pull/160)).
