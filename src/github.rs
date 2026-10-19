@@ -384,12 +384,39 @@ fn release_error(error: octocrab::Error, tag: &str, sha: &str) -> anyhow::Error 
     );
     let error = anyhow::Error::new(error).context("create GitHub release");
     if forbidden {
-        error.context(format!(
-            "GitHub refused to create {tag} at {sha}. When that commit's .github/workflows differ from the default branch, the Releases API also needs workflows: write, which GITHUB_TOKEN cannot hold; rerun verctl publish at that commit with a token that has it"
-        ))
+        error.context(ReleaseRefused {
+            tag: tag.to_owned(),
+            sha: sha.to_owned(),
+        })
     } else {
         error
     }
+}
+
+/// GitHub's 403 on creating a Release: the token lacks a permission the
+/// commit needs, so a rerun with a token that has it can still create it.
+#[derive(Debug)]
+struct ReleaseRefused {
+    tag: String,
+    sha: String,
+}
+
+impl std::fmt::Display for ReleaseRefused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "GitHub refused to create {tag} at {sha}. When that commit's .github/workflows differ from the default branch, the Releases API also needs workflows: write, which GITHUB_TOKEN cannot hold; rerun verctl publish at that commit with a token that has it",
+            tag = self.tag,
+            sha = self.sha
+        )
+    }
+}
+
+/// Whether `error` is GitHub refusing to create a Release for a missing
+/// permission, rather than a failure a rerun would repeat.
+#[must_use]
+pub fn is_release_refused(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<ReleaseRefused>().is_some()
 }
 
 async fn require_tag_at(crab: &Octocrab, repo: &Repo, tag: &str, sha: &str) -> Result<()> {
@@ -1238,6 +1265,7 @@ mod tests {
         let message = format!("{error:#}");
         assert!(message.contains("workflows: write"), "{message}");
         assert!(message.contains(PUBLISHED), "{message}");
+        assert!(super::is_release_refused(&error), "{message}");
     }
 
     #[tokio::test]

@@ -25,6 +25,12 @@ claims nothing `pending` reads: a retry still finds the package incomplete
 and uploads it. The existing tag is checked to name HEAD, which `pending`
 already guarantees for the commit it hands to the run.
 
+When GitHub refuses an early Release with 403 for a missing permission, the
+uploads still run, and the run fails at the end naming the refusal, beside
+any later failure. A rerun with a token that holds the permission then has
+only the Release left to do. Any other early failure, such as an existing
+tag that names another commit, stops the run before any upload.
+
 A shared `v{version}` tag over a checked and an unchecked package follows
 the unchecked one, because creating it early would mark that package
 complete before it ran.

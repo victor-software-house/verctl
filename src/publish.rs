@@ -235,37 +235,62 @@ pub fn run_pending(
         .into_iter()
         .partition(|tag| tags_before_upload(tag, &uploads));
     let repo = github::repo(root)?;
-    let mut releases = Vec::new();
-    // A refused early tag still lets the uploads run, so a rerun with a token
-    // that can create it has only the tag left to do. The run fails at the end.
-    let mut refused = None;
-    for tag in before {
-        // This run releases the tag at HEAD, so an existing tag must name it.
-        match open_release(config, root, &token, &repo, tag, &head, true) {
-            Ok(url) => releases.push(url),
-            Err(error) => {
-                refused.get_or_insert(error);
-            }
+    let (mut releases, refused) = open_early(config, root, &token, &repo, &before, &head)?;
+    let rest = run_uploads(uploads).and_then(|(packages, shipped_packages)| {
+        for tag in after {
+            let shipped = tag
+                .packages
+                .iter()
+                .any(|entry| shipped_packages.contains(&entry.name));
+            releases.push(open_release(
+                config, root, &token, &repo, tag, &head, shipped,
+            )?);
         }
-    }
-    let (packages, shipped_packages) = run_uploads(uploads)?;
-    for tag in after {
-        let shipped = tag
-            .packages
-            .iter()
-            .any(|entry| shipped_packages.contains(&entry.name));
-        releases.push(open_release(
-            config, root, &token, &repo, tag, &head, shipped,
-        )?);
-    }
-    if let Some(error) = refused {
-        return Err(error);
-    }
+        Ok(packages)
+    });
+    let packages = match (rest, refused) {
+        (Ok(packages), None) => packages,
+        (Ok(_), Some(early)) => return Err(early),
+        (Err(later), None) => return Err(later),
+        // Both are reported, so the refused Release is not lost behind
+        // the later failure.
+        (Err(later), Some(early)) => {
+            return Err(later.context(format!("{early:#}; then the run failed")));
+        }
+    };
     Ok(PublishRun {
         outcome: Outcome::Released,
         published: PublishOutcome { packages, releases },
         waiting,
     })
+}
+
+/// Open the Releases of the tags created before the uploads, at `head`. An
+/// existing tag must name it. GitHub refusing one for a missing permission
+/// is returned beside the URLs rather than stopping the run, so the uploads
+/// still run and a rerun with a token that has it has only the Release left
+/// to do. Any other failure, such as a tag that names another commit, stops
+/// the run here.
+fn open_early(
+    config: &Config,
+    root: &Path,
+    token: &str,
+    repo: &github::Repo,
+    tags: &[&TagPlan],
+    head: &str,
+) -> Result<(Vec<String>, Option<anyhow::Error>)> {
+    let mut releases = Vec::new();
+    let mut refused = None;
+    for tag in tags {
+        match open_release(config, root, token, repo, tag, head, true) {
+            Ok(url) => releases.push(url),
+            Err(error) if github::is_release_refused(&error) => {
+                refused.get_or_insert(error);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok((releases, refused))
 }
 
 /// Run every upload, and return each package's line with the names of the

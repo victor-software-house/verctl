@@ -5,7 +5,9 @@
 `verctl publish` SHALL create the tag and GitHub Release of a tag whose
 packages all have a registry check, or no upload, before running any upload
 of the run. A run that finds that tag and Release SHALL create neither and
-SHALL fail when the tag names a commit other than HEAD.
+SHALL fail before any upload when the tag names a commit other than HEAD.
+When GitHub refuses that Release with 403, the run SHALL still run its
+uploads and SHALL then fail, naming the refusal.
 
 #### Scenario: The crates.io rate limit stops the first run
 
