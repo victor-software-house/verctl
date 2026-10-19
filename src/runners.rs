@@ -26,6 +26,11 @@ pub struct Machine {
 
 /// Check every declared machine before any job names one, so a broken
 /// `runners` entry fails even when nothing uses it yet.
+///
+/// # Errors
+///
+/// Returns an error when a runner has no labels, an empty label, or a repeated
+/// label.
 pub fn declared(config: &Config) -> Result<()> {
     for (name, runner) in &config.runners {
         validate(name, runner)?;
@@ -54,6 +59,12 @@ fn validate(name: &str, runner: &Runner) -> Result<()> {
 
 /// The machines a job named. `None` (field omitted) takes `default_labels`
 /// under the name `default_name`.
+///
+/// # Errors
+///
+/// Returns an error when `named` is present but empty, names a machine twice,
+/// or names a machine that is not declared or fails the label checks of
+/// [`declared`].
 pub fn of(
     config: &Config,
     kind: &str,
@@ -89,6 +100,11 @@ pub fn of(
 
 /// One machine by name. An undeclared name cannot be guessed at: verctl would
 /// be inventing a label GitHub has never seen.
+///
+/// # Errors
+///
+/// Returns an error when `name` is not declared under `runners`, or when its
+/// labels are empty, contain an empty label, or repeat one.
 pub fn one(config: &Config, kind: &str, job: &str, name: &str) -> Result<Machine> {
     let Some(runner) = config.runners.get(name) else {
         bail!(

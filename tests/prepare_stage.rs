@@ -54,7 +54,7 @@ fn write_min(root: &Path, extra: &str) {
 }
 
 fn prepare(root: &Path) -> std::process::Output {
-    std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+    common::verctl()
         .current_dir(root)
         .args(["prepare", "--no-pr"])
         .output()
@@ -292,7 +292,7 @@ fn a_dry_run_reports_the_pin_without_writing_it() {
     "#};
     fs::write(root.path().join("pinned.toml"), body).unwrap();
     init_repo(root.path());
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+    let output = common::verctl()
         .current_dir(root.path())
         .args(["prepare", "--no-pr", "--dry-run"])
         .output()
@@ -424,7 +424,7 @@ const HOOK_ENV: [(&str, &str); 3] = [
 ];
 
 fn verctl(root: &Path, args: &[&str], env: &[(&str, &str)]) -> std::process::Output {
-    std::process::Command::new(env!("CARGO_BIN_EXE_verctl"))
+    common::verctl()
         .current_dir(root)
         .args(args)
         .envs(env.iter().copied())

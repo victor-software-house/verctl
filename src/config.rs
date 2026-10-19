@@ -61,6 +61,13 @@ pub struct DriverSpec {
 
 impl DriverSpec {
     /// Build the [`Driver`]. `name` only labels the errors.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a `read` and `write` pair has an empty mise task
+    /// name or an empty argv. Without that pair, it returns an error when
+    /// `format` is missing or neither `toml` nor `json`, or when `keys` is
+    /// missing or empty.
     pub fn into_driver(self, name: &str) -> Result<Driver> {
         if let (Some(read), Some(write)) = (self.read, self.write) {
             return Ok(Driver::Command {
@@ -140,6 +147,10 @@ pub struct PackageSpec {
     /// Fills the publisher's `{registry}` placeholder and is named in the plan.
     /// Empty means none.
     pub registry: Option<String>,
+    /// Asks the registry whether a version is published, in place of the
+    /// publisher's query or the crates.io index read. Unsaid, the publisher
+    /// decides; an empty list turns the check off for this package.
+    pub query: Option<Vec<String>>,
     /// Package CHANGELOG.md. Defaults to next to the manifest.
     pub changelog: Option<PathBuf>,
     /// Lets this package leave `0.0.0` with a `minor` fragment, so its first
@@ -167,6 +178,12 @@ impl PackageSpec {
 
     /// The version driver: the stock or named driver with this package's own
     /// fields over it, and a lockfile follow-up inferred when none is set.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the merged driver is incomplete or invalid, as
+    /// described for [`DriverSpec::into_driver`]. A package whose file is
+    /// neither `Cargo.toml` nor `package.json` needs a driver of its own.
     pub fn resolve(&self, config: &Config, root: &Path) -> Result<Driver> {
         let inferred = self
             .path
@@ -508,6 +525,11 @@ impl Tags {
 
     /// Substitute `{version}` and, when given, `{name}`. The load already
     /// proved those are the only braces, so a leftover `{` here is a bug.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the template needs `{name}` and `name` is `None`,
+    /// or when braces remain after substitution.
     pub fn render(&self, version: &str, name: Option<&str>) -> Result<String> {
         let mut out = self.template.replace(PLACEHOLDER, version);
         if let Some(name) = name {
@@ -799,11 +821,22 @@ impl Prepare {
 
 impl Config {
     /// Read and validate the file at `path`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the file cannot be read, when its YAML does not
+    /// match the schema, or when validation fails. Each complaint names the
+    /// line it comes from.
     pub fn load(path: &Path) -> Result<Self> {
         Self::from_input(&Input::read(path)?)
     }
 
     /// A config from text in memory, named as the file a repo writes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `raw` does not match the schema or fails
+    /// validation, as described for [`Config::load`].
     pub fn parse(raw: &str) -> Result<Self> {
         Self::from_input(&Input::new(".ctl/ver.yaml", raw))
     }
@@ -833,6 +866,10 @@ impl Config {
     }
 
     /// The package declared as `name`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when no declared package has that name.
     pub fn find(&self, name: &str) -> Result<&PackageSpec> {
         self.packages
             .iter()

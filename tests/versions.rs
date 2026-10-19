@@ -70,20 +70,24 @@ fn is_host_actions_key(key: &str) -> bool {
     key == "CI" || key.starts_with("GITHUB_")
 }
 
-/// Everything the child may keep. Split from the environment it reads so the
-/// rule is testable against a planted one: `std::env` cannot be given a
-/// non-Unicode key without `set_var`, and `unsafe_code = "forbid"` rules that
-/// out. `vars()` would panic on such a key, so this never decodes one — a key
-/// we cannot read is not a key we are stripping.
+/// Everything the child may keep: no host Actions key, and nothing
+/// [`common::is_cleared`] strips from every verctl child, since `env_clear`
+/// followed by `envs` would otherwise put those back. Split from the
+/// environment it reads so the rule is testable against a planted one:
+/// `std::env` cannot be given a non-Unicode key without `set_var`, and
+/// `unsafe_code = "forbid"` rules that out. `vars()` would panic on such a key,
+/// so this never decodes one — a key we cannot read is not a key we are
+/// stripping.
 fn inherited(
     vars: impl IntoIterator<Item = (OsString, OsString)>,
 ) -> impl Iterator<Item = (OsString, OsString)> {
-    vars.into_iter()
-        .filter(|(key, _)| !key.to_str().is_some_and(is_host_actions_key))
+    vars.into_iter().filter(|(key, _)| {
+        !key.to_str().is_some_and(is_host_actions_key) && !common::is_cleared(key)
+    })
 }
 
 fn check_cmd(root: &Path) -> std::process::Command {
-    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_verctl"));
+    let mut cmd = common::verctl();
     cmd.env_clear()
         .envs(inherited(std::env::vars_os()))
         .current_dir(root)
@@ -243,6 +247,11 @@ fn actions_keys_are_dropped_and_unreadable_keys_survive() {
             OsString::from("/event.json"),
         ),
         (OsString::from("GITHUB_BASE_REF"), OsString::from("main")),
+        (
+            OsString::from("VERCTL_CONFIG"),
+            OsString::from("elsewhere.yaml"),
+        ),
+        (OsString::from("FORCE_COLOR"), OsString::from("3")),
         (opaque.clone(), OsString::from("not utf-8")),
     ];
     let kept: Vec<OsString> = inherited(planted).map(|(key, _)| key).collect();
@@ -337,12 +346,12 @@ fn nested_config_maps_onto_the_git_tree() {
 }
 
 #[test]
-fn current_branch_reads_version_packages() {
+fn current_branch_reads_the_version_branch() {
     let dir = repo_with_origin_main("1.0.0");
-    common::git(dir.path(), &["checkout", "-q", "-b", "version-packages"]);
+    common::git(dir.path(), &["checkout", "-q", "-b", "verctl/release/main"]);
     assert_eq!(
         verctl::git::current_branch(dir.path()).as_deref(),
-        Some("version-packages")
+        Some("verctl/release/main")
     );
 }
 
@@ -352,7 +361,7 @@ fn pull_request_head_ref_is_not_an_exemption() {
     write_crate(dir.path(), "1.0.1");
     let output = check_cmd(dir.path())
         .env("GITHUB_ACTIONS", "true")
-        .env("GITHUB_HEAD_REF", "version-packages")
+        .env("GITHUB_HEAD_REF", "verctl/release/main")
         .output()
         .unwrap();
     assert!(
@@ -411,7 +420,7 @@ fn github_ref_name_is_not_an_exemption() {
     write_crate(dir.path(), "1.0.1");
     let output = check_cmd(dir.path())
         .env("GITHUB_ACTIONS", "true")
-        .env("GITHUB_REF_NAME", "version-packages")
+        .env("GITHUB_REF_NAME", "verctl/release/main")
         .output()
         .unwrap();
     assert!(
@@ -467,12 +476,26 @@ fn configured_version_label_is_the_exemption() {
 }
 
 #[test]
-fn version_packages_branch_cli_is_exempt() {
+fn version_branch_cli_is_exempt() {
     let dir = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
-    common::git(dir.path(), &["checkout", "-q", "-b", "version-packages"]);
+    common::git(dir.path(), &["checkout", "-q", "-b", "verctl/release/main"]);
     let output = check_cmd(dir.path()).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success(), "{stdout}");
     assert!(stdout.contains("version-pr"), "{stdout}");
+}
+
+/// The Changesets branch name is no longer a Version PR: a hand edit there
+/// fails like anywhere else.
+#[test]
+fn old_version_packages_branch_is_not_exempt() {
+    let dir = repo_with_origin_main("1.0.0");
+    write_crate(dir.path(), "1.0.1");
+    common::git(dir.path(), &["checkout", "-q", "-b", "version-packages"]);
+    let output = check_cmd(dir.path()).output().unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("demo"), "{stderr}");
+    assert!(stderr.contains("1.0.1"), "{stderr}");
 }

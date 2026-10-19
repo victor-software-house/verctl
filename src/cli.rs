@@ -1,14 +1,19 @@
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
-use ctl_core::{ColorLong, DryRunArgs, FormatArgs};
+use ctl_core::{ColorLong, DryRunArgs, EnvPrefix, FormatArgs};
 
 /// Stack-agnostic version PRs from Changesets-format fragments.
+///
+/// `env_prefix` binds every long option, at every depth, to `VERCTL_<LONG>`,
+/// so an action or a CI step sets `env:` and runs the bare verb. A flag on the
+/// command line wins over its variable, and an empty variable is unset.
 #[derive(Debug, Parser)]
 #[command(
     version,
     about = "Stack-agnostic version PRs from Changesets-format fragments",
-    arg_required_else_help = true
+    arg_required_else_help = true,
+    env_prefix = "VERCTL"
 )]
 pub struct Cli {
     /// Output format selection shared by every command.
@@ -41,10 +46,26 @@ pub enum Command {
     Assets(AssetsArgs),
     /// Plan the validation jobs declared in `[ci]`.
     Ci(CiArgs),
+    /// Wait for docs.rs to build each crates.io crate released at HEAD.
+    Docs(DocsArgs),
+}
+
+/// Arguments of `docs`.
+#[derive(Debug, Args)]
+#[non_exhaustive]
+pub struct DocsArgs {
+    /// Package map. Defaults to .ctl/ver.yaml in the current directory.
+    #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
+    pub config: PathBuf,
+    /// Minutes to wait for docs.rs before a crate it has not built fails, at
+    /// most a day.
+    #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(0..=1440))]
+    pub timeout: u64,
 }
 
 /// Arguments of `ci`.
 #[derive(Debug, Args)]
+#[non_exhaustive]
 pub struct CiArgs {
     /// Package map. Defaults to .ctl/ver.yaml in the current directory.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
@@ -56,6 +77,7 @@ pub struct CiArgs {
 
 /// Arguments of `publish` and `pin`.
 #[derive(Debug, Args)]
+#[non_exhaustive]
 pub struct PublishArgs {
     /// Package map. Defaults to .ctl/ver.yaml in the current directory.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
@@ -63,10 +85,20 @@ pub struct PublishArgs {
     /// The shared `--dry-run` flag.
     #[command(flatten)]
     pub dry: DryRunArgs,
+    /// List every version commit whose release is incomplete, oldest first,
+    /// and write `commits`, `pending`, and `assets` to `$GITHUB_OUTPUT` when
+    /// it is set. Publishes nothing. `publish` only.
+    #[arg(long)]
+    pub plan: bool,
+    /// Leave declared assets out of the completeness check, for a workflow
+    /// that builds none. `publish` only.
+    #[arg(long)]
+    pub skip_assets: bool,
 }
 
 /// Arguments of `assets`.
 #[derive(Debug, Args)]
+#[non_exhaustive]
 pub struct AssetsArgs {
     /// Package map. Defaults to .ctl/ver.yaml in the current directory.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
@@ -96,6 +128,7 @@ impl PublishArgs {
 
 /// Arguments of `status`.
 #[derive(Debug, Args)]
+#[non_exhaustive]
 pub struct StatusArgs {
     /// Directory of fragments. Defaults to .changeset.
     #[arg(short = 'd', long, default_value = ".changeset", value_hint = clap::ValueHint::DirPath)]
@@ -104,6 +137,7 @@ pub struct StatusArgs {
 
 /// Arguments of `check`.
 #[derive(Debug, Args)]
+#[non_exhaustive]
 pub struct CheckArgs {
     /// Directory of fragments. Defaults to .changeset.
     #[arg(short = 'd', long, default_value = ".changeset", value_hint = clap::ValueHint::DirPath)]
@@ -118,6 +152,7 @@ pub struct CheckArgs {
 
 /// Arguments of `prepare`.
 #[derive(Debug, Args)]
+#[non_exhaustive]
 pub struct PrepareArgs {
     /// Directory of fragments. Defaults to .changeset.
     #[arg(short = 'd', long, default_value = ".changeset", value_hint = clap::ValueHint::DirPath)]
@@ -135,6 +170,11 @@ pub struct PrepareArgs {
     /// Write files only. This is the default. Opposite of --pr.
     #[arg(long, overrides_with = "pr")]
     pub no_pr: bool,
+    /// Enable GitHub auto-merge on the Version PR, as a squash titled after
+    /// it. Needs `--pr`, a ruleset on the base that requires a status check,
+    /// and a token other than the job's own (`VERCTL_JOB_TOKEN`).
+    #[arg(long)]
+    pub auto_merge: bool,
 }
 
 impl PrepareArgs {
@@ -153,14 +193,24 @@ impl PrepareArgs {
 
 #[cfg(test)]
 mod tests {
-    use clap::Parser;
+    use std::ffi::OsString;
+
+    use clap::{CommandFactory, FromArgMatches};
 
     use super::{Cli, Command};
+
+    /// Parse as `App` does: variables the command line overrules are unbound
+    /// first, so an ambient `VERCTL_*` cannot change what a test asserts.
+    fn parse(words: &[&str]) -> Result<Cli, clap::Error> {
+        let raw: Vec<OsString> = words.iter().map(OsString::from).collect();
+        let command = ctl_core::flags::env_under_flags(Cli::command(), &raw)?;
+        Cli::from_arg_matches(&command.try_get_matches_from(raw)?)
+    }
 
     fn prepare_from(args: &[&str]) -> super::PrepareArgs {
         let mut words = vec!["verctl", "prepare"];
         words.extend_from_slice(args);
-        match Cli::try_parse_from(words).expect("parse") {
+        match parse(&words).expect("parse") {
             Cli {
                 command: Command::Prepare(args),
                 ..
@@ -199,8 +249,14 @@ mod tests {
     }
 
     #[test]
+    fn auto_merge_is_off_unless_asked() {
+        assert!(!prepare_from(&["--pr"]).auto_merge);
+        assert!(prepare_from(&["--pr", "--auto-merge"]).auto_merge);
+    }
+
+    #[test]
     fn check_versions_flag_parses() {
-        let cli = Cli::try_parse_from(["verctl", "check", "--versions"]).expect("parse");
+        let cli = parse(&["verctl", "check", "--versions"]).expect("parse");
         let Command::Check(args) = cli.command else {
             panic!("expected check");
         };
@@ -222,8 +278,31 @@ mod tests {
             ["verctl", "status", "--format", "json"].as_slice(),
             ["verctl", "-f", "json", "pin"].as_slice(),
         ] {
-            let cli = Cli::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
+            let cli = parse(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
             assert!(cli.format.format.is_json(), "{args:?}");
+        }
+    }
+
+    /// The release workflow sets these and runs the bare verb, so each must
+    /// read its variable at subcommand depth.
+    #[test]
+    fn publish_flags_read_their_variables() {
+        let command = Cli::command();
+        let publish = command.find_subcommand("publish").expect("publish");
+        for (id, variable) in [
+            ("plan", "VERCTL_PLAN"),
+            ("skip_assets", "VERCTL_SKIP_ASSETS"),
+            ("config", "VERCTL_CONFIG"),
+        ] {
+            let arg = publish
+                .get_arguments()
+                .find(|arg| arg.get_id() == id)
+                .unwrap_or_else(|| panic!("{id}"));
+            assert_eq!(
+                arg.get_env(),
+                Some(OsString::from(variable).as_os_str()),
+                "{id}"
+            );
         }
     }
 }

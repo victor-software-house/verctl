@@ -8,14 +8,16 @@ use verctl::cli::{CheckArgs, Cli, Command, PrepareArgs, PublishArgs, StatusArgs}
 use verctl::config::{self, Config};
 use verctl::fragment::{self, Bump};
 use verctl::{
-    assets, ci, git, github, pins, prepare, process, publish, release, templates, versions,
+    assets, ci, docsrs, git, github, pending, pins, prepare, process, publish, release, templates,
+    versions,
 };
 
 mod presentation;
 
 use presentation::{
-    AssetsReport, CheckReport, CiReport, InstructionsReport, PinReport, PrepareBump, PrepareReport,
-    PublishReport, Report, StatusFragment, StatusPackage, StatusReport, VersionCheckReport,
+    AssetsReport, CheckReport, CiReport, DocsReport, InstructionsReport, PinReport, PrepareBump,
+    PrepareReport, PublishReport, ReleaseRow, Report, StatusFragment, StatusPackage, StatusReport,
+    VersionCheckReport,
 };
 
 const INSTRUCTIONS: &str = include_str!("instructions.md");
@@ -38,7 +40,17 @@ fn execute(cli: Cli) -> Result<Report> {
         Command::Pin(args) => pin_report(&args).map(Report::Pin),
         Command::Assets(args) => assets_report(&args).map(Report::Assets),
         Command::Ci(args) => ci_report(&args).map(Report::Ci),
+        Command::Docs(args) => docs_report(&args).map(Report::Docs),
     }
+}
+
+fn docs_report(args: &verctl::cli::DocsArgs) -> Result<DocsReport> {
+    let config = Config::load(&args.config)?;
+    let root = &config::root_of(&args.config);
+    let timeout = std::time::Duration::from_secs(args.timeout.saturating_mul(60));
+    Ok(DocsReport {
+        crates: docsrs::run(&config, root, timeout)?,
+    })
 }
 
 /// Fragments that parse and that `prepare` would accept: every package they
@@ -83,7 +95,29 @@ fn versions_for_templates(
     Ok(planned.to_vec())
 }
 
+/// The token and Version PR that `prepare --pr` writes with, and the
+/// auto-merge refusals, all settled before anything is written; `None` when
+/// the run opens no pull request.
+fn version_pr_target(
+    args: &PrepareArgs,
+    root: &Path,
+) -> Result<Option<(String, release::VersionPr)>> {
+    if !args.open_pr() || args.dry_run() {
+        return Ok(None);
+    }
+    let token = release::resolve_token()?;
+    let version_pr = release::VersionPr::from_env(root)?;
+    if args.auto_merge {
+        release::require_auto_merge(root, &token, &version_pr.base)?;
+    }
+    Ok(Some((token, version_pr)))
+}
+
 fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
+    anyhow::ensure!(
+        !args.auto_merge || args.open_pr(),
+        "--auto-merge needs --pr"
+    );
     let dry_run = args.dry_run();
     let config = Config::load(&args.config)?;
     let fragments = fragment::load_dir(&args.dir)?;
@@ -100,11 +134,8 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
             dry_run,
         });
     }
-    let token = if args.open_pr() && !dry_run {
-        Some(release::resolve_token()?)
-    } else {
-        None
-    };
+    let target = version_pr_target(args, root)?;
+    let token = target.as_ref().map(|(token, _)| token.as_str());
     let bumps: Vec<PrepareBump> = plan
         .iter()
         .map(|entry| PrepareBump {
@@ -137,7 +168,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     // commit, and staged from here — a repo never lists them in stage.
     pinned.extend(templates::write(root, &config.templates, &served)?);
     let consumed = release::contributing_fragments(&plan, &fragments);
-    let origins = release::origins(root, token.as_deref(), &config.changelog, &fragments)?;
+    let origins = release::origins(root, token, &config.changelog, &fragments)?;
     let changelog = release::changelog_sections_with(&plan, &fragments, &origins)?;
     let changelogs = release::write_changelogs_with(&config, root, &plan, &fragments, &origins)?;
     if let Some(after) = &config.prepare.after {
@@ -167,19 +198,21 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     paths.extend(staged);
     release::consume_fragments(consumed)?;
     let mut pr = None;
-    if let Some(token) = token {
-        let title = std::env::var("VERCTL_PR_TITLE")
-            .unwrap_or_else(|_| "chore(release): version packages".into());
-        let message = std::env::var("VERCTL_COMMIT_MESSAGE").unwrap_or_else(|_| title.clone());
-        pr = release::open_or_update_pr(
+    if let Some((token, version_pr)) = &target {
+        let opened = release::open_or_update_pr(
             root,
-            &token,
-            &title,
-            &message,
+            token,
+            version_pr,
             &paths,
             &changelog,
             config.prepare.version_label(),
         )?;
+        if args.auto_merge
+            && let Some(opened) = &opened
+        {
+            release::auto_merge(root, token, opened)?;
+        }
+        pr = opened.map(|opened| opened.url);
     }
     Ok(PrepareReport {
         changelog,
@@ -224,26 +257,7 @@ fn preview_report(
     } else {
         Vec::new()
     };
-    let pr = if open_pr {
-        Some(match release::resolve_token() {
-            Ok(token) => match github::repo(root)
-                .and_then(|repo| github::existing_pr(&token, &repo, release::VERSION_BRANCH))
-            {
-                Ok(Some(existing)) => formatdoc!("update {url}", url = existing.url),
-                Ok(None) => formatdoc!("open {branch}", branch = release::VERSION_BRANCH),
-                Err(_) => formatdoc!(
-                    "open or update {branch} (lookup failed)",
-                    branch = release::VERSION_BRANCH
-                ),
-            },
-            Err(_) => formatdoc!(
-                "open or update {branch} (auth not checked)",
-                branch = release::VERSION_BRANCH
-            ),
-        })
-    } else {
-        None
-    };
+    let pr = open_pr.then(|| preview_pr(root));
     Ok(PrepareReport {
         bumps,
         changelog,
@@ -258,14 +272,78 @@ fn preview_report(
     })
 }
 
+/// What `prepare --pr` would do to the Version PR, as far as a preview can
+/// tell without writing: the branch needs the base, and the lookup needs a
+/// token.
+fn preview_pr(root: &Path) -> String {
+    let Ok(base) = github::base_branch(root) else {
+        return formatdoc!(
+            "open or update {prefix}<base> (base not resolved)",
+            prefix = release::VERSION_BRANCH_PREFIX
+        );
+    };
+    let branch = release::version_branch(&base);
+    let Ok(token) = release::resolve_token() else {
+        return formatdoc!("open or update {branch} (auth not checked)");
+    };
+    match github::repo(root).and_then(|repo| github::existing_pr(&token, &repo, &branch)) {
+        Ok(Some(existing)) => formatdoc!("update {url}", url = existing.url),
+        Ok(None) => formatdoc!("open {branch}"),
+        Err(_) => formatdoc!("open or update {branch} (lookup failed)"),
+    }
+}
+
 fn publish_report(args: &verctl::cli::PublishArgs) -> Result<PublishReport> {
     let config = Config::load(&args.config)?;
     let root = &config::root_of(&args.config);
-    let outcome = publish::run(&config, root, args.dry_run())?;
+    if args.plan {
+        return publish_plan_report(args, &config, root);
+    }
+    let run = publish::run_pending(&config, root, args.dry_run(), args.skip_assets)?;
     Ok(PublishReport {
-        packages: outcome.packages,
-        releases: outcome.releases,
+        outcome: run.outcome,
+        packages: run.published.packages,
+        releases: run.published.releases,
+        waiting: run.waiting.iter().map(ReleaseRow::from).collect(),
+        pending: Vec::new(),
         dry_run: args.dry_run(),
+    })
+}
+
+/// `publish --plan`: every incomplete version commit, written to
+/// `$GITHUB_OUTPUT` for the workflow's matrix when Actions set it.
+fn publish_plan_report(
+    args: &verctl::cli::PublishArgs,
+    config: &Config,
+    root: &std::path::Path,
+) -> Result<PublishReport> {
+    publish::full_history(root)?;
+    let token = release::resolve_token()?;
+    let pending = pending::pending(config, root, &token, args.skip_assets)?;
+    if let Some(path) = std::env::var_os("GITHUB_OUTPUT").filter(|path| !path.is_empty()) {
+        pending::write_github_output(&pending, std::path::Path::new(&path))?;
+    }
+    Ok(PublishReport {
+        outcome: if pending.is_empty() {
+            publish::Outcome::NothingToRelease
+        } else {
+            publish::Outcome::Released
+        },
+        packages: Vec::new(),
+        releases: Vec::new(),
+        waiting: Vec::new(),
+        pending: pending
+            .commits
+            .iter()
+            .flat_map(|commit| {
+                commit.packages.iter().map(|package| ReleaseRow {
+                    name: package.name.clone(),
+                    version: package.version.clone(),
+                    commit: commit.sha.clone(),
+                })
+            })
+            .collect(),
+        dry_run: false,
     })
 }
 

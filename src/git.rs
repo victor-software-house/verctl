@@ -12,6 +12,7 @@ use gix::objs::tree::EntryKind;
 use gix::refs::Target;
 use gix::refs::transaction::{PreviousValue, RefEdit};
 use gix::remote::Direction;
+use gix::remote::fetch::Shallow;
 use gix::sec::identity::Account;
 use gix::sec::trust::{DefaultForLevel, Mapping};
 use gix::sec::{Permission, Trust};
@@ -29,6 +30,11 @@ pub fn current_branch(root: &Path) -> Option<String> {
 }
 
 /// The commit HEAD currently names, as a full hex SHA.
+///
+/// # Errors
+///
+/// Returns an error when `root` is not inside a git repository, or when HEAD
+/// names no commit, as in a repository with no commits.
 pub fn head_sha(root: &Path) -> Result<String> {
     let repo = discover(root).context("publish needs a git repository to name the tag")?;
     let commit = repo
@@ -46,6 +52,16 @@ const NEED_FULL_FETCH: &str =
 /// Paths are relative to `root` (the directory holding `.ctl/`) and are mapped
 /// onto the git workdir so `-c crates/foo/.ctl/ver.yaml` still hits the
 /// right blob. One repository open for the whole list.
+///
+/// Every entry is `None` when there is no repository, or when the repository
+/// has no `origin` remote and none of the candidate refs exists. A path
+/// missing from the merge-base tree is `None` for that entry only.
+///
+/// # Errors
+///
+/// Returns an error when `origin` exists but its default branch ref cannot be
+/// resolved, when HEAD names no commit, when there is no merge-base (a shallow
+/// clone, for one), or when the merge-base commit or its tree cannot be read.
 pub fn files_on_merge_base(
     root: &Path,
     rels: &[&Path],
@@ -90,6 +106,11 @@ fn blob_at(tree: &gix::Tree<'_>, rel: &Path) -> Option<String> {
 }
 
 /// The URL of the `origin` remote.
+///
+/// # Errors
+///
+/// Returns an error when `root` is not inside a git repository, when there is
+/// no `origin` remote, or when `origin` has no fetch URL.
 pub fn origin_url(root: &Path) -> Result<String> {
     let repo = discover(root).context("open git repository")?;
     let remote = repo.find_remote("origin").context("git remote origin")?;
@@ -123,6 +144,11 @@ pub struct AddedBy {
 /// `.git/shallow` is the boundary, so it counts as parentless, and naming it
 /// would link the wrong commit. A parent that exists but cannot be loaded is
 /// treated the same way.
+///
+/// # Errors
+///
+/// Returns an error when the shallow boundary cannot be read, or when a tree
+/// or commit message on the walk cannot be read.
 pub fn added_by(root: &Path, path: &Path) -> Result<Option<AddedBy>> {
     let Ok(repo) = discover(root) else {
         return Ok(None);
@@ -175,6 +201,135 @@ pub fn added_by(root: &Path, path: &Path) -> Result<Option<AddedBy>> {
     }
 }
 
+/// The commit that set a package's version, and how far it sits below HEAD.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct VersionCommit {
+    /// Full hex SHA of the commit.
+    pub sha: String,
+    /// First-parent steps from HEAD: 0 is HEAD itself. A larger depth is an
+    /// older commit, so sorting by depth, largest first, orders releases the
+    /// way history made them.
+    pub depth: usize,
+}
+
+/// The newest commit on HEAD's first-parent history where the version `read`
+/// finds in `path` became the version it has at HEAD.
+///
+/// The walk follows first parents only, so a merge counts as the commit that
+/// brought the version to this branch, which is where the release happens.
+/// `read` returns `None` when a revision of the file holds no version, which
+/// counts as a different version.
+///
+/// # Errors
+///
+/// Returns an error when `root` is in no repository, `path` is outside it,
+/// HEAD has no version in `path`, a commit or tree cannot be read, or the walk
+/// reaches a shallow clone's boundary before the version changes: the commit
+/// that set it is not in the clone, so a full fetch is needed.
+pub fn version_commit(
+    root: &Path,
+    path: &Path,
+    read: &dyn Fn(&str) -> Option<String>,
+) -> Result<VersionCommit> {
+    let repo = discover(root).context("finding a version commit needs a git repository")?;
+    let rel = git_path(root, path, repo.workdir())
+        .with_context(|| format!("{} is not in the repository", path.display()))?;
+    let version_at = |commit: &gix::Commit<'_>| -> Result<Option<String>> {
+        Ok(blob_at(&commit.tree()?, &rel).and_then(|raw| read(&raw)))
+    };
+    let mut commit = repo
+        .head_commit()
+        .context("finding a version commit needs HEAD")?;
+    let wanted = version_at(&commit)?
+        .with_context(|| format!("HEAD has no version in {}", rel.display()))?;
+    let boundary: Vec<gix::ObjectId> = repo
+        .shallow_commits()?
+        .map(|commits| commits.iter().copied().collect())
+        .unwrap_or_default();
+    let mut depth = 0;
+    loop {
+        ensure!(
+            !boundary.contains(&commit.id().detach()),
+            "cannot find the commit that set {} to {wanted}: the clone is shallow; fetch the full history{}",
+            rel.display(),
+            shallow_hint()
+        );
+        let Some(parent) = commit.parent_ids().next() else {
+            break;
+        };
+        let parent = repo.find_commit(parent.detach())?;
+        if version_at(&parent)?.as_deref() != Some(wanted.as_str()) {
+            break;
+        }
+        commit = parent;
+        depth += 1;
+    }
+    Ok(VersionCommit {
+        sha: commit.id().to_string(),
+        depth,
+    })
+}
+
+/// `sha` as the release commit of the version `read` finds in `path` at HEAD,
+/// when `sha` is on HEAD's first-parent history and carries that version.
+///
+/// A release tag can name a commit other than [`version_commit`] and still be
+/// that version's release: a publish rerun after later commits tagged a newer
+/// HEAD at the same version, or a version set again after a revert keeps the
+/// tag from its first release. Either way the registry already has the
+/// version, so the tag's commit is the release. `None` means the tag is on a
+/// commit with another version, or off the first-parent history.
+///
+/// # Errors
+///
+/// Returns an error when `root` is in no repository, `path` is outside it,
+/// HEAD has no version in `path`, a commit or tree cannot be read, or the walk
+/// reaches a shallow clone's boundary before finding `sha`.
+pub fn tagged_commit(
+    root: &Path,
+    path: &Path,
+    sha: &str,
+    read: &dyn Fn(&str) -> Option<String>,
+) -> Result<Option<VersionCommit>> {
+    let repo = discover(root).context("reading a tagged commit needs a git repository")?;
+    let rel = git_path(root, path, repo.workdir())
+        .with_context(|| format!("{} is not in the repository", path.display()))?;
+    let version_at = |commit: &gix::Commit<'_>| -> Result<Option<String>> {
+        Ok(blob_at(&commit.tree()?, &rel).and_then(|raw| read(&raw)))
+    };
+    let mut commit = repo
+        .head_commit()
+        .context("reading a tagged commit needs HEAD")?;
+    let wanted = version_at(&commit)?
+        .with_context(|| format!("HEAD has no version in {}", rel.display()))?;
+    let boundary: Vec<gix::ObjectId> = repo
+        .shallow_commits()?
+        .map(|commits| commits.iter().copied().collect())
+        .unwrap_or_default();
+    let mut depth = 0;
+    loop {
+        if commit.id().to_string().eq_ignore_ascii_case(sha) {
+            return Ok(
+                (version_at(&commit)?.as_deref() == Some(wanted.as_str())).then(|| VersionCommit {
+                    sha: commit.id().to_string(),
+                    depth,
+                }),
+            );
+        }
+        ensure!(
+            !boundary.contains(&commit.id().detach()),
+            "cannot find tagged commit {sha}: the clone is shallow; fetch the full history{}",
+            shallow_hint()
+        );
+        let Some(parent) = commit.parent_ids().next() else {
+            return Ok(None);
+        };
+        commit = repo.find_commit(parent.detach())?;
+        depth += 1;
+    }
+}
+
 fn has_path(commit: &gix::Commit<'_>, rel: &Path) -> Result<bool> {
     Ok(commit.tree()?.lookup_entry_by_path(rel)?.is_some())
 }
@@ -207,6 +362,12 @@ pub fn upstream_default_branch(root: &Path) -> Option<String> {
 /// have nothing to prove. A repo that has `origin` but no peelable
 /// default-tracking ref fails closed. A shallow clone that cannot walk
 /// the graph also fails closed.
+///
+/// # Errors
+///
+/// Returns an error when `origin` exists but its default branch ref cannot be
+/// resolved, when HEAD is not an ancestor of the default branch, or when the
+/// merge-base cannot be computed, as in a shallow clone.
 pub fn require_on_default_history(root: &Path) -> Result<()> {
     prove_default_history(root, &candidate_names(env_base_ref().as_deref()))
 }
@@ -280,6 +441,14 @@ pub fn configured_default_branch() -> Option<String> {
 /// Point `origin/HEAD` at `origin/<branch>`. Fetch that one ref only
 /// when it is missing. The fetch is the branch's history, not a
 /// depth-1 tip: `require_on_default_history` walks parents.
+///
+/// An empty `branch`, no repository, and no `origin` remote are each a no-op.
+///
+/// # Errors
+///
+/// Returns an error when the fetch fails (remote unreachable, credentials
+/// rejected, or the branch absent on the remote), when `origin/<branch>` is
+/// still missing afterwards, or when `origin/HEAD` cannot be updated.
 pub fn ensure_origin_head(root: &Path, branch: &str, fetch: &FetchDefault) -> Result<()> {
     if branch.is_empty() {
         return Ok(());
@@ -292,7 +461,7 @@ pub fn ensure_origin_head(root: &Path, branch: &str, fetch: &FetchDefault) -> Re
     }
     let remote_ref = format!("refs/remotes/origin/{branch}");
     if peel_remote(&repo, &remote_ref).is_none() {
-        fetch_one_branch(&repo, branch, fetch)?;
+        fetch_one_branch(&repo, branch, fetch, Shallow::NoChange)?;
     }
     ensure!(
         peel_remote(&repo, &remote_ref).is_some(),
@@ -312,10 +481,55 @@ pub fn ensure_origin_head(root: &Path, branch: &str, fetch: &FetchDefault) -> Re
     Ok(())
 }
 
+/// Points at `VERCTL_DEFAULT_BRANCH` only while it is unset: once set,
+/// [`ensure_full_history`] has run, and a commit still past the boundary is
+/// not on the default branch.
+fn shallow_hint() -> &'static str {
+    if configured_default_branch().is_some() {
+        ""
+    } else {
+        ", or set VERCTL_DEFAULT_BRANCH so verctl fetches it"
+    }
+}
+
+/// Fetch the whole history of `origin/<branch>` when the clone is shallow.
+///
+/// A depth-1 checkout, the default of `actions/checkout`, ends at a commit
+/// with no parents, so finding the commit that set a version, finding a tag's
+/// commit, and proving HEAD is on the default branch all stop at the boundary.
+/// Fetching the default branch without a depth limit removes that boundary for
+/// every commit on it, the version commit included.
+///
+/// A clone that is not shallow, an empty `branch`, no repository, and no
+/// `origin` remote are each a no-op; the walks then report the boundary.
+///
+/// # Errors
+///
+/// Returns an error when the shallow boundary cannot be read, or when the
+/// fetch fails (remote unreachable, credentials rejected, or the branch absent
+/// on the remote).
+pub fn ensure_full_history(root: &Path, branch: &str, fetch: &FetchDefault) -> Result<()> {
+    if branch.is_empty() {
+        return Ok(());
+    }
+    let Some(repo) = repo_covering(root) else {
+        return Ok(());
+    };
+    if !has_origin(&repo) || !repo.is_shallow().context("read the shallow boundary")? {
+        return Ok(());
+    }
+    fetch_one_branch(&repo, branch, fetch, Shallow::undo())
+}
+
 /// Fetches `branch` alone into `origin/<branch>`, through a remote that carries
 /// only that refspec and no tags, so the configured `origin` refspecs cannot
-/// widen the fetch.
-fn fetch_one_branch(repo: &gix::Repository, branch: &str, fetch: &FetchDefault) -> Result<()> {
+/// widen the fetch. `shallow` says what happens to a shallow clone's boundary.
+fn fetch_one_branch(
+    repo: &gix::Repository,
+    branch: &str,
+    fetch: &FetchDefault,
+    shallow: Shallow,
+) -> Result<()> {
     let spec = format!("+refs/heads/{branch}:refs/remotes/origin/{branch}");
     let url = match fetch {
         FetchDefault::Origin => origin_url_of(repo)?,
@@ -338,6 +552,7 @@ fn fetch_one_branch(repo: &gix::Repository, branch: &str, fetch: &FetchDefault) 
                 gix::remote::ref_map::Options::default(),
             )
             .with_context(|| format!("git fetch {spec}"))?
+            .with_shallow(shallow)
             .receive(gix::progress::Discard, &interrupt),
         FetchDefault::GitHub { token, .. } => connection
             .with_credentials(github_credentials(token))
@@ -346,6 +561,7 @@ fn fetch_one_branch(repo: &gix::Repository, branch: &str, fetch: &FetchDefault) 
                 gix::remote::ref_map::Options::default(),
             )
             .with_context(|| format!("git fetch {spec}"))?
+            .with_shallow(shallow)
             .receive(gix::progress::Discard, &interrupt),
     }
     .with_context(|| format!("git fetch {spec}"))?;
@@ -413,6 +629,10 @@ pub fn workdir_covering(dir: &Path) -> Option<PathBuf> {
 /// project's, and what is left is rebased onto it. A tree with no repository
 /// tracks nothing — it cannot serve a file by tag — but a repository whose
 /// index cannot be read is an error, never an empty answer.
+///
+/// # Errors
+///
+/// Returns an error when the repository's index cannot be read.
 pub fn tracked(root: &Path) -> Result<Vec<PathBuf>> {
     let Some(repo) = repo_covering(root) else {
         return Ok(Vec::new());
@@ -637,6 +857,13 @@ fn matches_stage(pattern: &str, rel: &str) -> bool {
 /// the unexpected-dirty check; not a filesystem glob. Renames are not
 /// tracked, so a moved file shows as its old and its new path, each of
 /// which must be allowed.
+///
+/// # Errors
+///
+/// Returns an error when `git status` cannot be computed, or when a dirty
+/// path is neither in `allowed` nor matched by `globs`. The latter error lists
+/// those paths. A root outside a repository is not an error and returns an
+/// empty list.
 pub fn assert_only_allowed(
     root: &Path,
     allowed: &[PathBuf],
@@ -751,6 +978,17 @@ pub enum PushOutcome {
 
 /// Commits `paths` onto `branch` without moving HEAD, then force-pushes
 /// `branch` to `github` over HTTPS with `token`.
+///
+/// Returns [`PushOutcome::Empty`] without pushing when `paths` leave the tree
+/// unchanged.
+///
+/// # Errors
+///
+/// Returns an error when `root` is not inside a git repository, when the
+/// repository has no workdir or HEAD names no commit, when a path lies
+/// outside the workdir, is not UTF-8, or cannot be read or filtered, when the
+/// commit or branch ref cannot be written, or when `git push` fails or runs
+/// past five minutes.
 pub fn commit_branch_and_push(
     root: &Path,
     branch: &str,
@@ -1012,7 +1250,7 @@ mod tests {
 
     use indoc::indoc;
 
-    use super::{AddedBy, added_by, origin_url};
+    use super::{AddedBy, VersionCommit, added_by, origin_url, tagged_commit, version_commit};
     use crate::test_git::{commit_all, git, init};
 
     /// The paths of every blob in the commit `sha`.
@@ -1021,6 +1259,111 @@ mod tests {
             .lines()
             .map(str::to_owned)
             .collect()
+    }
+
+    fn version_line(raw: &str) -> Option<String> {
+        raw.lines()
+            .find_map(|line| line.strip_prefix("version = "))
+            .map(|version| version.trim_matches('"').to_owned())
+    }
+
+    fn write_version(dir: &Path, version: &str) {
+        std::fs::write(
+            dir.join("Cargo.toml"),
+            indoc::formatdoc! {r#"
+                [package]
+                name = "demo"
+                version = "{version}"
+            "#},
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn head_moved_past_the_release_finds_the_commit_that_set_it() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        write_version(dir.path(), "0.4.5");
+        commit_all(dir.path(), "chore: start");
+        write_version(dir.path(), "0.4.6");
+        let set = commit_all(dir.path(), "chore(release): version packages (#7)");
+        std::fs::write(dir.path().join("README"), "later\n").unwrap();
+        commit_all(dir.path(), "docs: later (#8)");
+        let found =
+            version_commit(dir.path(), &dir.path().join("Cargo.toml"), &version_line).unwrap();
+        assert_eq!(found, VersionCommit { sha: set, depth: 1 });
+    }
+
+    #[test]
+    fn the_first_commit_is_the_version_commit_when_nothing_changed_it() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        write_version(dir.path(), "0.0.1");
+        let first = commit_all(dir.path(), "chore: start");
+        let found =
+            version_commit(dir.path(), &dir.path().join("Cargo.toml"), &version_line).unwrap();
+        assert_eq!(found.sha, first);
+        assert_eq!(found.depth, 0);
+    }
+
+    #[test]
+    fn a_version_set_again_after_a_revert_names_the_newest_change() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        write_version(dir.path(), "0.4.6");
+        commit_all(dir.path(), "chore: start");
+        write_version(dir.path(), "0.4.5");
+        commit_all(dir.path(), "revert: 0.4.6");
+        write_version(dir.path(), "0.4.6");
+        let again = commit_all(dir.path(), "chore(release): version packages (#9)");
+        let found =
+            version_commit(dir.path(), &dir.path().join("Cargo.toml"), &version_line).unwrap();
+        assert_eq!(found.sha, again);
+    }
+
+    #[test]
+    fn a_tag_on_a_later_commit_at_the_same_version_is_the_release() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        write_version(dir.path(), "0.4.6");
+        let set = commit_all(dir.path(), "chore(release): version packages (#9)");
+        std::fs::write(dir.path().join("README"), "later\n").unwrap();
+        let later = commit_all(dir.path(), "docs: later");
+        std::fs::write(dir.path().join("README"), "head\n").unwrap();
+        commit_all(dir.path(), "docs: head");
+        let manifest = dir.path().join("Cargo.toml");
+        let found = tagged_commit(dir.path(), &manifest, &later, &version_line).unwrap();
+        assert_eq!(
+            found,
+            Some(VersionCommit {
+                sha: later,
+                depth: 1,
+            })
+        );
+        assert!(
+            tagged_commit(dir.path(), &manifest, &set, &version_line)
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn a_tag_on_a_commit_at_another_version_is_not_the_release() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        write_version(dir.path(), "0.4.5");
+        let older = commit_all(dir.path(), "chore: start");
+        write_version(dir.path(), "0.4.6");
+        commit_all(dir.path(), "chore(release): version packages (#9)");
+        let manifest = dir.path().join("Cargo.toml");
+        assert_eq!(
+            tagged_commit(dir.path(), &manifest, &older, &version_line).unwrap(),
+            None
+        );
+        assert_eq!(
+            tagged_commit(dir.path(), &manifest, &"0".repeat(40), &version_line).unwrap(),
+            None
+        );
     }
 
     #[test]
@@ -1172,7 +1515,7 @@ mod tests {
         };
         let out = super::commit_branch_and_push(
             dir.path(),
-            "version-packages",
+            "verctl/release/main",
             "chore",
             "unused",
             &repo_id,
@@ -1467,11 +1810,11 @@ mod tests {
             .mount(&server)
             .await;
         let (dir, _) = fixture();
-        git(dir.path(), &["branch", "version-packages"]);
+        git(dir.path(), &["branch", "verctl/release/main"]);
         let url = format!("{}/owner/repo.git", server.uri());
         let token = "verctl-push-token-5f3a9c";
         let error = tokio::task::spawn_blocking(move || {
-            super::push(&dir.path().join(".git"), &url, "version-packages", token)
+            super::push(&dir.path().join(".git"), &url, "verctl/release/main", token)
         })
         .await
         .unwrap()
@@ -1561,7 +1904,7 @@ mod tests {
                     "-g",
                     "-1",
                     "--format=%gn <%ge>",
-                    "refs/heads/version-packages",
+                    "refs/heads/verctl/release/main",
                 ],
             ),
             configured
@@ -1614,9 +1957,16 @@ mod tests {
         let repo = super::discover(dir).unwrap();
         let workdir = super::absolute_workdir(&repo).unwrap();
         let parent = repo.head_commit().unwrap();
-        super::write_commit_on_branch(&repo, &workdir, &parent, "version-packages", "chore", paths)
-            .unwrap()
-            .map(|id| id.to_string())
+        super::write_commit_on_branch(
+            &repo,
+            &workdir,
+            &parent,
+            "verctl/release/main",
+            "chore",
+            paths,
+        )
+        .unwrap()
+        .map(|id| id.to_string())
     }
 
     fn stock() -> Vec<String> {
@@ -1824,6 +2174,46 @@ mod tests {
             ),
             "refs/remotes/origin/main"
         );
+    }
+
+    #[test]
+    fn a_shallow_clone_gets_the_history_that_set_the_version() {
+        let upstream = tempfile::TempDir::new().unwrap();
+        init(upstream.path());
+        write_version(upstream.path(), "0.0.1");
+        commit_all(upstream.path(), "chore: start");
+        write_version(upstream.path(), "0.0.2");
+        let set = commit_all(upstream.path(), "chore(release): version packages");
+        std::fs::write(upstream.path().join("README"), "later\n").unwrap();
+        commit_all(upstream.path(), "docs: later");
+
+        let parent = tempfile::TempDir::new().unwrap();
+        let url = format!("file://{}", upstream.path().display());
+        git(
+            parent.path(),
+            &["clone", "-q", "--depth", "1", &url, "work"],
+        );
+        let work = parent.path().join("work");
+        let manifest = work.join("Cargo.toml");
+        let error = version_commit(&work, &manifest, &version_line).unwrap_err();
+        assert!(format!("{error:#}").contains("shallow"), "{error:#}");
+
+        super::ensure_full_history(&work, "main", &super::FetchDefault::Origin).unwrap();
+        let found = version_commit(&work, &manifest, &version_line).unwrap();
+        assert_eq!(found, VersionCommit { sha: set, depth: 1 });
+    }
+
+    #[test]
+    fn a_full_clone_is_not_fetched_again() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        commit_all(dir.path(), "init");
+        // An origin that does not exist: a fetch would fail.
+        git(
+            dir.path(),
+            &["remote", "add", "origin", "file:///nonexistent/verctl"],
+        );
+        super::ensure_full_history(dir.path(), "main", &super::FetchDefault::Origin).unwrap();
     }
 
     #[test]

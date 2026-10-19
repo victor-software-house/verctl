@@ -1,9 +1,8 @@
-# Loaded when MISE_ENV contains `release`.
-# Published tarball only. No rust.
-
-[tools]
-"github:victor-software-house/verctl" = "0.4.0"
+# Loaded when MISE_ENV contains `release`: verctl's own release run
+# (.github/workflows/self-release.yml). No rust and no verctl pin: the run
+# builds verctl once per platform from the commit it releases, and each job
+# puts that binary first on PATH, so `ver` runs it.
 
 [tasks.ver]
-description = "Released verctl binary"
+description = "The verctl this release run built"
 run = "verctl"
