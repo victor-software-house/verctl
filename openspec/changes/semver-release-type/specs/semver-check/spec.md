@@ -49,8 +49,9 @@ crates.io.
 
 `verctl semver` SHALL leave out a crates.io crate whose manifest has no
 library target as Cargo resolves it, an explicit `[lib]` table or an
-auto-discovered `src/lib.rs`, and SHALL run no check for it. Such a crate
-has no API, so the 1.0 rule below does not apply to it.
+auto-discovered `src/lib.rs`, or whose library is a proc-macro, which
+cargo-semver-checks does not check, and SHALL run no check for it. The 1.0
+rule below does not apply to such a crate.
 
 #### Scenario: A binary member of a workspace package
 

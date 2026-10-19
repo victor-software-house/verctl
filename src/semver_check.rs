@@ -8,9 +8,9 @@
 //! bumps the minor may break it, so `semver` skips it. The rule covers 0.x
 //! only: at 1.0 a break needs a major release, and reaching 1.0 is an
 //! operator decision that revisits the rule, so a crate at 1.0 or later
-//! fails the run. A crate with no library target has no API to check, so it
-//! gets no row, as cargo-semver-checks itself skips it, and the 1.0 rule,
-//! which is about API breaks, does not apply to it.
+//! fails the run. A crate cargo-semver-checks cannot check, one with no
+//! library target or a proc-macro, gets no row, and the 1.0 rule, which is
+//! about API breaks, does not apply to it.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -18,6 +18,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use semver::Version;
 use serde::Serialize;
+use toml_edit::DocumentMut;
 
 use crate::config::Config;
 use crate::fragment::{Bump, Fragment};
@@ -76,7 +77,7 @@ struct Planned {
 /// A package's next release is a patch unless a fragment in `fragments`
 /// bumps it further, or its manifest's major.minor already differs from the
 /// crates.io baseline. A workspace package counts once per publishing
-/// member, and a crate with no library target is left out.
+/// member, and a crate [`checkable`] rejects is left out.
 ///
 /// # Errors
 ///
@@ -142,7 +143,7 @@ fn plan(config: &Config, root: &Path, fragments: &[Fragment]) -> Result<Vec<Plan
             let RegistryCheck::CratesIo { name } = &upload.check else {
                 continue;
             };
-            if !docsrs::has_library(&upload.manifest)? {
+            if !checkable(&upload.manifest)? {
                 continue;
             }
             let version = Version::parse(&upload.version)
@@ -163,6 +164,29 @@ fn plan(config: &Config, root: &Path, fragments: &[Fragment]) -> Result<Vec<Plan
         }
     }
     Ok(crates)
+}
+
+/// Whether cargo-semver-checks can check the crate in `manifest`: it has a
+/// library target, as [`docsrs::has_library`] resolves it, that is not a
+/// proc-macro. cargo-semver-checks 0.51.0 leaves out a proc-macro
+/// (`is_lib_like_checkable_target`) and refuses to run with nothing left.
+fn checkable(manifest: &Path) -> Result<bool> {
+    if !docsrs::has_library(manifest)? {
+        return Ok(false);
+    }
+    let raw = std::fs::read_to_string(manifest).with_context(|| manifest.display().to_string())?;
+    let document = raw
+        .parse::<DocumentMut>()
+        .with_context(|| manifest.display().to_string())?;
+    // Cargo still reads the old `proc_macro` spelling.
+    let proc_macro = ["proc-macro", "proc_macro"].iter().any(|key| {
+        document
+            .get("lib")
+            .and_then(|lib| lib.get(key))
+            .and_then(toml_edit::Item::as_bool)
+            == Some(true)
+    });
+    Ok(!proc_macro)
 }
 
 /// The largest bump any fragment asks for `package`, or [`Bump::None`].
@@ -203,9 +227,12 @@ fn skip_reason(
 
 #[cfg(test)]
 mod tests {
-    use semver::Version;
+    use std::fs;
 
-    use super::{Decision, pending_bump, skip_reason};
+    use semver::Version;
+    use tempfile::TempDir;
+
+    use super::{Decision, checkable, pending_bump, skip_reason};
     use crate::fragment::{Bump, Fragment, PackageBump};
 
     fn version(raw: &str) -> Version {
@@ -255,6 +282,42 @@ mod tests {
             skip(Bump::Patch, "0.0.1", None),
             Some(Decision::Unpublished)
         );
+    }
+
+    #[test]
+    fn only_a_library_that_is_not_a_proc_macro_is_checkable() {
+        let crate_with = |manifest: &str, source: &str| {
+            let dir = TempDir::new().unwrap();
+            fs::create_dir_all(dir.path().join("src")).unwrap();
+            fs::write(dir.path().join(source), "").unwrap();
+            fs::write(dir.path().join("Cargo.toml"), manifest).unwrap();
+            dir
+        };
+        let package = "[package]\nname = \"demo\"\nversion = \"0.0.2\"\n";
+        let cases = [
+            ("a library", package.to_owned(), "src/lib.rs", true),
+            ("a binary", package.to_owned(), "src/main.rs", false),
+            (
+                "a proc-macro",
+                format!("{package}\n[lib]\nproc-macro = true\n"),
+                "src/lib.rs",
+                false,
+            ),
+            (
+                "the old proc_macro spelling",
+                format!("{package}\n[lib]\nproc_macro = true\n"),
+                "src/lib.rs",
+                false,
+            ),
+        ];
+        for (label, manifest, source, expected) in cases {
+            let dir = crate_with(&manifest, source);
+            assert_eq!(
+                checkable(&dir.path().join("Cargo.toml")).unwrap(),
+                expected,
+                "{label}"
+            );
+        }
     }
 
     #[test]

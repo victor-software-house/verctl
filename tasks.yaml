@@ -308,7 +308,7 @@ queue:
       - A crate whose pending fragments are at most patch, at the baseline's major.minor, is checked with cargo semver-checks --release-type minor against its crates.io baseline.
       - A crate is skipped when a pending fragment for its package is minor or major, when its manifest's major.minor differs from the baseline, or when crates.io has no release of it.
       - A crate at 1.0 or later fails the run, naming the rule.
-      - A crate with no library target is left out with no check, so a workspace package with a binary member passes.
+      - A crate with no library target, or a proc-macro, is left out with no check, so a workspace package with a binary member passes.
     notes:
       - OpenSpec change semver-release-type in openspec/changes/semver-release-type.
       - 'shrub#26, on verctl 0.5.1, failed its semver step: verctl ran cargo semver-checks --package shrub on the binary-only crate shrub, and cargo-semver-checks refused with "no crates with library targets selected".'
