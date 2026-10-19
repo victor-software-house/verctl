@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.4.8
+
+- A cargo package at a virtual workspace manifest publishes each workspace member that publishes, dependencies first, with `cargo publish --package <member>` under its own crates.io index check. A rerun after a partial release uploads only the members still missing, and a registry rate limit stops the run before any tag, naming the crate and the time to retry. Before this, such a repository overrode the upload with `cargo publish --workspace`, which cannot resume, and a rerun could tag a release whose later crates were never uploaded ([#174](https://github.com/victor-software-house/verctl/pull/174)).
+
 ## verctl 0.4.7
 
 - `verctl docs` keeps waiting while docs.rs builds a crate. docs.rs reports `doc_status: false` both while a build runs and after it failed, and `docs` used to fail the release on the first such answer. A crate now fails only when the timeout runs out while docs.rs still reports no documentation ([#171](https://github.com/victor-software-house/verctl/pull/171)).
