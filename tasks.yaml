@@ -266,6 +266,19 @@ queue:
       - OpenSpec change cargo-workspace-publish in openspec/changes/cargo-workspace-publish; it takes decisions 9 and 10 of release-state-machine (VER-011) as a patch, closing gap W11 for cargo workspaces.
       - 'Orchestrator decision 2026-10-18: implement this in verctl, over a per-repository publish task (rejected: it duplicates verctl logic) and a crates.io limit exception (not needed). Patch bump only.'
 
+  - id: VER-070
+    title: A duplicate release asset upload reports already
+    scope: src/github.rs
+    outcome: A release run whose asset another run already uploaded reports `already` and passes, so a release that is complete never reports red.
+    blocked_by: []
+    acceptance:
+      - An upload refused with GitHub's 422 `already_exists` code, for an asset the release lists as `uploaded`, returns `already <name>`.
+      - An asset of that name in any other state fails and says to delete it and rerun.
+      - Any other upload failure still fails.
+    notes:
+      - 'Self-release runs 39188632481 and 39188754557 both released 2a7b33d (v0.4.8) and each lost one asset race with `already_exists`. The duplicate check text-matched `format!("{error:#}")`, but octocrab 0.54.1 displays `Error::GitHub` as "GitHub", so the code in `GitHubError.errors` never reached it.'
+      - Digests cannot decide a duplicate, because two builds of one commit produce different tarballs. No concurrency group on the asset legs; the idempotent upload makes it unnecessary.
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all

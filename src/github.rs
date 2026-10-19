@@ -499,14 +499,16 @@ struct AssetName {
 
 /// Attach `tarball` to the release for `tag`.
 ///
-/// Returns the download URL, or `already <name>` when the release has an
-/// asset of that name.
+/// Returns the download URL, or `already <name>` when GitHub refuses the
+/// upload because the release already has a complete asset of that name: the
+/// run that got there first, or an earlier attempt of this one, uploaded it.
 ///
 /// # Errors
 ///
 /// Returns an error when `tarball` has no UTF-8 file name or cannot be read,
 /// the GitHub client cannot be built, the release for `tag` does not exist,
-/// or the upload fails for a reason other than a duplicate asset.
+/// the asset of that name exists but its upload never completed, or the
+/// upload fails for a reason other than a duplicate asset.
 pub fn upload_release_asset(token: &str, repo: &Repo, tag: &str, tarball: &Path) -> Result<String> {
     let name = tarball
         .file_name()
@@ -517,28 +519,91 @@ pub fn upload_release_asset(token: &str, repo: &Repo, tag: &str, tarball: &Path)
         bytes::Bytes::from(std::fs::read(tarball).with_context(|| tarball.display().to_string())?);
     block(async {
         let crab = client(token)?;
-        let repos = crab.repos(&repo.owner, &repo.name);
-        let releases = repos.releases();
-        let release = releases
-            .get_by_tag(tag)
-            .await
-            .context("get release by tag")?;
-        match releases
-            .upload_asset(release.id.into_inner(), &name, body)
-            .send()
-            .await
-        {
-            Ok(asset) => Ok(asset.browser_download_url.to_string()),
-            Err(error)
-                if format!("{error:#}")
-                    .to_ascii_lowercase()
-                    .contains("already") =>
-            {
-                Ok(format!("already {name}"))
-            }
-            Err(error) => Err(error).context("upload release asset"),
-        }
+        upload_release_asset_with(&crab, repo, tag, &name, body).await
     })
+}
+
+/// The part of a Release an upload reads.
+#[derive(serde::Deserialize)]
+struct UploadTarget {
+    id: u64,
+    assets: Vec<UploadedAsset>,
+}
+
+#[derive(serde::Deserialize)]
+struct UploadedAsset {
+    name: String,
+    /// `uploaded` once GitHub holds the whole file; an upload that broke off
+    /// leaves the asset in another state.
+    state: String,
+}
+
+async fn upload_target(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<UploadTarget> {
+    crab.get(
+        format!(
+            "/repos/{owner}/{name}/releases/tags/{tag}",
+            owner = repo.owner,
+            name = repo.name
+        ),
+        None::<&()>,
+    )
+    .await
+    .with_context(|| format!("read release {tag}"))
+}
+
+async fn upload_release_asset_with(
+    crab: &Octocrab,
+    repo: &Repo,
+    tag: &str,
+    name: &str,
+    body: bytes::Bytes,
+) -> Result<String> {
+    let release = upload_target(crab, repo, tag).await?;
+    let uploaded = crab
+        .repos(&repo.owner, &repo.name)
+        .releases()
+        .upload_asset(release.id, name, body)
+        .send()
+        .await;
+    match uploaded {
+        Ok(asset) => Ok(asset.browser_download_url.to_string()),
+        // Two runs can release the same commit, and both build every asset.
+        // The tarballs are not byte-identical (tar records file times), so a
+        // digest cannot tell a duplicate from a mismatch. The name carries the
+        // version and the target, and the tag fixes the commit, so a complete
+        // asset of that name is this asset.
+        Err(error) if is_already_exists(&error) => {
+            let release = upload_target(crab, repo, tag).await?;
+            let asset = release
+                .assets
+                .iter()
+                .find(|asset| asset.name == name)
+                .with_context(|| {
+                    format!(
+                        "GitHub reports asset {name} exists, but release {tag} does not list it"
+                    )
+                })?;
+            ensure!(
+                asset.state == "uploaded",
+                "release {tag} has asset {name} in state {:?}, not uploaded; delete the asset and rerun",
+                asset.state
+            );
+            Ok(format!("already {name}"))
+        }
+        Err(error) => Err(error).context("upload release asset"),
+    }
+}
+
+/// GitHub's 422 for an upload whose name the release already has, from
+/// <https://docs.github.com/en/rest/releases/assets#upload-a-release-asset>.
+/// The code is only in the error's body: octocrab displays a GitHub error as
+/// "GitHub", so its text never names it.
+fn is_already_exists(error: &octocrab::Error) -> bool {
+    matches!(error, octocrab::Error::GitHub { source, .. }
+    if source.status_code.as_u16() == 422
+        && source.errors.iter().flatten().any(|detail| {
+            detail.get("code").and_then(serde_json::Value::as_str) == Some("already_exists")
+        }))
 }
 
 /// Who opened a pull request, and where its head branch lives.
@@ -1210,5 +1275,104 @@ mod tests {
         .await
         .unwrap();
         assert!(url.contains(TAG), "{url}");
+    }
+
+    fn upload_target_json(assets: serde_json::Value) -> Mock {
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases/tags/{TAG}")))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "id": 1, "assets": assets })),
+            )
+    }
+
+    /// The release octocrab reads before an upload, pointing uploads at `uri`.
+    fn release_by_id(uri: &str) -> Mock {
+        let mut json = release_json("main");
+        json["upload_url"] =
+            format!("{uri}/upload/repos/{OWNER}/{NAME}/releases/1/assets{{?name,label}}").into();
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases/1")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json))
+    }
+
+    fn upload_refused(status: u16, body: serde_json::Value) -> Mock {
+        Mock::given(method("POST"))
+            .and(path(format!(
+                "/upload/repos/{OWNER}/{NAME}/releases/1/assets"
+            )))
+            .respond_with(ResponseTemplate::new(status).set_body_json(body))
+    }
+
+    fn already_exists() -> serde_json::Value {
+        serde_json::json!({
+            "message": "Validation Failed",
+            "errors": [{ "resource": "ReleaseAsset", "code": "already_exists", "field": "name" }],
+            "documentation_url": "https://docs.github.com/rest/releases/assets#upload-a-release-asset"
+        })
+    }
+
+    async fn upload(server: &MockServer) -> anyhow::Result<String> {
+        super::upload_release_asset_with(
+            &crab(&server.uri()),
+            &repo(),
+            TAG,
+            "app_1.0.0_linux_x64.tar.gz",
+            bytes::Bytes::from_static(b"tarball"),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn an_asset_another_run_uploaded_is_already_done() {
+        let server = MockServer::start().await;
+        upload_target_json(serde_json::json!([
+            { "name": "app_1.0.0_linux_x64.tar.gz", "state": "uploaded" }
+        ]))
+        .mount(&server)
+        .await;
+        release_by_id(&server.uri()).mount(&server).await;
+        upload_refused(422, already_exists()).mount(&server).await;
+        assert_eq!(
+            upload(&server).await.unwrap(),
+            "already app_1.0.0_linux_x64.tar.gz"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_asset_whose_upload_broke_off_fails() {
+        let server = MockServer::start().await;
+        upload_target_json(serde_json::json!([
+            { "name": "app_1.0.0_linux_x64.tar.gz", "state": "starter" }
+        ]))
+        .mount(&server)
+        .await;
+        release_by_id(&server.uri()).mount(&server).await;
+        upload_refused(422, already_exists()).mount(&server).await;
+        let error = upload(&server).await.unwrap_err();
+        assert!(format!("{error:#}").contains("\"starter\""), "{error:#}");
+    }
+
+    #[tokio::test]
+    async fn another_validation_failure_fails_the_upload() {
+        let server = MockServer::start().await;
+        upload_target_json(serde_json::json!([]))
+            .mount(&server)
+            .await;
+        release_by_id(&server.uri()).mount(&server).await;
+        upload_refused(
+            422,
+            serde_json::json!({
+                "message": "Validation Failed",
+                "errors": [{ "resource": "ReleaseAsset", "code": "invalid", "field": "name" }]
+            }),
+        )
+        .mount(&server)
+        .await;
+        let error = upload(&server).await.unwrap_err();
+        assert!(
+            format!("{error:#}").contains("upload release asset"),
+            "{error:#}"
+        );
     }
 }
