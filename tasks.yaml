@@ -252,6 +252,16 @@ queue:
       - 'Decision (operator, 2026-10-12): render the reference as a short (#N) and credit no maintainer by default; credit outside contributors only. OpenSpec change changelog-references.'
       - 'Follow-up (2026-10-12): the author lookup credited the owner on Version PR #118, so it is removed and no entry carries a byline; VER-054 adds the explicit list on next.'
 
+  - id: VER-071
+    title: Every action loads as YAML
+    scope: actions/version-pr/action.yml, tests/action_publish.rs
+    outcome: A consumer that uses any verctl action gets past "Set up job".
+    blocked_by: []
+    acceptance:
+      - Every `actions/*/action.yml` parses as YAML in a test, so a file GitHub cannot load fails CI.
+    notes:
+      - 'VER-064 (#155) added an unquoted `: ` to the version-pr `title` description, so v0.4.6 to v0.4.8 shipped an action that GitHub refuses ("Mapping values are not allowed in this context"). Found in shrub run 39190679995. actionlint reads only workflows, so nothing caught it.'
+
   - id: VER-069
     title: Publish a cargo workspace one member at a time
     scope: src/members.rs, src/publisher.rs, src/publish.rs, src/pending.rs, src/docsrs.rs, src/registry.rs, operator docs
