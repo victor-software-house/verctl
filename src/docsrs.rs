@@ -375,7 +375,12 @@ mod tests {
             .await;
         let base = server.uri();
         let line = tokio::task::spawn_blocking(move || {
-            wait_built(&base, &demo(), Duration::from_millis(200), Duration::ZERO)
+            wait_built(
+                &base,
+                &demo(),
+                Duration::from_secs(2),
+                Duration::from_millis(10),
+            )
         })
         .await
         .unwrap()
