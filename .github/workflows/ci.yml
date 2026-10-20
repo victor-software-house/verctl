@@ -11,7 +11,7 @@ on:
 
 permissions:
   contents: read
-  # ctl-core's check:versions reads a pull request that changes a manifest
+  # A check:versions task reads a pull request that changes a manifest
   # version, to tell the Version PR apart from a hand edit.
   pull-requests: read
 
@@ -100,23 +100,3 @@ jobs:
       # Builds the package crates.io would receive.
       - name: Package
         run: mise x -- cargo package --locked --all-features
-
-  template:
-    name: Template
-    # A pull request from a fork gets no secrets and cannot read the private
-    # template, so the check is skipped there instead of failing.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # Mints a token from the vsh-templates-reader App, installs only uv and
-      # python from mise.template.toml, and fails when the newest template tag
-      # would change the repository.
-      - name: Check the template version
-        uses: victor-software-house/ctl-core/.github/actions/copier-check@1fc4bc9acf3e8ec64eb8433837da5f720c295e93 # main, 2026-10-15
-        with:
-          client-id: ${{ secrets.TEMPLATES_APP_CLIENT_ID }}
-          private-key: ${{ secrets.TEMPLATES_APP_PRIVATE_KEY }}

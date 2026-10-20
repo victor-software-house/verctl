@@ -99,7 +99,7 @@ pub fn any(root: &Path, config: &Templates) -> Result<bool> {
 ///
 /// # Errors
 ///
-/// Returns an error under the conditions of [`write`], except that no target
+/// Returns an error under the conditions of [`write()`], except that no target
 /// is written, so a write failure cannot occur.
 pub fn plan(
     root: &Path,

@@ -162,7 +162,7 @@ pub struct Waiting {
 ///
 /// A tag whose packages all have a registry check, or no upload, gets its tag
 /// and Release before any upload; any other tag gets them after its uploads
-/// (see [`tags_before_upload`]).
+/// (see `tags_before_upload`).
 ///
 /// A run on any other commit with an incomplete release fails before any side
 /// effect and names the version commits, so a later commit can never tag one

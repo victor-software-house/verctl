@@ -46,7 +46,7 @@ pub fn write(root: &Path, pins: &[Pin], versions: &[(String, String)]) -> Result
 ///
 /// # Errors
 ///
-/// Returns an error under the same conditions as [`write`], except that no
+/// Returns an error under the same conditions as [`write()`], except that no
 /// file is written, so a write failure cannot occur.
 pub fn plan(root: &Path, pins: &[Pin], versions: &[(String, String)]) -> Result<Vec<PathBuf>> {
     apply(root, pins, versions, false)
