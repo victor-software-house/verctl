@@ -77,7 +77,7 @@ struct Planned {
 /// A package's next release is a patch unless a fragment in `fragments`
 /// bumps it further, or its manifest's major.minor already differs from the
 /// crates.io baseline. A workspace package counts once per publishing
-/// member, and a crate [`checkable`] rejects is left out.
+/// member, and a crate `checkable` rejects is left out.
 ///
 /// # Errors
 ///
