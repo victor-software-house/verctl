@@ -158,14 +158,22 @@ for a person to merge it. Delete the variable to resume.
 mise: the repository setup comes from the shared Copier template
 (project `rust-crate`, layout `crate`); `.copier-answers.yml` records its
 tag and answers. Take a new tag with `copier update --defaults` and
-check `git diff --check` before committing; the CI job `Template`
-fails when the newest tag would change a file. No local edit survives an
-update: `missing_docs`, `missing_debug_implementations`, and the openssl
-and native-tls bans all apply as the template ships them.
+check `git diff --check` before committing. `template.yml` calls the
+shared drift check of the public actions repository at the commit the
+template pins, reported as `template / Template`: it fails only a pull
+request that changes `.copier-answers.yml` without reaching the newest tag,
+and a push to `main` or the daily run keeps a "Template update available"
+issue open while a newer tag would change a file. One local edit survives
+an update: `ci.yml` keeps its own `plan` and matrix `verify` jobs, because
+`mise run ver ci` plans the runners and `semver` skips pull requests into
+`next`, which the shared Rust workflow does not express. `missing_docs`,
+`missing_debug_implementations`, and the openssl and native-tls bans all
+apply as the template ships them.
 `mise.toml` pins stable 1.99.0 (through mr-boxington, whose store CI
-restores with its action) and the formatting nightly;
-`rust-toolchain.toml` and `rust-version` match. `verify` comes from
-ctl-core's `tasks/rust.toml`. `check:repo` is the template's (TOML format,
+restores with its action) and the dated nightly, for formatting and for
+`doc`, which builds rustdoc as docs.rs does; `rust-toolchain.toml` and
+`rust-version` match. `mise.toml` composes `verify` from the actions
+repository's `tasks/rust.toml`. `check:repo` is the template's (TOML format,
 Markdown, spelling, workflows, OpenSpec) and runs `check:local`, which
 `mise-tasks/check/local.sh` fills with workflow policy, the version guard, and
 pending fragments; never edit `check:repo`. This repo's other tasks live in
