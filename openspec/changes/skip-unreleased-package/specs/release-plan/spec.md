@@ -16,3 +16,8 @@
 
 - **WHEN** `.ctl/ver.yaml` declares only package `demo` at `0.0.0` and no changelog exists
 - **THEN** `verctl publish` does not fail for a missing changelog section
+
+#### Scenario: A new package beside a released one under a shared tag
+
+- **WHEN** `.ctl/ver.yaml` declares package `demo` at `1.0.0` and package `extra` at `0.0.0`, with the default `v{version}` tag template
+- **THEN** `verctl publish --dry-run` lists only `demo` and would create `v1.0.0`

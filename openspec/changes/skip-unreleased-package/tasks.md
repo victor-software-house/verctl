@@ -6,7 +6,8 @@ The pull request's CI runs compile, format, lint, and test tasks with `mise run 
 
 - [ ] 1.1 `pending` leaves out a package at `0.0.0` before any lookup; proof: `a_package_at_0_0_0_plans_nothing` passes with the GitHub API address closed
 - [ ] 1.2 `publish` asks no changelog section of a package at `0.0.0`; proof: `publish_asks_no_changelog_of_a_package_at_0_0_0` passes
-- [ ] 1.3 `bump::apply` and `pending` share the unreleased test; proof: `cargo test --test bump` passes unchanged
+- [ ] 1.3 A package at `0.0.0` gets no tag and no dry-run row; proof: `dry_run_leaves_out_a_package_at_0_0_0` passes
+- [ ] 1.4 `bump::apply` and `pending` share the unreleased test; proof: `cargo test --test bump` passes unchanged
 
 ## 2. Document and ship
 

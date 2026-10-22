@@ -81,6 +81,9 @@ pub struct PublishLine {
 
 /// Resolve each package's version, upload command, and the tags to release.
 ///
+/// A package at `0.0.0` gets no tag, so a new package beside a released one
+/// does not break a shared `v{version}` tag (see [`bump::unreleased`]).
+///
 /// # Errors
 ///
 /// Returns an error when a package's version driver cannot be resolved, its
@@ -107,7 +110,16 @@ pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
             argv,
         });
     }
-    let tags = tags_for(config, &packages)?;
+    let released: Vec<PublishEntry> = packages
+        .iter()
+        .filter(|entry| !bump::unreleased(&entry.version))
+        .cloned()
+        .collect();
+    let tags = if released.is_empty() && !packages.is_empty() {
+        Vec::new()
+    } else {
+        tags_for(config, &released)?
+    };
     Ok(PublishPlan { packages, tags })
 }
 
@@ -168,7 +180,7 @@ pub struct Waiting {
 /// effect and names the version commits, so a later commit can never tag one
 /// that was never published. With `skip_assets`, declared assets do not count
 /// toward completeness. A package at `0.0.0` is never released and needs no
-/// changelog section. A dry run plans every package and asks nothing.
+/// changelog section. A dry run plans every other package and asks nothing.
 ///
 /// # Errors
 ///
@@ -364,8 +376,9 @@ fn open_release(
     github::ensure_release(token, repo, &tag.tag, &tag.title, &notes, sha, shipped)
 }
 
-/// What a dry run would publish: every package, a workspace package as its
-/// members in publish order, and every tag. It asks no registry.
+/// What a dry run would publish: every package not at `0.0.0`, a workspace
+/// package as its members in publish order, and every tag. It asks no
+/// registry.
 fn dry_run_plan(config: &Config, root: &Path, planned: &PublishPlan) -> Result<PublishRun> {
     let releases = planned
         .tags
@@ -374,6 +387,9 @@ fn dry_run_plan(config: &Config, root: &Path, planned: &PublishPlan) -> Result<P
         .collect();
     let mut packages = Vec::new();
     for (spec, entry) in config.packages.iter().zip(&planned.packages) {
+        if bump::unreleased(&entry.version) {
+            continue;
+        }
         match publisher::workspace_members(config, spec, root)? {
             Some(members) => packages.extend(members.into_iter().map(|member| PublishLine {
                 name: member.name,

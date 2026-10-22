@@ -213,6 +213,53 @@ fn dry_run_lists_many_packages() {
     assert_eq!(publish_stdout(root.path()), expected);
 }
 
+/// A new package at `0.0.0` beside a released one is left out, so the shared
+/// `v{version}` tag still names one version.
+#[test]
+fn dry_run_leaves_out_a_package_at_0_0_0() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+              - name: extra
+                path: extra/Cargo.toml
+        "},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.0.0"
+        "#},
+    )
+    .unwrap();
+    fs::create_dir_all(root.path().join("extra")).unwrap();
+    fs::write(
+        root.path().join("extra/Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "extra"
+            version = "0.0.0"
+        "#},
+    )
+    .unwrap();
+    let expected = formatdoc! {"
+        ┌──────┬─────────┬───────┐
+        │ name ┆ version ┆ via   │
+        ╞══════╪═════════╪═══════╡
+        │ demo ┆ 1.0.0   ┆ cargo │
+        └──────┴─────────┴───────┘
+
+        release  would create v1.0.0
+        dry-run  nothing published
+    "};
+    assert_eq!(publish_stdout(root.path()), expected);
+}
+
 #[test]
 fn dry_run_refuses_differing_versions_without_name() {
     let root = TempDir::new().unwrap();

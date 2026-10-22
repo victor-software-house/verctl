@@ -18,7 +18,7 @@ Queue row: VER-077.
 2. `publish --plan` and `publish` therefore report `nothing to release` for a repository whose only package is at `0.0.0`, and the reusable workflow goes on to open the Version PR.
 3. `publish` asks no changelog section of a package at `0.0.0`, so a released package beside a new one still passes the changelog check.
 4. A package with a released version in the same repository is planned as before.
-5. A dry run still lists every package; it asks nothing and plans no release.
+5. A package at `0.0.0` gets no tag, and a dry run leaves it out, so a new package beside a released one does not break a shared `v{version}` tag.
 
 ## Override
 
