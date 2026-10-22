@@ -1,7 +1,8 @@
 # release-plan Specification
 
 ## Purpose
-TBD - created by archiving change skip-unreleased-package. Update Purpose after archive.
+
+Which packages `verctl publish --plan` and `verctl publish` plan as releases.
 
 ## Requirements
 
