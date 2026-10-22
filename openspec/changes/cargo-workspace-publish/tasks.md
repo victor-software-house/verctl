@@ -19,6 +19,7 @@ Compile, format, lint, and test tasks run in pull request CI with
 - [x] 2.3 A 429 names the member and the retry time and fails before any tag; proof: `a_rate_limit_names_the_crate_and_the_retry_time` and `a_rate_limit_without_a_time_still_says_so` pass in CI
   - 2026-10-19 (UTC): passed in [verify run 39185946178](https://github.com/victor-software-house/verctl/actions/runs/39185946178) on #174.
 - [ ] 2.4 `pending` counts a workspace package complete only when every member is listed, and `docs` waits for every library member; proof: code review of `registry_lists` and `released_crates`, then the first workspace release reports each member
+  - 2026-10-22 (UTC): tracked by VER-078 until the first workspace release; VER-069 is archived, and this change stays open until 2.4 closes.
 
 ## 3. Docs
 

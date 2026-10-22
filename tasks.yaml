@@ -314,20 +314,6 @@ queue:
       - 'shrub#26, on verctl 0.5.1, failed its semver step: verctl ran cargo semver-checks --package shrub on the binary-only crate shrub, and cargo-semver-checks refused with "no crates with library targets selected".'
       - ctl-core's shared semver task calls mise run ver semver; a repository that does not serve the ver task runs its own verctl.
 
-  - id: VER-069
-    title: Publish a cargo workspace one member at a time
-    scope: src/members.rs, src/publisher.rs, src/publish.rs, src/pending.rs, src/docsrs.rs, src/registry.rs, operator docs
-    outcome: A package at a virtual workspace manifest publishes each member in dependency order under its own index check, so a release that stops partway, including at a crates.io rate limit, finishes on rerun and is never tagged early.
-    blocked_by: []
-    acceptance:
-      - '`verctl publish --dry-run` lists a virtual workspace''s publishing members, dependencies first, and leaves out `publish = false`.'
-      - Each member runs `cargo publish --locked --manifest-path <path> --package <member>` under its own timeout, and a member the crates.io index lists is reported `already` without running.
-      - A 429 from the registry exits non-zero, names the member and the retry time, and creates no tag or Release.
-      - The package counts as published only when every member is listed, and `verctl docs` waits for every library member.
-    notes:
-      - OpenSpec change cargo-workspace-publish in openspec/changes/cargo-workspace-publish; it takes decisions 9 and 10 of release-state-machine (VER-011) as a patch, closing gap W11 for cargo workspaces.
-      - 'Orchestrator decision 2026-10-18: implement this in verctl, over a per-repository publish task (rejected: it duplicates verctl logic) and a crates.io limit exception (not needed). Patch bump only.'
-
   - id: VER-070
     title: A duplicate release asset upload reports already
     scope: src/github.rs
@@ -359,18 +345,20 @@ queue:
       - 'Found by ctl-core#149, whose Verify job failed with: cannot resolve the default branch (origin exists but origin/HEAD, origin/main, and origin/master are missing).'
       - 'Orchestrator decision 2026-10-19: fix it in verctl as publish already does, over a template fetch-depth: 0 on every Verify checkout. Patch bump.'
 
-  - id: VER-077
-    title: Leave a package at 0.0.0 out of the release plan
-    scope: verctl
+  - id: VER-078
+    title: A workspace release proves member-complete pending and docs
+    scope: src/pending.rs, src/registry.rs, src/docsrs.rs
     outcome: >-
-      publish --plan and publish skip a package whose version is 0.0.0, so a crate
-      adopted before its first release plans nothing and the Version PR opens.
+      The first cargo workspace release shows that pending counts a workspace package
+      complete only when every member is listed, and that docs waits for every library
+      member.
     blocked_by: []
     acceptance:
-      - pending leaves out a package at 0.0.0, with or without a pre-release or build suffix, before any registry or GitHub lookup
-      - A test proves a repository whose only package is at 0.0.0 plans nothing to release
-      - The instructions and the operator skill state the rule, and a patch changeset ships it
-    plan: openspec/changes/skip-unreleased-package/proposal.md
+      - A code review of registry_lists and released_crates confirms both rules
+      - The first workspace release reports each member
+    plan: openspec/changes/cargo-workspace-publish/proposal.md
+    notes:
+      - 'Split from VER-069, which #174 completed on 2026-10-18; this row tracks only task 2.4 of openspec/changes/cargo-workspace-publish.'
 
 horizon:
   - id: VER-038
@@ -664,6 +652,32 @@ horizon:
       - 'Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.'
 
 archive:
+  - id: VER-069
+    title: Publish a cargo workspace one member at a time
+    scope: src/members.rs, src/publisher.rs, src/publish.rs, src/pending.rs, src/docsrs.rs, src/registry.rs, operator docs
+    outcome: A package at a virtual workspace manifest publishes each member in dependency order under its own index check, so a release that stops partway, including at a crates.io rate limit, finishes on rerun and is never tagged early.
+    notes:
+      - OpenSpec change cargo-workspace-publish in openspec/changes/cargo-workspace-publish; it takes decisions 9 and 10 of release-state-machine (VER-011) as a patch, closing gap W11 for cargo workspaces.
+      - 'Orchestrator decision 2026-10-18: implement this in verctl, over a per-repository publish task (rejected: it duplicates verctl logic) and a crates.io limit exception (not needed). Patch bump only.'
+    completed: 2026-10-22T04:00:47
+    evidence:
+      - 'Completed by #174 (b9c9f3d, 2026-10-18), whose subject names VER-069.'
+      - The remaining proof, task 2.4 of openspec/changes/cargo-workspace-publish, moves to VER-078.
+    disposition: completed
+
+  - id: VER-077
+    title: Leave a package at 0.0.0 out of the release plan
+    scope: verctl
+    outcome: >-
+      publish --plan and publish skip a package whose version is 0.0.0, so a crate
+      adopted before its first release plans nothing and the Version PR opens.
+    plan: openspec/changes/archive/2026-10-22-skip-unreleased-package/proposal.md
+    completed: 2026-10-22T03:51:21
+    evidence:
+      - 'verctl#204 merged 2026-10-22 and shipped in verctl 0.5.4 (Version PR #205).'
+      - Tests a_package_at_0_0_0_plans_nothing, publish_asks_no_changelog_of_a_package_at_0_0_0, dry_run_leaves_out_a_package_at_0_0_0 and dry_run_of_a_package_at_0_0_0_has_nothing_to_release passed in CI run 39727472324.
+    disposition: completed
+
   - id: VER-029
     title: The Version PR exemption must not race its own label
     scope: verctl
