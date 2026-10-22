@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.5.4
+
+- `verctl publish --plan` and `verctl publish` leave out a package at `0.0.0`, before any registry or GitHub lookup, `publish` asks no changelog section of it, and it gets no tag, so a new package beside a released one no longer breaks a shared `v{version}` tag. A crate that adopted the release workflow at `0.0.0` had its placeholder planned as a release, so every push to its default branch ran the publish job on the commit where `0.0.0` first appeared, and the Version PR job never ran ([#204](https://github.com/victor-software-house/verctl/pull/204)).
+
 ## verctl 0.5.3
 
 - `verctl semver` leaves out a crate with no library target, or a proc-macro, which cargo-semver-checks does not check. It ran `cargo semver-checks --package <crate>` on a binary-only crate, which cargo-semver-checks refuses, so a workspace package with a binary member failed ([#197](https://github.com/victor-software-house/verctl/pull/197)).
