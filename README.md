@@ -79,6 +79,8 @@ first release is `0.0.1`. Moving to `0.1.0` or `1.0.0` is a separate operator
 decision. `prepare` and `check` refuse a `minor` or `major` fragment on a
 package at `0.0.0`, including its pre-releases and builds; to open at
 `0.1.0` on purpose, set `first_minor: true` on the package in `.ctl/ver.yaml`.
+`publish` and `publish --plan` leave a package at `0.0.0` out, so a repo can
+adopt the release workflow before its first release.
 
 ## Changelog
 

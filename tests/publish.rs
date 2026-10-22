@@ -213,6 +213,79 @@ fn dry_run_lists_many_packages() {
     assert_eq!(publish_stdout(root.path()), expected);
 }
 
+/// A new package at `0.0.0` beside a released one is left out, so the shared
+/// `v{version}` tag still names one version.
+#[test]
+fn dry_run_leaves_out_a_package_at_0_0_0() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+              - name: extra
+                path: extra/Cargo.toml
+        "},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.0.0"
+        "#},
+    )
+    .unwrap();
+    fs::create_dir_all(root.path().join("extra")).unwrap();
+    fs::write(
+        root.path().join("extra/Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "extra"
+            version = "0.0.0"
+        "#},
+    )
+    .unwrap();
+    let expected = formatdoc! {"
+        ┌──────┬─────────┬───────┐
+        │ name ┆ version ┆ via   │
+        ╞══════╪═════════╪═══════╡
+        │ demo ┆ 1.0.0   ┆ cargo │
+        └──────┴─────────┴───────┘
+
+        release  would create v1.0.0
+        dry-run  nothing published
+    "};
+    assert_eq!(publish_stdout(root.path()), expected);
+}
+
+/// A dry run agrees with `publish`: a repository whose only package is at
+/// `0.0.0` has nothing to release.
+#[test]
+fn dry_run_of_a_package_at_0_0_0_has_nothing_to_release() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "0.0.0"
+        "#},
+    )
+    .unwrap();
+    let stdout = publish_stdout(root.path());
+    assert!(stdout.contains("nothing to release"), "{stdout}");
+}
+
 #[test]
 fn dry_run_refuses_differing_versions_without_name() {
     let root = TempDir::new().unwrap();
@@ -315,6 +388,84 @@ fn publish_with_matching_changelog_asks_for_token() {
 
             - First.
         "},
+    )
+    .unwrap();
+    let output = common::verctl()
+        .current_dir(root.path())
+        .env_remove("GITHUB_TOKEN")
+        .env_remove("GH_TOKEN")
+        .args(["publish", "--color", "never"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("GITHUB_TOKEN"), "{stderr}");
+    assert!(!stderr.contains("changelog section"), "{stderr}");
+}
+
+/// A crate that adopts the release workflow at `0.0.0` has nothing to
+/// release. The GitHub API address is closed, so any lookup for the package
+/// would fail the plan.
+#[test]
+fn a_package_at_0_0_0_plans_nothing() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "0.0.0"
+        "#},
+    )
+    .unwrap();
+    common::init(root.path());
+    common::commit_all(root.path(), "chore: adopt");
+    let github_output = root.path().join("github-output");
+    let output = common::verctl()
+        .current_dir(root.path())
+        .env("GITHUB_TOKEN", "test")
+        .env("GITHUB_REPOSITORY", "acme/demo")
+        .env("GITHUB_API_URL", "http://127.0.0.1:9")
+        .env("GITHUB_OUTPUT", &github_output)
+        .args(["publish", "--plan", "--color", "never"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("nothing to release"), "{stdout}");
+    let written = fs::read_to_string(&github_output).unwrap();
+    assert!(written.contains("pending=false"), "{written}");
+}
+
+/// `publish` asks no changelog section of a package at `0.0.0`, and goes on
+/// to the token check.
+#[test]
+fn publish_asks_no_changelog_of_a_package_at_0_0_0() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "0.0.0"
+        "#},
     )
     .unwrap();
     let output = common::verctl()

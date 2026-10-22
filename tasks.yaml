@@ -359,6 +359,19 @@ queue:
       - 'Found by ctl-core#149, whose Verify job failed with: cannot resolve the default branch (origin exists but origin/HEAD, origin/main, and origin/master are missing).'
       - 'Orchestrator decision 2026-10-19: fix it in verctl as publish already does, over a template fetch-depth: 0 on every Verify checkout. Patch bump.'
 
+  - id: VER-077
+    title: Leave a package at 0.0.0 out of the release plan
+    scope: verctl
+    outcome: >-
+      publish --plan and publish skip a package whose version is 0.0.0, so a crate
+      adopted before its first release plans nothing and the Version PR opens.
+    blocked_by: []
+    acceptance:
+      - pending leaves out a package at 0.0.0, with or without a pre-release or build suffix, before any registry or GitHub lookup
+      - A test proves a repository whose only package is at 0.0.0 plans nothing to release
+      - The instructions and the operator skill state the rule, and a patch changeset ships it
+    plan: openspec/changes/skip-unreleased-package/proposal.md
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
