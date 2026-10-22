@@ -43,6 +43,9 @@ A new package starts at `0.0.0`. Its first fragment is a `patch`, so
 its first release is `0.0.1`: `0.0.x` is the initial line. Moving to
 `0.1.0`, where a package claims a usable API, or to `1.0.0` is a
 separate operator decision, never the first fragment's bump.
+`publish` and `publish --plan` leave a package at `0.0.0` out before
+any lookup, so a repo can adopt the release workflow before its first
+release.
 
 `prepare` and `check` refuse a `minor` or `major` fragment on a package
 at `0.0.0`, including its pre-releases and builds, naming the package.

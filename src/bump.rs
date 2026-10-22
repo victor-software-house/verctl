@@ -3,6 +3,15 @@ use semver::Version;
 
 use crate::fragment::Bump;
 
+/// Whether `version` is a new package's placeholder: `0.0.0`, with or without
+/// a pre-release or build suffix. A new package releases `0.0.1` first, so a
+/// placeholder is never a release. A version that is not semver is not one.
+#[must_use]
+pub fn unreleased(version: &str) -> bool {
+    Version::parse(version)
+        .is_ok_and(|version| (version.major, version.minor, version.patch) == (0, 0, 0))
+}
+
 /// The version `bump` moves `current` to.
 ///
 /// Two bumps are refused. A `major` on any 0.x package, because 1.0 is a
@@ -20,8 +29,7 @@ pub fn apply(current: &str, bump: Bump, first_minor: bool) -> Result<String> {
         return Ok(current.to_owned());
     }
     let mut version = Version::parse(current).with_context(|| format!("semver {current:?}"))?;
-    let unreleased = (version.major, version.minor, version.patch) == (0, 0, 0);
-    if unreleased && bump > Bump::Patch && !first_minor {
+    if unreleased(current) && bump > Bump::Patch && !first_minor {
         bail!(
             "0.0.0 refuses a {} bump: a new package releases 0.0.1 first, from a patch \
              fragment; set `first_minor: true` on the package to open at 0.1.0",

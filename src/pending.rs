@@ -19,8 +19,8 @@ use crate::driver::Driver;
 use crate::git::{self, VersionCommit};
 use crate::github::{self, ReleaseState};
 use crate::publish::{self, PublishEntry};
-use crate::publisher;
 use crate::registry::RegistryCheck;
+use crate::{bump, publisher};
 
 /// Every version commit with an incomplete release, and the assets missing at
 /// each.
@@ -94,6 +94,10 @@ struct PackageState {
 
 /// Find every version commit with an incomplete release.
 ///
+/// A package at `0.0.0` is left out before any lookup: it has never been
+/// released, and its first release is the `0.0.1` a Version PR prepares (see
+/// [`bump::unreleased`]).
+///
 /// With `skip_assets`, declared assets do not count toward completeness, so a
 /// repository that turns assets off still reaches nothing to release.
 ///
@@ -116,17 +120,25 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
         (plan.matrix.include, plan.tag)
     };
     let mut found = Vec::new();
-    for (spec, entry) in config.packages.iter().zip(&planned.packages) {
+    for (index, (spec, entry)) in config.packages.iter().zip(&planned.packages).enumerate() {
+        if bump::unreleased(&entry.version) {
+            continue;
+        }
         let driver = spec.resolve(config, root)?;
         let commit = git::version_commit(root, &root.join(&spec.path), &|raw: &str| {
             version_in(&driver, raw)
         })?;
-        found.push(((spec, driver), entry, tag_of(&planned, entry)?, commit));
+        found.push((
+            (index, spec, driver),
+            entry,
+            tag_of(&planned, entry)?,
+            commit,
+        ));
     }
     let release_commits = newest_per_tag(&found);
     let mut states = Vec::new();
     let mut releases: BTreeMap<String, ReleaseState> = BTreeMap::new();
-    for (index, ((spec, driver), entry, tag, _)) in found.iter().enumerate() {
+    for ((index, spec, driver), entry, tag, _) in &found {
         let commit = release_commits[tag.as_str()].clone();
         let release = match releases.entry(tag.clone()) {
             Entry::Occupied(held) => held.into_mut(),
@@ -151,7 +163,7 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
             Some(_) | None => commit,
         };
         let listed = registry_lists(config, root, spec, entry, release)?;
-        let declared: &[MatrixTarget] = if index == 0 { &targets } else { &[] };
+        let declared: &[MatrixTarget] = if *index == 0 { &targets } else { &[] };
         states.push(state_of(entry, commit, listed, release, declared));
     }
     Ok(group(states, &assets_tag))

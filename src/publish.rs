@@ -15,7 +15,7 @@ use serde::Serialize;
 use crate::config::{Config, NAME_PLACEHOLDER};
 use crate::publisher::Upload;
 use crate::registry::{self, RegistryCheck};
-use crate::{git, github, pending, process, publisher, release};
+use crate::{bump, git, github, pending, process, publisher, release};
 
 /// How long one package upload may run.
 pub const PUBLISH_TIMEOUT: Duration = Duration::from_mins(10);
@@ -167,7 +167,8 @@ pub struct Waiting {
 /// A run on any other commit with an incomplete release fails before any side
 /// effect and names the version commits, so a later commit can never tag one
 /// that was never published. With `skip_assets`, declared assets do not count
-/// toward completeness. A dry run plans every package and asks nothing.
+/// toward completeness. A package at `0.0.0` is never released and needs no
+/// changelog section. A dry run plans every package and asks nothing.
 ///
 /// # Errors
 ///
@@ -523,6 +524,7 @@ fn prove_version_commit(config: &Config, root: &Path, planned: &PublishPlan) -> 
         planned
             .packages
             .iter()
+            .filter(|entry| !bump::unreleased(&entry.version))
             .map(|entry| (entry.name.as_str(), entry.version.as_str())),
     )?;
     if let Some(branch) = git::configured_default_branch() {

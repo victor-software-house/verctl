@@ -329,3 +329,81 @@ fn publish_with_matching_changelog_asks_for_token() {
     assert!(stderr.contains("GITHUB_TOKEN"), "{stderr}");
     assert!(!stderr.contains("changelog section"), "{stderr}");
 }
+
+/// A crate that adopts the release workflow at `0.0.0` has nothing to
+/// release. The GitHub API address is closed, so any lookup for the package
+/// would fail the plan.
+#[test]
+fn a_package_at_0_0_0_plans_nothing() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "0.0.0"
+        "#},
+    )
+    .unwrap();
+    common::init(root.path());
+    common::commit_all(root.path(), "chore: adopt");
+    let github_output = root.path().join("github-output");
+    let output = common::verctl()
+        .current_dir(root.path())
+        .env("GITHUB_TOKEN", "test")
+        .env("GITHUB_REPOSITORY", "acme/demo")
+        .env("GITHUB_API_URL", "http://127.0.0.1:9")
+        .env("GITHUB_OUTPUT", &github_output)
+        .args(["publish", "--plan", "--color", "never"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("nothing to release"), "{stdout}");
+    let written = fs::read_to_string(&github_output).unwrap();
+    assert!(written.contains("pending=false"), "{written}");
+}
+
+/// `publish` asks no changelog section of a package at `0.0.0`, and goes on
+/// to the token check.
+#[test]
+fn publish_asks_no_changelog_of_a_package_at_0_0_0() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "0.0.0"
+        "#},
+    )
+    .unwrap();
+    let output = common::verctl()
+        .current_dir(root.path())
+        .env_remove("GITHUB_TOKEN")
+        .env_remove("GH_TOKEN")
+        .args(["publish", "--color", "never"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("GITHUB_TOKEN"), "{stderr}");
+    assert!(!stderr.contains("changelog section"), "{stderr}");
+}

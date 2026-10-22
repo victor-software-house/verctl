@@ -80,6 +80,8 @@ first release is `0.0.1`. Moving to `0.1.0` or `1.0.0` is a separate operator
 decision, never the first fragment's bump. `prepare` and `check` refuse a
 `minor` or `major` fragment on a `0.0.0` package; `first_minor: true` on the
 package in `.ctl/ver.yaml` opens it at `0.1.0`, and only the operator sets it.
+`publish` and `publish --plan` leave a package at `0.0.0` out, so a repo can
+adopt the release workflow before its first release.
 
 A repo declares everything in `.ctl/ver.yaml`, the one file verctl reads;
 `.ctl/` is shared with the other ctl CLIs and templates live in
