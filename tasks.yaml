@@ -359,19 +359,6 @@ queue:
       - 'Found by ctl-core#149, whose Verify job failed with: cannot resolve the default branch (origin exists but origin/HEAD, origin/main, and origin/master are missing).'
       - 'Orchestrator decision 2026-10-19: fix it in verctl as publish already does, over a template fetch-depth: 0 on every Verify checkout. Patch bump.'
 
-  - id: VER-077
-    title: Leave a package at 0.0.0 out of the release plan
-    scope: verctl
-    outcome: >-
-      publish --plan and publish skip a package whose version is 0.0.0, so a crate
-      adopted before its first release plans nothing and the Version PR opens.
-    blocked_by: []
-    acceptance:
-      - pending leaves out a package at 0.0.0, with or without a pre-release or build suffix, before any registry or GitHub lookup
-      - A test proves a repository whose only package is at 0.0.0 plans nothing to release
-      - The instructions and the operator skill state the rule, and a patch changeset ships it
-    plan: openspec/changes/skip-unreleased-package/proposal.md
-
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
@@ -664,6 +651,19 @@ horizon:
       - 'Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.'
 
 archive:
+  - id: VER-077
+    title: Leave a package at 0.0.0 out of the release plan
+    scope: verctl
+    outcome: >-
+      publish --plan and publish skip a package whose version is 0.0.0, so a crate
+      adopted before its first release plans nothing and the Version PR opens.
+    plan: openspec/changes/archive/2026-10-22-skip-unreleased-package/proposal.md
+    completed: 2026-10-22T03:51:21
+    evidence:
+      - 'verctl#204 merged 2026-10-22 and shipped in verctl 0.5.4 (Version PR #205).'
+      - Tests a_package_at_0_0_0_plans_nothing, publish_asks_no_changelog_of_a_package_at_0_0_0, dry_run_leaves_out_a_package_at_0_0_0 and dry_run_of_a_package_at_0_0_0_has_nothing_to_release passed in CI run 39727472324.
+    disposition: completed
+
   - id: VER-029
     title: The Version PR exemption must not race its own label
     scope: verctl
