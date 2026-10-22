@@ -378,7 +378,7 @@ fn open_release(
 
 /// What a dry run would publish: every package not at `0.0.0`, a workspace
 /// package as its members in publish order, and every tag. It asks no
-/// registry.
+/// registry. With every package at `0.0.0`, there is nothing to release.
 fn dry_run_plan(config: &Config, root: &Path, planned: &PublishPlan) -> Result<PublishRun> {
     let releases = planned
         .tags
@@ -400,8 +400,13 @@ fn dry_run_plan(config: &Config, root: &Path, planned: &PublishPlan) -> Result<P
             None => packages.push(PublishLine::from(entry)),
         }
     }
+    let outcome = if packages.is_empty() {
+        Outcome::NothingToRelease
+    } else {
+        Outcome::Released
+    };
     Ok(PublishRun {
-        outcome: Outcome::Released,
+        outcome,
         published: PublishOutcome { packages, releases },
         waiting: Vec::new(),
     })

@@ -260,6 +260,32 @@ fn dry_run_leaves_out_a_package_at_0_0_0() {
     assert_eq!(publish_stdout(root.path()), expected);
 }
 
+/// A dry run agrees with `publish`: a repository whose only package is at
+/// `0.0.0` has nothing to release.
+#[test]
+fn dry_run_of_a_package_at_0_0_0_has_nothing_to_release() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "0.0.0"
+        "#},
+    )
+    .unwrap();
+    let stdout = publish_stdout(root.path());
+    assert!(stdout.contains("nothing to release"), "{stdout}");
+}
+
 #[test]
 fn dry_run_refuses_differing_versions_without_name() {
     let root = TempDir::new().unwrap();
