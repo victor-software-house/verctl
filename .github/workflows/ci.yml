@@ -5,7 +5,9 @@ on:
   # branch, and base, read through the API when it runs, so no label event
   # needs a run. Changing a pull request's base starts no run: re-run the
   # workflow by hand after retargeting one.
+  # A draft pull request runs no CI; marking it ready starts the run.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
 
@@ -23,7 +25,9 @@ env:
   MISE_ENV: ci
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}-${{ github.event.pull_request.base.sha || github.sha }}
+  # One run per branch: a new push, or a retarget after the base merges,
+  # cancels the run it replaces, on the default branch as on a pull request.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -35,6 +39,7 @@ jobs:
   # compiler. This one builds the verctl it plans with: `mise run ver` runs
   # this checkout, so a new verb plans its own pull request.
   plan:
+    if: ${{ !github.event.pull_request.draft }}
     name: Plan
     runs-on: ubuntu-latest
     outputs:
@@ -57,6 +62,7 @@ jobs:
         run: mise run ver ci --github-output "$GITHUB_OUTPUT"
 
   verify:
+    if: ${{ !github.event.pull_request.draft }}
     name: ${{ matrix.name }}
     needs: plan
     strategy:
