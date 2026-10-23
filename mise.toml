@@ -1,5 +1,5 @@
 # The latest stable mise is the floor; CI pins the same version.
-min_version = "2026.10.9"
+min_version = "2026.10.17"
 
 [settings]
 # mise loads git:: task includes only in experimental mode.
@@ -72,8 +72,8 @@ includes = [
   # Pinned git:: catalogs follow mise-tasks.
   "mise-tasks",
   "git::https://github.com/victor-software-house/qctl.git//tasks/q?ref=v0.5.9",
-  # The shared Rust tasks, at actions main, 2026-10-21.
-  "git::https://github.com/victor-software-house/actions.git//tasks/rust.toml?ref=a04de3586cc377e1c7d98972f10ae7e8fb4c0631",
-  # template:check, template:off, and template:on, at actions main, 2026-10-21.
-  "git::https://github.com/victor-software-house/actions.git//tasks/template.toml?ref=a04de3586cc377e1c7d98972f10ae7e8fb4c0631",
+  # The shared Rust tasks, at actions main, 2026-10-22.
+  "git::https://github.com/victor-software-house/actions.git//tasks/rust.toml?ref=139ef87290aa73f99f37d486e94baca96bad5a36",
+  # template:check, template:off, and template:on, at actions main, 2026-10-22.
+  "git::https://github.com/victor-software-house/actions.git//tasks/template.toml?ref=139ef87290aa73f99f37d486e94baca96bad5a36",
 ]
