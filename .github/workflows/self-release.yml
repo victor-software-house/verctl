@@ -16,7 +16,7 @@ on:
 permissions:
   contents: write # tags, Releases, assets, and verctl/release/main without the App
   pull-requests: write # the Version PR without the App
-  # release.yml's publish job requests it for crates.io trusted publishing.
+  # crates.io trusted publishing in release.yml's publish job.
   id-token: write
 
 jobs:
@@ -89,7 +89,9 @@ jobs:
       # puts the build above.
       mise-env: ci,release
       verctl-artifact: verctl
+      # crates.io lists this repository and self-release.yml as verctl's
+      # trusted publisher.
+      crates-io-trusted-publishing: true
     secrets:
       app-client-id: ${{ secrets.CHANGESET_VERSION_APP_CLIENT_ID }}
       app-private-key: ${{ secrets.CHANGESET_VERSION_APP_PRIVATE_KEY }}
-      registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
