@@ -65,7 +65,16 @@ gix = { version = "0.89.0", default-features = false, features = [
 jsonc-parser = { version = "0.33.1", features = ["cst"] }
 serde_json = "1.0.145"
 minijinja = { version = "2.24.0", features = ["deserialization", "serde"] }
-octocrab = "0.54.1"
+# verctl authenticates with a personal token only, so octocrab's JWT backends stay off.
+octocrab = { version = "0.54.5", default-features = false, features = [
+  "default-client",
+  "follow-redirect",
+  "retry",
+  "rustls",
+  "rustls-ring",
+  "timeout",
+  "tracing",
+] }
 os_pipe = "1.2.3"
 regex = "1.13.1"
 # The crates.io sparse index and docs.rs reads (VER-066). gix's HTTP transport
