@@ -476,6 +476,10 @@ async fn require_tag_at(crab: &Octocrab, repo: &Repo, tag: &str, sha: &str) -> R
     Ok(())
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "octocrab's ref Object is non_exhaustive, so a catch-all arm is required"
+)]
 async fn tag_commit_sha(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<String> {
     let git_ref = crab
         .repos(&repo.owner, &repo.name)
@@ -487,11 +491,7 @@ async fn tag_commit_sha(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<Strin
         octocrab::models::repos::Object::Tag { sha: tag_sha, .. } => {
             peel_tag(crab, repo, tag, &tag_sha).await
         }
-        other @ (octocrab::models::repos::Object::Tree { .. }
-        | octocrab::models::repos::Object::Blob { .. }) => {
-            bail!("tag {tag} names {other:?}, not a commit")
-        }
-        _ => bail!("tag {tag} names an object that is not a commit"),
+        other => bail!("tag {tag} names {other:?}, not a commit"),
     }
 }
 
