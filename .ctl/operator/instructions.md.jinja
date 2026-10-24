@@ -138,7 +138,10 @@ declared manifest to the merge-base of HEAD and the default branch.
 It fails when they differ. Exempt only on a `verctl/release/<base>`
 branch locally, or when the pull request of the GitHub event is a
 Version PR: its head repository is this repository, and its head branch
-is `verctl/release/<base>` for the base it targets. When a version
+is `verctl/release/<base>` for the base it targets. A merge queue run
+(a `merge_group` event) skips too: each entry's pull request already
+compared its own versions, and an entry behind the Version PR carries its
+versions. When a version
 differs, the check reads all three through the API, so the job needs
 `GITHUB_TOKEN` with `pull-requests: read`; a pull request that changes
 no version reads nothing. Labels, title, and body are never read, and

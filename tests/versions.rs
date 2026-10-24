@@ -459,6 +459,34 @@ fn a_pull_request_that_changes_no_version_reads_no_api() {
     assert!(!stdout.contains("version-pr"), "{stdout}");
 }
 
+/// A merge queue run skips a changed version without reading the API: the
+/// Version PR's own entry, and every entry behind it, carry its versions.
+#[test]
+fn a_merge_queue_run_skips_a_changed_version() {
+    let dir = repo_with_origin_main("1.0.0");
+    write_crate(dir.path(), "1.0.1");
+    let event = dir.path().join("event.json");
+    fs::write(
+        &event,
+        r#"{"action":"checks_requested","merge_group":{"head_ref":"refs/heads/gh-readonly-queue/main/pr-7-0000000000000000000000000000000000000001","base_ref":"refs/heads/main"}}"#,
+    )
+    .unwrap();
+    let output = check_cmd(dir.path())
+        .env("GITHUB_ACTIONS", "true")
+        .env("GITHUB_EVENT_PATH", &event)
+        .env("GITHUB_REPOSITORY", "owner/demo")
+        .env("GITHUB_API_URL", "http://127.0.0.1:9")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{stdout}{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(stdout.contains("merge-queue"), "{stdout}");
+}
+
 #[tokio::test]
 async fn the_version_pr_identity_is_exempt() {
     let server = pull_api("owner/demo", "verctl/release/main", "main").await;

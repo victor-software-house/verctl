@@ -18,12 +18,16 @@ pub enum Skip {
     Ci,
     /// Skip on the Version PR, where versions are meant to differ.
     VersionBranch,
+    /// Skip in a merge queue run. Each entry's pull request already compared
+    /// its own versions, and a queue run combines entries, so a Version PR
+    /// ahead in the queue changes the versions every later entry sees.
+    MergeQueue,
 }
 
 impl Skip {
     /// Detect a Version PR from the current branch, when it is a
     /// `verctl/release/<base>` branch, or from the identity of the event's
-    /// pull request.
+    /// pull request, and a merge queue run from the event.
     ///
     /// # Errors
     ///
@@ -34,6 +38,9 @@ impl Skip {
     pub fn from_env(root: &Path) -> Result<Self> {
         if on_version_branch(root) {
             return Ok(Self::VersionBranch);
+        }
+        if crate::github::event_is_merge_group() {
+            return Ok(Self::MergeQueue);
         }
         // Detached Actions checkout: the pull request's head repository, head
         // branch, and live base, read from the API. Not GITHUB_HEAD_REF /
@@ -51,6 +58,7 @@ impl Skip {
             Self::None => None,
             Self::Ci => Some("ci"),
             Self::VersionBranch => Some("version-pr"),
+            Self::MergeQueue => Some("merge-queue"),
         }
     }
 }
