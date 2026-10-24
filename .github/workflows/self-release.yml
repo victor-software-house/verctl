@@ -16,6 +16,8 @@ on:
 permissions:
   contents: write # tags, Releases, assets, and verctl/release/main without the App
   pull-requests: write # the Version PR without the App
+  # release.yml's publish job requests it for crates.io trusted publishing.
+  id-token: write
 
 jobs:
   build:

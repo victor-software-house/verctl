@@ -26,16 +26,19 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write
 jobs:
   release:
-    uses: victor-software-house/verctl/.github/workflows/release.yml@<sha> # v0.4.6
+    uses: victor-software-house/verctl/.github/workflows/release.yml@<sha> # v0.6.0
+    with:
+      crates-io-trusted-publishing: true
     secrets:
       app-client-id: ${{ secrets.CHANGESET_VERSION_APP_CLIENT_ID }}
       app-private-key: ${{ secrets.CHANGESET_VERSION_APP_PRIVATE_KEY }}
-      registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 ```
 
-The caller grants `contents: write` for tags and Releases and
+The caller grants `contents: write` for tags and Releases,
+`id-token: write` for crates.io trusted publishing, and
 `pull-requests: write` for the Version PR: a called workflow's
 `GITHUB_TOKEN` cannot exceed what the caller grants, and `propose` falls
 back to it when no App secret is mapped. That fallback also needs the
@@ -70,6 +73,7 @@ override.
 | `title` | string | `""` | Version PR title; empty means `chore(release): version packages` |
 | `commit-message` | string | `""` | Version PR commit message; empty means the title |
 | `registry-token-env` | string | `CARGO_REGISTRY_TOKEN` | the variable the `registry-token` secret is exported as for the publisher |
+| `crates-io-trusted-publishing` | boolean | `false` | publish to crates.io with a trusted-publishing token from `rust-lang/crates-io-auth-action`, exported as `registry-token-env`, in place of the `registry-token` secret; the publish job requests `id-token: write`, which every caller grants |
 
 | Secret | Required | Without it |
 |:--|:--|:--|
