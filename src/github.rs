@@ -487,7 +487,11 @@ async fn tag_commit_sha(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<Strin
         octocrab::models::repos::Object::Tag { sha: tag_sha, .. } => {
             peel_tag(crab, repo, tag, &tag_sha).await
         }
-        other => bail!("tag {tag} names {other:?}, not a commit"),
+        other @ (octocrab::models::repos::Object::Tree { .. }
+        | octocrab::models::repos::Object::Blob { .. }) => {
+            bail!("tag {tag} names {other:?}, not a commit")
+        }
+        _ => bail!("tag {tag} names an object that is not a commit"),
     }
 }
 
