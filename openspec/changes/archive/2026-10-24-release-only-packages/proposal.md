@@ -10,7 +10,7 @@ to publish. That command is a workaround for a missing mode.
 Queue row: VER-057.
 A patch: no public type changes, and `PackageSpec.publisher` already takes a name.
 
-It fits [VER-011](../release-state-machine/proposal.md): in the release state
+It fits [VER-011](../../release-state-machine/proposal.md): in the release state
 machine, a release-only package is one with no Registry block.
 This change gives that state a name now.
 

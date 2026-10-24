@@ -51,5 +51,5 @@ holds `contents: write`, `metadata: read`, and `pull_requests: write`, and no
 repository, so it was an operator decision. The operator decided on
 2026-10-19 that no App gets `workflows: write`: a registry-checked package is
 tagged before its uploads instead, in the run that merged the Version PR
-([tag-at-merge](../tag-at-merge/design.md), VER-073). The error and the docs
+([tag-at-merge](../2026-10-24-tag-at-merge/design.md), VER-073). The error and the docs
 still carry the remedy for a package with an unchecked upload.

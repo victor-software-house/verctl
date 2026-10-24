@@ -1,5 +1,5 @@
-# yaml-language-server: $schema=https://github.com/victor-software-house/qctl/releases/download/v0.5.9/tasks.schema.json
-schema_version: 4
+# yaml-language-server: $schema=https://github.com/victor-software-house/qctl/releases/download/v0.6.0/tasks.schema.json
+schema_version: 5
 prefix: VER
 
 style:
@@ -30,6 +30,7 @@ queue:
     notes:
       - 'Original product goal. Do not name the private release-skill in repo docs. Rust and bun are stock examples, not the architecture. Adopt ctl-core fixture trees (CTC-006) instead of more fs::write + indoc copies. 2026-08-17: status/check/prepare are ColorMode tables; publish proves changelog headings + default-branch history (no commit-subject sniff); GitHub notes come from each package CHANGELOG. Hand-edit guard shipped as VER-012 / PR #9. Still open for archive: lockfile-after-bump (VER-013).'
       - '2026-10-12 (UTC): the operator approved all eight decisions of the OpenSpec change release-state-machine as recommended: (1) derive release state from facts on every run, with no state file or labels; (2) release on push to the release branch, then propose; (3) identify the Version PR by head repository, head branch, and base, and verify its content; (4) one Version PR per base on verctl/release/<base>, with no per-package PRs and no version in the branch name; (5) built-in cargo and bun as providers of building blocks, extensions as steps run through mise tasks or argv, declared ecosystems for other stacks; (6) mise installs, verifies, runs steps, and owns mise.lock, and verctl writes no lockfile; (7) bun-release in Rust as option (b), Bun packs and verctl owns the registry protocol; (8) ship 0.4.0 from an integration branch next, then patches. The held plan on feat/011-refresh-lockfile is replaced by that change and deleted unpushed.'
+    plan: openspec/changes/release-state-machine/proposal.md
 
   - id: VER-015
     title: Asset runners are configuration, not a hardcoded map
@@ -226,20 +227,6 @@ queue:
       - 'Related: VER-029, the Version PR label race.'
       - '2026-10-12 (UTC): the decision also covers whether verctl should verify the ruleset that limits pushes on the proposal branch `verctl/release/<base>` to the release identity, in `check` or a separate command. The release-state-machine design documents that ruleset but does not verify it.'
 
-  - id: VER-051
-    title: Fill each changelog entry with its pull request and commit, and apply internalAuthors
-    scope: src/release.rs changelog_sections, src/changelog.rs
-    outcome: Every changelog entry and Release body links the pull request that added its fragment, and internalAuthors hides the byline it lists.
-    blocked_by: []
-    acceptance:
-      - changelog_sections resolves the commit that added each fragment and the pull request that merged it, and passes both to the template instead of None.
-      - with_author_filter is applied with the configured internalAuthors, so a listed login renders no byline.
-      - A test renders an entry with its pull request link and one with an internal author.
-    notes:
-      - 'release::changelog_sections passes pull_request: None and commit: None, and ChangelogInput::with_author_filter is defined but never called, so internalAuthors is documented and has no effect (main at 9596fb7, verctl 0.3.14). Reported by a consumer adopting verctl that wants a short (#N) per entry and no author credit.'
-      - 'Decision (operator, 2026-10-12): render the reference as a short (#N) and credit no maintainer by default; credit outside contributors only. OpenSpec change changelog-references.'
-      - 'Follow-up (2026-10-12): the author lookup credited the owner on Version PR #118, so it is removed and no entry carries a byline; VER-054 adds the explicit list on next.'
-
   - id: VER-071
     title: Every action loads as YAML
     scope: actions/version-pr/action.yml, tests/action_publish.rs
@@ -249,35 +236,6 @@ queue:
       - Every `actions/*/action.yml` parses as YAML in a test, so a file GitHub cannot load fails CI.
     notes:
       - 'VER-064 (#155) added an unquoted `: ` to the version-pr `title` description, so v0.4.6 to v0.4.8 shipped an action that GitHub refuses ("Mapping values are not allowed in this context"). Found in shrub run 39190679995. actionlint reads only workflows, so nothing caught it.'
-
-  - id: VER-072
-    title: Release from shallow clones and drifted workflow trees
-    scope: src/git.rs, src/publish.rs, src/main.rs, src/github.rs, operator docs
-    outcome: A depth-1 checkout releases without a manual fetch, and a Release GitHub refuses for a missing workflows permission says so and how to fix it.
-    blocked_by: []
-    acceptance:
-      - With `VERCTL_DEFAULT_BRANCH` set, `publish` and `publish --plan` fetch the whole history of that branch when the clone is shallow; without it the shallow error names the variable.
-      - 'A 403 on Release creation is matched on the typed status and names `workflows: write`, the commit, and that `GITHUB_TOKEN` cannot hold it.'
-      - The operator instructions and README say to adopt `release.yml` only when no release is pending, or to merge the adoption before the Version PR.
-    notes:
-      - OpenSpec change release-from-shallow-and-drifted-trees.
-      - 'Evidence from a consumer adoption: shallow clone in run 39195633667, 403 "Resource not accessible by integration" after every crate published in run 39198937088, "no task ver found" in run 39196692461.'
-      - 'Operator decision 2026-10-19: no App gets workflows: write, and release.yml keeps GITHUB_TOKEN for publish. A registry-checked package is tagged in the Version PR merge run instead, before its uploads (VER-073), so a retry creates no tag GitHub would check.'
-
-  - id: VER-073
-    title: Tag at merge for registry-checked packages
-    scope: src/publish.rs, src/docsrs.rs, src/pending.rs, src/github.rs, operator docs
-    outcome: >-
-      A release whose upload fails retries at its version commit without creating a
-      tag or Release, so a later workflow change cannot make GitHub refuse it.
-    blocked_by: []
-    acceptance:
-      - A tag whose packages all have a registry check, or no upload, gets its tag and Release before any upload in the publish run.
-      - A tag with an unchecked upload gets its tag and Release after the uploads, as before.
-      - verctl docs waits only for crates the crates.io index lists, so a tag created before a failed upload does not start a docs.rs wait.
-    notes:
-      - OpenSpec change tag-at-merge in openspec/changes/tag-at-merge.
-      - 'Operator decision 2026-10-19: tag at merge for registry-checked packages; no workflows permission for any App, and no guard until a package with an unchecked real upload exists. It reverses publish-before-tag (VER-011) for registry-checked packages.'
 
   - id: VER-074
     title: release.yml input for mise config paths the release jobs ignore
@@ -294,9 +252,10 @@ queue:
       - session-lake's first release on it installs no root mise.toml tool outside propose.
     notes:
       - Design section 1.4 and task 3.4 of OpenSpec change reusable-release-workflow.
+    plan: openspec/changes/reusable-release-workflow/proposal.md
 
   - id: VER-075
-    title: "verctl semver: cargo-semver-checks at the release type the pending release allows"
+    title: 'verctl semver: cargo-semver-checks at the release type the pending release allows'
     scope: >-
       src/semver_check.rs, src/registry.rs, src/cli.rs, src/main.rs,
       src/presentation.rs, operator docs
@@ -313,6 +272,7 @@ queue:
       - OpenSpec change semver-release-type in openspec/changes/semver-release-type.
       - 'shrub#26, on verctl 0.5.1, failed its semver step: verctl ran cargo semver-checks --package shrub on the binary-only crate shrub, and cargo-semver-checks refused with "no crates with library targets selected".'
       - ctl-core's shared semver task calls mise run ver semver; a repository that does not serve the ver task runs its own verctl.
+    plan: openspec/changes/semver-release-type/proposal.md
 
   - id: VER-070
     title: A duplicate release asset upload reports already
@@ -324,7 +284,7 @@ queue:
       - An asset of that name in another state is re-read for up to a minute, since another run may still be sending it; one that never reaches `uploaded` fails and says to delete it and rerun.
       - Any other upload failure still fails.
     notes:
-      - 'Self-release runs 39188632481 and 39188754557 both released 2a7b33d (v0.4.8) and each lost one asset race with `already_exists`. The duplicate check text-matched `format!("{error:#}")`, but octocrab 0.54.1 displays `Error::GitHub` as "GitHub", so the code in `GitHubError.errors` never reached it.'
+      - Self-release runs 39188632481 and 39188754557 both released 2a7b33d (v0.4.8) and each lost one asset race with `already_exists`. The duplicate check text-matched `format!("{error:#}")`, but octocrab 0.54.1 displays `Error::GitHub` as "GitHub", so the code in `GitHubError.errors` never reached it.
       - Digests cannot decide a duplicate, because two builds of one commit produce different tarballs. No concurrency group on the asset legs; the idempotent upload makes it unnecessary.
 
   - id: VER-076
@@ -652,6 +612,49 @@ horizon:
       - 'Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.'
 
 archive:
+  - id: VER-073
+    title: Tag at merge for registry-checked packages
+    scope: src/publish.rs, src/docsrs.rs, src/pending.rs, src/github.rs, operator docs
+    outcome: >-
+      A release whose upload fails retries at its version commit without creating a
+      tag or Release, so a later workflow change cannot make GitHub refuse it.
+    notes:
+      - OpenSpec change tag-at-merge in openspec/changes/tag-at-merge.
+      - 'Operator decision 2026-10-19: tag at merge for registry-checked packages; no workflows permission for any App, and no guard until a package with an unchecked real upload exists. It reverses publish-before-tag (VER-011) for registry-checked packages.'
+    plan: openspec/changes/archive/2026-10-24-tag-at-merge/proposal.md
+    completed: 2026-10-24T00:18:45
+    evidence:
+      - openspec/changes/archive/2026-10-24-tag-at-merge/
+    disposition: completed
+
+  - id: VER-072
+    title: Release from shallow clones and drifted workflow trees
+    scope: src/git.rs, src/publish.rs, src/main.rs, src/github.rs, operator docs
+    outcome: A depth-1 checkout releases without a manual fetch, and a Release GitHub refuses for a missing workflows permission says so and how to fix it.
+    notes:
+      - OpenSpec change release-from-shallow-and-drifted-trees.
+      - 'Evidence from a consumer adoption: shallow clone in run 39195633667, 403 "Resource not accessible by integration" after every crate published in run 39198937088, "no task ver found" in run 39196692461.'
+      - 'Operator decision 2026-10-19: no App gets workflows: write, and release.yml keeps GITHUB_TOKEN for publish. A registry-checked package is tagged in the Version PR merge run instead, before its uploads (VER-073), so a retry creates no tag GitHub would check.'
+    plan: openspec/changes/archive/2026-10-24-release-from-shallow-and-drifted-trees/proposal.md
+    completed: 2026-10-24T00:18:45
+    evidence:
+      - openspec/changes/archive/2026-10-24-release-from-shallow-and-drifted-trees/
+    disposition: completed
+
+  - id: VER-051
+    title: Fill each changelog entry with its pull request and commit, and apply internalAuthors
+    scope: src/release.rs changelog_sections, src/changelog.rs
+    outcome: Every changelog entry and Release body links the pull request that added its fragment, and internalAuthors hides the byline it lists.
+    notes:
+      - 'release::changelog_sections passes pull_request: None and commit: None, and ChangelogInput::with_author_filter is defined but never called, so internalAuthors is documented and has no effect (main at 9596fb7, verctl 0.3.14). Reported by a consumer adopting verctl that wants a short (#N) per entry and no author credit.'
+      - 'Decision (operator, 2026-10-12): render the reference as a short (#N) and credit no maintainer by default; credit outside contributors only. OpenSpec change changelog-references.'
+      - 'Follow-up (2026-10-12): the author lookup credited the owner on Version PR #118, so it is removed and no entry carries a byline; VER-054 adds the explicit list on next.'
+    plan: openspec/changes/archive/2026-10-24-changelog-references/proposal.md
+    completed: 2026-10-24T00:18:45
+    evidence:
+      - openspec/changes/archive/2026-10-24-changelog-references/
+    disposition: completed
+
   - id: VER-069
     title: Publish a cargo workspace one member at a time
     scope: src/members.rs, src/publisher.rs, src/publish.rs, src/pending.rs, src/docsrs.rs, src/registry.rs, operator docs
@@ -700,7 +703,7 @@ archive:
     completed: 2026-10-18T23:02:06
     evidence:
       - 'Template v0.0.26 merged as #173 (8e180b1); Version PR #172 then merged by hand as a5502fe on 2026-10-18.'
-      - 'crates.io lists verctl 0.4.7, which carries VER-064, and tag v0.4.7 names a5502fe.'
+      - crates.io lists verctl 0.4.7, which carries VER-064, and tag v0.4.7 names a5502fe.
       - VERCTL_RELEASE_HOLD is deleted; gh variable list for the repository prints nothing.
       - This pull request removes the [package.metadata.cargo-semver-checks.lints] table, and its CI semver step passes against 0.4.7.
     disposition: completed
@@ -728,6 +731,7 @@ archive:
       - '#159 merged as e56ea95 on 2026-10-17 with its Closes trailer; its CI verify passed on the merged head.'
       - The 0.4.6 release run 39075339999 ran every verb as mise run ver <verb> with settings in env only.
     disposition: completed
+    plan: openspec/changes/archive/2026-10-24-env-bound-flags/proposal.md
 
   - id: VER-066
     title: Ship one reusable release workflow with an idempotent publish
@@ -744,6 +748,7 @@ archive:
       - '#171 makes verctl docs keep polling while docs.rs answers doc_status false for a running build; the 0.4.6 docs leg failed on that answer.'
       - OpenSpec tasks 4.2 (template renders the caller) stays open in the templates repository.
     disposition: completed
+    plan: openspec/changes/reusable-release-workflow/proposal.md
 
   - id: VER-064
     title: Derive Version PR defaults instead of hardcoding them
@@ -806,6 +811,7 @@ archive:
     evidence:
       - git2 is gone; gix 0.89 reads, fetches, and commits over rustls, git push carries the token through an env-reading credential helper, and deny.toml takes the openssl and native-tls bans.
     disposition: completed
+    plan: openspec/changes/archive/2026-10-24-gix-git-access/proposal.md
 
   - id: VER-049
     title: Deny missing_docs and missing_debug_implementations
@@ -847,6 +853,7 @@ archive:
     evidence:
       - 'Shipped in verctl 0.4.2 (#134, released by #135): publisher: none releases a package on GitHub only, with no registry upload.'
     disposition: completed
+    plan: openspec/changes/archive/2026-10-24-release-only-packages/proposal.md
 
   - id: VER-055
     title: Link the pull request that added a fragment, not the merge that brought it
@@ -869,6 +876,7 @@ archive:
     evidence:
       - 'Shipped in verctl 0.4.0 (#122, released by #127). verctl, qctl, forkctl, ctl-core, unixd, yamled, and flowgate list their maintainer and Apps in changelog.internal_authors.'
     disposition: completed
+    plan: openspec/changes/archive/2026-10-24-changelog-internal-authors/proposal.md
 
   - id: VER-052
     title: Group changelog entries under Added, Fixed, and Changed
@@ -881,6 +889,7 @@ archive:
     evidence:
       - 'Shipped in verctl 0.4.0 (#123, released by #127): the verctl:group fragment key and grouped changelog sections.'
     disposition: completed
+    plan: openspec/changes/archive/2026-10-24-changelog-groups/proposal.md
 
   - id: VER-048
     title: Take the shared Rust setup from the Copier template
@@ -901,6 +910,7 @@ archive:
     evidence:
       - 'Shipped in #110 (verctl 0.3.13). Version PR #111 had auto-merge enabled by the action and merged itself after Plan and verify passed, and publish released 0.3.13. Rulesets require CI on main in the six repos, and qctl #98, forkctl #91, ctl-core #106, unixd #28, and yamled #25 set auto-merge.'
     disposition: completed
+    plan: openspec/changes/archive/2026-10-24-version-pr-auto-merge/proposal.md
 
   - id: VER-046
     title: Declare the lock platforms so mise install leaves the locks unchanged
