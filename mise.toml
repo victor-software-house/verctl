@@ -34,9 +34,8 @@ taplo = "0.10.0"
 rumdl = "0.2.79"
 typos = "1.51.1"
 actionlint = "1.7.12"
-# OpenSpec runs on node.
-node = "24.21.0"
-"npm:@fission-ai/openspec" = "1.14.1"
+# OpenSpec's standalone release binary; it needs no node.
+"github:Fission-AI/OpenSpec" = "1.15.0"
 
 # The shared Rust tasks read their toolchains from here and name none.
 [env]
@@ -72,8 +71,8 @@ includes = [
   # Pinned git:: catalogs follow mise-tasks.
   "mise-tasks",
   "git::https://github.com/victor-software-house/qctl.git//tasks/q?ref=v0.6.0",
-  # The shared Rust tasks, at actions main, 2026-10-23.
-  "git::https://github.com/victor-software-house/actions.git//tasks/rust.toml?ref=1f79b4ff5eff1221289dad0baaf1b562037fc528",
-  # template:check, template:off, and template:on, at actions main, 2026-10-23.
-  "git::https://github.com/victor-software-house/actions.git//tasks/template.toml?ref=1f79b4ff5eff1221289dad0baaf1b562037fc528",
+  # The shared Rust tasks, at actions main, 2026-10-24.
+  "git::https://github.com/victor-software-house/actions.git//tasks/rust.toml?ref=e043b23758a65d7d1261246374bd105bbd4270d4",
+  # template:check, template:off, and template:on, at actions main, 2026-10-24.
+  "git::https://github.com/victor-software-house/actions.git//tasks/template.toml?ref=e043b23758a65d7d1261246374bd105bbd4270d4",
 ]
