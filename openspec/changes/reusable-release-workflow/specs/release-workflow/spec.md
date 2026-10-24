@@ -3,12 +3,15 @@
 ### Requirement: verctl ships one reusable release workflow
 
 verctl SHALL ship `.github/workflows/release.yml` triggered only by
-`workflow_call`. It SHALL declare the inputs `version-pr`, `publish`,
-`assets`, `docs`, `auto-merge`, `config`, `runner`, `mise-version`, `mise-env`,
-`mise-ignored-config-paths`, `title`, `commit-message`, `registry-token-env`, and `crates-io-trusted-publishing`, and the optional secrets
-`app-client-id`, `app-private-key`, and `registry-token`, each with the
-default the design's input table gives. A caller that passes no input SHALL
-get verctl's defaults.
+`workflow_call`. It SHALL declare every input and optional secret the
+design's input tables list, each with the default they give. A caller that
+passes no input SHALL get verctl's defaults.
+
+#### Scenario: The declared interface
+
+- **WHEN** a caller reads the workflow's `workflow_call` block
+- **THEN** it declares the inputs `version-pr`, `publish`, `assets`, `docs`, `auto-merge`, `config`, `runner`, `mise-version`, `mise-env`, `mise-ignored-config-paths`, `title`, `commit-message`, `registry-token-env` and `crates-io-trusted-publishing`
+- **AND** the optional secrets `app-client-id`, `app-private-key` and `registry-token`
 
 #### Scenario: A caller with no inputs
 
