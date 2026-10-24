@@ -23,10 +23,10 @@ that commit when the subject names no pull request.
 - **WHEN** `.changeset/fix.md` was added by commit `abc1234` with subject `fix: the parser`, and `verctl prepare --dry-run` runs
 - **THEN** the entry ends with `` ([`abc1234`](https://github.com/acme/demo/commit/<sha>)) ``
 
-### Requirement: No entry credits an author
+### Requirement: No maintainer is credited
 
-verctl SHALL write no author byline on any changelog entry, so no
-maintainer is credited.
+verctl SHALL write no author byline for a maintainer. Crediting an
+outside contributor follows the `changelog-credit` capability.
 
 #### Scenario: Maintainer pull request read as a contributor
 
