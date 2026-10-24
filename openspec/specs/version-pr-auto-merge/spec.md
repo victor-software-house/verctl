@@ -1,7 +1,8 @@
 # version-pr-auto-merge Specification
 
 ## Purpose
-TBD - created by archiving change version-pr-auto-merge. Update Purpose after archive.
+
+How a repository opts in to merging its Version PR once required checks pass.
 
 ## Requirements
 

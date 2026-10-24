@@ -1,7 +1,8 @@
 # changelog-groups Specification
 
 ## Purpose
-TBD - created by archiving change changelog-groups. Update Purpose after archive.
+
+How a fragment names its changelog group and how entries render under one heading per group.
 
 ## Requirements
 

@@ -1,7 +1,8 @@
 # env-flags Specification
 
 ## Purpose
-TBD - created by archiving change env-bound-flags. Update Purpose after archive.
+
+How every verctl option reads its value from a VERCTL environment variable.
 
 ## Requirements
 

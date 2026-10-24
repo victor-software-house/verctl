@@ -1,7 +1,8 @@
 # changelog-references Specification
 
 ## Purpose
-TBD - created by archiving change changelog-references. Update Purpose after archive.
+
+How each changelog entry links the pull request or commit that added it.
 
 ## Requirements
 

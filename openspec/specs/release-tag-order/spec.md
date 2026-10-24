@@ -1,7 +1,8 @@
 # release-tag-order Specification
 
 ## Purpose
-TBD - created by archiving change tag-at-merge. Update Purpose after archive.
+
+When a release tag and Release are created relative to the package uploads.
 
 ## Requirements
 

@@ -1,7 +1,8 @@
 # git-access Specification
 
 ## Purpose
-TBD - created by archiving change gix-git-access. Update Purpose after archive.
+
+How verctl reads and writes git without linking OpenSSL.
 
 ## Requirements
 

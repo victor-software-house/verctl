@@ -1,7 +1,8 @@
 # release-preconditions Specification
 
 ## Purpose
-TBD - created by archiving change release-from-shallow-and-drifted-trees. Update Purpose after archive.
+
+What a release needs from the clone and the workflow tree, and how a failure to meet it is reported.
 
 ## Requirements
 

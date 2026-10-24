@@ -1,7 +1,8 @@
 # changelog-credit Specification
 
 ## Purpose
-TBD - created by archiving change changelog-internal-authors. Update Purpose after archive.
+
+Which pull request authors a changelog entry credits, and which maintainers it leaves out.
 
 ## Requirements
 

@@ -1,7 +1,8 @@
 # release-only Specification
 
 ## Purpose
-TBD - created by archiving change release-only-packages. Update Purpose after archive.
+
+How a package is released on GitHub only, with no registry upload.
 
 ## Requirements
 

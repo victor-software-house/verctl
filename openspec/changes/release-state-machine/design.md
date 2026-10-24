@@ -142,7 +142,7 @@ Rules that hold across all transitions:
    registry check is tagged first, in the run that merged the Version PR,
    because the registry, not the tag, records the upload, and a rerun at an
    older commit could not create the tag without `workflows: write`
-   ([tag-at-merge](../tag-at-merge/design.md)).
+   ([tag-at-merge](../archive/2026-10-24-tag-at-merge/design.md)).
 5. verctl never decides one fact from another. A published version does not
    imply a tag, and a tag does not imply a Release.
 
