@@ -1,5 +1,11 @@
 # Changelog
 
+## verctl 0.7.0
+
+- `check --versions` skips in a merge queue run (a `merge_group` event). Each entry's pull request already compared its own versions, and the queue run of the Version PR, or of any entry behind it, carries the new versions, so without the skip the check would fail every release that lands through a queue.
+
+The library's public `versions::Skip` enum gains a `MergeQueue` variant, so a crate that matches on it exhaustively needs a new arm ([#220](https://github.com/victor-software-house/verctl/pull/220)).
+
 ## verctl 0.6.0
 
 - The reusable release workflow publishes to crates.io through trusted publishing with `crates-io-trusted-publishing: true`, so a caller keeps no registry token. Its publish job now requests `id-token: write`, which every caller grants in the same change that moves its pin, because GitHub checks a called job's permissions when the run starts ([#218](https://github.com/victor-software-house/verctl/pull/218)).
