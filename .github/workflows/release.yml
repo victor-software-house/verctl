@@ -330,6 +330,12 @@ jobs:
     runs-on: ${{ matrix.labels }}
     permissions:
       contents: write # uploads the tarball to the GitHub Release
+    # One tool at a time, in every mise command of the job: on macOS runners
+    # rustup fails to rename a component download ("could not rename
+    # 'downloaded' file") when mise installs two Rust toolchains at once,
+    # which failed the darwin-arm64 asset of verctl 0.6.0 (run 40147490485).
+    env:
+      MISE_JOBS: 1
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.plan.outputs.assets) }}
@@ -365,12 +371,6 @@ jobs:
           echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
       - name: Set up mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
-        # One tool at a time: on macOS runners rustup fails to rename a
-        # component download ("could not rename 'downloaded' file") when mise
-        # installs two Rust toolchains at once, which failed the darwin-arm64
-        # asset of verctl 0.6.0 (run 40147490485).
-        env:
-          MISE_JOBS: 1
         with:
           version: ${{ inputs.mise-version }}
           cache: true
