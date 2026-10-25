@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.7.1
+
+- The release workflow's asset jobs install tools one at a time. On macOS runners rustup failed to rename a component download when two Rust toolchains installed at once, which left a release without its darwin-arm64 asset ([#223](https://github.com/victor-software-house/verctl/pull/223)).
+
 ## verctl 0.7.0
 
 - `check --versions` skips in a merge queue run (a `merge_group` event). Each entry's pull request already compared its own versions, and the queue run of the Version PR, or of any entry behind it, carries the new versions, so without the skip the check would fail every release that lands through a queue.
