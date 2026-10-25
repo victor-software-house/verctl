@@ -8,8 +8,16 @@ on:
   # A draft pull request runs no CI; marking it ready starts the run.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  push:
-    branches: [main]
+  # The queue tests each entry on top of the ones ahead of it, so a push to
+  # the default branch has already passed and runs nothing.
+  merge_group:
+  # A merge_group run saves its build cache on its queue branch, which no pull
+  # request can restore from, and a schedule run saves none, so the daily
+  # refresh job dispatches this workflow on the default branch, whose run
+  # saves the cache pull requests restore from.
+  schedule:
+    - cron: "37 8 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -31,6 +39,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  refresh:
+    if: github.event_name == 'schedule'
+    # One API call: a GitHub-hosted runner, which bills no Namespace units.
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch CI on the default branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          WORKFLOW: ${{ github.workflow_ref }}
+        run: |
+          workflow=${WORKFLOW%@*}
+          gh workflow run "${workflow##*/}" --repo "$REPOSITORY" --ref main
+
   # runs-on must be known before a job exists, so the machine cannot come
   # from a tool running inside that job. This reads [ci] and hands
   # the labels down, the same bootstrap the publish lane uses for assets.
@@ -39,7 +64,7 @@ jobs:
   # compiler. This one builds the verctl it plans with: `mise run ver` runs
   # this checkout, so a new verb plans its own pull request.
   plan:
-    if: ${{ !github.event.pull_request.draft }}
+    if: ${{ !github.event.pull_request.draft && github.event_name != 'schedule' }}
     name: Plan
     runs-on: ubuntu-latest
     outputs:
@@ -57,12 +82,16 @@ jobs:
       - run: mise install --locked
       - name: Cache builds with mbx
         uses: jdx/mr-boxington-action@47ce49b32025d93a7a2f4570815afaa2b7092240 # v1.7.2
+        with:
+          # The daily dispatch run on main saves the cache pull requests
+          # restore from; a merge_group run saves on its queue branch.
+          save-on-workflow-dispatch: true
       - name: Plan validation jobs
         id: plan
         run: mise run ver ci --github-output "$GITHUB_OUTPUT"
 
   verify:
-    if: ${{ !github.event.pull_request.draft }}
+    if: ${{ !github.event.pull_request.draft && github.event_name != 'schedule' }}
     name: ${{ matrix.name }}
     needs: plan
     strategy:
@@ -83,6 +112,10 @@ jobs:
       - run: mise install --locked
       - name: Cache builds with mbx
         uses: jdx/mr-boxington-action@47ce49b32025d93a7a2f4570815afaa2b7092240 # v1.7.2
+        with:
+          # The daily dispatch run on main saves the cache pull requests
+          # restore from; a merge_group run saves on its queue branch.
+          save-on-workflow-dispatch: true
       - name: Verify
         env:
           GITHUB_TOKEN: ${{ github.token }}
