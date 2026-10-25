@@ -330,6 +330,12 @@ jobs:
     runs-on: ${{ matrix.labels }}
     permissions:
       contents: write # uploads the tarball to the GitHub Release
+    # One tool at a time, in every mise command of the job: on macOS runners
+    # rustup fails to rename a component download ("could not rename
+    # 'downloaded' file") when mise installs two Rust toolchains at once,
+    # which failed the darwin-arm64 asset of verctl 0.6.0 (run 40147490485).
+    env:
+      MISE_JOBS: 1
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.plan.outputs.assets) }}
