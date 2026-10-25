@@ -3,12 +3,15 @@
 ### Requirement: verctl ships one reusable release workflow
 
 verctl SHALL ship `.github/workflows/release.yml` triggered only by
-`workflow_call`. It SHALL declare the inputs `version-pr`, `publish`,
-`assets`, `docs`, `auto-merge`, `config`, `runner`, `mise-version`, `mise-env`,
-`mise-ignored-config-paths`, `title`, `commit-message`, and `registry-token-env`, and the optional secrets
-`app-client-id`, `app-private-key`, and `registry-token`, each with the
-default the design's input table gives. A caller that passes no input SHALL
-get verctl's defaults.
+`workflow_call`. It SHALL declare every input and optional secret the
+design's input tables list, each with the default they give. A caller that
+passes no input SHALL get verctl's defaults.
+
+#### Scenario: The declared interface
+
+- **WHEN** a caller reads the workflow's `workflow_call` block
+- **THEN** it declares the inputs `version-pr`, `publish`, `assets`, `docs`, `auto-merge`, `config`, `runner`, `mise-version`, `mise-env`, `mise-ignored-config-paths`, `title`, `commit-message`, `registry-token-env` and `crates-io-trusted-publishing`
+- **AND** the optional secrets `app-client-id`, `app-private-key` and `registry-token`
 
 #### Scenario: A caller with no inputs
 
@@ -19,6 +22,12 @@ get verctl's defaults.
 
 - **WHEN** a caller maps `registry-token: ${{ secrets.CRATES_TOKEN }}` and sets `registry-token-env: CARGO_REGISTRY_TOKEN`
 - **THEN** the publisher runs with `CARGO_REGISTRY_TOKEN` set from `CRATES_TOKEN`
+
+#### Scenario: Trusted publishing
+
+- **WHEN** a caller grants `id-token: write`, sets `crates-io-trusted-publishing: true`, and maps no `registry-token`
+- **THEN** the publish job exchanges the run's OIDC token for a crates.io token and the publisher runs with `CARGO_REGISTRY_TOKEN` set from it
+- **AND** a caller that also maps `registry-token` fails the publish job before publishing
 
 ### Requirement: Each part can be turned off
 

@@ -115,13 +115,18 @@ lacks, waits for docs.rs, then opens or updates the Version PR. Every
 input is optional and defaults to verctl's: `version-pr`, `publish`,
 `assets`, `docs`, `auto-merge`, `config`, `runner`, `mise-version`,
 `mise-env`, `mise-ignored-config-paths`, `title`, `commit-message`,
-`registry-token-env`, and
+`registry-token-env`, `crates-io-trusted-publishing`, and
 `verctl-artifact` (verctl's own release only: each job runs a verctl
 build from the calling run); secrets `app-client-id`, `app-private-key`,
 `registry-token`. `mise-ignored-config-paths` takes colon-separated
 config paths relative to the repository root, such as `mise.toml`, that
 every job but propose ignores, so they install only the release tools;
 propose keeps them because `prepare.after` runs the repository's tasks.
+`crates-io-trusted-publishing: true` publishes to crates.io with a
+trusted-publishing token in place of the `registry-token` secret; each
+crate lists the caller's repository and workflow file as its trusted
+publisher. The publish job requests `id-token: write`, so every caller
+grants it.
 Steps set `env:` and
 run `mise run ver <verb>`, so a caller serves the `ver` task. Without the
 App secrets the Version PR is opened with `GITHUB_TOKEN`, which needs the
