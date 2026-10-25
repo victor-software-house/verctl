@@ -301,6 +301,25 @@ pub fn pull_request_number(raw: &str) -> Option<u64> {
         .as_u64()
 }
 
+/// Whether the Actions event is a merge queue's `merge_group` event, read
+/// from its payload. Without an event it is `false`.
+#[must_use]
+pub fn event_is_merge_group() -> bool {
+    env::var("GITHUB_EVENT_PATH")
+        .ok()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .is_some_and(|raw| is_merge_group(&raw))
+}
+
+/// Whether an event payload is a `merge_group` event's.
+#[must_use]
+pub fn is_merge_group(raw: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(raw)
+        .ok()
+        .and_then(|event| event.get("merge_group").map(serde_json::Value::is_object))
+        .unwrap_or(false)
+}
+
 /// The repository's default branch named by the Actions event payload, or
 /// `None` without an event.
 #[must_use]
@@ -943,6 +962,16 @@ mod tests {
             super::pull_request_number(r#"{"issue":{"number":187}}"#),
             None
         );
+    }
+
+    #[test]
+    fn is_merge_group_reads_only_a_merge_group_event() {
+        assert!(super::is_merge_group(
+            r#"{"action":"checks_requested","merge_group":{"head_ref":"refs/heads/gh-readonly-queue/main/pr-7-0000000000000000000000000000000000000001"}}"#
+        ));
+        assert!(!super::is_merge_group(r#"{"pull_request":{"number":7}}"#));
+        assert!(!super::is_merge_group(r#"{"merge_group":null}"#));
+        assert!(!super::is_merge_group("not json"));
     }
 
     #[test]
