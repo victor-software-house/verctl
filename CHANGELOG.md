@@ -1,5 +1,9 @@
 # Changelog
 
+## verctl 0.6.0
+
+- The reusable release workflow publishes to crates.io through trusted publishing with `crates-io-trusted-publishing: true`, so a caller keeps no registry token. Its publish job now requests `id-token: write`, which every caller grants in the same change that moves its pin, because GitHub checks a called job's permissions when the run starts ([#218](https://github.com/victor-software-house/verctl/pull/218)).
+
 ## verctl 0.5.5
 
 - The release binary no longer carries octocrab's unused JWT crypto, which RUSTSEC-2026-0387 flagged in `crypto-bigint`. verctl authenticates with a personal token only ([#212](https://github.com/victor-software-house/verctl/pull/212)).
