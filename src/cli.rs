@@ -123,7 +123,7 @@ pub struct AssetsArgs {
     #[arg(long)]
     pub build: Option<String>,
     /// Upload the built tarball, or the `--file`, to the GitHub Release for
-    /// `--tag`, draft or published.
+    /// `--tag`, which must be a draft.
     #[arg(long)]
     pub upload: bool,
     /// A file the repository built itself, declared under `assets.files`, to

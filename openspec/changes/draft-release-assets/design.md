@@ -36,8 +36,16 @@ A tag with no declared asset keeps today's single step to `released`.
    is published. A draft is incomplete even when every asset is there, so
    the next run finalizes it.
 
-A published Release found by `publish` is reported as today, whatever its
-assets: verctl does not unpublish, and an immutable Release cannot change.
+A published Release is complete, whatever its assets: verctl does not
+unpublish, and an immutable Release cannot change. An asset is therefore
+uploaded only to a draft, and a published Release gets no asset jobs.
+
+Every tag is created the same way, through the git refs API before its
+Release, whether the Release is a draft or not. GitHub no longer creates a
+tag implicitly from `target_commitish`, so one path covers both.
+
+This change keeps no compatibility path: a Release published by an earlier
+verctl without some asset stays as it is, and its asset is not uploaded.
 
 ## 2. Finding a draft
 

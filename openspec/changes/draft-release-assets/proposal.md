@@ -37,7 +37,7 @@ built on today's `.ctl/ver.yaml` rather than the 0.4.0 schema.
    publishes the draft once every declared asset is uploaded, and otherwise
    reports the draft and the assets it still lacks.
 3. `verctl assets --upload --file <path>` uploads one declared file to the
-   Release for the plan's tag, draft or published.
+   draft Release for the plan's tag; a published Release takes no asset.
 4. Every Release lookup sees drafts, and only an asset in state `uploaded`
    counts. A draft Release is an incomplete release.
 5. The reusable release workflow gains a `finalize` job after `assets`,

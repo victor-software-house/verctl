@@ -1,8 +1,9 @@
 //! Which version commits still need a release.
 //!
-//! A release is complete when the registry lists each package's version, its
-//! tag and every declared asset exist, and its Release is published: a draft
-//! Release is still waiting for `publish` to finalize it. `publish --plan`
+//! A release is complete when the registry lists each package's version, and
+//! its tag and published Release exist. A Release with declared assets is a
+//! draft until every asset is uploaded; once published it takes no asset, so
+//! only a draft, or a Release not yet created, has asset jobs. `publish --plan`
 //! lists every version commit with an incomplete release, oldest first, so the
 //! workflow can release each at its own commit; `publish` releases only the
 //! packages whose version commit is HEAD.
@@ -264,11 +265,16 @@ fn state_of(
     release: &ReleaseState,
     declared: &[MatrixTarget],
 ) -> PackageState {
-    let missing_assets: Vec<MatrixTarget> = declared
-        .iter()
-        .filter(|target| !release.assets.contains(&target.asset))
-        .cloned()
-        .collect();
+    let published = release.release && !release.draft;
+    let missing_assets: Vec<MatrixTarget> = if published {
+        Vec::new()
+    } else {
+        declared
+            .iter()
+            .filter(|target| !release.assets.contains(&target.asset))
+            .cloned()
+            .collect()
+    };
     PackageState {
         package: PendingPackage {
             name: entry.name.clone(),
@@ -276,11 +282,7 @@ fn state_of(
             listed,
         },
         commit,
-        complete: listed
-            && release.tag.is_some()
-            && release.release
-            && !release.draft
-            && missing_assets.is_empty(),
+        complete: listed && release.tag.is_some() && published,
         missing_assets,
     }
 }
@@ -490,13 +492,15 @@ mod tests {
     }
 
     #[test]
-    fn only_a_missing_asset_keeps_the_commit_pending() {
+    fn a_draft_missing_an_asset_builds_only_that_asset() {
         let declared = [target("darwin-arm64"), target("linux-x64")];
+        let mut draft = finished(&["demo-linux-x64.tar.gz"]);
+        draft.draft = true;
         let state = state_of(
             &entry("demo", "0.4.6"),
             at("aaa", 1),
             true,
-            &finished(&["demo-linux-x64.tar.gz"]),
+            &draft,
             &declared,
         );
         let pending = group(vec![state], "v0.4.6");
@@ -527,6 +531,20 @@ mod tests {
         let pending = group(vec![state], "v0.4.6");
         assert_eq!(pending.commits.len(), 1);
         assert_eq!(pending.assets, []);
+    }
+
+    /// A published Release takes no asset, so it is complete whatever it holds.
+    #[test]
+    fn a_published_release_is_complete_without_its_assets() {
+        let declared = [target("darwin-arm64"), target("linux-x64")];
+        let state = state_of(
+            &entry("demo", "0.4.6"),
+            at("aaa", 0),
+            true,
+            &finished(&["demo-linux-x64.tar.gz"]),
+            &declared,
+        );
+        assert!(group(vec![state], "v0.4.6").is_empty());
     }
 
     #[test]

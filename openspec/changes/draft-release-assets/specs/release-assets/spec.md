@@ -63,3 +63,14 @@ before any side effect.
 
 - **WHEN** `finalize` runs at version commit `bbb`, whose Release is published, while the draft at version commit `aaa` still lacks `App.pkg`
 - **THEN** `verctl publish` at `bbb` reports `nothing to release` and exits zero
+
+### Requirement: An asset uploads only to a draft
+
+`verctl assets --upload` SHALL refuse a Release that is already published, and
+`verctl publish --plan` SHALL schedule no asset job for a published Release.
+
+#### Scenario: A Release published without an asset
+
+- **WHEN** the Release for `v1.2.0` is published and lacks `demo_1.2.0_linux_x64.tar.gz`
+- **THEN** `verctl publish --plan` lists no asset job for it
+- **AND** `verctl assets --build linux-x64 --upload` fails and says an asset is uploaded only to a draft

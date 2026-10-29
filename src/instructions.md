@@ -320,10 +320,10 @@ template with `{name}` names one tag and one Release per package; each
 Release body is that package's own CHANGELOG section (path from
 `packages[].changelog`, default `CHANGELOG.md` beside the manifest).
 A template that would render the same tag for two packages fails at
-plan time. Each Release is created at HEAD (`target_commitish` is that
-SHA); a Release with declared assets gets its tag first, through the git
-refs API, then is created as a draft. After create, and when a Release already exists, the tag is
-re-read and the run fails if it names another commit. A retry at the
+plan time. Each tag is created at HEAD through the git refs API, then
+its Release: published, or a draft when the tag carries declared assets.
+An existing tag, and the tag of an existing Release, is re-read and the
+run fails if it names another commit. A retry at the
 same commit is a no-op.
 
 After the Version PR merges, the next push runs the reusable workflow's
@@ -340,7 +340,7 @@ They belong to the first package's tag. When a tag carries any,
 `publish` creates the tag, then the Release as a draft, because an
 immutable Release takes no asset once published. `assets --upload --file
 <path>` (`VERCTL_FILE`) uploads one declared file to the Release for the
-plan's tag, draft or published, and refuses a path `assets.files` does
+plan's tag, which must be a draft, and refuses a path `assets.files` does
 not declare. A later `publish` publishes the draft once every declared
 asset is `uploaded`, and otherwise reports `draft <url> lacks <names>`
 and exits zero. The reusable workflow's `finalize` job runs that
