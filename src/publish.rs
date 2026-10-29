@@ -15,7 +15,7 @@ use serde::Serialize;
 use crate::config::{Config, NAME_PLACEHOLDER};
 use crate::publisher::Upload;
 use crate::registry::{self, RegistryCheck};
-use crate::{bump, git, github, pending, process, publisher, release};
+use crate::{assets, bump, git, github, pending, process, publisher, release};
 
 /// How long one package upload may run.
 pub const PUBLISH_TIMEOUT: Duration = Duration::from_mins(10);
@@ -195,8 +195,9 @@ pub fn run_pending(
     skip_assets: bool,
 ) -> Result<PublishRun> {
     let planned = plan(config, root)?;
+    let declared = declared_assets(config, root, skip_assets)?;
     if dry_run {
-        return dry_run_plan(config, root, &planned);
+        return dry_run_plan(config, root, &planned, &declared);
     }
     full_history(root)?;
     prove_version_commit(config, root, &planned)?;
@@ -214,6 +215,16 @@ pub fn run_pending(
     }
     let head = git::head_sha(root)?;
     let (here, waiting) = at_head(&pending, &head)?;
+    let Some(here) = here else {
+        return Ok(PublishRun {
+            outcome: Outcome::NothingToRelease,
+            published: PublishOutcome {
+                packages: Vec::new(),
+                releases: Vec::new(),
+            },
+            waiting,
+        });
+    };
     let selected: Vec<(&crate::config::PackageSpec, &PublishEntry)> = config
         .packages
         .iter()
@@ -236,7 +247,15 @@ pub fn run_pending(
         })
         .collect();
     let mut uploads = Vec::new();
+    let mut already = Vec::new();
     for (spec, entry) in &selected {
+        if !entry.argv.is_empty() && listed(here, &entry.name) {
+            already.push(PublishLine {
+                note: Some("already".to_owned()),
+                ..PublishLine::from(*entry)
+            });
+            continue;
+        }
         let runs = if entry.argv.is_empty() {
             Vec::new()
         } else {
@@ -248,7 +267,8 @@ pub fn run_pending(
         .into_iter()
         .partition(|tag| tags_before_upload(tag, &uploads));
     let repo = github::repo(root)?;
-    let (mut releases, refused) = open_early(config, root, &token, &repo, &before, &head)?;
+    let (mut releases, refused) =
+        open_early(config, root, &token, &repo, &before, &head, &declared)?;
     let rest = run_uploads(uploads).and_then(|(packages, shipped_packages)| {
         for tag in after {
             let shipped = tag
@@ -256,13 +276,13 @@ pub fn run_pending(
                 .iter()
                 .any(|entry| shipped_packages.contains(&entry.name));
             releases.push(open_release(
-                config, root, &token, &repo, tag, &head, shipped,
+                config, root, &token, &repo, tag, &head, shipped, &declared,
             )?);
         }
         Ok(packages)
     });
     let packages = match (rest, refused) {
-        (Ok(packages), None) => packages,
+        (Ok(packages), None) => already.into_iter().chain(packages).collect(),
         (Ok(_), Some(early)) => return Err(early),
         (Err(later), early) => return Err(after_refusal(later, early)),
     };
@@ -271,6 +291,14 @@ pub fn run_pending(
         published: PublishOutcome { packages, releases },
         waiting,
     })
+}
+
+/// Whether `pending` found `name`'s version already uploaded, so a rerun that
+/// only has a tag, Release, or assets left runs no upload for it.
+fn listed(here: &pending::PendingCommit, name: &str) -> bool {
+    here.packages
+        .iter()
+        .any(|package| package.name == name && package.listed)
 }
 
 /// Open the Releases of the tags created before the uploads, at `head`. An
@@ -286,11 +314,12 @@ fn open_early(
     repo: &github::Repo,
     tags: &[&TagPlan],
     head: &str,
+    declared: &DeclaredAssets,
 ) -> Result<(Vec<String>, Option<anyhow::Error>)> {
     let mut releases = Vec::new();
     let mut refused = None;
     for tag in tags {
-        match open_release(config, root, token, repo, tag, head, true) {
+        match open_release(config, root, token, repo, tag, head, true, declared) {
             Ok(url) => releases.push(url),
             Err(error) if github::is_release_refused(&error) => {
                 refused.get_or_insert(error);
@@ -355,8 +384,36 @@ fn tags_before_upload(tag: &TagPlan, uploads: &[(&PublishEntry, Vec<Upload>)]) -
     })
 }
 
+/// The tag that carries the declared assets, and their names. `None` when
+/// none are declared or `--skip-assets` leaves them out.
+type DeclaredAssets = Option<(String, Vec<String>)>;
+
+/// The declared assets: they belong to the first package's tag, as
+/// [`assets::plan`] resolves it.
+fn declared_assets(config: &Config, root: &Path, skip_assets: bool) -> Result<DeclaredAssets> {
+    if skip_assets || config.assets.is_none() {
+        return Ok(None);
+    }
+    let planned = assets::plan(config, root)?;
+    let names = planned.declared();
+    Ok((!names.is_empty()).then_some((planned.tag, names)))
+}
+
+/// The asset names the Release for `tag` must hold before it is published.
+fn assets_of<'a>(declared: &'a DeclaredAssets, tag: &str) -> &'a [String] {
+    match declared {
+        Some((carrier, names)) if carrier == tag => names,
+        Some(_) | None => &[],
+    }
+}
+
 /// Create the GitHub Release for `tag` at `sha`, or confirm it exists, with
-/// the CHANGELOG sections of its packages as the body.
+/// the CHANGELOG sections of its packages as the body. With declared assets
+/// it is a draft until they are all uploaded (see [`github::ensure_release`]).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is one fact of the release; a struct would be built once per call"
+)]
 fn open_release(
     config: &Config,
     root: &Path,
@@ -365,6 +422,7 @@ fn open_release(
     tag: &TagPlan,
     sha: &str,
     shipped: bool,
+    declared: &DeclaredAssets,
 ) -> Result<String> {
     let notes = release::notes_for(
         config,
@@ -373,17 +431,37 @@ fn open_release(
             .iter()
             .map(|entry| (entry.name.as_str(), entry.version.as_str())),
     );
-    github::ensure_release(token, repo, &tag.tag, &tag.title, &notes, sha, shipped)
+    github::ensure_release(
+        token,
+        repo,
+        &tag.tag,
+        &tag.title,
+        &notes,
+        sha,
+        shipped,
+        assets_of(declared, &tag.tag),
+    )
 }
 
 /// What a dry run would publish: every package not at `0.0.0`, a workspace
 /// package as its members in publish order, and every tag. It asks no
 /// registry. With every package at `0.0.0`, there is nothing to release.
-fn dry_run_plan(config: &Config, root: &Path, planned: &PublishPlan) -> Result<PublishRun> {
+fn dry_run_plan(
+    config: &Config,
+    root: &Path,
+    planned: &PublishPlan,
+    declared: &DeclaredAssets,
+) -> Result<PublishRun> {
     let releases = planned
         .tags
         .iter()
-        .map(|tag| formatdoc!("would create {tag}", tag = tag.tag))
+        .map(|tag| {
+            if assets_of(declared, &tag.tag).is_empty() {
+                formatdoc!("would create {tag}", tag = tag.tag)
+            } else {
+                formatdoc!("would create draft {tag}", tag = tag.tag)
+            }
+        })
         .collect();
     let mut packages = Vec::new();
     for (spec, entry) in config.packages.iter().zip(&planned.packages) {
@@ -418,7 +496,7 @@ fn dry_run_plan(config: &Config, root: &Path, planned: &PublishPlan) -> Result<P
 fn at_head<'a>(
     pending: &'a pending::Pending,
     head: &str,
-) -> Result<(&'a pending::PendingCommit, Vec<Waiting>)> {
+) -> Result<(Option<&'a pending::PendingCommit>, Vec<Waiting>)> {
     let waiting: Vec<Waiting> = pending
         .commits
         .iter()
@@ -431,6 +509,9 @@ fn at_head<'a>(
             })
         })
         .collect();
+    if pending.is_complete(head) {
+        return Ok((None, waiting));
+    }
     let Some(here) = pending.at(head) else {
         let named: Vec<String> = waiting
             .iter()
@@ -441,7 +522,7 @@ fn at_head<'a>(
             named.join(", ")
         );
     };
-    Ok((here, waiting))
+    Ok((Some(here), waiting))
 }
 
 /// Run one upload under its registry check, and return `already` when the
@@ -655,6 +736,7 @@ mod tests {
             let package = |name: &str, version: &str| PendingPackage {
                 name: name.into(),
                 version: version.into(),
+                listed: false,
             };
             Pending {
                 commits: vec![
@@ -668,6 +750,7 @@ mod tests {
                     },
                 ],
                 assets: Vec::new(),
+                complete: vec!["ddd".into()],
             }
         }
 
@@ -683,10 +766,20 @@ mod tests {
         fn another_package_pending_at_an_older_commit_waits() {
             let pending = pending();
             let (here, waiting) = at_head(&pending, "ccc").unwrap();
-            assert_eq!(here.packages[0].name, "app");
+            assert_eq!(here.unwrap().packages[0].name, "app");
             assert_eq!(waiting.len(), 1);
             assert_eq!(waiting[0].name, "core");
             assert_eq!(waiting[0].commit, "aaa");
+        }
+
+        /// A finalize leg at a commit whose release another leg completed
+        /// does nothing, while an older draft still waits.
+        #[test]
+        fn a_completed_version_commit_has_nothing_to_release() {
+            let pending = pending();
+            let (here, waiting) = at_head(&pending, "ddd").unwrap();
+            assert!(here.is_none());
+            assert_eq!(waiting.len(), 2);
         }
     }
 

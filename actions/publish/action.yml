@@ -1,7 +1,8 @@
 name: verctl publish
 description: >-
   After the Version PR merges, publish cargo and bun packages and open
-  the GitHub Release. Requires `verctl` on PATH.
+  the GitHub Release: a draft when assets are declared, published by a
+  later run once every asset is uploaded. Requires `verctl` on PATH.
 author: victor-software-house
 branding:
   icon: package

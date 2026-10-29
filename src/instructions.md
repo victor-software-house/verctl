@@ -23,7 +23,7 @@ completion bootstrap.
 | `prepare` | — | Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews |
 | `publish` | — | Publish the versions on HEAD (cargo / bun + GitHub Release) |
 | `pin` | — | Rewrite collocated tool pins to the versions on HEAD |
-| `assets` | — | Plan or build native GitHub Release tarballs declared under `assets` |
+| `assets` | — | Plan, build, or upload the GitHub Release assets declared under `assets` |
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
 | `docs` | — | Wait for docs.rs to build each crates.io crate released at HEAD |
 | `semver` | — | Check the API of each crates.io crate whose next release is a patch |
@@ -111,7 +111,8 @@ Happy path is verctl's reusable workflow,
 thin caller on push to the default branch and on `workflow_dispatch`
 (`examples/workflows/release.yml`). It plans every incomplete version
 commit, publishes each in history order, builds the assets each Release
-lacks, waits for docs.rs, then opens or updates the Version PR. Every
+lacks, publishes each draft Release once its assets are uploaded
+(`finalize`), waits for docs.rs, then opens or updates the Version PR. Every
 input is optional and defaults to verctl's: `version-pr`, `publish`,
 `assets`, `docs`, `auto-merge`, `config`, `runner`, `mise-version`,
 `mise-env`, `mise-ignored-config-paths`, `title`, `commit-message`,
@@ -232,14 +233,16 @@ require GitHub auth.
 `publish` ships the versions already on HEAD, then a GitHub Release.
 A package's version commit is the newest commit on HEAD's first-parent
 history where its manifest version became the version at HEAD. A release
-is complete when the registry lists the version and its tag, its Release,
-and every declared asset exist; `--skip-assets` (`VERCTL_SKIP_ASSETS`)
-leaves assets out. `publish --plan` lists every version commit with an
+is complete when the registry lists the version, its tag and every
+declared asset exist, and its Release is published, not a draft;
+`--skip-assets` (`VERCTL_SKIP_ASSETS`) leaves assets out. `publish --plan` lists every version commit with an
 incomplete release, oldest first, and writes `commits` (a JSON list),
 `pending`, and `assets` (a job matrix of commit, target, and labels) to
 `$GITHUB_OUTPUT` when it is set. `publish` releases only the packages
 whose version commit is HEAD, names the others, and fails before any side
-effect on a commit that releases nothing. When every release is complete,
+effect on a commit that releases nothing. At a version commit whose
+releases are already complete it reports `nothing to release`, so a rerun
+or a `finalize` leg there is a no-op. When every release is complete,
 both report `nothing to release` and exit zero; the JSON report's
 `outcome` is `nothing-to-release` or `released`.
 It refuses unless each package version has a matching CHANGELOG
@@ -317,9 +320,10 @@ template with `{name}` names one tag and one Release per package; each
 Release body is that package's own CHANGELOG section (path from
 `packages[].changelog`, default `CHANGELOG.md` beside the manifest).
 A template that would render the same tag for two packages fails at
-plan time. Each Release is created at HEAD (`target_commitish` is that
-SHA). After create, and when a Release already exists, the tag is
-re-read and the run fails if it names another commit. A retry at the
+plan time. Each tag is created at HEAD through the git refs API, then
+its Release: published, or a draft when the tag carries declared assets.
+An existing tag, and the tag of an existing Release, is re-read and the
+run fails if it names another commit. A retry at the
 same commit is a no-op.
 
 After the Version PR merges, the next push runs the reusable workflow's
@@ -327,7 +331,22 @@ After the Version PR merges, the next push runs the reusable workflow's
 `victor-software-house/verctl/actions/publish` instead. Native tarballs
 are the `assets` matrix, only when an `assets` target is declared;
 `verctl assets` prints the matrix, and `--build` + `--upload` is
-`actions/asset`. Publish pushes
+`actions/asset`.
+
+Declared assets are each `assets` target's tarball and each
+`assets.files` entry: a file the repository builds itself, such as a
+signed installer, as a path relative to the directory holding `.ctl/`.
+They belong to the first package's tag. When a tag carries any,
+`publish` creates the tag, then the Release as a draft, because an
+immutable Release takes no asset once published. `assets --upload --file
+<path>` (`VERCTL_FILE`) uploads one declared file to the Release for the
+plan's tag, which must be a draft, and refuses a path `assets.files` does
+not declare. A later `publish` publishes the draft once every declared
+asset is `uploaded`, and otherwise reports `draft <url> lacks <names>`
+and exits zero. The reusable workflow's `finalize` job runs that
+`publish` after `assets`. A repository that builds its own files runs
+`publish`, then `assets --upload --file` for each, then `publish`.
+`--skip-assets` declares none, so the Release is published at once. Publish pushes
 nothing but the tag. `pins` are rewritten by `prepare`, on the
 Version PR commit the tag will name, so the released tree carries its
 own pins. A pin that must name an already-published tarball — a repo's

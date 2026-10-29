@@ -320,6 +320,22 @@ queue:
     notes:
       - 'Split from VER-069, which #174 completed on 2026-10-18; this row tracks only task 2.4 of openspec/changes/cargo-workspace-publish.'
 
+  - id: VER-079
+    title: Keep a Release with assets a draft until its assets are uploaded
+    scope: verctl
+    outcome: >-
+      A Release with declared assets is created as a draft, assets upload to it, and
+      verctl publish publishes it once every asset is uploaded, so immutable Releases
+      work.
+    blocked_by: []
+    acceptance:
+      - verctl publish creates the tag, then a draft Release, when a target or an assets.files entry is declared, and publishes it on a later run once every declared asset is uploaded.
+      - verctl assets --upload --file uploads a declared prebuilt file and refuses an undeclared one.
+      - A draft Release counts as incomplete, and the reusable release workflow finalizes after its asset jobs.
+    plan: openspec/changes/draft-release-assets/proposal.md
+    notes:
+      - Slice of VER-011 (release, asset, finalize) on the current schema.
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all

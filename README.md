@@ -262,8 +262,9 @@ one flow:
 1. `plan` lists every version commit whose release is incomplete.
 2. `publish` releases each, oldest first, at its own commit.
 3. `assets` builds the tarballs each Release lacks.
-4. `docs` waits for docs.rs to build each released crate.
-5. `propose` opens or updates the Version PR.
+4. `finalize` publishes each draft Release once its assets are uploaded.
+5. `docs` waits for docs.rs to build each released crate.
+6. `propose` opens or updates the Version PR.
 
 Every job is safe to rerun. A run with nothing pending reports `nothing to
 release`. Every input is optional and defaults to verctl's, so a caller passes
@@ -291,6 +292,31 @@ uploads, in the run that merged the Version PR, and a rerun after a
 failed upload finds them. A package with an unchecked upload is tagged
 after its upload, since its tag is the record that the upload ran.
 
+### Release assets
+
+A Release with declared assets stays a draft until every asset is
+uploaded, so it works with GitHub immutable Releases, which take no asset
+once published. Declared assets are each `assets` target's tarball and each
+`assets.files` entry, a file the repository builds itself:
+
+```yaml
+assets:
+  files: [build/App.pkg]
+```
+
+A repository that builds its own files runs, in its release job:
+
+```sh
+verctl publish                                    # tag, then a draft Release
+verctl assets --upload --file build/App.pkg       # once per declared file
+verctl publish                                    # publishes the draft
+```
+
+The second `publish` publishes the draft once every declared asset is
+uploaded, and otherwise reports what the draft lacks. The reusable
+workflow's `finalize` job does the same after the `assets` jobs.
+`--skip-assets` publishes the Release at once.
+
 ## Actions
 
 These replace `changesets/action`. They are **GitHub Actions, not a
@@ -303,7 +329,7 @@ never on the command line or in a URL. There is no local token setup.
 |:--|:--|
 | [`actions/version-pr`](actions/version-pr/action.yml) | Open or update the Version PR |
 | [`actions/publish`](actions/publish/action.yml) | Run after that PR merges |
-| [`actions/asset`](actions/asset/action.yml) | Build and attach one native target |
+| [`actions/asset`](actions/asset/action.yml) | Build and attach one native target to the draft Release |
 
 For a hand-written workflow, use these actions; most repositories call the
 reusable workflow instead.

@@ -42,7 +42,8 @@ pub enum Command {
     Publish(PublishArgs),
     /// Rewrite collocated tool pins to the versions on HEAD.
     Pin(PublishArgs),
-    /// Plan or build native GitHub Release tarballs declared under `assets`.
+    /// Plan, build, or upload the GitHub Release assets declared under
+    /// `assets`.
     Assets(AssetsArgs),
     /// Plan the validation jobs declared in `[ci]`.
     Ci(CiArgs),
@@ -121,10 +122,15 @@ pub struct AssetsArgs {
     /// omitted.
     #[arg(long)]
     pub build: Option<String>,
-    /// Upload the built tarball to the GitHub Release for `--tag`.
+    /// Upload the built tarball, or the `--file`, to the GitHub Release for
+    /// `--tag`, which must be a draft.
     #[arg(long)]
     pub upload: bool,
-    /// Release tag (`v0.0.1`). Required with `--upload`.
+    /// A file the repository built itself, declared under `assets.files`, to
+    /// upload instead of building a target. Needs `--upload`.
+    #[arg(long, requires = "upload", conflicts_with = "build", value_hint = clap::ValueHint::FilePath)]
+    pub file: Option<PathBuf>,
+    /// Release tag (`v0.0.1`). Defaults to the first package's tag.
     #[arg(long)]
     pub tag: Option<String>,
     /// Write `has_assets`, `tag`, and `matrix` for `$GITHUB_OUTPUT`.
@@ -295,6 +301,32 @@ mod tests {
             let cli = parse(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
             assert!(cli.format.format.is_json(), "{args:?}");
         }
+    }
+
+    #[test]
+    fn a_file_needs_upload_and_excludes_build() {
+        assert!(parse(&["verctl", "assets", "--file", "build/App.pkg"]).is_err());
+        assert!(
+            parse(&[
+                "verctl",
+                "assets",
+                "--upload",
+                "--file",
+                "build/App.pkg",
+                "--build",
+                "linux-x64",
+            ])
+            .is_err()
+        );
+        let cli =
+            parse(&["verctl", "assets", "--upload", "--file", "build/App.pkg"]).expect("parse");
+        let Command::Assets(args) = cli.command else {
+            panic!("expected assets");
+        };
+        assert_eq!(
+            args.file.as_deref(),
+            Some(std::path::Path::new("build/App.pkg"))
+        );
     }
 
     /// The release workflow sets these and runs the bare verb, so each must
