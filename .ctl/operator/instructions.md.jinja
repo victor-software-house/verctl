@@ -221,7 +221,9 @@ incomplete release, oldest first, and writes `commits` (a JSON list),
 `pending`, and `assets` (a job matrix of commit, target, and labels) to
 `$GITHUB_OUTPUT` when it is set. `publish` releases only the packages
 whose version commit is HEAD, names the others, and fails before any side
-effect on a commit that releases nothing. When every release is complete,
+effect on a commit that releases nothing. At a version commit whose
+releases are already complete it reports `nothing to release`, so a rerun
+or a `finalize` leg there is a no-op. When every release is complete,
 both report `nothing to release` and exit zero; the JSON report's
 `outcome` is `nothing-to-release` or `released`.
 It refuses unless each package version has a matching CHANGELOG

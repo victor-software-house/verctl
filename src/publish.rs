@@ -215,6 +215,16 @@ pub fn run_pending(
     }
     let head = git::head_sha(root)?;
     let (here, waiting) = at_head(&pending, &head)?;
+    let Some(here) = here else {
+        return Ok(PublishRun {
+            outcome: Outcome::NothingToRelease,
+            published: PublishOutcome {
+                packages: Vec::new(),
+                releases: Vec::new(),
+            },
+            waiting,
+        });
+    };
     let selected: Vec<(&crate::config::PackageSpec, &PublishEntry)> = config
         .packages
         .iter()
@@ -486,7 +496,7 @@ fn dry_run_plan(
 fn at_head<'a>(
     pending: &'a pending::Pending,
     head: &str,
-) -> Result<(&'a pending::PendingCommit, Vec<Waiting>)> {
+) -> Result<(Option<&'a pending::PendingCommit>, Vec<Waiting>)> {
     let waiting: Vec<Waiting> = pending
         .commits
         .iter()
@@ -499,6 +509,9 @@ fn at_head<'a>(
             })
         })
         .collect();
+    if pending.is_complete(head) {
+        return Ok((None, waiting));
+    }
     let Some(here) = pending.at(head) else {
         let named: Vec<String> = waiting
             .iter()
@@ -509,7 +522,7 @@ fn at_head<'a>(
             named.join(", ")
         );
     };
-    Ok((here, waiting))
+    Ok((Some(here), waiting))
 }
 
 /// Run one upload under its registry check, and return `already` when the
@@ -737,6 +750,7 @@ mod tests {
                     },
                 ],
                 assets: Vec::new(),
+                complete: vec!["ddd".into()],
             }
         }
 
@@ -752,10 +766,20 @@ mod tests {
         fn another_package_pending_at_an_older_commit_waits() {
             let pending = pending();
             let (here, waiting) = at_head(&pending, "ccc").unwrap();
-            assert_eq!(here.packages[0].name, "app");
+            assert_eq!(here.unwrap().packages[0].name, "app");
             assert_eq!(waiting.len(), 1);
             assert_eq!(waiting[0].name, "core");
             assert_eq!(waiting[0].commit, "aaa");
+        }
+
+        /// A finalize leg at a commit whose release another leg completed
+        /// does nothing, while an older draft still waits.
+        #[test]
+        fn a_completed_version_commit_has_nothing_to_release() {
+            let pending = pending();
+            let (here, waiting) = at_head(&pending, "ddd").unwrap();
+            assert!(here.is_none());
+            assert_eq!(waiting.len(), 2);
         }
     }
 

@@ -32,6 +32,9 @@ pub struct Pending {
     pub commits: Vec<PendingCommit>,
     /// Asset jobs to run: one per version commit and missing target.
     pub assets: Vec<PendingAsset>,
+    /// Version commits whose releases are all complete, so a run there has
+    /// nothing left to do.
+    pub complete: Vec<String>,
 }
 
 impl Pending {
@@ -39,6 +42,16 @@ impl Pending {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.commits.is_empty()
+    }
+
+    /// Whether `sha` is a version commit whose releases are all complete.
+    #[must_use]
+    pub fn is_complete(&self, sha: &str) -> bool {
+        self.at(sha).is_none()
+            && self
+                .complete
+                .iter()
+                .any(|complete| complete.eq_ignore_ascii_case(sha))
     }
 
     /// The pending commit at `sha`, if any.
@@ -283,7 +296,14 @@ struct AtCommit {
 /// belong to the first package, so every asset job uploads to `assets_tag`.
 fn group(states: Vec<PackageState>, assets_tag: &str) -> Pending {
     let mut by_commit: BTreeMap<String, AtCommit> = BTreeMap::new();
-    for state in states.into_iter().filter(|state| !state.complete) {
+    let mut complete = Vec::new();
+    for state in states {
+        if state.complete {
+            if !complete.contains(&state.commit.sha) {
+                complete.push(state.commit.sha);
+            }
+            continue;
+        }
         let slot = by_commit
             .entry(state.commit.sha)
             .or_insert_with(|| AtCommit {
@@ -296,7 +316,10 @@ fn group(states: Vec<PackageState>, assets_tag: &str) -> Pending {
     }
     let mut ordered: Vec<(String, AtCommit)> = by_commit.into_iter().collect();
     ordered.sort_by_key(|(_, at)| std::cmp::Reverse(at.depth));
-    let mut pending = Pending::default();
+    let mut pending = Pending {
+        complete,
+        ..Pending::default()
+    };
     for (sha, at) in ordered {
         pending
             .assets
@@ -503,7 +526,7 @@ mod tests {
         );
         let pending = group(vec![state], "v0.4.6");
         assert_eq!(pending.commits.len(), 1);
-        assert!(pending.assets.is_empty());
+        assert_eq!(pending.assets, []);
     }
 
     #[test]

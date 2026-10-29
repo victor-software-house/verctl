@@ -51,3 +51,15 @@ does not declare. The load SHALL fail when two entries share a file name.
 
 - **WHEN** `assets.files` declares `build/App.pkg` and the operator runs `verctl assets --upload --file build/Other.pkg`
 - **THEN** the command fails and says to declare the file under `assets.files`
+
+### Requirement: A run at a completed version commit does nothing
+
+`verctl publish` at a version commit whose releases are all complete SHALL
+report `nothing to release` and exit zero, even while another version commit
+is still pending. At a commit that is not a version commit it SHALL still fail
+before any side effect.
+
+#### Scenario: A finalize leg after its release completed
+
+- **WHEN** `finalize` runs at version commit `bbb`, whose Release is published, while the draft at version commit `aaa` still lacks `App.pkg`
+- **THEN** `verctl publish` at `bbb` reports `nothing to release` and exits zero

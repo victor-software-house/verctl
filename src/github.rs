@@ -723,11 +723,28 @@ const RELEASES_PER_PAGE: usize = 100;
 
 /// The Release for `tag`, draft or published, or `None`.
 ///
-/// `GET /releases/tags/{tag}` returns only a published Release, so a draft is
-/// found in `GET /releases`, which lists drafts to a token with push access
+/// `GET /releases/tags/{tag}` answers for a published Release in one request.
+/// It returns 404 for a draft, so only then is the tag looked up in
+/// `GET /releases`, which lists drafts to a token with push access
 /// (<https://docs.github.com/en/rest/releases/releases#list-releases>). The
-/// list is newest first, so a draft verctl just created is on the first page.
+/// list is newest first, so a draft verctl just created is on the first page;
+/// only a tag with no Release at all reads every page.
 async fn find_release(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<Option<ForgeRelease>> {
+    let published: Result<ForgeRelease, _> = crab
+        .get(
+            format!(
+                "/repos/{owner}/{name}/releases/tags/{tag}",
+                owner = repo.owner,
+                name = repo.name
+            ),
+            None::<&()>,
+        )
+        .await;
+    match published {
+        Ok(found) => return Ok(Some(found)),
+        Err(error) if is_not_found(&error) => {}
+        Err(error) => return Err(error).with_context(|| format!("get release {tag}")),
+    }
     let mut page = 1_u32;
     loop {
         let releases: Vec<ForgeRelease> = crab
@@ -1270,6 +1287,22 @@ mod tests {
         }
     }
 
+    /// A mock GitHub whose `GET /releases/tags/{tag}` answers 404, as it does
+    /// for a draft or a missing Release, unless a test mounts a published one.
+    async fn server() -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases/tags/{TAG}")))
+            .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
+                "message": "Not Found",
+                "documentation_url": "https://docs.github.com"
+            })))
+            .with_priority(u8::MAX)
+            .mount(&server)
+            .await;
+        server
+    }
+
     fn crab(uri: &str) -> Octocrab {
         Octocrab::builder()
             .personal_token("token".to_owned())
@@ -1449,7 +1482,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_release_never_made_has_no_tag_and_no_release() {
-        let server = MockServer::start().await;
+        let server = server().await;
         missing_tag().mount(&server).await;
         missing_release().mount(&server).await;
         let state = super::release_state_with(&crab(&server.uri()), &repo(), TAG)
@@ -1460,7 +1493,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_finished_release_names_its_commit_and_assets() {
-        let server = MockServer::start().await;
+        let server = server().await;
         lightweight_tag(PUBLISHED).mount(&server).await;
         release_with_assets(&[
             ("app-darwin-arm64.tar.gz", "uploaded"),
@@ -1482,8 +1515,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_published_release_is_read_by_tag_without_listing() {
+        let server = server().await;
+        lightweight_tag(PUBLISHED).mount(&server).await;
+        let mut json = release_json("main");
+        json["assets"] = serde_json::json!([{ "name": "app.pkg", "state": "uploaded" }]);
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases/tags/{TAG}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json))
+            .mount(&server)
+            .await;
+        releases(serde_json::json!([]))
+            .expect(0)
+            .mount(&server)
+            .await;
+        let state = super::release_state_with(&crab(&server.uri()), &repo(), TAG)
+            .await
+            .unwrap();
+        assert!(state.release);
+        assert_eq!(state.assets, ["app.pkg"]);
+    }
+
+    #[tokio::test]
     async fn a_draft_is_found_beyond_the_first_page() {
-        let server = MockServer::start().await;
+        let server = server().await;
         lightweight_tag(PUBLISHED).mount(&server).await;
         let mut others = release_json("main");
         others["tag_name"] = "v0.9.0".into();
@@ -1514,7 +1569,7 @@ mod tests {
 
     #[tokio::test]
     async fn declared_assets_tag_first_then_open_a_draft() {
-        let server = MockServer::start().await;
+        let server = server().await;
         missing_release().mount(&server).await;
         missing_tag().up_to_n_times(1).mount(&server).await;
         create_tag_ref().expect(1).mount(&server).await;
@@ -1542,7 +1597,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_draft_missing_an_asset_stays_a_draft() {
-        let server = MockServer::start().await;
+        let server = server().await;
         releases(serde_json::json!([draft_json(&[
             ("app.pkg", "uploaded"),
             ("app_1.0.0_linux_x64.tar.gz", "starter"),
@@ -1571,7 +1626,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_draft_with_every_asset_is_published() {
-        let server = MockServer::start().await;
+        let server = server().await;
         releases(serde_json::json!([draft_json(&[
             ("app.pkg", "uploaded"),
             ("app_1.0.0_linux_x64.tar.gz", "uploaded"),
@@ -1597,7 +1652,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_draft_whose_tag_names_another_commit_fails() {
-        let server = MockServer::start().await;
+        let server = server().await;
         releases(serde_json::json!([draft_json(&[])]))
             .mount(&server)
             .await;
@@ -1620,7 +1675,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_tags_the_published_commit_not_the_default_branch() {
-        let server = MockServer::start().await;
+        let server = server().await;
         missing_release().mount(&server).await;
         create_at_published_sha().mount(&server).await;
         lightweight_tag(PUBLISHED).mount(&server).await;
@@ -1641,7 +1696,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_forbidden_release_names_the_workflows_permission() {
-        let server = MockServer::start().await;
+        let server = server().await;
         missing_release().mount(&server).await;
         Mock::given(method("POST"))
             .and(path(format!("/repos/{OWNER}/{NAME}/releases")))
@@ -1671,7 +1726,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_fails_when_the_tag_lands_elsewhere() {
-        let server = MockServer::start().await;
+        let server = server().await;
         missing_release().mount(&server).await;
         create_at_published_sha().mount(&server).await;
         lightweight_tag(OTHER).mount(&server).await;
@@ -1694,7 +1749,7 @@ mod tests {
 
     #[tokio::test]
     async fn existing_release_at_the_published_commit_is_ok() {
-        let server = MockServer::start().await;
+        let server = server().await;
         existing_release().mount(&server).await;
         lightweight_tag(PUBLISHED).mount(&server).await;
         let url = super::ensure_release_with(
@@ -1714,7 +1769,7 @@ mod tests {
 
     #[tokio::test]
     async fn existing_release_at_another_commit_fails() {
-        let server = MockServer::start().await;
+        let server = server().await;
         existing_release().mount(&server).await;
         lightweight_tag(OTHER).mount(&server).await;
         let error = super::ensure_release_with(
@@ -1736,7 +1791,7 @@ mod tests {
 
     #[tokio::test]
     async fn existing_release_is_kept_when_nothing_under_it_shipped() {
-        let server = MockServer::start().await;
+        let server = server().await;
         existing_release().mount(&server).await;
         lightweight_tag(OTHER).mount(&server).await;
         let url = super::ensure_release_with(
@@ -1756,7 +1811,7 @@ mod tests {
 
     #[tokio::test]
     async fn annotated_tag_peels_to_the_commit() {
-        let server = MockServer::start().await;
+        let server = server().await;
         existing_release().mount(&server).await;
         annotated_tag().mount(&server).await;
         peeled_tag_object(PUBLISHED).mount(&server).await;
@@ -1821,7 +1876,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_asset_another_run_uploaded_is_already_done() {
-        let server = MockServer::start().await;
+        let server = server().await;
         upload_target_json(&serde_json::json!([
             { "name": "app_1.0.0_linux_x64.tar.gz", "state": "uploaded" }
         ]))
@@ -1837,7 +1892,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_duplicate_waits_for_the_other_upload_to_finish() {
-        let server = MockServer::start().await;
+        let server = server().await;
         // The read before the upload and the first read after the refusal see
         // the other run still sending.
         upload_target_json(&serde_json::json!([
@@ -1861,7 +1916,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_asset_whose_upload_broke_off_fails() {
-        let server = MockServer::start().await;
+        let server = server().await;
         upload_target_json(&serde_json::json!([
             { "name": "app_1.0.0_linux_x64.tar.gz", "state": "starter" }
         ]))
@@ -1875,7 +1930,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_upload_with_no_release_says_to_publish_first() {
-        let server = MockServer::start().await;
+        let server = server().await;
         missing_release().mount(&server).await;
         let error = upload(&server).await.unwrap_err();
         assert!(
@@ -1886,7 +1941,7 @@ mod tests {
 
     #[tokio::test]
     async fn another_validation_failure_fails_the_upload() {
-        let server = MockServer::start().await;
+        let server = server().await;
         upload_target_json(&serde_json::json!([]))
             .mount(&server)
             .await;
