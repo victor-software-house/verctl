@@ -1,8 +1,9 @@
 //! Which version commits still need a release.
 //!
-//! A release is complete when the registry lists each package's version and
-//! its tag, its Release, and every declared asset exist. `publish --plan` lists
-//! every version commit with an incomplete release, oldest first, so the
+//! A release is complete when the registry lists each package's version, its
+//! tag and every declared asset exist, and its Release is published: a draft
+//! Release is still waiting for `publish` to finalize it. `publish --plan`
+//! lists every version commit with an incomplete release, oldest first, so the
 //! workflow can release each at its own commit; `publish` releases only the
 //! packages whose version commit is HEAD.
 
@@ -67,6 +68,12 @@ pub struct PendingPackage {
     pub name: String,
     /// Version at HEAD.
     pub version: String,
+    /// Whether the registry already lists the version, or, for an upload with
+    /// no registry check, its tag exists. Only the tag, Release, or assets are
+    /// then left, such as a draft waiting to be published, and `publish`
+    /// runs no upload for it.
+    #[serde(skip)]
+    pub listed: bool,
 }
 
 /// One asset job: a target whose tarball the Release at `commit` lacks.
@@ -253,9 +260,14 @@ fn state_of(
         package: PendingPackage {
             name: entry.name.clone(),
             version: entry.version.clone(),
+            listed,
         },
         commit,
-        complete: listed && release.tag.is_some() && release.release && missing_assets.is_empty(),
+        complete: listed
+            && release.tag.is_some()
+            && release.release
+            && !release.draft
+            && missing_assets.is_empty(),
         missing_assets,
     }
 }
@@ -381,6 +393,7 @@ mod tests {
         ReleaseState {
             tag: Some("a".repeat(40)),
             release: true,
+            draft: false,
             assets: assets.iter().map(|name| (*name).to_owned()).collect(),
         }
     }
@@ -422,7 +435,8 @@ mod tests {
             pending.at("ccc").unwrap().packages,
             [PendingPackage {
                 name: "app".into(),
-                version: "0.2.1".into()
+                version: "0.2.1".into(),
+                listed: false,
             }]
         );
     }
@@ -473,6 +487,23 @@ mod tests {
                 tag: "v0.4.6".into(),
             }]
         );
+    }
+
+    #[test]
+    fn a_draft_with_every_asset_waits_for_publish_and_builds_nothing() {
+        let declared = [target("darwin-arm64"), target("linux-x64")];
+        let mut draft = finished(&["demo-darwin-arm64.tar.gz", "demo-linux-x64.tar.gz"]);
+        draft.draft = true;
+        let state = state_of(
+            &entry("demo", "0.4.6"),
+            at("aaa", 0),
+            true,
+            &draft,
+            &declared,
+        );
+        let pending = group(vec![state], "v0.4.6");
+        assert_eq!(pending.commits.len(), 1);
+        assert!(pending.assets.is_empty());
     }
 
     #[test]

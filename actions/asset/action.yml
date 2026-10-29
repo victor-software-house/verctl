@@ -1,7 +1,8 @@
 name: verctl asset
 description: >-
   Build one declared native target and attach the tarball to the
-  GitHub Release. Skip the job when no `[assets.NAME]` table is declared.
+  GitHub Release, draft or published. Skip the job when no
+  `[assets.NAME]` table is declared.
 author: victor-software-house
 branding:
   icon: package

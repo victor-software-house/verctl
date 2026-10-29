@@ -35,7 +35,7 @@ completion bootstrap.
 | `prepare` | — | Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews |
 | `publish` | — | Publish the versions on HEAD (cargo / bun + GitHub Release) |
 | `pin` | — | Rewrite collocated tool pins to the versions on HEAD |
-| `assets` | — | Plan or build native GitHub Release tarballs declared under `assets` |
+| `assets` | — | Plan, build, or upload the GitHub Release assets declared under `assets` |
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
 | `docs` | — | Wait for docs.rs to build each crates.io crate released at HEAD |
 | `semver` | — | Check the API of each crates.io crate whose next release is a patch |
@@ -121,9 +121,18 @@ assets), with no registry upload; use it for private binaries.
 
 `publish` acts on version commits: the commit that set each package's
 version. `publish --plan` lists every one whose release is incomplete
-(registry, tag, Release, assets unless `--skip-assets`), oldest first, and
-`publish` releases only the packages whose version commit is HEAD. Both
-report `nothing to release` when every release is complete.
+(registry, tag, published Release, assets unless `--skip-assets`), oldest
+first, and `publish` releases only the packages whose version commit is HEAD.
+Both report `nothing to release` when every release is complete.
+
+A Release whose tag carries declared assets (each `assets` target's tarball
+and each `assets.files` entry, a file the repository builds itself) is
+created as a draft after its tag, because an immutable Release takes no asset
+once published. Upload with `assets --build <target> --upload`, or
+`assets --upload --file <path>` for a declared file, then run `publish` again:
+it publishes the draft once every declared asset is uploaded, and otherwise
+reports `draft <url> lacks <names>`. The reusable workflow's `finalize` job
+does that after `assets`. `--skip-assets` publishes the Release at once.
 
 `docs` waits for docs.rs to build each crates.io library crate released at
 HEAD and fails on a build that failed or never arrived (`--timeout`, minutes,
