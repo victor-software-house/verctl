@@ -20,8 +20,9 @@ without its assets. verctl also has no way to name a prebuilt file as part
 of a release, so nothing checks that it was attached.
 
 Queue row: VER-079.
-A patch: every key and flag it adds is optional, and a repository with no
-assets releases as before.
+A minor: `github::ensure_release`, a public library function, takes the
+declared asset names. Every key and flag it adds is optional, and a
+repository with no assets releases as before.
 
 It is the `release ──▶ drafted ──asset──▶ finalize ──▶ released` slice of
 [VER-011](../release-state-machine/design.md) (section 1.2, decision 11),
