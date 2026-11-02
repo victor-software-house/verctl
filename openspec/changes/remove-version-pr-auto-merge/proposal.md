@@ -17,6 +17,7 @@ Queue row: VER-079.
    A caller that still passes it fails when it moves to this release, because GitHub refuses an undeclared input.
 4. verctl's own [`self-release.yml`][self-release] drops the `hold` job and the `VERCTL_RELEASE_HOLD` variable, which existed only to turn auto-merge off.
 5. The instructions, the operator skill, the README, and `AGENTS.md` stop describing auto-merge and say that a person merges the Version PR.
+
 ## Capabilities
 
 ### New Capabilities
