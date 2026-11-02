@@ -274,7 +274,10 @@ pub struct AssetTarget {
 #[non_exhaustive]
 pub struct Vendored {
     /// The upstream version, written by hand: `{version}` in every template.
-    #[garde(custom(cannot_be_empty("it names the release and the archives")))]
+    #[garde(
+        custom(cannot_be_empty("it names the release and the archives")),
+        custom(one_plain_name)
+    )]
     pub version: String,
     /// Release tag, with `{name}` and `{version}`. Omit for
     /// `{name}-{version}`.
@@ -310,7 +313,7 @@ pub struct Vendored {
     #[garde(inner(custom(inside_the_repo)))]
     pub notes: Option<PathBuf>,
     /// One entry per platform; the key is `{id}`, such as `linux-x64`.
-    #[garde(custom(at_least_one_target), dive)]
+    #[garde(custom(at_least_one_target), custom(every_key_is_one_plain_name), dive)]
     pub targets: BTreeMap<String, VendoredTarget>,
 }
 
@@ -371,6 +374,23 @@ fn only_placeholders(allowed: &'static [&'static str]) -> impl Fn(&str, &Config)
         }
         Ok(())
     }
+}
+
+/// `{name}`, `{version}`, and `{id}` are substituted into `archive` and
+/// `dir` after the load checked those templates, so a value holding a path
+/// separator or a parent step would move the archive or the packed directory
+/// outside the repository.
+fn one_plain_name(value: &str, _: &Config) -> garde::Result {
+    if value.is_empty() || value == "." || value == ".." || value.contains(['/', '\\']) {
+        return Err(garde::Error::new(format!(
+            "{value:?} must be one plain name, with no / or \\ and not . or .."
+        )));
+    }
+    Ok(())
+}
+
+fn every_key_is_one_plain_name<V>(map: &BTreeMap<String, V>, config: &Config) -> garde::Result {
+    map.keys().try_for_each(|key| one_plain_name(key, config))
 }
 
 fn at_least_one_target(targets: &BTreeMap<String, VendoredTarget>, _: &Config) -> garde::Result {
@@ -443,7 +463,7 @@ pub struct Config {
     /// Asset sets built from someone else's source at its own version, by
     /// name. Omit when the repo vendors nothing.
     #[serde(default)]
-    #[garde(dive)]
+    #[garde(custom(every_key_is_one_plain_name), dive)]
     pub vendored: BTreeMap<String, Vendored>,
     /// PR and push validation. Empty means one `verify` on `ubuntu-latest`.
     #[serde(default)]
@@ -1484,7 +1504,7 @@ mod tests {
         let set = &config.vendored["lib"];
         assert_eq!(set.tag, "{name}-{version}");
         assert_eq!(set.archive, "{name}-{version}-{id}.tar.gz");
-        assert!(set.build.is_empty());
+        assert_eq!(set.build, Vec::<String>::new());
         assert_eq!(set.notes, None);
     }
 
@@ -1569,6 +1589,26 @@ mod tests {
                 "a file outside the repo",
                 base.replace("files: [lib]", "files: [../secret]"),
                 "must stay inside the repository",
+            ),
+            (
+                "version with a path separator",
+                base.replace("version: 1.4.0", "version: 1.4/../../x"),
+                "must be one plain name",
+            ),
+            (
+                "target key with a parent step",
+                base.replace("linux-x64:", "\"..\":"),
+                "must be one plain name",
+            ),
+            (
+                "target key with a path separator",
+                base.replace("linux-x64:", "a/b:"),
+                "must be one plain name",
+            ),
+            (
+                "set name with a path separator",
+                base.replace("  lib:", "  \"../lib\":"),
+                "must be one plain name",
             ),
             (
                 "undeclared machine",

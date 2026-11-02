@@ -13,12 +13,17 @@ Each set SHALL declare `version`, `dir`, `files`, and `targets`, and MAY declare
 
 ### Requirement: A vendored set is validated at load
 
-The load SHALL fail when an `archive` template lacks `{id}` or does not end in `.tar.gz`, when `files` or `targets` is empty, when `dir`, a `files` entry, or `notes` leaves the repository, or when a target's `runner` is not declared in `runners`.
+The load SHALL fail when an `archive` template lacks `{id}` or does not end in `.tar.gz`, when `files` or `targets` is empty, when `dir`, a `files` entry, or `notes` leaves the repository, when a target's `runner` is not declared in `runners`, or when a set name, a target key, or `version` is empty, `.`, `..`, or holds `/` or `\`.
 
 #### Scenario: Archive without the target
 
 - **WHEN** a set declares `archive: libexample.tar.gz`
 - **THEN** loading `.ctl/ver.yaml` fails with a message that says the archive must contain `{id}`
+
+#### Scenario: Target key that leaves the repository
+
+- **WHEN** a set declares a target `../x`
+- **THEN** loading `.ctl/ver.yaml` fails with a message that says the key must be one plain name
 
 ### Requirement: A config needs a package or a vendored set
 
