@@ -17,12 +17,7 @@ Without auto-merge, every Version PR already waits for a person, so the job has 
 Alternative: keep the hold job for a future need.
 It lost because it only calls `gh pr merge --disable-auto`, which has no effect once nothing enables auto-merge.
 
-## 3. A patch release
-
-Removing a flag and a workflow input breaks their callers, which in 0.x is a minor bump.
-The operator ruled on 2026-11-02 that this removal ships as a patch, because no caller depends on auto-merge being available.
-
-## 4. Override and disable path
+## 3. Override and disable path
 
 The change removes an automatic behaviour rather than adding one.
 The Version PR's merge is the person's action, and nothing in verctl overrides it.
