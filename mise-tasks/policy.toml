@@ -1,1 +1,4 @@
-"policy" = { description = "Conftest on GitHub workflows", run = "conftest test --policy policy .github/workflows" }
+"policy" = { description = "Conftest on GitHub workflows, and their mise pins against mise.toml", run = [
+  "conftest test --policy policy .github/workflows",
+  "conftest test --combine --namespace mise_pins --policy policy .github/workflows mise.toml",
+] }

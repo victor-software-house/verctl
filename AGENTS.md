@@ -156,7 +156,10 @@ auto-merge on it, so no release happens on its own.
 mise: the repository setup comes from the shared Copier template
 (project `rust-crate`, layout `crate`); `.copier-answers.yml` records its
 tag and answers. Take a new tag with `copier update --defaults` and
-check `git diff --check` before committing. `template.yml` calls the
+check `git diff --check` before committing. The `policy` task fails when a
+workflow names a mise version other than `min_version` in `mise.toml`,
+including the `mise-version` default of `release.yml`, which the template
+does not render. `template.yml` calls the
 shared drift check of the public actions repository at the commit the
 template pins, reported as `template / Template`: it fails only a pull
 request that changes `.copier-answers.yml` without reaching the newest tag,
