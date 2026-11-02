@@ -77,6 +77,10 @@ pub fn run_inherit(argv: &[String], timeout: Duration) -> Result<()> {
         let _ = tail.join();
         bail!("command timed out after {timeout:?}");
     }
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "a thread join error is a panic payload (`Box<dyn Any>`), not an `Error`, so it cannot be a source"
+    )]
     let stderr = tail
         .join()
         .map_err(|_| anyhow::anyhow!("stderr reader panicked"))?;
