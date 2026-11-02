@@ -17,7 +17,7 @@ mod presentation;
 use presentation::{
     AssetsReport, CheckReport, CiReport, DocsReport, InstructionsReport, PinReport, PrepareBump,
     PrepareReport, PublishReport, ReleaseRow, Report, SemverReport, StatusFragment, StatusPackage,
-    StatusReport, VersionCheckReport,
+    StatusReport, VendoredReport, VersionCheckReport,
 };
 
 const INSTRUCTIONS: &str = include_str!("instructions.md");
@@ -38,7 +38,10 @@ fn execute(cli: Cli) -> Result<Report> {
         Command::Prepare(args) => prepare_report(&args).map(Report::Prepare),
         Command::Publish(args) => publish_report(&args).map(Report::Publish),
         Command::Pin(args) => pin_report(&args).map(Report::Pin),
-        Command::Assets(args) => assets_report(&args).map(Report::Assets),
+        Command::Assets(args) => match &args.vendored {
+            Some(name) => vendored_report(&args, name).map(Report::Vendored),
+            None => assets_report(&args).map(Report::Assets),
+        },
         Command::Ci(args) => ci_report(&args).map(Report::Ci),
         Command::Docs(args) => docs_report(&args).map(Report::Docs),
         Command::Semver(args) => semver_report(&args).map(Report::Semver),
@@ -383,6 +386,34 @@ fn assets_report(args: &verctl::cli::AssetsArgs) -> Result<AssetsReport> {
         plan: planned,
         tarball: None,
         uploaded: None,
+    })
+}
+
+fn vendored_report(args: &verctl::cli::AssetsArgs, name: &str) -> Result<VendoredReport> {
+    let config = Config::load(&args.config)?;
+    let root = &config::root_of(&args.config);
+    let planned = assets::plan_vendored(&config, name)?;
+    if let Some(path) = &args.github_output {
+        assets::write_vendored_github_output(&planned, path)?;
+    }
+    let Some(id) = &args.build else {
+        anyhow::ensure!(!args.upload, "--upload requires --build");
+        return Ok(VendoredReport {
+            plan: planned,
+            archive: None,
+            uploaded: None,
+        });
+    };
+    let archive = assets::build_vendored(&planned, id, root)?;
+    let uploaded = if args.upload {
+        Some(assets::upload_vendored(&planned, root, &archive)?)
+    } else {
+        None
+    };
+    Ok(VendoredReport {
+        plan: planned,
+        archive: Some(archive.display().to_string()),
+        uploaded,
     })
 }
 

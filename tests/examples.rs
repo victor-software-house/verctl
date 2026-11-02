@@ -251,6 +251,40 @@ fn the_example_assets_table_plans_the_targets_it_documents() {
     );
 }
 
+#[test]
+fn the_example_vendored_set_plans_the_archives_it_documents() {
+    let root = planted();
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("parse");
+    let plan = assets::plan_vendored(&config, "libexample").expect("plan");
+    assert_eq!(plan.tag, "libexample-1.4.0");
+    let targets: Vec<(&str, String, &str)> = plan
+        .targets
+        .iter()
+        .map(|target| {
+            (
+                target.id.as_str(),
+                target.labels.join(", "),
+                target.asset.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        targets,
+        [
+            (
+                "linux-x64",
+                "nscloud-ubuntu-24.04-amd64-4x8".to_owned(),
+                "libexample-1.4.0-linux-x64.tar.gz"
+            ),
+            (
+                "macos-arm64",
+                "macos-15".to_owned(),
+                "libexample-1.4.0-macos-arm64.tar.gz"
+            ),
+        ]
+    );
+}
+
 /// `config.pins.len()` proves a pin was parsed, not that it points anywhere.
 /// Run the rewrite: a wrong `file` cannot be read, a wrong `tool` is rejected,
 /// and a `package` naming nothing is skipped without touching the file.

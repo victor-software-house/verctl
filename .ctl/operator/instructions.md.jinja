@@ -309,6 +309,24 @@ own pins. A pin that must name an already-published tarball — a repo's
 own bootstrap tool — is not a `pins` entry. OIDC trusted publishing
 is later (VER-007).
 
+A vendored set is release assets built from someone else's source, at
+that source's version, so mise can install them as a `github:` tool.
+Declare it as `vendored.<name>`: `version`, `tag` (default
+`{name}-{version}`), `archive` (default `{name}-{version}-{id}.tar.gz`;
+it must contain `{id}` and end in `.tar.gz`), an optional `build` argv,
+`dir`, the `files` to pack from it, optional `notes`, and `targets`,
+each naming one `runner`. Fragments never bump its version and
+`publish` never reads it; a config that vendors may declare no
+packages. `verctl assets --vendored <name>` (`VERCTL_VENDORED`) plans
+the set and writes the same `has_assets`, `tag`, and `matrix` outputs.
+`--build <id>` runs `build` with `{name}`, `{version}`, and `{id}`
+replaced, then packs `tar czf <archive> -C <dir> <files>`. `--upload`
+creates the Release at HEAD when it is missing, never marked latest,
+with `notes` as its body, then attaches the archive and
+`<archive>.sha256`, written from the digest GitHub reports for the
+stored archive. An asset the Release already holds is `already`; to
+replace an archive, delete it and its `.sha256` together.
+
 Prefer a template over a pin. A served file under `.ctl/templates/`
 {% raw %}declares its own target in top-level `{%- set … -%}` exports and is{% endraw %}
 rendered onto the Version PR commit, so it cannot drift; a `pins`

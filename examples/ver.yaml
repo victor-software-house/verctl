@@ -76,6 +76,8 @@ runners:
     labels: [self-hosted, linux, x64]
   ns:
     labels: [nscloud-ubuntu-24.04-amd64-4x8]
+  macos:
+    labels: [macos-15]
 
 # Omit `assets` entirely for a library. `bin` is the recipe every target
 # shares; prepare/build/binary override the stock rust recipe. Every other key
@@ -99,6 +101,29 @@ assets:
     os: linux
     arch: arm64
     triple: aarch64-unknown-linux-gnu
+
+# Release assets built from someone else's source, at that source's version,
+# so mise can install them as a `github:` tool. Fragments never bump
+# `version`; edit it here. `verctl assets --vendored libexample` plans the set,
+# `--build <id>` runs `build` and packs `files` from `dir`, and `--upload`
+# creates the Release (never marked latest) when it is missing and attaches
+# the archive and its `.sha256`. `tag` and `archive` show their defaults.
+vendored:
+  libexample:
+    version: 1.4.0
+    tag: "{name}-{version}"
+    archive: "{name}-{version}-{id}.tar.gz"
+    build: [mise, run, "libexample:build", "{id}"]
+    dir: build/libexample/{id}
+    files: [lib/libexample.a, include, LICENSE]
+    notes: vendor/libexample.md
+    # Each key is `{id}`, the platform name in the archive. verctl knows no
+    # vendored platform, so every target names its machine.
+    targets:
+      linux-x64:
+        runner: ns
+      macos-arm64:
+        runner: macos
 
 # PR and push validation. Omit `ci` for one `verify` job on ubuntu-latest.
 # A job may name several machines: one check each, `verify (ns)` and

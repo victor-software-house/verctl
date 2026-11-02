@@ -191,33 +191,34 @@ struct GithubMatrix {
 /// Returns an error when the matrix cannot be encoded as JSON, or when the
 /// file at `path` cannot be opened or written.
 pub fn write_github_output(plan: &AssetsPlan, path: &Path) -> Result<()> {
-    let matrix = GithubMatrix {
-        include: plan
-            .matrix
-            .include
-            .iter()
-            .map(|row| GithubRow {
-                id: row.id.clone(),
-                labels: row.labels.clone(),
-            })
-            .collect(),
-    };
-    let encoded = serde_json::to_string(&matrix).context("encode matrix")?;
-    let body = formatdoc_output(plan, &encoded);
-    github::write_output(path, &body)
+    let include = plan
+        .matrix
+        .include
+        .iter()
+        .map(|row| GithubRow {
+            id: row.id.clone(),
+            labels: row.labels.clone(),
+        })
+        .collect();
+    write_matrix_output(path, plan.has_assets, &plan.tag, include)
 }
 
-fn formatdoc_output(plan: &AssetsPlan, matrix: &str) -> String {
+/// One writer for both kinds of set, so a workflow reads `has_assets`, `tag`,
+/// and `matrix` the same way from either.
+fn write_matrix_output(
+    path: &Path,
+    has_assets: bool,
+    tag: &str,
+    include: Vec<GithubRow>,
+) -> Result<()> {
     use ctl_core::formatdoc;
-    formatdoc! {"
-        has_assets={}
-        tag={}
-        matrix={}
-        ",
-        plan.has_assets,
-        plan.tag,
-        matrix,
-    }
+    let encoded = serde_json::to_string(&GithubMatrix { include }).context("encode matrix")?;
+    let body = formatdoc! {"
+        has_assets={has_assets}
+        tag={tag}
+        matrix={encoded}
+    "};
+    github::write_output(path, &body)
 }
 
 /// Builds the target `id` and packs its binary into a tarball under `root`.
@@ -276,6 +277,213 @@ pub fn upload(root: &Path, tag: &str, tarball: &Path) -> Result<String> {
     let token = crate::release::resolve_token()?;
     let repo = github::repo(root)?;
     github::upload_release_asset(&token, &repo, tag, tarball)
+}
+
+/// One target of a vendored set: its platform name, the machine that builds
+/// it, and the archive it writes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct VendoredTarget {
+    /// The target's key under `targets`, such as `linux-x64`: `{id}`.
+    pub id: String,
+    /// The machine as declared, for the grid. `runs-on:` gets `labels`.
+    pub machine: String,
+    /// The `runs-on:` labels of the machine that builds this target.
+    pub labels: Vec<String>,
+    /// File name of the archive.
+    pub asset: String,
+}
+
+/// What a vendored set builds and uploads, resolved from the config.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct VendoredPlan {
+    /// The set's key under `vendored`: `{name}`.
+    pub name: String,
+    /// The upstream version the set declares.
+    pub version: String,
+    /// The release tag the archives are uploaded to.
+    pub tag: String,
+    /// One entry per target.
+    pub targets: Vec<VendoredTarget>,
+    #[serde(skip)]
+    build: Vec<String>,
+    #[serde(skip)]
+    dir: String,
+    #[serde(skip)]
+    files: Vec<String>,
+    #[serde(skip)]
+    notes: Option<PathBuf>,
+}
+
+/// Where a vendored target's archive and checksum landed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct VendoredUpload {
+    /// The Release's HTML URL.
+    pub release: String,
+    /// The archive's download URL, or `already <name>`.
+    pub archive: String,
+    /// The checksum file's download URL, or `already <name>`.
+    pub checksum: String,
+}
+
+/// Resolves the vendored set `name`: its tag, and each target's machine and
+/// archive name.
+///
+/// # Errors
+///
+/// Returns an error when `vendored` declares no set `name`, or when a target's
+/// machine declares an invalid label set.
+pub fn plan_vendored(config: &Config, name: &str) -> Result<VendoredPlan> {
+    let set = config.vendored.get(name).with_context(|| {
+        format!(
+            "vendored declares no set {name:?} (declared: {})",
+            config
+                .vendored
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    })?;
+    let mut targets = Vec::new();
+    for (id, target) in &set.targets {
+        let machine = runners::one(config, "vendored target", id, &target.runner)?;
+        targets.push(VendoredTarget {
+            id: id.clone(),
+            machine: machine.name,
+            labels: machine.labels,
+            asset: expand_one(&set.archive, &vendored_ctx(name, &set.version, id)),
+        });
+    }
+    Ok(VendoredPlan {
+        name: name.to_owned(),
+        version: set.version.clone(),
+        tag: expand_one(&set.tag, &vendored_ctx(name, &set.version, "")),
+        targets,
+        build: set.build.clone(),
+        dir: set.dir.display().to_string(),
+        files: set
+            .files
+            .iter()
+            .map(|file| file.display().to_string())
+            .collect(),
+        notes: set.notes.clone(),
+    })
+}
+
+/// The placeholders a vendored template may use. The tag names one Release
+/// for every target, so it is rendered with an empty `id`.
+fn vendored_ctx(name: &str, version: &str, id: &str) -> BTreeMap<&'static str, String> {
+    BTreeMap::from([
+        ("name", name.to_owned()),
+        ("version", version.to_owned()),
+        ("id", id.to_owned()),
+    ])
+}
+
+/// Appends `has_assets`, `tag`, and the matrix of a vendored set to the step
+/// output file `path`, in the same shape as [`write_github_output`].
+///
+/// # Errors
+///
+/// Returns an error when the matrix cannot be encoded as JSON, or when the
+/// file at `path` cannot be opened or written.
+pub fn write_vendored_github_output(plan: &VendoredPlan, path: &Path) -> Result<()> {
+    let include = plan
+        .targets
+        .iter()
+        .map(|target| GithubRow {
+            id: target.id.clone(),
+            labels: target.labels.clone(),
+        })
+        .collect();
+    write_matrix_output(path, !plan.targets.is_empty(), &plan.tag, include)
+}
+
+/// Runs the set's `build` for target `id`, then packs the listed files from
+/// `dir` into the target's archive under `root`, each at its place under
+/// `dir`.
+///
+/// # Errors
+///
+/// Returns an error when `id` is not a target of the set, when the build or
+/// `tar` cannot run, times out, or exits unsuccessfully, when a listed file is
+/// missing after the build, or when a path is not valid UTF-8.
+pub fn build_vendored(plan: &VendoredPlan, id: &str, root: &Path) -> Result<PathBuf> {
+    let target = plan
+        .targets
+        .iter()
+        .find(|target| target.id == id)
+        .with_context(|| format!("target {id:?} is not in vendored.{}", plan.name))?;
+    let ctx = vendored_ctx(&plan.name, &plan.version, id);
+    if !plan.build.is_empty() {
+        process::run_inherit(&expand(&plan.build, &ctx), BUILD_TIMEOUT)
+            .with_context(|| format!("vendored.{}.build", plan.name))?;
+    }
+    let dir = root.join(expand_one(&plan.dir, &ctx));
+    let files = expand(&plan.files, &ctx);
+    for file in &files {
+        let packed = dir.join(file);
+        anyhow::ensure!(
+            packed.exists(),
+            "vendored.{}: {} is missing after the build",
+            plan.name,
+            packed.display()
+        );
+    }
+    let archive = root.join(&target.asset);
+    let mut tar = process::argv(&[
+        "tar",
+        "czf",
+        archive.to_str().context("archive path")?,
+        "-C",
+        dir.to_str().context("dir")?,
+    ]);
+    tar.extend(files);
+    process::run_inherit(&tar, Duration::from_mins(2)).context("tar")?;
+    Ok(archive)
+}
+
+/// Creates the set's Release at HEAD when it is missing, uploads `archive`,
+/// then uploads `<archive>.sha256` written from the digest GitHub reports for
+/// the stored archive. An asset the Release already holds is reported as
+/// `already`.
+///
+/// # Errors
+///
+/// Returns an error when no token is set, the GitHub repository or HEAD cannot
+/// be read, the notes file cannot be read, the Release cannot be read or
+/// created, an upload fails, GitHub reports no digest for the archive, or the
+/// checksum file cannot be written.
+pub fn upload_vendored(plan: &VendoredPlan, root: &Path, archive: &Path) -> Result<VendoredUpload> {
+    let token = crate::release::resolve_token()?;
+    let repo = github::repo(root)?;
+    let notes = match &plan.notes {
+        Some(path) => fs::read_to_string(root.join(path))
+            .with_context(|| format!("vendored.{}.notes {}", plan.name, path.display()))?,
+        None => String::new(),
+    };
+    let sha = crate::git::head_sha(root)?;
+    let release = github::ensure_vendored_release(&token, &repo, &plan.tag, &notes, &sha)?;
+    let uploaded = github::upload_release_asset(&token, &repo, &plan.tag, archive)?;
+    let name = archive
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("archive name")?;
+    let digest = github::asset_sha256(&token, &repo, &plan.tag, name)?;
+    let checksum = archive.with_file_name(format!("{name}.sha256"));
+    fs::write(&checksum, checksum_line(&digest, name))
+        .with_context(|| checksum.display().to_string())?;
+    let checksum_uploaded = github::upload_release_asset(&token, &repo, &plan.tag, &checksum)?;
+    Ok(VendoredUpload {
+        release,
+        archive: uploaded,
+        checksum: checksum_uploaded,
+    })
+}
+
+/// One `sha256sum` line: the digest, two spaces, the file name.
+fn checksum_line(digest: &str, name: &str) -> String {
+    format!("{digest}  {name}\n")
 }
 
 fn resolve_target(
@@ -410,6 +618,15 @@ mod tests {
         let root = tempfile::TempDir::new().unwrap();
         write_cargo(root.path(), version);
         plan(config, root.path())
+    }
+
+    /// The format `sha256sum --check` reads: digest, two spaces, file name.
+    #[test]
+    fn a_checksum_line_is_what_sha256sum_reads() {
+        assert_eq!(
+            super::checksum_line("abc123", "lib-1.0.0-linux-x64.tar.gz"),
+            "abc123  lib-1.0.0-linux-x64.tar.gz\n"
+        );
     }
 
     #[test]
