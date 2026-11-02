@@ -225,7 +225,7 @@ fn cli_hand_edit_fails_with_one_stderr_report() {
     let output = check_cmd(dir.path()).output().unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "{stderr}");
-    assert_eq!(output.stdout, &[] as &[u8]);
+    assert_eq!(output.stdout, Vec::<u8>::new());
     assert!(stderr.contains("demo"), "{stderr}");
     assert!(stderr.contains("1.0.0"), "{stderr}");
     assert!(stderr.contains("1.0.1"), "{stderr}");
