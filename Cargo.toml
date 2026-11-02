@@ -9,6 +9,7 @@ repository = "https://github.com/victor-software-house/verctl"
 readme = "README.md"
 keywords = ["version", "changelog", "mise", "changeset", "release"]
 categories = ["command-line-utilities", "development-tools"]
+autotests = false
 
 [package.metadata.docs.rs]
 all-features = true
