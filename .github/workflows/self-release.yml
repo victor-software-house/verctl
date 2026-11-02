@@ -58,6 +58,8 @@ jobs:
     needs: build
     uses: ./.github/workflows/release.yml
     with:
+      # Every release job installs this mise; it must meet min_version in mise.toml.
+      mise-version: 2026.10.25
       # mise.release.toml's ver task runs verctl from PATH, where each job
       # puts the build above.
       mise-env: ci,release
