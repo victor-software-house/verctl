@@ -48,10 +48,6 @@ on:
         description: Wait for docs.rs to build each released crate.
         type: boolean
         default: true
-      auto-merge:
-        description: Enable auto-merge on the Version PR. Needs the App secrets.
-        type: boolean
-        default: false
       config:
         description: Path to the declarations file. Empty means .ctl/ver.yaml.
         type: string
@@ -532,9 +528,7 @@ jobs:
       - name: Prepare the Version PR
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
-          VERCTL_JOB_TOKEN: ${{ github.token }}
           VERCTL_PR: "true"
-          VERCTL_AUTO_MERGE: ${{ inputs.auto-merge }}
           VERCTL_PR_TITLE: ${{ inputs.title }}
           VERCTL_COMMIT_MESSAGE: ${{ inputs.commit-message }}
         run: mise run ver prepare

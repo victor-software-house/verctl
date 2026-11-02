@@ -513,7 +513,7 @@ fn non_empty_env(name: &str) -> Option<String> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct OpenedPr {
-    /// The PR number, which auto-merge acts on.
+    /// The PR number.
     pub number: u64,
     /// The PR's web URL.
     pub url: String,
@@ -557,44 +557,6 @@ pub fn open_or_update_pr(
         number: created.number,
         url: created.url,
     }))
-}
-
-/// Refuse auto-merge before `prepare --pr` writes anything.
-///
-/// The token must not be the job's own, which the workflow names in
-/// `VERCTL_JOB_TOKEN`: a merge made with `GITHUB_TOKEN` starts no workflow, so
-/// the release after it would never run. And a ruleset on `base` must require
-/// a status check, or GitHub merges the moment auto-merge is on.
-///
-/// # Errors
-///
-/// Returns an error when `token` is the job's own, when the repository has no
-/// GitHub `origin`, when the rules lookup fails, or when no ruleset on `base`
-/// requires a status check.
-pub fn require_auto_merge(root: &Path, token: &str, base: &str) -> Result<()> {
-    ensure!(
-        non_empty_env("VERCTL_JOB_TOKEN").as_deref() != Some(token),
-        "auto-merge needs a token other than the job's GITHUB_TOKEN, such as a GitHub App token: a merge made with GITHUB_TOKEN starts no workflow, so the release would not run"
-    );
-    let repo = github::repo(root)?;
-    ensure!(
-        github::requires_status_check(token, &repo, base)?,
-        "{base} has no required status check; auto-merge would merge the Version PR at once"
-    );
-    Ok(())
-}
-
-/// Enable auto-merge on the Version PR `pr`.
-///
-/// It takes the PR that [`open_or_update_pr`] returned rather than listing
-/// open PRs again, because the list can lag a PR created a moment before.
-///
-/// # Errors
-///
-/// Returns an error when the repository has no GitHub `origin` or GitHub
-/// refuses auto-merge.
-pub fn auto_merge(root: &Path, token: &str, pr: &OpenedPr) -> Result<()> {
-    github::enable_auto_merge(token, &github::repo(root)?, pr.number)
 }
 
 /// The PR body: the changelog, trimmed, or a stock line when it is empty.

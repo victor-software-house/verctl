@@ -54,37 +54,10 @@ jobs:
           # A failed release job can be rerun for a week without rebuilding.
           retention-days: 7
 
-  # The repository variable VERCTL_RELEASE_HOLD=true holds the next release:
-  # the Version PR opens and updates but never merges itself, so a person
-  # merges it when the hold ends (VER-065). Delete the variable to resume.
-  # Auto-merge enabled before the hold survives later pushes, so the hold also
-  # turns it off on the open Version PR.
-  hold:
-    name: Hold the release
-    if: >-
-      vars.VERCTL_RELEASE_HOLD == 'true' &&
-      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write # disabling auto-merge is a merge setting on the PR
-      pull-requests: write # reads and edits the Version PR
-    steps:
-      - name: Turn off auto-merge on the Version PR
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          BASE: ${{ github.event.repository.default_branch }}
-        run: |
-          number=$(gh pr list --repo "${REPO}" --head "verctl/release/${BASE}" --base "${BASE}" --state open --json number,autoMergeRequest --jq '.[] | select(.autoMergeRequest != null) | .number')
-          if [ -n "${number}" ]; then
-            gh pr merge "${number}" --repo "${REPO}" --disable-auto
-          fi
-
   release:
     needs: build
     uses: ./.github/workflows/release.yml
     with:
-      auto-merge: ${{ vars.VERCTL_RELEASE_HOLD != 'true' }}
       # mise.release.toml's ver task runs verctl from PATH, where each job
       # puts the build above.
       mise-env: ci,release

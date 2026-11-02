@@ -368,37 +368,19 @@ fn check_ok_when_dir_missing() {
     assert!(stdout.contains("0 fragment(s)"), "{stdout}");
 }
 
+/// verctl never arms a Version PR's merge: a person merges it, so the
+/// removed `--auto-merge` is an unknown argument, refused before any write.
 #[test]
-fn auto_merge_needs_pr() {
+fn prepare_refuses_auto_merge() {
     let root = demo_root();
     let output = common::verctl()
         .current_dir(root.path())
-        .args(["prepare", "--auto-merge", "--color", "never"])
-        .output()
-        .expect("spawn");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!output.status.success(), "{stderr}");
-    assert!(stderr.contains("--auto-merge needs --pr"), "{stderr}");
-    let cargo = fs::read_to_string(root.path().join("Cargo.toml")).expect("read");
-    assert!(cargo.contains("version = \"1.0.0\""), "{cargo}");
-}
-
-/// A merge made with the job's own token starts no workflow, so auto-merge
-/// with it is refused before a manifest moves or a fragment is consumed.
-#[test]
-fn auto_merge_refuses_the_job_token_before_writing() {
-    let root = demo_root();
-    let output = common::verctl()
-        .current_dir(root.path())
-        .env("GITHUB_TOKEN", "job-token")
-        .env("VERCTL_JOB_TOKEN", "job-token")
-        .env("GITHUB_REF_NAME", "main")
         .args(["prepare", "--pr", "--auto-merge", "--color", "never"])
         .output()
         .expect("spawn");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "{stderr}");
-    assert!(stderr.contains("starts no workflow"), "{stderr}");
+    assert!(stderr.contains("--auto-merge"), "{stderr}");
     let cargo = fs::read_to_string(root.path().join("Cargo.toml")).expect("read");
     assert!(cargo.contains("version = \"1.0.0\""), "{cargo}");
     assert!(root.path().join(".changeset/bump.md").exists());

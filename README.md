@@ -309,10 +309,8 @@ For a hand-written workflow, use these actions; most repositories call the
 reusable workflow instead.
 
 The Version PR comes from `verctl/release/<base>`, one per base branch.
-`actions/version-pr` takes `auto-merge: true` (`prepare --pr --auto-merge`)
-to merge the Version PR once the base branch's required checks pass. It
-needs a ruleset that requires a status check on that branch, and a GitHub
-App token in `token`; verctl checks both before it writes anything.
+verctl never merges it or enables auto-merge on it: a release starts only
+when a person merges the Version PR.
 
 Mise owns tools. Publish uses the registry's token secret (for crates.io,
 `CARGO_REGISTRY_TOKEN`) and the workflow's `GITHUB_TOKEN`; no PAT.

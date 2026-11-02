@@ -10,7 +10,7 @@ passes no input SHALL get verctl's defaults.
 #### Scenario: The declared interface
 
 - **WHEN** a caller reads the workflow's `workflow_call` block
-- **THEN** it declares the inputs `version-pr`, `publish`, `assets`, `docs`, `auto-merge`, `config`, `runner`, `mise-version`, `mise-env`, `mise-ignored-config-paths`, `title`, `commit-message`, `registry-token-env` and `crates-io-trusted-publishing`
+- **THEN** it declares the inputs `version-pr`, `publish`, `assets`, `docs`, `config`, `runner`, `mise-version`, `mise-env`, `mise-ignored-config-paths`, `title`, `commit-message`, `registry-token-env` and `crates-io-trusted-publishing`
 - **AND** the optional secrets `app-client-id`, `app-private-key` and `registry-token`
 
 #### Scenario: A caller with no inputs
@@ -32,8 +32,7 @@ passes no input SHALL get verctl's defaults.
 ### Requirement: Each part can be turned off
 
 Setting `version-pr`, `publish`, `assets`, or `docs` to `false` SHALL skip
-the matching job and SHALL NOT change what the other jobs do. `auto-merge`
-SHALL default to `false`.
+the matching job and SHALL NOT change what the other jobs do.
 
 #### Scenario: A repository that publishes nothing
 
@@ -49,11 +48,6 @@ SHALL default to `false`.
 
 - **WHEN** a caller sets `version-pr: false` and a fragment lands on `main`
 - **THEN** no `propose` job runs and no `verctl/release/main` branch is pushed
-
-#### Scenario: Auto-merge without the App
-
-- **WHEN** a caller sets `auto-merge: true` and maps no `app-client-id`
-- **THEN** the `propose` job fails before pushing, naming the App secrets
 
 ### Requirement: A caller can keep repository-only mise configs out of the release jobs
 

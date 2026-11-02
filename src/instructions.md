@@ -113,7 +113,7 @@ thin caller on push to the default branch and on `workflow_dispatch`
 commit, publishes each in history order, builds the assets each Release
 lacks, waits for docs.rs, then opens or updates the Version PR. Every
 input is optional and defaults to verctl's: `version-pr`, `publish`,
-`assets`, `docs`, `auto-merge`, `config`, `runner`, `mise-version`,
+`assets`, `docs`, `config`, `runner`, `mise-version`,
 `mise-env`, `mise-ignored-config-paths`, `title`, `commit-message`,
 `registry-token-env`, `crates-io-trusted-publishing`, and
 `verctl-artifact` (verctl's own release only: each job runs a verctl
@@ -179,16 +179,10 @@ when the checkout lacks them or is shallow, so the depth-1 pull request checkout
 `actions/checkout` needs no `fetch-depth`. A full clone that has them
 fetches nothing.
 
-`prepare --pr --auto-merge` (`VERCTL_AUTO_MERGE`, or `auto-merge: true` on
-`actions/version-pr`) enables GitHub auto-merge on the Version PR, as a
-squash titled `<title> (#<number>)` with the PR description as body. GitHub
-merges once the base branch's required checks pass. Before it writes
-anything, verctl fails when no ruleset on the base branch requires a status
-check, because GitHub would merge at once, and when its token equals
-`VERCTL_JOB_TOKEN` (the action sets it to the job's `GITHUB_TOKEN`), because
-a merge made with that token starts no publish workflow. Pass a GitHub App
-token. Cancel one Version PR's auto-merge with
-`gh pr merge --disable-auto <number>`.
+verctl never merges the Version PR and never enables auto-merge on it. A
+release starts only when a person merges the Version PR. Open it with a
+GitHub App token: a pull request opened with the job's `GITHUB_TOKEN` starts
+no CI.
 
 This repo compiles itself: `mise.toml` holds the toolchain, and
 `mise run ver` runs this checkout. Local default is `dev`

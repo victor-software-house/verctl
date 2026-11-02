@@ -151,10 +151,8 @@ GitHub event's pull request has this repository as its head repository and
 through the API. A version the default branch carries at its merge-base
 with HEAD is not a hand edit. On Actions the check fetches the base and
 default branches when the checkout lacks them or is shallow. CI does not skip.
-This repository's self-release caller passes `auto-merge: true`, except
-while the repository variable `VERCTL_RELEASE_HOLD` is `true`: then the
-Version PR opens and updates but never merges itself, so the release waits
-for a person to merge it. Delete the variable to resume.
+Only the operator merges the Version PR; nothing in CI merges it or enables
+auto-merge on it, so no release happens on its own.
 mise: the repository setup comes from the shared Copier template
 (project `rust-crate`, layout `crate`); `.copier-answers.yml` records its
 tag and answers. Take a new tag with `copier update --defaults` and

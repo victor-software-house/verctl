@@ -104,9 +104,8 @@ fn versions_for_templates(
     Ok(planned.to_vec())
 }
 
-/// The token and Version PR that `prepare --pr` writes with, and the
-/// auto-merge refusals, all settled before anything is written; `None` when
-/// the run opens no pull request.
+/// The token and Version PR that `prepare --pr` writes with, settled before
+/// anything is written; `None` when the run opens no pull request.
 fn version_pr_target(
     args: &PrepareArgs,
     root: &Path,
@@ -116,17 +115,10 @@ fn version_pr_target(
     }
     let token = release::resolve_token()?;
     let version_pr = release::VersionPr::from_env(root)?;
-    if args.auto_merge {
-        release::require_auto_merge(root, &token, &version_pr.base)?;
-    }
     Ok(Some((token, version_pr)))
 }
 
 fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
-    anyhow::ensure!(
-        !args.auto_merge || args.open_pr(),
-        "--auto-merge needs --pr"
-    );
     let dry_run = args.dry_run();
     let config = Config::load(&args.config)?;
     let fragments = fragment::load_dir(&args.dir)?;
@@ -216,11 +208,6 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
             &changelog,
             config.prepare.version_label(),
         )?;
-        if args.auto_merge
-            && let Some(opened) = &opened
-        {
-            release::auto_merge(root, token, opened)?;
-        }
         pr = opened.map(|opened| opened.url);
     }
     Ok(PrepareReport {
