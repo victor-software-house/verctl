@@ -8,6 +8,10 @@
 //! Omit `assets` when there is no host binary. Override `prepare`, `build`,
 //! and `binary` when the stock rust recipe is the wrong stack. PR CI never
 //! reads this list.
+//!
+//! `assets.files` names files the repository builds itself, which verctl
+//! only uploads. Every target tarball and file is a declared asset: the
+//! Release stays a draft until each one is uploaded.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -62,6 +66,8 @@ pub struct AssetsPlan {
     pub has_assets: bool,
     /// The build matrix.
     pub matrix: Matrix,
+    /// Files the repository builds itself, from `assets.files`.
+    pub files: Vec<PathBuf>,
     #[serde(skip)]
     prepare: Vec<String>,
     #[serde(skip)]
@@ -158,6 +164,7 @@ pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
         tag,
         has_assets: !include.is_empty(),
         matrix: Matrix { include },
+        files: assets.files,
         prepare: assets.prepare.unwrap_or_else(|| {
             if custom_build {
                 Vec::new()
@@ -263,6 +270,46 @@ pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
     ]);
     process::run_inherit(&tar, Duration::from_mins(2)).context("tar")?;
     Ok(tarball)
+}
+
+impl AssetsPlan {
+    /// The names of every asset the Release for [`AssetsPlan::tag`] must hold
+    /// before it is published: each target's tarball, then each file's name.
+    #[must_use]
+    pub fn declared(&self) -> Vec<String> {
+        self.matrix
+            .include
+            .iter()
+            .map(|target| target.asset.clone())
+            .chain(
+                self.files
+                    .iter()
+                    .filter_map(|file| file.file_name()?.to_str().map(str::to_owned)),
+            )
+            .collect()
+    }
+
+    /// The `assets.files` entry that `path` names, as a path under `root`.
+    /// `path` is read from the working directory, as an operator types it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `path` does not exist, or names no declared file:
+    /// an undeclared file would not hold the draft Release back, so it is
+    /// refused rather than uploaded.
+    pub fn declared_file(&self, root: &Path, path: &Path) -> Result<PathBuf> {
+        let wanted = fs::canonicalize(path).with_context(|| path.display().to_string())?;
+        for file in &self.files {
+            let declared = root.join(file);
+            if fs::canonicalize(&declared).is_ok_and(|found| found == wanted) {
+                return Ok(declared);
+            }
+        }
+        bail!(
+            "{} is not declared; list it under assets.files in .ctl/ver.yaml so the draft Release waits for it",
+            path.display()
+        )
+    }
 }
 
 /// Uploads `tarball` to the release `tag` and returns the asset's download URL.
@@ -629,5 +676,79 @@ mod tests {
         assert!(text.contains("tag=v0.0.1\n"), "{text}");
         assert!(text.contains("matrix={\"include\":[]}"), "{text}");
         assert!(!text.contains("triple"), "{text}");
+    }
+
+    #[test]
+    fn targets_and_files_are_declared_assets() {
+        let config = with(indoc::indoc! {"
+            assets:
+              files: [build/App.pkg]
+              linux-x64: {}
+        "})
+        .unwrap();
+        let plan = planned(&config, "1.2.3").unwrap();
+        assert!(plan.has_assets);
+        assert_eq!(
+            plan.declared(),
+            ["verctl_1.2.3_linux_x64.tar.gz", "App.pkg"]
+        );
+    }
+
+    #[test]
+    fn files_alone_build_no_target() {
+        let config = with(indoc::indoc! {"
+            assets:
+              files: [build/App.pkg]
+        "})
+        .unwrap();
+        let plan = planned(&config, "1.2.3").unwrap();
+        assert!(!plan.has_assets);
+        assert_eq!(plan.declared(), ["App.pkg"]);
+    }
+
+    #[test]
+    fn two_files_with_one_name_fail_the_load() {
+        let error = with(indoc::indoc! {"
+            assets:
+              files: [build/App.pkg, dist/App.pkg]
+        "})
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("App.pkg"), "{error:#}");
+    }
+
+    #[test]
+    fn a_file_outside_the_repository_fails_the_load() {
+        let error = with(indoc::indoc! {"
+            assets:
+              files: [../App.pkg]
+        "})
+        .unwrap_err();
+        assert!(
+            format!("{error:#}").contains("inside the repository"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn only_a_declared_file_uploads() {
+        let config = with(indoc::indoc! {"
+            assets:
+              files: [build/App.pkg]
+        "})
+        .unwrap();
+        let root = tempfile::TempDir::new().unwrap();
+        write_cargo(root.path(), "1.2.3");
+        std::fs::create_dir(root.path().join("build")).unwrap();
+        std::fs::write(root.path().join("build/App.pkg"), "pkg").unwrap();
+        std::fs::write(root.path().join("build/Other.pkg"), "pkg").unwrap();
+        let plan = plan(&config, root.path()).unwrap();
+        let found = plan
+            .declared_file(root.path(), &root.path().join("build/App.pkg"))
+            .unwrap();
+        assert_eq!(found, root.path().join("build/App.pkg"));
+        let error = plan
+            .declared_file(root.path(), &root.path().join("build/Other.pkg"))
+            .unwrap_err();
+        assert!(format!("{error:#}").contains("assets.files"), "{error:#}");
     }
 }

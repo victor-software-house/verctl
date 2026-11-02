@@ -364,10 +364,19 @@ fn assets_report(args: &verctl::cli::AssetsArgs) -> Result<AssetsReport> {
     if let Some(path) = &args.github_output {
         assets::write_github_output(&planned, path)?;
     }
+    let tag = args.tag.as_deref().unwrap_or(planned.tag.as_str());
+    if let Some(file) = &args.file {
+        let file = planned.declared_file(root, file)?;
+        let uploaded = assets::upload(root, tag, &file)?;
+        return Ok(AssetsReport {
+            plan: planned,
+            tarball: None,
+            uploaded: Some(uploaded),
+        });
+    }
     if let Some(id) = &args.build {
         let tarball = assets::build(&planned, id, root)?;
         let uploaded = if args.upload {
-            let tag = args.tag.as_deref().unwrap_or(planned.tag.as_str());
             Some(assets::upload(root, tag, &tarball)?)
         } else {
             None
@@ -378,7 +387,7 @@ fn assets_report(args: &verctl::cli::AssetsArgs) -> Result<AssetsReport> {
             uploaded,
         });
     }
-    anyhow::ensure!(!args.upload, "--upload requires --build");
+    anyhow::ensure!(!args.upload, "--upload requires --build or --file");
     Ok(AssetsReport {
         plan: planned,
         tarball: None,

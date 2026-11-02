@@ -165,6 +165,54 @@ fn dry_run_lists_a_release_only_package() {
     assert_eq!(publish_stdout(root.path()), expected);
 }
 
+/// A declared asset makes the Release a draft until it is uploaded, and
+/// `--skip-assets` publishes it at once.
+#[test]
+fn dry_run_drafts_a_release_with_declared_files() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publisher: none
+            assets:
+              files: [build/demo.pkg]
+        "},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "0.0.1"
+            publish = false
+        "#},
+    )
+    .unwrap();
+    assert!(
+        publish_stdout(root.path()).contains("release  would create draft v0.0.1\n"),
+        "{}",
+        publish_stdout(root.path())
+    );
+    let output = common::verctl()
+        .current_dir(root.path())
+        .args(["publish", "--dry-run", "--skip-assets", "--color", "never"])
+        .output()
+        .unwrap_or_else(|error| panic!("spawn verctl: {error}"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        stdout.contains("release  would create v0.0.1\n"),
+        "{stdout}"
+    );
+}
+
 #[test]
 fn dry_run_lists_many_packages() {
     let root = TempDir::new().unwrap();

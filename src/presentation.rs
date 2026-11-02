@@ -443,7 +443,7 @@ pub(super) struct AssetsReport {
 
 impl Present for AssetsReport {
     fn present(&self) -> Document {
-        if !self.plan.has_assets {
+        if !self.plan.has_assets && self.plan.files.is_empty() {
             return Document::new()
                 .fields(Fields::new().row("assets", "none (library or one host build is enough)"));
         }
@@ -452,13 +452,20 @@ impl Present for AssetsReport {
             |table, row| table.row([row.id.clone(), row.labels.join(", "), row.asset.clone()]),
         );
         let mut fields = Fields::new().row("tag", self.plan.tag.clone());
+        for file in &self.plan.files {
+            fields = fields.row("file", file.display().to_string());
+        }
         if let Some(path) = &self.tarball {
             fields = fields.row("tarball", path.clone());
         }
         if let Some(url) = &self.uploaded {
             fields = fields.row("upload", url.clone());
         }
-        Document::new().table(table).fields(fields)
+        if self.plan.has_assets {
+            Document::new().table(table).fields(fields)
+        } else {
+            Document::new().fields(fields)
+        }
     }
 }
 

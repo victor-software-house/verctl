@@ -240,6 +240,12 @@ pub struct Assets {
     pub build: Option<Vec<String>>,
     /// Path to the built binary, with `{bin}` `{triple}` `{os}` `{arch}`.
     pub binary: Option<String>,
+    /// Files the repository builds itself, such as a signed installer, each
+    /// relative to the directory holding `.ctl/`. verctl builds none of them;
+    /// `assets --upload --file` attaches one, under its file name. Empty means
+    /// none.
+    #[serde(default)]
+    pub files: Vec<PathBuf>,
     /// Every remaining sub-mapping: `assets.linux-x64` and friends. A typo'd
     /// recipe key lands here and fails as an unknown target, loudly.
     #[serde(flatten)]
@@ -297,6 +303,7 @@ pub struct Config {
     pub runners: BTreeMap<String, Runner>,
     /// Release tarball recipe. Omit for libraries.
     #[serde(default)]
+    #[garde(custom(each_file_names_one_asset))]
     pub assets: Option<Assets>,
     /// PR and push validation. Empty means one `verify` on `ubuntu-latest`.
     #[serde(default)]
@@ -422,6 +429,34 @@ fn release_only_names_no_registry(packages: &[PackageSpec], _: &Config) -> garde
             return Err(garde::Error::new(format!(
                 "package {:?} has publisher: none, which uploads to no registry; remove its registry and publish",
                 package.name
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// An `assets.files` entry is uploaded under its file name, so it must stay in
+/// the repository, have a UTF-8 file name, and share it with no other entry:
+/// two entries with one name would be one asset on the Release.
+#[expect(clippy::ref_option, reason = "garde passes the field by reference")]
+fn each_file_names_one_asset(assets: &Option<Assets>, config: &Config) -> garde::Result {
+    let Some(assets) = assets else {
+        return Ok(());
+    };
+    let mut seen = BTreeSet::new();
+    for file in &assets.files {
+        inside_the_repo(file, config).map_err(|error| {
+            garde::Error::new(format!("files entry {}: {error}", file.display()))
+        })?;
+        let Some(name) = file.file_name().and_then(OsStr::to_str) else {
+            return Err(garde::Error::new(format!(
+                "files entry {} has no file name to upload it under",
+                file.display()
+            )));
+        };
+        if !seen.insert(name) {
+            return Err(garde::Error::new(format!(
+                "files lists two entries named {name}; each is uploaded under its file name, so rename one"
             )));
         }
     }
