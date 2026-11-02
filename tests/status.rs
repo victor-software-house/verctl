@@ -66,7 +66,7 @@ fn status_json_uses_the_same_report_without_ansi() {
         .output()
         .expect("spawn");
     assert!(output.status.success());
-    assert_eq!(output.stderr, &[] as &[u8]);
+    assert_eq!(output.stderr, Vec::<u8>::new());
     assert!(!output.stdout.contains(&0x1b));
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("JSON");
     assert_eq!(value["pending"], 1);
@@ -83,8 +83,8 @@ fn quiet_suppresses_only_successful_pretty_status() {
         .output()
         .expect("spawn");
     assert!(output.status.success());
-    assert_eq!(output.stdout, &[] as &[u8]);
-    assert_eq!(output.stderr, &[] as &[u8]);
+    assert_eq!(output.stdout, Vec::<u8>::new());
+    assert_eq!(output.stderr, Vec::<u8>::new());
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn json_errors_use_stdout_and_one_envelope() {
         .output()
         .expect("spawn");
     assert!(!output.status.success());
-    assert_eq!(output.stderr, &[] as &[u8]);
+    assert_eq!(output.stderr, Vec::<u8>::new());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("JSON");
     assert_eq!(value["status"], "err");
     assert_eq!(value["error"]["bin"], "verctl");
@@ -152,7 +152,7 @@ fn instructions_preserve_the_installed_markdown() {
         .output()
         .expect("spawn");
     assert!(output.status.success());
-    assert_eq!(output.stderr, &[] as &[u8]);
+    assert_eq!(output.stderr, Vec::<u8>::new());
     let expected =
         fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/instructions.md"))
             .expect("instructions");

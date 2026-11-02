@@ -726,6 +726,10 @@ impl<'de> serde::de::Visitor<'de> for OccurrencesVisitor {
         use serde::de::Error;
         let wrong = || A::Error::custom(format!("must be {ARITY}"));
         let key: String = bound.next_key()?.ok_or_else(wrong)?;
+        #[expect(
+            clippy::map_err_ignore,
+            reason = "the report names the accepted shapes; the number parse error adds nothing"
+        )]
         let count: usize = bound.next_value().map_err(|_| wrong())?;
         if bound.next_key::<serde::de::IgnoredAny>()?.is_some() {
             return Err(wrong());

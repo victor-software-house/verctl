@@ -8,21 +8,14 @@ on:
   # A draft pull request runs no CI; marking it ready starts the run.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  # The queue tests each entry on top of the ones ahead of it, so a push to
-  # the default branch has already passed and runs nothing.
   merge_group:
-  # A merge_group run saves its build cache on its queue branch, which no pull
-  # request can restore from, and a schedule run saves none, so the daily
-  # refresh job dispatches this workflow on the default branch, whose run
-  # saves the cache pull requests restore from.
+  # Refresh the default branch's build cache without repeating every push.
   schedule:
     - cron: "37 8 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
-  # A check:versions task reads a pull request that changes a manifest
-  # version, to tell the Version PR apart from a hand edit.
   pull-requests: read
 
 env:
@@ -33,15 +26,13 @@ env:
   MISE_ENV: ci
 
 concurrency:
-  # One run per branch: a new push, or a retarget after the base merges,
-  # cancels the run it replaces, on the default branch as on a pull request.
   group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
   refresh:
     if: github.event_name == 'schedule'
-    # One API call: a GitHub-hosted runner, which bills no Namespace units.
+    # One API call on the runner chosen when this repository was rendered.
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
@@ -75,13 +66,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up mise
-        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
         with:
-          version: 2026.10.17
+          version: 2026.10.25
           cache: true
       - run: mise install --locked
       - name: Cache builds with mbx
-        uses: jdx/mr-boxington-action@47ce49b32025d93a7a2f4570815afaa2b7092240 # v1.7.2
+        uses: jdx/mr-boxington-action@88acf2bb50552c7c508cbac13e5f8c576b95b1de # v1.7.3
         with:
           # The daily dispatch run on main saves the cache pull requests
           # restore from; a merge_group run saves on its queue branch.
@@ -105,13 +96,13 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - name: Set up mise
-        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
         with:
-          version: 2026.10.17
+          version: 2026.10.25
           cache: true
       - run: mise install --locked
       - name: Cache builds with mbx
-        uses: jdx/mr-boxington-action@47ce49b32025d93a7a2f4570815afaa2b7092240 # v1.7.2
+        uses: jdx/mr-boxington-action@88acf2bb50552c7c508cbac13e5f8c576b95b1de # v1.7.3
         with:
           # The daily dispatch run on main saves the cache pull requests
           # restore from; a merge_group run saves on its queue branch.

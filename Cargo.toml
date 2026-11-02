@@ -2,13 +2,14 @@
 name = "verctl"
 version = "0.7.1"
 edition = "2024"
-rust-version = "1.99.0"
+rust-version = "1.99.1"
 description = "Stack-agnostic version PRs from Changesets-format fragments"
 license = "MIT"
 repository = "https://github.com/victor-software-house/verctl"
 readme = "README.md"
 keywords = ["version", "changelog", "mise", "changeset", "release"]
 categories = ["command-line-utilities", "development-tools"]
+autotests = false
 
 [package.metadata.docs.rs]
 all-features = true
@@ -44,6 +45,27 @@ wildcard_enum_match_arm = "deny"
 match_wildcard_for_single_variants = "deny"
 allow_attributes = "deny"
 allow_attributes_without_reason = "deny"
+# A function that returns Result reports failure through it, not a panic.
+panic_in_result_fn = "deny"
+# map_err(|_| ...) drops the cause; wrap it as a source instead. A site whose
+# error carries nothing carries #[expect(clippy::map_err_ignore, reason = "...")].
+map_err_ignore = "deny"
+# format! or push_str, not + on a String.
+string_add = "deny"
+# From and TryFrom, not as, which can silently truncate or wrap. A site that
+# truly needs as carries #[expect(clippy::as_conversions, reason = "...")].
+as_conversions = "deny"
+# Rc<str> and Rc<[T]>, not Rc<String> or Rc<Vec<T>>.
+rc_buffer = "deny"
+# Rc::clone(&x), so a cheap pointer clone reads apart from a deep copy.
+clone_on_ref_ptr = "deny"
+# foo.rs beside foo/, never foo/mod.rs. The Rust Book calls the first the
+# idiomatic path and mod.rs the older style, whose many same-named files blur
+# together in an editor (ch07-05, "Alternate File Paths").
+mod_module_files = "deny"
+# A library logs through tracing or log; printing is the binary's choice.
+print_stdout = "deny"
+print_stderr = "deny"
 # Duplicate versions come from transitive dependencies the crate does not
 # control; cargo-deny reports them (`bans.multiple-versions`).
 multiple_crate_versions = "allow"
@@ -102,3 +124,47 @@ codegen-units = 1
 lto = "thin"
 panic = "abort"
 strip = "symbols"
+
+[[test]]
+name = "action_publish"
+path = "tests/action_publish.rs"
+
+[[test]]
+name = "bump"
+path = "tests/bump.rs"
+
+[[test]]
+name = "changelog"
+path = "tests/changelog.rs"
+
+[[test]]
+name = "examples"
+path = "tests/examples.rs"
+
+[[test]]
+name = "fragment"
+path = "tests/fragment.rs"
+
+[[test]]
+name = "prepare_stage"
+path = "tests/prepare_stage.rs"
+
+[[test]]
+name = "publish"
+path = "tests/publish.rs"
+
+[[test]]
+name = "release"
+path = "tests/release.rs"
+
+[[test]]
+name = "status"
+path = "tests/status.rs"
+
+[[test]]
+name = "usage"
+path = "tests/usage.rs"
+
+[[test]]
+name = "versions"
+path = "tests/versions.rs"
