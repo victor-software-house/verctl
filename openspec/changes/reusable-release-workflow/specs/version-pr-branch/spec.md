@@ -22,7 +22,7 @@ the pull request from that branch. No configuration SHALL name the branch.
 `verctl/release/<base>` instead of `version-packages`, and in CI SHALL exempt
 a pull request whose head repository is the repository, whose head branch is
 `verctl/release/<base>`, and whose current base is `<base>`, read through the
-API. Auto-merge SHALL find the Version PR by the derived branch.
+API.
 
 #### Scenario: Checking versions on the Version PR branch
 

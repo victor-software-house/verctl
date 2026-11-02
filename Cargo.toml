@@ -14,6 +14,16 @@ categories = ["command-line-utilities", "development-tools"]
 all-features = true
 rustdoc-args = ["--cap-lints", "warn"]
 
+# Removing Version PR auto-merge (VER-079) drops public functions from
+# `release` and `github` and the `auto_merge` field from `PrepareArgs`, which
+# cargo-semver-checks reports as breaking against 0.7.1. That change ships in
+# a patch, by the operator's ruling, so these lints warn instead of failing.
+# They still print each finding. Remove this table once a release without
+# auto-merge is on crates.io, because the check then compares against it.
+[package.metadata.cargo-semver-checks.lints]
+function_missing = "warn"
+struct_pub_field_missing = "warn"
+
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "deny"

@@ -32,6 +32,19 @@ queue:
       - '2026-10-12 (UTC): the operator approved all eight decisions of the OpenSpec change release-state-machine as recommended: (1) derive release state from facts on every run, with no state file or labels; (2) release on push to the release branch, then propose; (3) identify the Version PR by head repository, head branch, and base, and verify its content; (4) one Version PR per base on verctl/release/<base>, with no per-package PRs and no version in the branch name; (5) built-in cargo and bun as providers of building blocks, extensions as steps run through mise tasks or argv, declared ecosystems for other stacks; (6) mise installs, verifies, runs steps, and owns mise.lock, and verctl writes no lockfile; (7) bun-release in Rust as option (b), Bun packs and verctl owns the registry protocol; (8) ship 0.4.0 from an integration branch next, then patches. The held plan on feat/011-refresh-lockfile is replaced by that change and deleted unpushed.'
     plan: openspec/changes/release-state-machine/proposal.md
 
+  - id: VER-079
+    title: Remove Version PR auto-merge
+    scope: verctl prepare, release workflow, actions/version-pr
+    outcome: "No repository releases on its own: a release starts only when a person merges the Version PR."
+    blocked_by: []
+    acceptance:
+      - verctl has no --auto-merge flag, no VERCTL_AUTO_MERGE variable, and no auto-merge input on release.yml or actions/version-pr.
+      - No verctl doc, skill, instruction, or current spec describes Version PR auto-merge as available.
+      - The cargo-semver-checks lint override in Cargo.toml is removed once a release without auto-merge is on crates.io.
+    plan: openspec/changes/remove-version-pr-auto-merge/proposal.md
+    notes:
+      - Operator decision 2026-11-02, no repository releases on its own; it ships as a patch because no caller depends on the input.
+
   - id: VER-015
     title: Asset runners are configuration, not a hardcoded map
     scope: verctl
