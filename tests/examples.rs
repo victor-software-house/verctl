@@ -63,7 +63,8 @@ fn the_example_config_parses() {
     let config = Config::load(&example()).expect("the shipped example must parse");
     let names: Vec<&str> = config.packages.iter().map(|p| p.name.as_str()).collect();
     assert_eq!(names, ["verctl", "@org/pkg", "py-tool"]);
-    assert_eq!(config.runners.len(), 2, "two machines are declared");
+    assert_eq!(config.runners.len(), 3, "three machines are declared");
+    assert_eq!(config.vendored.len(), 1, "one vendored set is declared");
     assert_eq!(config.publishers.len(), 1, "twine is declared");
     assert_eq!(
         config.pins.len(),
