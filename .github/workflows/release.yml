@@ -61,7 +61,7 @@ on:
       mise-version:
         description: The mise that installs the caller's tools, verctl included.
         type: string
-        default: 2026.10.17
+        default: 2026.10.25
       mise-env:
         description: MISE_ENV for every job.
         type: string
