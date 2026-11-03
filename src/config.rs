@@ -262,6 +262,169 @@ pub struct AssetTarget {
     pub triple: Option<String>,
 }
 
+/// Release assets built from someone else's source, at that source's version:
+/// a library built from a pinned upstream release, so mise can install it as a
+/// `github:` tool. The key is the set's `{name}`. Fragments never bump it, and
+/// `publish` never reads it; `assets --vendored <name>` plans, builds, and
+/// uploads it.
+#[derive(Debug, Clone, Deserialize, Validate)]
+#[serde(deny_unknown_fields)]
+#[garde(context(Config))]
+#[garde(allow_unvalidated)]
+#[non_exhaustive]
+pub struct Vendored {
+    /// The upstream version, written by hand: `{version}` in every template.
+    #[garde(
+        custom(cannot_be_empty("it names the release and the archives")),
+        custom(one_plain_name)
+    )]
+    pub version: String,
+    /// Release tag, with `{name}` and `{version}`. Omit for
+    /// `{name}-{version}`.
+    #[serde(default = "Vendored::default_tag")]
+    #[garde(
+        custom(cannot_be_empty("it names the release")),
+        custom(only_placeholders(&["{name}", "{version}"]))
+    )]
+    pub tag: String,
+    /// Archive file name, with `{name}`, `{version}`, and `{id}`. Omit for
+    /// `{name}-{version}-{id}.tar.gz`.
+    #[serde(default = "Vendored::default_archive")]
+    #[garde(
+        custom(one_archive_per_target),
+        custom(only_placeholders(&["{name}", "{version}", "{id}"]))
+    )]
+    pub archive: String,
+    /// Run once per target before packing, without a shell, with `{name}`,
+    /// `{version}`, and `{id}` replaced. Omit when an earlier workflow step
+    /// builds.
+    #[serde(default)]
+    pub build: Vec<String>,
+    /// The directory the files are packed from, relative to the directory
+    /// holding `.ctl/`, with the same placeholders.
+    #[garde(custom(inside_the_repo))]
+    pub dir: PathBuf,
+    /// Paths under `dir` packed into the archive, each kept at its place under
+    /// `dir`. A directory is packed whole.
+    #[garde(custom(at_least_one("file")), inner(custom(inside_the_repo)))]
+    pub files: Vec<PathBuf>,
+    /// The Release body, a file relative to the directory holding `.ctl/`.
+    /// Omit for a Release with no body.
+    #[garde(inner(custom(inside_the_repo)))]
+    pub notes: Option<PathBuf>,
+    /// One entry per platform; the key is `{id}`, such as `linux-x64`.
+    #[garde(custom(at_least_one_target), custom(every_key_is_one_plain_name), dive)]
+    pub targets: BTreeMap<String, VendoredTarget>,
+}
+
+impl Vendored {
+    fn default_tag() -> String {
+        "{name}-{version}".to_owned()
+    }
+
+    fn default_archive() -> String {
+        "{name}-{version}-{id}.tar.gz".to_owned()
+    }
+}
+
+/// One platform of a vendored set and the single machine that builds it.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Validate)]
+#[serde(deny_unknown_fields)]
+#[garde(context(Config))]
+#[non_exhaustive]
+pub struct VendoredTarget {
+    /// Name from `runners` of the machine that builds this target. verctl
+    /// knows no vendored platform, so there is no default machine.
+    #[garde(custom(runner_is_declared))]
+    pub runner: String,
+}
+
+/// Two targets under one archive name would overwrite each other, and `tar
+/// czf` writes only a gzipped tarball.
+fn one_archive_per_target(archive: &str, config: &Config) -> garde::Result {
+    ctl_core::validate::one_file_name(archive, config)?;
+    if !archive.contains("{id}") {
+        return Err(garde::Error::new(
+            "must contain {id}, or every target writes the same archive",
+        ));
+    }
+    if !archive.ends_with(".tar.gz") {
+        return Err(garde::Error::new(
+            "must end in .tar.gz, the only archive verctl writes",
+        ));
+    }
+    Ok(())
+}
+
+/// A brace left after the known placeholders is a typo that would reach a tag
+/// or a file name verbatim. The tag takes no `{id}`, since every target
+/// uploads to one Release.
+fn only_placeholders(allowed: &'static [&'static str]) -> impl Fn(&str, &Config) -> garde::Result {
+    move |template, _| {
+        let rest = allowed
+            .iter()
+            .fold(template.to_owned(), |rest, placeholder| {
+                rest.replace(placeholder, "")
+            });
+        if rest.contains(['{', '}']) {
+            return Err(garde::Error::new(format!(
+                "has a '{{' or '}}' that is not {}",
+                allowed.join(", ")
+            )));
+        }
+        Ok(())
+    }
+}
+
+/// `{name}`, `{version}`, and `{id}` are substituted into `archive` and
+/// `dir` after the load checked those templates, so a value holding a path
+/// separator or a parent step would move the archive or the packed directory
+/// outside the repository.
+fn one_plain_name(value: &str, _: &Config) -> garde::Result {
+    if value.is_empty() || value == "." || value == ".." || value.contains(['/', '\\']) {
+        return Err(garde::Error::new(format!(
+            "{value:?} must be one plain name, with no / or \\ and not . or .."
+        )));
+    }
+    Ok(())
+}
+
+fn every_key_is_one_plain_name<V>(map: &BTreeMap<String, V>, config: &Config) -> garde::Result {
+    map.keys().try_for_each(|key| one_plain_name(key, config))
+}
+
+fn at_least_one_target(targets: &BTreeMap<String, VendoredTarget>, _: &Config) -> garde::Result {
+    if targets.is_empty() {
+        return Err(garde::Error::new("must declare at least one target"));
+    }
+    Ok(())
+}
+
+fn runner_is_declared(runner: &str, config: &Config) -> garde::Result {
+    if config.runners.contains_key(runner) {
+        return Ok(());
+    }
+    let declared = config.runners.keys().cloned().collect::<Vec<_>>();
+    Err(garde::Error::new(format!(
+        "{runner:?} is not declared in runners ({})",
+        if declared.is_empty() {
+            "none declared".to_owned()
+        } else {
+            format!("declared: {}", declared.join(", "))
+        }
+    )))
+}
+
+/// A config that releases no package and vendors nothing has nothing to do.
+fn something_to_release(packages: &[PackageSpec], config: &Config) -> garde::Result {
+    if packages.is_empty() && config.vendored.is_empty() {
+        return Err(garde::Error::new(
+            "must declare at least one package, or a vendored set",
+        ));
+    }
+    Ok(())
+}
+
 /// The whole file, and the context every rule in it is checked against: a
 /// pattern is only unused, and an id only unknown, relative to the rest of the
 /// config. `Config::parse` reads the shape with serde and then validates it
@@ -280,11 +443,10 @@ pub struct Config {
     /// field by field.
     #[serde(default)]
     pub drivers: BTreeMap<String, DriverSpec>,
-    /// What this repo releases. A config that names none has nothing to do.
-    #[garde(
-        custom(at_least_one("package")),
-        custom(release_only_names_no_registry)
-    )]
+    /// What this repo releases. Omit only when the repo declares `vendored`;
+    /// a config with neither has nothing to do.
+    #[serde(default)]
+    #[garde(custom(something_to_release), custom(release_only_names_no_registry))]
     pub packages: Vec<PackageSpec>,
     /// Publish recipes by name, for a package's `publisher` to select.
     #[serde(default)]
@@ -298,6 +460,11 @@ pub struct Config {
     /// Release tarball recipe. Omit for libraries.
     #[serde(default)]
     pub assets: Option<Assets>,
+    /// Asset sets built from someone else's source at its own version, by
+    /// name. Omit when the repo vendors nothing.
+    #[serde(default)]
+    #[garde(custom(every_key_is_one_plain_name), dive)]
+    pub vendored: BTreeMap<String, Vendored>,
     /// PR and push validation. Empty means one `verify` on `ubuntu-latest`.
     #[serde(default)]
     pub ci: BTreeMap<String, Job>,
@@ -1300,6 +1467,153 @@ mod tests {
                       template: "v{{version}}}}"
                 "#},
                 "tags.template: has a '{' or '}' that is not {version} or {name}",
+            ),
+        ];
+        for (scenario, body, expected) in cases {
+            let error = load(&body).expect_err(scenario);
+            assert!(
+                format!("{error:#}").contains(expected),
+                "{scenario}: {error:#}"
+            );
+        }
+    }
+
+    /// A vendored set with every required key over one declared machine and
+    /// no package, plus `extra` as one more key of the set.
+    fn vendored(extra: &str) -> String {
+        formatdoc! {"
+            runners:
+              linux:
+                labels: [ubuntu-24.04]
+            vendored:
+              lib:
+                version: 1.4.0
+                dir: out
+                files: [lib]
+                targets:
+                  linux-x64:
+                    runner: linux
+                {extra}
+        "}
+    }
+
+    #[test]
+    fn a_vendored_set_alone_is_a_config_and_takes_the_default_names() {
+        let config = load(&vendored("")).unwrap();
+        assert!(config.packages.is_empty());
+        let set = &config.vendored["lib"];
+        assert_eq!(set.tag, "{name}-{version}");
+        assert_eq!(set.archive, "{name}-{version}-{id}.tar.gz");
+        assert_eq!(set.build, Vec::<String>::new());
+        assert_eq!(set.notes, None);
+    }
+
+    #[test]
+    fn a_config_with_no_package_and_no_vendored_set_fails() {
+        let error = load("runners: {}\n").unwrap_err();
+        assert!(
+            format!("{error:#}").contains("must declare at least one package, or a vendored set"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn a_vendored_set_without_targets_fails() {
+        let error = load(indoc! {"
+            vendored:
+              lib:
+                version: 1.4.0
+                dir: out
+                files: [lib]
+                targets: {}
+        "})
+        .unwrap_err();
+        assert!(
+            format!("{error:#}").contains("must declare at least one target"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn a_vendored_set_rejects_what_it_cannot_publish() {
+        let base = vendored("");
+        let cases = [
+            (
+                "archive without the target",
+                vendored("archive: lib.tar.gz"),
+                "must contain {id}",
+            ),
+            (
+                "archive in another format",
+                vendored("archive: \"{id}.zip\""),
+                "must end in .tar.gz",
+            ),
+            (
+                "archive in a directory",
+                vendored("archive: \"dist/{id}.tar.gz\""),
+                "must be one file name",
+            ),
+            (
+                "archive with a typo",
+                vendored("archive: \"{ids}.tar.gz\""),
+                "that is not {name}, {version}, {id}",
+            ),
+            (
+                "tag that varies by target",
+                vendored("tag: \"lib-{id}\""),
+                "that is not {name}, {version}",
+            ),
+            ("empty tag", vendored("tag: \"\""), "cannot be empty"),
+            (
+                "notes outside the repo",
+                vendored("notes: ../notes.md"),
+                "must stay inside the repository",
+            ),
+            ("unknown key", vendored("bin: lib"), "bin"),
+            (
+                "empty version",
+                base.replace("version: 1.4.0", "version: \"\""),
+                "cannot be empty",
+            ),
+            (
+                "dir outside the repo",
+                base.replace("dir: out", "dir: /tmp"),
+                "must stay inside the repository",
+            ),
+            (
+                "no files",
+                base.replace("files: [lib]", "files: []"),
+                "must declare at least one file",
+            ),
+            (
+                "a file outside the repo",
+                base.replace("files: [lib]", "files: [../secret]"),
+                "must stay inside the repository",
+            ),
+            (
+                "version with a path separator",
+                base.replace("version: 1.4.0", "version: 1.4/../../x"),
+                "must be one plain name",
+            ),
+            (
+                "target key with a parent step",
+                base.replace("linux-x64:", "\"..\":"),
+                "must be one plain name",
+            ),
+            (
+                "target key with a path separator",
+                base.replace("linux-x64:", "a/b:"),
+                "must be one plain name",
+            ),
+            (
+                "set name with a path separator",
+                base.replace("  lib:", "  \"../lib\":"),
+                "must be one plain name",
+            ),
+            (
+                "undeclared machine",
+                base.replace("runner: linux", "runner: big"),
+                "\"big\" is not declared in runners (declared: linux)",
             ),
         ];
         for (scenario, body, expected) in cases {

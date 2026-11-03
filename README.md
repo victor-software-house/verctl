@@ -252,6 +252,58 @@ output rather than an assumption. Both also write a matrix for
 `plan` job emits the labels and the real jobs consume them
 ([`examples/workflows/ci.yml`](examples/workflows/ci.yml)).
 
+## Vendored assets
+
+A repository that builds someone else's library from a pinned upstream
+release can publish the result as Release assets, so mise installs it as a
+`github:` tool. The set carries the upstream version; fragments never bump it
+and `publish` never reads it. A config that vendors may declare no packages.
+
+```yaml
+vendored:
+  libexample:
+    version: 1.4.0
+    build: [mise, run, "libexample:build", "{id}"]
+    dir: build/libexample/{id}
+    files: [lib/libexample.a, include, LICENSE]
+    notes: vendor/libexample.md
+    targets:
+      linux-x64:
+        runner: ns
+      macos-arm64:
+        runner: macos
+```
+
+| key | means | when unsaid |
+|:--|:--|:--|
+| `version` | the upstream version, `{version}` | required |
+| `tag` | the Release tag, with `{name}` and `{version}` | `{name}-{version}` |
+| `archive` | the archive name, with `{name}`, `{version}`, and `{id}` | `{name}-{version}-{id}.tar.gz` |
+| `build` | an argv run once per target, with the same placeholders | nothing runs; an earlier step built |
+| `dir` | the directory the files are packed from | required |
+| `files` | paths under `dir`, each kept at its place; a directory is packed whole | required |
+| `notes` | a file whose text is the Release body | an empty body |
+| `targets` | one entry per platform, `{id}`, each naming one `runner` | required |
+
+`verctl assets --vendored libexample` plans the set and writes the same
+`has_assets`, `tag`, and `matrix` outputs as `assets`. In the build job:
+
+```yaml
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERCTL_VENDORED: libexample
+          VERCTL_BUILD: ${{ matrix.id }}
+          VERCTL_UPLOAD: "true"
+        run: mise run ver assets
+```
+
+`--upload` creates the Release at `HEAD` when it is missing, never marked
+latest, and attaches the archive and `<archive>.sha256`, whose digest is the
+one GitHub reports for the stored archive, so a rerun whose build differs
+byte for byte still publishes a checksum that matches. An asset the Release
+already holds is reported as `already`. To replace an archive, delete it and
+its `.sha256` together.
+
 ## Release workflow
 
 A repository releases through one thin caller of verctl's reusable workflow

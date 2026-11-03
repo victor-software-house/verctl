@@ -13,6 +13,7 @@ pub(super) enum Report {
     Publish(PublishReport),
     Pin(PinReport),
     Assets(AssetsReport),
+    Vendored(VendoredReport),
     Ci(CiReport),
     Docs(DocsReport),
     Semver(SemverReport),
@@ -29,6 +30,7 @@ impl Present for Report {
             Self::Publish(report) => report.present(),
             Self::Pin(report) => report.present(),
             Self::Assets(report) => report.present(),
+            Self::Vendored(report) => report.present(),
             Self::Ci(report) => report.present(),
             Self::Docs(report) => report.present(),
             Self::Semver(report) => report.present(),
@@ -45,6 +47,7 @@ impl Present for Report {
             | Self::Publish(_)
             | Self::Pin(_)
             | Self::Assets(_)
+            | Self::Vendored(_)
             | Self::Ci(_)
             | Self::Docs(_)
             | Self::Semver(_) => MessageKind::Success,
@@ -457,6 +460,43 @@ impl Present for AssetsReport {
         }
         if let Some(url) = &self.uploaded {
             fields = fields.row("upload", url.clone());
+        }
+        Document::new().table(table).fields(fields)
+    }
+}
+
+#[derive(Serialize)]
+pub(super) struct VendoredReport {
+    #[serde(flatten)]
+    pub(super) plan: assets::VendoredPlan,
+    pub(super) archive: Option<String>,
+    pub(super) uploaded: Option<assets::VendoredUpload>,
+}
+
+impl Present for VendoredReport {
+    fn present(&self) -> Document {
+        let table = self.plan.targets.iter().fold(
+            Table::new(["target", "runs-on", "asset"]).token_column(0),
+            |table, target| {
+                table.row([
+                    target.id.clone(),
+                    target.labels.join(", "),
+                    target.asset.clone(),
+                ])
+            },
+        );
+        let mut fields = Fields::new()
+            .row("vendored", self.plan.name.clone())
+            .row("version", self.plan.version.clone())
+            .row("tag", self.plan.tag.clone());
+        if let Some(path) = &self.archive {
+            fields = fields.row("archive", path.clone());
+        }
+        if let Some(uploaded) = &self.uploaded {
+            fields = fields
+                .row("release", uploaded.release.clone())
+                .row("upload", uploaded.archive.clone())
+                .row("checksum", uploaded.checksum.clone());
         }
         Document::new().table(table).fields(fields)
     }

@@ -44,6 +44,19 @@ queue:
     notes:
       - Operator decision 2026-11-02, no repository releases on its own.
 
+  - id: VER-080
+    title: Publish vendored builds as Release assets
+    scope: verctl assets, .ctl/ver.yaml
+    outcome: >-
+      A repository publishes a third-party build, at its upstream version, as GitHub
+      Release assets with verctl assets, with no gh release step or release action.
+    blocked_by: []
+    acceptance:
+      - '`vendored.<name>` in `.ctl/ver.yaml` declares a version, tag and archive templates, a build argv, the files to pack, notes, and one runner per target.'
+      - '`verctl assets --vendored <name> --build <id> --upload` creates the Release when it is missing and attaches the archive and its `.sha256`, and a rerun reports both as already.'
+      - '`verctl assets` without `--vendored` plans, names, packs, and uploads exactly as before.'
+    plan: openspec/changes/vendored-assets/proposal.md
+
   - id: VER-015
     title: Asset runners are configuration, not a hardcoded map
     scope: verctl

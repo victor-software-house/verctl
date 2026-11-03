@@ -438,6 +438,104 @@ async fn ensure_release_with(
     Ok(release.html_url.to_string())
 }
 
+/// The Release for a vendored set's `tag`, created at `sha` when the tag has
+/// none. Returns its HTML URL.
+///
+/// An existing Release is used as it is: its tag records which commit built
+/// the first asset, not a version commit, so where it points is not checked.
+/// A new one is created with `make_latest: false`, because GitHub otherwise
+/// makes every new published Release the repository's latest
+/// (<https://docs.github.com/en/rest/releases/releases#create-a-release>),
+/// and a vendored library must not displace the repository's own.
+///
+/// # Errors
+///
+/// Returns an error when the GitHub client cannot be built, when reading the
+/// Release fails with anything but 404, or when creating it fails for any
+/// reason other than another job having created it first.
+pub fn ensure_vendored_release(
+    token: &str,
+    repo: &Repo,
+    tag: &str,
+    body: &str,
+    sha: &str,
+) -> Result<String> {
+    block(async {
+        let crab = client(token)?;
+        ensure_vendored_release_with(&crab, repo, tag, body, sha).await
+    })
+}
+
+/// Every target's job runs this, so two can find the Release missing at once;
+/// the one GitHub refuses with `already_exists` reads the Release the other
+/// created.
+async fn ensure_vendored_release_with(
+    crab: &Octocrab,
+    repo: &Repo,
+    tag: &str,
+    body: &str,
+    sha: &str,
+) -> Result<String> {
+    let repos = crab.repos(&repo.owner, &repo.name);
+    let releases = repos.releases();
+    match releases.get_by_tag(tag).await {
+        Ok(release) => return Ok(release.html_url.to_string()),
+        Err(error) if is_not_found(&error) => {}
+        Err(error) => return Err(error).with_context(|| format!("read release {tag}")),
+    }
+    let created = releases
+        .create(tag)
+        .name(tag)
+        .body(body)
+        .target_commitish(sha)
+        .make_latest(octocrab::repos::releases::MakeLatest::False)
+        .send()
+        .await;
+    match created {
+        Ok(release) => Ok(release.html_url.to_string()),
+        Err(error) if is_already_exists(&error) => {
+            let release = releases
+                .get_by_tag(tag)
+                .await
+                .with_context(|| format!("read release {tag}, which another job created"))?;
+            Ok(release.html_url.to_string())
+        }
+        Err(error) => Err(release_error(error, tag, sha)),
+    }
+}
+
+/// The hex SHA-256 GitHub holds for asset `name` of the Release for `tag`,
+/// from the asset's `digest` (`sha256:<hex>`,
+/// <https://docs.github.com/en/rest/releases/assets>). Reading GitHub's digest
+/// rather than hashing a local file keeps a checksum true to the stored asset
+/// when a rerun's build is not byte-identical to the one GitHub kept.
+///
+/// # Errors
+///
+/// Returns an error when the GitHub client cannot be built, the Release cannot
+/// be read, it does not list `name`, or the asset has no SHA-256 digest.
+pub fn asset_sha256(token: &str, repo: &Repo, tag: &str, name: &str) -> Result<String> {
+    block(async {
+        let crab = client(token)?;
+        asset_sha256_with(&crab, repo, tag, name).await
+    })
+}
+
+async fn asset_sha256_with(crab: &Octocrab, repo: &Repo, tag: &str, name: &str) -> Result<String> {
+    let release = upload_target(crab, repo, tag).await?;
+    let asset = release
+        .assets
+        .iter()
+        .find(|asset| asset.name == name)
+        .with_context(|| format!("release {tag} does not list asset {name}"))?;
+    asset
+        .digest
+        .as_deref()
+        .and_then(|digest| digest.strip_prefix("sha256:"))
+        .map(str::to_owned)
+        .with_context(|| format!("GitHub reports no SHA-256 digest for asset {name} of {tag}"))
+}
+
 /// Names the cause of GitHub's 403 for a new Release. Creating a Release
 /// takes `contents: write`, plus `workflows: write` when the commit the tag
 /// would name has a `.github/workflows` tree that differs from the default
@@ -662,6 +760,10 @@ struct UploadedAsset {
     /// `uploaded` once GitHub holds the whole file; an upload that broke off
     /// leaves the asset in another state.
     state: String,
+    /// `sha256:<hex>` of the stored file. GitHub reports `null` for an asset
+    /// it holds no digest for.
+    #[serde(default)]
+    digest: Option<String>,
 }
 
 async fn upload_target(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<UploadTarget> {
@@ -1375,6 +1477,109 @@ mod tests {
         let error = upload(&server).await.unwrap_err();
         assert!(
             format!("{error:#}").contains("upload release asset"),
+            "{error:#}"
+        );
+    }
+
+    fn create_vendored_release() -> wiremock::MockBuilder {
+        Mock::given(method("POST"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases")))
+            .and(body_partial_json(serde_json::json!({
+                "tag_name": TAG,
+                "name": TAG,
+                "body": "Built from upstream.",
+                "target_commitish": PUBLISHED,
+                "make_latest": "false"
+            })))
+    }
+
+    async fn vendored_release(server: &MockServer) -> anyhow::Result<String> {
+        super::ensure_vendored_release_with(
+            &crab(&server.uri()),
+            &repo(),
+            TAG,
+            "Built from upstream.",
+            PUBLISHED,
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn a_missing_vendored_release_is_created_and_not_made_latest() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        create_vendored_release()
+            .respond_with(ResponseTemplate::new(201).set_body_json(release_json(PUBLISHED)))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let url = vendored_release(&server).await.unwrap();
+        assert!(url.ends_with(&format!("/releases/tag/{TAG}")), "{url}");
+    }
+
+    #[tokio::test]
+    async fn an_existing_vendored_release_is_used_wherever_its_tag_points() {
+        let server = MockServer::start().await;
+        existing_release().mount(&server).await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(0)
+            .mount(&server)
+            .await;
+        let url = vendored_release(&server).await.unwrap();
+        assert!(url.contains(TAG), "{url}");
+    }
+
+    #[tokio::test]
+    async fn a_vendored_release_another_job_created_first_is_used() {
+        let server = MockServer::start().await;
+        missing_release().up_to_n_times(1).mount(&server).await;
+        existing_release().mount(&server).await;
+        create_vendored_release()
+            .respond_with(ResponseTemplate::new(422).set_body_json(serde_json::json!({
+                "message": "Validation Failed",
+                "errors": [{ "resource": "Release", "code": "already_exists", "field": "tag_name" }]
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let url = vendored_release(&server).await.unwrap();
+        assert!(url.contains(TAG), "{url}");
+    }
+
+    async fn sha256_of(server: &MockServer, name: &str) -> anyhow::Result<String> {
+        super::asset_sha256_with(&crab(&server.uri()), &repo(), TAG, name).await
+    }
+
+    #[tokio::test]
+    async fn the_checksum_is_the_digest_github_holds() {
+        let server = MockServer::start().await;
+        upload_target_json(&serde_json::json!([
+            { "name": "lib-1.0.0-linux-x64.tar.gz", "state": "uploaded", "digest": "sha256:abc123" }
+        ]))
+        .mount(&server)
+        .await;
+        assert_eq!(
+            sha256_of(&server, "lib-1.0.0-linux-x64.tar.gz")
+                .await
+                .unwrap(),
+            "abc123"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_asset_without_a_digest_has_no_checksum() {
+        let server = MockServer::start().await;
+        upload_target_json(&serde_json::json!([
+            { "name": "lib-1.0.0-linux-x64.tar.gz", "state": "uploaded", "digest": null }
+        ]))
+        .mount(&server)
+        .await;
+        let error = sha256_of(&server, "lib-1.0.0-linux-x64.tar.gz")
+            .await
+            .unwrap_err();
+        assert!(
+            format!("{error:#}").contains("no SHA-256 digest"),
             "{error:#}"
         );
     }

@@ -117,6 +117,15 @@ package's bump, or when a fragment names a package that is not in `packages`.
 `publisher: none` on a package releases it on GitHub only (tag, Release,
 assets), with no registry upload; use it for private binaries.
 
+`vendored.<name>` declares release assets built from someone else's source
+at its own `version`, outside fragments and `publish`, for a mise `github:`
+tool. `assets --vendored <name>` (`VERCTL_VENDORED`) plans it, `--build <id>`
+runs its `build` and packs `files` from `dir` into `archive` (default
+`{name}-{version}-{id}.tar.gz`), and `--upload` creates the `tag` Release
+(default `{name}-{version}`, never marked latest) when it is missing and
+attaches the archive and its `.sha256`. A config that vendors may declare no
+packages.
+
 `publish` acts on version commits: the commit that set each package's
 version. `publish --plan` lists every one whose release is incomplete
 (registry, tag, Release, assets unless `--skip-assets`), oldest first, and

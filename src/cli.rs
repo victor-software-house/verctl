@@ -117,14 +117,20 @@ pub struct AssetsArgs {
     /// Package map. Defaults to .ctl/ver.yaml in the current directory.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
     pub config: PathBuf,
+    /// Plan, build, or upload this set under `vendored` instead of `assets`.
+    #[arg(long, conflicts_with = "tag")]
+    pub vendored: Option<String>,
     /// Build this target id (`darwin-arm64`, `linux-x64`). Plan only when
     /// omitted.
     #[arg(long)]
     pub build: Option<String>,
-    /// Upload the built tarball to the GitHub Release for `--tag`.
+    /// Upload the built tarball to the GitHub Release for `--tag`. With
+    /// `--vendored`, create the set's Release when it is missing and upload a
+    /// `.sha256` beside the archive.
     #[arg(long)]
     pub upload: bool,
-    /// Release tag (`v0.0.1`). Required with `--upload`.
+    /// Release tag (`v0.0.1`). Defaults to the first package's tag. A vendored
+    /// set declares its own.
     #[arg(long)]
     pub tag: Option<String>,
     /// Write `has_assets`, `tag`, and `matrix` for `$GITHUB_OUTPUT`.
