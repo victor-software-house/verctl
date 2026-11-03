@@ -1,5 +1,16 @@
 # Changelog
 
+## verctl 0.7.2
+
+### Added
+
+- `vendored.<name>` in `.ctl/ver.yaml` declares release assets built from someone else's source at its own version, and `verctl assets --vendored <name>` (`VERCTL_VENDORED`) plans, builds, and uploads them. `--upload` creates the set's Release when it is missing, never marked latest, and attaches each archive with a `.sha256` written from the digest GitHub reports. A config that vendors may declare no packages. `assets` without `--vendored` is unchanged ([#232](https://github.com/victor-software-house/verctl/pull/232)).
+
+### Changed
+
+- The reusable `release.yml` installs mise 2026.10.25 when a caller passes no `mise-version`, the version verctl's own `mise.toml` requires ([#233](https://github.com/victor-software-house/verctl/pull/233)).
+- verctl no longer arms auto-merge on the Version PR: a release starts only when a person merges it. `prepare` drops `--auto-merge` and `VERCTL_AUTO_MERGE`, and the reusable `release.yml` and `actions/version-pr` drop their `auto-merge` input, so a caller that still passes `auto-merge` must remove it when it moves to this release ([#230](https://github.com/victor-software-house/verctl/pull/230)).
+
 ## verctl 0.7.1
 
 - The release workflow's asset jobs install tools one at a time. On macOS runners rustup failed to rename a component download when two Rust toolchains installed at once, which left a release without its darwin-arm64 asset ([#223](https://github.com/victor-software-house/verctl/pull/223)).
