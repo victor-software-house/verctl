@@ -15,11 +15,6 @@ autotests = false
 all-features = true
 rustdoc-args = ["--cap-lints", "warn"]
 
-# One-off for the VER-079 patch release; delete this table once it is on crates.io.
-[package.metadata.cargo-semver-checks.lints]
-function_missing = "warn"
-struct_pub_field_missing = "warn"
-
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "deny"
