@@ -9,6 +9,15 @@ min_version := v if {
 	some f in input
 	f.path == "mise.toml"
 	v := f.contents.min_version
+	is_string(v)
+}
+
+# Without a readable min_version every comparison below is undefined and the
+# check would pass on anything, so its absence is itself a failure.
+has_min_version if is_string(min_version)
+
+deny contains "mise.toml: no string min_version, so the workflow mise pins cannot be checked" if {
+	not has_min_version
 }
 
 workflows contains f if {
