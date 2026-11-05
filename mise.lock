@@ -20,19 +20,21 @@ url_api = "https://api.github.com/repos/rhysd/actionlint/releases/assets/3849248
 provenance = "github-attestations"
 
 [[tools.conftest]]
-version = "0.69.0"
+version = "0.71.1"
 backend = "aqua:open-policy-agent/conftest"
-specifiers = ["0.69.0"]
+specifiers = ["0.71.1"]
 
 [tools.conftest."platforms.linux-x64"]
-checksum = "sha256:96fc2fbf11f0afde51256647127e6f00a64ce839a4d9a0a1aef2426c0e6f4b3f"
-url = "https://github.com/open-policy-agent/conftest/releases/download/v0.69.0/conftest_0.69.0_Linux_x86_64.tar.gz"
-url_api = "https://api.github.com/repos/open-policy-agent/conftest/releases/assets/499923547"
+checksum = "sha256:c3f6b2a753bd56e377a1e51a95ae3e057f926f2e9139f7d5b5dfbbaf810f7985"
+url = "https://github.com/open-policy-agent/conftest/releases/download/v0.71.1/conftest_0.71.1_Linux_x86_64.tar.gz"
+url_api = "https://api.github.com/repos/open-policy-agent/conftest/releases/assets/614476638"
+provenance = "github-attestations"
 
 [tools.conftest."platforms.macos-arm64"]
-checksum = "sha256:78302d045f0ec52e9786a06c6c621ac4516b4c5dd1e54efc8050c86c29b964d9"
-url = "https://github.com/open-policy-agent/conftest/releases/download/v0.69.0/conftest_0.69.0_Darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/open-policy-agent/conftest/releases/assets/499923548"
+checksum = "sha256:e1cc50d2590b6c5e3da6912666a71264bae82d60bdd62d7ae2b99971ccc8eedd"
+url = "https://github.com/open-policy-agent/conftest/releases/download/v0.71.1/conftest_0.71.1_Darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/open-policy-agent/conftest/releases/assets/614476647"
+provenance = "github-attestations"
 
 [[tools."github:EmbarkStudios/cargo-deny"]]
 version = "0.20.2"
