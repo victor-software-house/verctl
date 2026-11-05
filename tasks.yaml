@@ -70,6 +70,19 @@ queue:
       - '`verctl assets` without `dir` and `files` plans, names, and packs exactly as before.'
     plan: openspec/changes/package-asset-files/proposal.md
 
+  - id: VER-082
+    title: Run the registry publish in a caller-named environment
+    scope: release.yml publish job
+    outcome: >-
+      A caller keeps its registry token in a GitHub environment that admits only the
+      default branch, and the reusable workflow still publishes with it.
+    blocked_by: []
+    acceptance:
+      - '`release.yml` takes an `environment` input, default empty, set on the `publish` job only.'
+      - In an environment, with no `registry-token` secret, `publish` reads the secret named by `registry-token-env`; without one, it reads only `registry-token`, as before.
+      - 'A caller publishes from an environment with `secrets: inherit`.'
+    plan: openspec/changes/release-environment/proposal.md
+
   - id: VER-015
     title: Asset runners are configuration, not a hardcoded map
     scope: verctl

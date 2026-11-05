@@ -342,6 +342,13 @@ release`. Every input is optional and defaults to verctl's, so a caller passes
 only what differs. Steps set `env:` and run `mise run ver <verb>`, so the
 caller serves the `ver` task and pins verctl in its mise config.
 
+To keep a registry token out of reach of every branch but the default one,
+store it in a GitHub environment that admits only that branch, under the
+`registry-token-env` name (`CARGO_REGISTRY_TOKEN` by default), pass
+`environment: <name>`, and pass `secrets: inherit`. Only `publish` runs in the
+environment. An environment secret reaches a called workflow only under its
+stored name, which is why the token is not mapped to `registry-token`.
+
 To migrate from `version-pr.yml` and `publish.yml`, do it in one pull request:
 
 1. Add the caller as `.github/workflows/release.yml`.
