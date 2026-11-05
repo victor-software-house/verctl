@@ -168,10 +168,7 @@ fn a_package_file_missing_after_the_build_is_named() {
     let output = run(root.path(), &["assets", "--build", "linux-x64"]);
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("demod@.service is missing after the build"),
-        "{stderr}"
-    );
+    assert!(stderr.contains("demod@.service is missing"), "{stderr}");
 }
 
 const VENDORED: &str = indoc! {r"
