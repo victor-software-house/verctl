@@ -115,7 +115,7 @@ lacks, waits for docs.rs, then opens or updates the Version PR. Every
 input is optional and defaults to verctl's: `version-pr`, `publish`,
 `assets`, `docs`, `config`, `runner`, `mise-version`,
 `mise-env`, `mise-ignored-config-paths`, `title`, `commit-message`,
-`registry-token-env`, `crates-io-trusted-publishing`, and
+`registry-token-env`, `crates-io-trusted-publishing`, `environment`, and
 `verctl-artifact` (verctl's own release only: each job runs a verctl
 build from the calling run); secrets `app-client-id`, `app-private-key`,
 `registry-token`. `mise-ignored-config-paths` takes colon-separated
@@ -126,7 +126,18 @@ propose keeps them because `prepare.after` runs the repository's tasks.
 trusted-publishing token in place of the `registry-token` secret; each
 crate lists the caller's repository and workflow file as its trusted
 publisher. The publish job requests `id-token: write`, so every caller
-grants it.
+grants it. `environment` names a GitHub environment for the publish job,
+the only job that reads a registry token, so the token can live only in
+an environment that admits the default branch. The environment holds the
+token under the `registry-token-env` name, such as
+`CARGO_REGISTRY_TOKEN`, and the caller passes `secrets: inherit`: an
+environment secret reaches a called workflow only under its stored name,
+and no secret name holds the hyphen in `registry-token`.
+`secrets: inherit` replaces the `secrets:` map, so the App secrets are
+not passed and the Version PR is opened with `GITHUB_TOKEN`. Trusted
+publishing skips the stored-name read, so a crate's first publish from
+the environment turns `crates-io-trusted-publishing` off for that
+release. Empty runs publish in no environment.
 Steps set `env:` and
 run `mise run ver <verb>`, so a caller serves the `ver` task. Without the
 App secrets the Version PR is opened with `GITHUB_TOKEN`, which needs the
