@@ -134,8 +134,10 @@ token under the `registry-token-env` name, such as
 environment secret reaches a called workflow only under its stored name,
 and no secret name holds the hyphen in `registry-token`.
 `secrets: inherit` replaces the `secrets:` map, so the App secrets are
-not passed and the Version PR is opened with `GITHUB_TOKEN`. Empty runs
-publish in no environment.
+not passed and the Version PR is opened with `GITHUB_TOKEN`. Trusted
+publishing skips the stored-name read, so a crate's first publish from
+the environment turns `crates-io-trusted-publishing` off for that
+release. Empty runs publish in no environment.
 Steps set `env:` and
 run `mise run ver <verb>`, so a caller serves the `ver` task. Without the
 App secrets the Version PR is opened with `GITHUB_TOKEN`, which needs the

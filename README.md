@@ -350,7 +350,9 @@ environment. An environment secret reaches a called workflow only under its
 stored name, which is why the token is not mapped to `registry-token`.
 `secrets: inherit` replaces the `secrets:` map, so the App secrets are not
 passed either, and the Version PR is opened with `GITHUB_TOKEN`: its own CI
-does not start.
+does not start. Trusted publishing skips the stored-name read, so a crate's
+first publish from the environment turns `crates-io-trusted-publishing` off
+for that one release.
 
 To migrate from `version-pr.yml` and `publish.yml`, do it in one pull request:
 
