@@ -1,4 +1,6 @@
+# conftest gets the tracked workflow files by name, never a folder, which it
+# would walk; -r runs nothing when there are none.
 "policy" = { description = "Conftest on GitHub workflows, and their mise pins against mise.toml", run = [
-  "conftest test --policy policy .github/workflows",
-  "conftest test --combine --namespace mise_pins --policy policy .github/workflows mise.toml",
+  "git ls-files -z ':(glob).github/workflows/*.yml' ':(glob).github/workflows/*.yaml' | xargs -0 -r conftest test --policy policy",
+  "git ls-files -z ':(glob).github/workflows/*.yml' ':(glob).github/workflows/*.yaml' | xargs -0 -r conftest test --combine --namespace mise_pins --policy policy mise.toml",
 ] }
