@@ -103,6 +103,69 @@ fn a_package_target_plans_and_packs_as_before() {
     );
 }
 
+/// A package whose release is two executables, a service unit, and a licence,
+/// all already in place under the triple's directory.
+fn files_root() -> TempDir {
+    let root = TempDir::new().expect("tmp");
+    common::write_config(
+        root.path(),
+        indoc! {r#"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publisher: none
+            assets:
+              build: ["true"]
+              dir: out/{triple}
+              files: [demo, demod, "demod@.service", LICENSE]
+              linux-x64: {}
+        "#},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.2.3"
+        "#},
+    )
+    .expect("cargo");
+    let out = root.path().join("out/x86_64-unknown-linux-gnu");
+    fs::create_dir_all(&out).expect("out");
+    for file in ["demo", "demod", "demod@.service", "LICENSE"] {
+        fs::write(out.join(file), file).expect("file");
+    }
+    root
+}
+
+#[test]
+fn a_package_target_packs_the_listed_files() {
+    let root = files_root();
+    let report = json(&run(
+        root.path(),
+        &["assets", "--build", "linux-x64", "--format", "json"],
+    ));
+    assert_eq!(report["tarball"], "./demo_1.2.3_linux_x64.tar.gz");
+    assert_eq!(
+        entries(&root.path().join("demo_1.2.3_linux_x64.tar.gz")),
+        ["demo", "demod", "demod@.service", "LICENSE"]
+    );
+}
+
+#[test]
+fn a_package_file_missing_after_the_build_is_named() {
+    let root = files_root();
+    fs::remove_file(root.path().join("out/x86_64-unknown-linux-gnu/demod@.service"))
+        .expect("remove");
+    let output = run(root.path(), &["assets", "--build", "linux-x64"]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("demod@.service is missing after the build"),
+        "{stderr}"
+    );
+}
+
 const VENDORED: &str = indoc! {r#"
     runners:
       linux:

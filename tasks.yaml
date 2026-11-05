@@ -57,6 +57,19 @@ queue:
       - '`verctl assets` without `--vendored` plans, names, packs, and uploads exactly as before.'
     plan: openspec/changes/vendored-assets/proposal.md
 
+  - id: VER-081
+    title: Pack several files into a package asset tarball
+    scope: verctl assets, .ctl/ver.yaml
+    outcome: >-
+      A package release ships every file it needs, such as a daemon, its client, a
+      service unit, and a licence, in each asset tarball.
+    blocked_by: []
+    acceptance:
+      - '`assets.dir` and `assets.files` in `.ctl/ver.yaml` make `verctl assets --build <id>` pack `tar czf <asset> -C <dir> <files>` with the binary placeholders replaced, and fail naming a listed path missing after the build.'
+      - The load fails when `dir` comes without `files`, `files` without `dir`, `binary` beside them, or a path leaves the repository.
+      - '`verctl assets` without `dir` and `files` plans, names, and packs exactly as before.'
+    plan: openspec/changes/package-asset-files/proposal.md
+
   - id: VER-015
     title: Asset runners are configuration, not a hardcoded map
     scope: verctl

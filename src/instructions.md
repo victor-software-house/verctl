@@ -321,7 +321,13 @@ After the Version PR merges, the next push runs the reusable workflow's
 `victor-software-house/verctl/actions/publish` instead. Native tarballs
 are the `assets` matrix, only when an `assets` target is declared;
 `verctl assets` prints the matrix, and `--build` + `--upload` is
-`actions/asset`. Publish pushes
+`actions/asset`. A tarball holds the one `binary` (default
+`target/{triple}/release/{bin}`), packed as `bin`. When a release holds
+more, such as a second executable, a service unit, or a licence, set
+`assets.dir` and `assets.files` instead of `binary`: `--build` checks
+each listed path exists, then packs `tar czf <asset> -C <dir> <files>`,
+with `{bin}`, `{version}`, `{id}`, `{os}`, `{arch}`, and `{triple}`
+replaced. Publish pushes
 nothing but the tag. `pins` are rewritten by `prepare`, on the
 Version PR commit the tag will name, so the released tree carries its
 own pins. A pin that must name an already-published tarball — a repo's

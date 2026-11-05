@@ -252,6 +252,26 @@ output rather than an assumption. Both also write a matrix for
 `plan` job emits the labels and the real jobs consume them
 ([`examples/workflows/ci.yml`](examples/workflows/ci.yml)).
 
+## Asset contents
+
+An `assets` tarball holds the one `binary`, default
+`target/{triple}/release/{bin}`, packed as `bin`. A release that ships more,
+such as a daemon beside its client, a service unit, or a licence, lists it
+instead:
+
+```yaml
+assets:
+  dir: target/{triple}/release
+  files: [demo, demod, "demod@.service", LICENSE]
+  linux-x64: {}
+```
+
+`verctl assets --build <id>` runs the build, checks that each listed path
+exists under `dir`, then packs `tar czf <asset> -C <dir> <files>`. `dir` and
+`files` take the placeholders `binary` takes, come together, and replace
+`binary`, which may not be set beside them. A file the build does not write,
+such as a licence, is copied into `dir` by the build command.
+
 ## Vendored assets
 
 A repository that builds someone else's library from a pinned upstream
