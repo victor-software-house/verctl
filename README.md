@@ -348,6 +348,9 @@ store it in a GitHub environment that admits only that branch, under the
 `environment: <name>`, and pass `secrets: inherit`. Only `publish` runs in the
 environment. An environment secret reaches a called workflow only under its
 stored name, which is why the token is not mapped to `registry-token`.
+`secrets: inherit` replaces the `secrets:` map, so the App secrets are not
+passed either, and the Version PR is opened with `GITHUB_TOKEN`: its own CI
+does not start.
 
 To migrate from `version-pr.yml` and `publish.yml`, do it in one pull request:
 

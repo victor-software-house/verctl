@@ -13,4 +13,8 @@
 3. **Outside an environment, and under trusted publishing, the stored-name read is off.**
    A caller that passes `secrets: inherit` and publishes by crates.io trusted publishing may also hold a `CARGO_REGISTRY_TOKEN` secret, in the repository or the environment, for a crate's first publish; reading it would trip the "not both" guard.
 
+4. **The App secrets are lost under `secrets: inherit`, and documented, not worked around.**
+   Inherit replaces the explicit map, and `app-client-id` reaches the workflow under no stored name, so the Version PR is opened with `GITHUB_TOKEN`.
+   Reading the App secrets under stored names too was considered and lost: a separate change removes them.
+
 Override and disable path: omit `environment`, or pass the token as `registry-token`, which wins.

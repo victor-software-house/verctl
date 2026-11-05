@@ -21,6 +21,8 @@ jobs:
       crates-io-trusted-publishing: true
       # A token kept in an environment that admits only main: name it here,
       # store it there as CARGO_REGISTRY_TOKEN, and use `secrets: inherit`.
+      # `secrets: inherit` replaces the map below, so the App secrets are not
+      # passed and the Version PR is opened with GITHUB_TOKEN.
       # environment: release
     secrets:
       app-client-id: ${{ secrets.CHANGESET_VERSION_APP_CLIENT_ID }}
