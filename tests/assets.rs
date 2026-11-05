@@ -155,8 +155,11 @@ fn a_package_target_packs_the_listed_files() {
 #[test]
 fn a_package_file_missing_after_the_build_is_named() {
     let root = files_root();
-    fs::remove_file(root.path().join("out/x86_64-unknown-linux-gnu/demod@.service"))
-        .expect("remove");
+    fs::remove_file(
+        root.path()
+            .join("out/x86_64-unknown-linux-gnu/demod@.service"),
+    )
+    .expect("remove");
     let output = run(root.path(), &["assets", "--build", "linux-x64"]);
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -210,7 +213,10 @@ fn a_vendored_target_packs_the_listed_files() {
     let report = json(&output);
     assert_eq!(report["tag"], "libexample-1.4.0");
     assert_eq!(report["version"], "1.4.0");
-    assert_eq!(report["targets"][1]["asset"], "libexample-1.4.0-macos-arm64.tar.gz");
+    assert_eq!(
+        report["targets"][1]["asset"],
+        "libexample-1.4.0-macos-arm64.tar.gz"
+    );
     assert_eq!(report["targets"][1]["labels"][0], "macos-15");
     assert_eq!(report["archive"], "./libexample-1.4.0-linux-x64.tar.gz");
     let mut listed = entries(&root.path().join("libexample-1.4.0-linux-x64.tar.gz"));
@@ -237,7 +243,10 @@ fn a_vendored_file_missing_after_the_build_is_named() {
     );
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("LICENSE is missing after the build"), "{stderr}");
+    assert!(
+        stderr.contains("LICENSE is missing after the build"),
+        "{stderr}"
+    );
 }
 
 #[test]
