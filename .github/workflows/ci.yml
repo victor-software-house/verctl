@@ -14,7 +14,9 @@ on:
     - cron: "37 8 * * *"
   workflow_dispatch:
 
+# The shared Verify job reads this run and the runs that replaced it.
 permissions:
+  actions: read
   contents: read
   pull-requests: read
 
@@ -26,7 +28,8 @@ env:
   MISE_ENV: ci
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref_name }}
+  # A draft run gets a group of its own, so it never cancels the ready run.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref_name }}${{ github.event.pull_request.draft && '-draft' || '' }}
   cancel-in-progress: true
 
 jobs:

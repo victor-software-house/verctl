@@ -14,10 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # tags, Releases, assets, and verctl/release/main without the App
-  pull-requests: write # the Version PR without the App
-  # crates.io trusted publishing in release.yml's publish job.
-  id-token: write
+  contents: read
 
 jobs:
   build:
@@ -57,6 +54,11 @@ jobs:
   release:
     needs: build
     uses: ./.github/workflows/release.yml
+    permissions:
+      contents: write # tags, Releases, assets, and verctl/release/main without the App
+      pull-requests: write # the Version PR without the App
+      # crates.io trusted publishing in release.yml's publish job.
+      id-token: write
     with:
       # mise.release.toml's ver task runs verctl from PATH, where each job
       # puts the build above.
