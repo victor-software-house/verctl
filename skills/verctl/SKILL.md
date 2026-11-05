@@ -117,6 +117,11 @@ package's bump, or when a fragment names a package that is not in `packages`.
 `publisher: none` on a package releases it on GitHub only (tag, Release,
 assets), with no registry upload; use it for private binaries.
 
+An `assets` tarball holds the one `binary`. Set `assets.dir` and
+`assets.files` instead when it holds more (a second executable, a service
+unit, a licence); `--build` packs `tar czf <asset> -C <dir> <files>` with
+`{triple}` and the other placeholders replaced.
+
 `vendored.<name>` declares release assets built from someone else's source
 at its own `version`, outside fragments and `publish`, for a mise `github:`
 tool. `assets --vendored <name>` (`VERCTL_VENDORED`) plans it, `--build <id>`

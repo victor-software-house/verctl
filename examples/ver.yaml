@@ -84,6 +84,10 @@ runners:
 # is one host binary: the name is the job, the tarball, and the platform.
 assets:
   bin: verctl
+  # A tarball holds the one `binary`. When a release holds more, list it
+  # instead, and drop `binary`: `--build` packs these from `dir`.
+  # dir: target/{triple}/release
+  # files: [verctl, verctld, "verctld@.service", LICENSE]
 
   # darwin-arm64 and linux-x64 are built in, so naming one is enough — and it
   # keeps free hosted minutes.

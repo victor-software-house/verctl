@@ -130,6 +130,10 @@ name = "action_publish"
 path = "tests/action_publish.rs"
 
 [[test]]
+name = "assets"
+path = "tests/assets.rs"
+
+[[test]]
 name = "bump"
 path = "tests/bump.rs"
 

@@ -229,7 +229,13 @@ pub struct Job {
 
 /// Native GitHub Release tarballs, plus the recipe every target shares. Omit
 /// for libraries. Each named sub-mapping is one target.
-#[derive(Debug, Clone, Deserialize, Default)]
+///
+/// A tarball holds either the one `binary`, or the `files` packed from `dir`
+/// when a release needs more than its binary: a second executable, a service
+/// unit, a licence.
+#[derive(Debug, Clone, Deserialize, Default, Validate)]
+#[garde(context(Config))]
+#[garde(allow_unvalidated)]
 #[non_exhaustive]
 pub struct Assets {
     /// The binary name. Defaults to the first package's name.
@@ -239,7 +245,22 @@ pub struct Assets {
     /// How to produce the binary. Stock rust recipe is `cargo build --release`.
     pub build: Option<Vec<String>>,
     /// Path to the built binary, with `{bin}` `{triple}` `{os}` `{arch}`.
+    /// Omit for `target/{triple}/release/{bin}`. Unused when `dir` and
+    /// `files` say what to pack, so it may not be set beside them.
+    #[garde(custom(binary_is_not_beside_files))]
     pub binary: Option<String>,
+    /// The directory `files` are packed from, relative to the directory
+    /// holding `.ctl/`, with the same placeholders as `binary`. Omit, with
+    /// `files`, to pack the one `binary`.
+    #[serde(default)]
+    #[garde(custom(dir_comes_with_files), inner(custom(inside_the_repo)))]
+    pub dir: Option<PathBuf>,
+    /// Paths under `dir` packed into every target's tarball, each kept at its
+    /// place under `dir`, with the same placeholders. A directory is packed
+    /// whole. Omit, with `dir`, to pack the one `binary`.
+    #[serde(default)]
+    #[garde(custom(files_come_with_dir), inner(custom(inside_the_repo)))]
+    pub files: Vec<PathBuf>,
     /// Every remaining sub-mapping: `assets.linux-x64` and friends. A typo'd
     /// recipe key lands here and fails as an unknown target, loudly.
     #[serde(flatten)]
@@ -400,6 +421,57 @@ fn at_least_one_target(targets: &BTreeMap<String, VendoredTarget>, _: &Config) -
     Ok(())
 }
 
+/// `dir` without `files` would pack nothing, so the two come together.
+#[expect(
+    clippy::ref_option,
+    reason = "garde passes the field as it is declared"
+)]
+fn dir_comes_with_files(dir: &Option<PathBuf>, config: &Config) -> garde::Result {
+    let packs_files = config
+        .assets
+        .as_ref()
+        .is_some_and(|assets| !assets.files.is_empty());
+    if dir.is_some() && !packs_files {
+        return Err(garde::Error::new(
+            "must come with files, the paths packed from it",
+        ));
+    }
+    Ok(())
+}
+
+/// `files` without `dir` have no place to be packed from.
+fn files_come_with_dir(files: &[PathBuf], config: &Config) -> garde::Result {
+    let has_dir = config
+        .assets
+        .as_ref()
+        .is_some_and(|assets| assets.dir.is_some());
+    if !files.is_empty() && !has_dir {
+        return Err(garde::Error::new(
+            "must come with dir, the directory they are packed from",
+        ));
+    }
+    Ok(())
+}
+
+/// A `binary` beside `dir` and `files` would never be read, and a reader
+/// would take it for what the tarball holds.
+#[expect(
+    clippy::ref_option,
+    reason = "garde passes the field as it is declared"
+)]
+fn binary_is_not_beside_files(binary: &Option<String>, config: &Config) -> garde::Result {
+    let packs_files = config
+        .assets
+        .as_ref()
+        .is_some_and(|assets| assets.dir.is_some() || !assets.files.is_empty());
+    if binary.is_some() && packs_files {
+        return Err(garde::Error::new(
+            "must be omitted when dir and files say what the tarball holds; list the binary in files",
+        ));
+    }
+    Ok(())
+}
+
 fn runner_is_declared(runner: &str, config: &Config) -> garde::Result {
     if config.runners.contains_key(runner) {
         return Ok(());
@@ -459,6 +531,7 @@ pub struct Config {
     pub runners: BTreeMap<String, Runner>,
     /// Release tarball recipe. Omit for libraries.
     #[serde(default)]
+    #[garde(dive)]
     pub assets: Option<Assets>,
     /// Asset sets built from someone else's source at its own version, by
     /// name. Omit when the repo vendors nothing.
@@ -1618,6 +1691,105 @@ mod tests {
         ];
         for (scenario, body, expected) in cases {
             let error = load(&body).expect_err(scenario);
+            assert!(
+                format!("{error:#}").contains(expected),
+                "{scenario}: {error:#}"
+            );
+        }
+    }
+
+    /// The package config followed by `section`, an `assets` mapping.
+    fn assets(section: &str) -> String {
+        format!("{PACKAGE}{section}")
+    }
+
+    #[test]
+    fn asset_files_are_packed_from_their_dir() {
+        let config = load(&assets(indoc! {"
+            assets:
+              dir: target/{triple}/release
+              files: [demo, demod, LICENSE]
+              linux-x64: {}
+        "}))
+        .unwrap();
+        let recipe = config.assets.unwrap();
+        assert_eq!(recipe.dir, Some(PathBuf::from("target/{triple}/release")));
+        assert_eq!(
+            recipe.files,
+            [
+                PathBuf::from("demo"),
+                PathBuf::from("demod"),
+                PathBuf::from("LICENSE")
+            ]
+        );
+        assert_eq!(recipe.targets.keys().collect::<Vec<_>>(), ["linux-x64"]);
+    }
+
+    #[test]
+    fn asset_files_reject_what_they_cannot_pack() {
+        let cases = [
+            (
+                "dir without files",
+                indoc! {"
+                    assets:
+                      dir: out
+                      linux-x64: {}
+                "},
+                "must come with files",
+            ),
+            (
+                "dir with no files",
+                indoc! {"
+                    assets:
+                      dir: out
+                      files: []
+                      linux-x64: {}
+                "},
+                "must come with files",
+            ),
+            (
+                "files without dir",
+                indoc! {"
+                    assets:
+                      files: [demo]
+                      linux-x64: {}
+                "},
+                "must come with dir",
+            ),
+            (
+                "binary beside files",
+                indoc! {"
+                    assets:
+                      binary: out/{bin}
+                      dir: out
+                      files: [demo]
+                      linux-x64: {}
+                "},
+                "list the binary in files",
+            ),
+            (
+                "dir outside the repo",
+                indoc! {"
+                    assets:
+                      dir: /tmp
+                      files: [demo]
+                      linux-x64: {}
+                "},
+                "must stay inside the repository",
+            ),
+            (
+                "a file outside the repo",
+                indoc! {"
+                    assets:
+                      dir: out
+                      files: [../secret]
+                      linux-x64: {}
+                "},
+                "must stay inside the repository",
+            ),
+        ];
+        for (scenario, section, expected) in cases {
+            let error = load(&assets(section)).expect_err(scenario);
             assert!(
                 format!("{error:#}").contains(expected),
                 "{scenario}: {error:#}"

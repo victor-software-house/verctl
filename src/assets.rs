@@ -6,8 +6,9 @@
 //! under one target would overwrite each other's tarball.
 //!
 //! Omit `assets` when there is no host binary. Override `prepare`, `build`,
-//! and `binary` when the stock rust recipe is the wrong stack. PR CI never
-//! reads this list.
+//! and `binary` when the stock rust recipe is the wrong stack, and set `dir`
+//! and `files` when a tarball holds more than the binary. PR CI never reads
+//! this list.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -52,7 +53,8 @@ pub struct Matrix {
 /// What the assets job builds and uploads, resolved from the config.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AssetsPlan {
-    /// Name of the binary packed into each tarball.
+    /// Name of the binary: the start of each tarball name, and what the
+    /// tarball holds unless `dir` and `files` say otherwise.
     pub bin: String,
     /// The first package's current version.
     pub version: String,
@@ -67,7 +69,16 @@ pub struct AssetsPlan {
     #[serde(skip)]
     build: Vec<String>,
     #[serde(skip)]
-    binary: String,
+    pack: Pack,
+}
+
+/// What a target's tarball holds, with placeholders still in it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Pack {
+    /// The one built binary at this path, packed as `bin`.
+    Binary(String),
+    /// These paths under `dir`, each kept at its place under `dir`.
+    Files { dir: String, files: Vec<String> },
 }
 
 /// A platform verctl knows, so a repo that wants the usual thing writes only
@@ -166,7 +177,17 @@ pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
             }
         }),
         build: assets.build.unwrap_or_else(|| strings(STOCK_BUILD)),
-        binary: assets.binary.unwrap_or_else(|| STOCK_BINARY.to_owned()),
+        pack: match assets.dir {
+            Some(dir) => Pack::Files {
+                dir: dir.display().to_string(),
+                files: assets
+                    .files
+                    .iter()
+                    .map(|file| file.display().to_string())
+                    .collect(),
+            },
+            None => Pack::Binary(assets.binary.unwrap_or_else(|| STOCK_BINARY.to_owned())),
+        },
     })
 }
 
@@ -221,14 +242,15 @@ fn write_matrix_output(
     github::write_output(path, &body)
 }
 
-/// Builds the target `id` and packs its binary into a tarball under `root`.
+/// Builds the target `id` and packs its binary, or the `files` under `dir`,
+/// into a tarball under `root`.
 ///
 /// # Errors
 ///
 /// Returns an error when `id` is not a target in `plan`, when the prepare,
 /// build, or `tar` command cannot run, times out, or exits unsuccessfully, or
-/// when the release binary is missing after the build. It also fails when a
-/// path is not valid UTF-8.
+/// when the release binary, or a path `files` lists, is missing after the
+/// build. It also fails when a path is not valid UTF-8.
 pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
     let target = plan
         .matrix
@@ -243,25 +265,40 @@ pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
     }
     let build = expand(&plan.build, &ctx);
     process::run_inherit(&build, BUILD_TIMEOUT).context("assets.build")?;
-    let binary = root.join(expand_one(&plan.binary, &ctx));
-    anyhow::ensure!(
-        binary.is_file(),
-        "missing release binary {}",
-        binary.display()
-    );
+    let (dir, files) = match &plan.pack {
+        Pack::Binary(binary) => {
+            let binary = root.join(expand_one(binary, &ctx));
+            anyhow::ensure!(
+                binary.is_file(),
+                "missing release binary {}",
+                binary.display()
+            );
+            let dir = binary.parent().context("binary parent")?.to_path_buf();
+            (dir, vec![plan.bin.clone()])
+        }
+        Pack::Files { dir, files } => {
+            let dir = root.join(expand_one(dir, &ctx));
+            let files = expand(files, &ctx);
+            for file in &files {
+                let packed = dir.join(file);
+                anyhow::ensure!(
+                    packed.exists(),
+                    "assets.files: {} is missing after the build",
+                    packed.display()
+                );
+            }
+            (dir, files)
+        }
+    };
     let tarball = root.join(&target.asset);
-    let tar = process::argv(&[
+    let mut tar = process::argv(&[
         "tar",
         "czf",
         tarball.to_str().context("tarball path")?,
         "-C",
-        binary
-            .parent()
-            .context("binary parent")?
-            .to_str()
-            .context("dir")?,
-        &plan.bin,
+        dir.to_str().context("dir")?,
     ]);
+    tar.extend(files);
     process::run_inherit(&tar, Duration::from_mins(2)).context("tar")?;
     Ok(tarball)
 }
