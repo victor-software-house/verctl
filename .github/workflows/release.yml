@@ -301,8 +301,9 @@ jobs:
           VERCTL_SKIP_ASSETS: ${{ !inputs.assets }}
           # Inside an environment the token is read under its stored name too:
           # a secret name holds no hyphen, so no environment can hold
-          # registry-token. Outside one nothing changes for existing callers.
-          REGISTRY_TOKEN: ${{ secrets.registry-token || (inputs.environment != '' && secrets[inputs.registry-token-env]) || '' }}
+          # registry-token. Trusted publishing, or no environment, skips that
+          # read, so a stored token never trips the "not both" guard below.
+          REGISTRY_TOKEN: ${{ secrets.registry-token || (inputs.environment != '' && !inputs.crates-io-trusted-publishing && secrets[inputs.registry-token-env]) || '' }}
           TRUSTED_TOKEN: ${{ steps.crates-io.outputs.token }}
           REGISTRY_TOKEN_ENV: ${{ inputs.registry-token-env }}
         # The token is exported under the caller's chosen name with a shell
