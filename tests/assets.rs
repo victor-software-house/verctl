@@ -1,6 +1,11 @@
 //! The `assets` command as run through the binary: package tarballs as they
 //! have always been built, and vendored sets beside them.
 
+#![expect(
+    clippy::expect_used,
+    reason = "the fixture helpers fail fast, as in tests/common.rs"
+)]
+
 mod common;
 
 use std::fs;
@@ -169,7 +174,7 @@ fn a_package_file_missing_after_the_build_is_named() {
     );
 }
 
-const VENDORED: &str = indoc! {r#"
+const VENDORED: &str = indoc! {r"
     runners:
       linux:
         labels: [ubuntu-24.04]
@@ -185,7 +190,7 @@ const VENDORED: &str = indoc! {r#"
             runner: linux
           macos-arm64:
             runner: macos
-"#};
+"};
 
 fn vendored_root() -> TempDir {
     let root = TempDir::new().expect("tmp");
