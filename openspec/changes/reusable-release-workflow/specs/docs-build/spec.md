@@ -3,9 +3,10 @@
 ### Requirement: verctl checks the docs.rs build of a released crate
 
 `verctl docs` SHALL poll docs.rs, with a bounded backoff, for each package
-released at HEAD whose publish target is crates.io, that has a library target
-as Cargo resolves it, and whose own release tag for that version exists on
-`origin` and names HEAD, until docs.rs reports `doc_status` true. It SHALL exit non-zero, naming the crate, when the
+released at HEAD whose publish target is crates.io and that has a library target
+as Cargo resolves it. It SHALL poll only a package whose own release tag for
+that version exists on `origin` and names HEAD, until docs.rs reports
+`doc_status` true. It SHALL exit non-zero, naming the crate, when the
 timeout runs out while docs.rs still reports `doc_status` false or answers 404.
 
 #### Scenario: A build that failed

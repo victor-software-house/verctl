@@ -6,7 +6,7 @@ A package on the stock cargo publisher, with no `publish` or `query` override
 on the package or on `publishers.cargo`, whose `path` is a manifest with a
 `[workspace]` table and no `[package]` table, SHALL be published by running
 `cargo publish --locked --manifest-path <path> --package <member>` once for
-each workspace member whose `publish` is not `false`, each under its own
+each workspace member whose `publish` is not `false`. Each runs under its own
 timeout. A member with `publish = false` SHALL never be published.
 
 #### Scenario: Two crates and a tool crate

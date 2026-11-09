@@ -32,14 +32,14 @@ Banner-only tints: `#6f675c` (muted on cream), `#8d857a` (muted on ink),
 ## Construction
 
 A 32-unit square, corner radius 6. Line from `7.5,24.5` to `22.5,9.5` at 2
-units wide; nodes on that line at `7.5,24.5` and `15,17` at r 3; the new tag
+units wide. Nodes on that line at `7.5,24.5` and `15,17` at r 3. The new tag
 at `22.5,9.5` at r 4.75. Every node centre satisfies `x + y = 32`, so the line
 needs no separate alignment, and the three sit 7.5 units apart in `x`. The
 figure clears the field by 4.5 units at the first node and 4.75 at the tag.
 
-Pad by moving the geometry, never by scaling the figure inside the square: a
+Pad by moving the geometry, never by scaling the figure inside the square. A
 scale takes the 2-unit line and the node radii down with it, so the mark loses
-weight exactly where it is already thinnest, and it shows first at 16px — which
+weight exactly where it is already thinnest. That shows first at 16px, which
 is the size it is checked at. Keep the node gaps for the same reason; they are
 what stop it reading as one blob.
 

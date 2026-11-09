@@ -160,7 +160,7 @@ by integration" when the version commit's `.github/workflows` differs
 from the default branch. The Releases API then needs `workflows: write`,
 which `GITHUB_TOKEN` cannot hold. So `publish` creates the tag and
 Release of a package whose uploads all have a registry check, or that
-has no upload, before its uploads: the run that merged the Version PR
+has no upload, before its uploads. The run that merged the Version PR
 creates them while HEAD is the default branch tip, and a rerun after a
 failed upload finds them. A package with an unchecked upload is tagged
 after its upload, because its tag is the record that the upload ran; a
@@ -305,9 +305,9 @@ release is a patch: patch is the default bump, and a real API break
 bumps the minor. It runs `cargo semver-checks --release-type minor`
 against the baseline cargo-semver-checks picks, so only a break fails.
 It skips a crate whose package has a pending `minor` or `major`
-fragment, whose manifest's major.minor differs from that baseline (the
-Version PR already moved it), or that has no release on crates.io. A
-crate with no library target, or a proc-macro, is left out, as
+fragment, or whose manifest's major.minor differs from that baseline (the
+Version PR already moved it). It also skips a crate that has no release
+on crates.io. A crate with no library target, or a proc-macro, is left out, as
 cargo-semver-checks leaves it. A workspace package counts once per
 publishing member. The rule covers 0.x: a crate with a library target
 at 1.0 or later fails the run, since reaching 1.0 is an operator
@@ -315,7 +315,7 @@ decision that revisits the rule. It needs `cargo-semver-checks`
 on PATH and reads the crates.io index.
 
 Tag names come from `tags.template` (default `v{version}`). The
-placeholders are `{version}` and `{name}` — the same vocabulary
+placeholders are `{version}` and `{name}`, the same vocabulary
 `patterns.match` uses. A template with no `{name}` names one tag and
 refuses when the release has more than one distinct version. A
 template with `{name}` names one tag and one Release per package; each
@@ -341,8 +341,8 @@ with `{bin}`, `{version}`, `{id}`, `{os}`, `{arch}`, and `{triple}`
 replaced. Publish pushes
 nothing but the tag. `pins` are rewritten by `prepare`, on the
 Version PR commit the tag will name, so the released tree carries its
-own pins. A pin that must name an already-published tarball — a repo's
-own bootstrap tool — is not a `pins` entry. OIDC trusted publishing
+own pins. A pin that must name an already-published tarball (a repo's
+own bootstrap tool) is not a `pins` entry. OIDC trusted publishing
 is later (VER-007).
 
 A vendored set is release assets built from someone else's source, at
@@ -370,7 +370,7 @@ entry admits a file is hand-authored. Commit the template: one the
 repo neither tracks nor ignores fails the run, because rendering
 nothing would leave the stale file served. An ignored one is disowned
 and left alone, a symlink is not followed, and one outside the source
-tree was never verctl's to render — which is what keeps this crate's
+tree was never verctl's to render, which is what keeps this crate's
 changelog templates out. See docs/served-files.md.
 
 A served mise task execs the tool from PATH, never
@@ -382,7 +382,7 @@ freezes on whatever version the file happens to name.
 
 Machines are configuration, not a hardcoded map. A machine is declared
 once under `runners` with `labels`, the literal GitHub label list
-that GitHub reads as AND — one machine, however many labels. Jobs name
+that GitHub reads as AND: one machine, however many labels. Jobs name
 machines: a `ci` job takes `runners`, one check each, and
 an `assets` target takes a single `runner`, because one tarball is one
 machine. A name resolves against `runners` or fails; only labels
@@ -396,9 +396,9 @@ exists before the job does.
 verctl decides how many jobs there are; the workflow file decides
 where a fixed job runs. `ci` and `assets` exist because only the
 repo knows how many verify checks or tarballs it wants, and a static
-YAML file cannot declare N jobs without knowing N. `plan`, `crate`,
+YAML file cannot declare N jobs when N is unknown. `plan`, `crate`,
 `pin`, and `prepare` are always exactly one job each, so their
-`runs-on` is a literal in the workflow the consumer owns — not a
+`runs-on` is a literal in the workflow the consumer owns, not a
 config key. Do not add one. There is no `release` runner section and
 none is planned: publishing a crate twice is wrong the same way two
 machines per tarball is wrong.
@@ -407,5 +407,5 @@ machines per tarball is wrong.
 
 Stop and ask when a fragment is not valid YAML, when a package name is
 unknown to the declarations, when a `major` fragment lands on a
-0.x package, or when verctl refuses a `0.0.0` package's bump:
+0.x package, or when verctl refuses a `0.0.0` package's bump.
 `first_minor` is the operator's to set.

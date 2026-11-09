@@ -129,11 +129,11 @@ pub fn argv(parts: &[&str]) -> Vec<String> {
 ///
 /// # Errors
 ///
-/// Returns an error when `argv` is empty, the pipes cannot be created, the
-/// command cannot be spawned or waited on, it runs longer than `timeout`, it
-/// prints more than `output_limit` bytes on either stream, it exits
-/// unsuccessfully (the error carries the argv, status, and trimmed stderr),
-/// or its stdout is not UTF-8.
+/// Returns an error when `argv` is empty, the pipes cannot be created, or the
+/// command cannot be spawned or waited on. It also returns one when the command
+/// runs longer than `timeout`, prints more than `output_limit` bytes on either
+/// stream, exits unsuccessfully (the error carries the argv, status, and
+/// trimmed stderr), or its stdout is not UTF-8.
 pub fn filter_limited(
     argv: &[String],
     stdin: &str,

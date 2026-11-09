@@ -169,7 +169,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     // names: a pin on a package no fragment bumped stays where it is.
     let mut pinned = pins::write(root, &config.pins, &planned)?;
     // Served files are rendered from the templates beside them, on the same
-    // commit, and staged from here — a repo never lists them in stage.
+    // commit, and staged from here: a repo never lists them in stage.
     pinned.extend(templates::write(root, &config.templates, &served)?);
     let consumed = release::contributing_fragments(&plan, &fragments);
     let origins = release::origins(root, token, &config.changelog, &fragments)?;

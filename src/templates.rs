@@ -13,7 +13,7 @@
 //!
 //! Jinja has no frontmatter, but a top-level `{% set %}` is its equivalent: an
 //! export, readable from the evaluated state, so the metadata travels inside
-//! the file it describes. `q.jinja` above serves `tasks/q/q` — the file name
+//! the file it describes. `q.jinja` above serves `tasks/q/q`: the file name
 //! defaults to the template's own, so most templates declare one line, and
 //! nothing accumulates in configuration.
 //!
@@ -41,7 +41,7 @@ use crate::git;
 
 /// What a template declares about the file it serves, in Jinja's own syntax:
 /// top-level `{%- set … -%}` exports, read as one schema and checked at the
-/// boundary. Other exports are the template's own business — a name it uses to
+/// boundary. Other exports are the template's own business: a name it uses to
 /// build a line is not a declaration.
 #[derive(Debug, Deserialize, Validate)]
 #[garde(allow_unvalidated)]
@@ -51,13 +51,13 @@ struct Declared {
     #[garde(custom(inside_the_repo))]
     path: PathBuf,
     /// The target file's name. Unsaid, it is this template's own name without
-    /// the suffix, which is what a served file almost always wants — so the
+    /// the suffix, which is what a served file almost always wants, so the
     /// fallback is seeded before parsing and this is never absent.
     #[garde(custom(one_file_name))]
     name: String,
     /// Whether the target is executable. Git records one bit of mode for a
-    /// regular file and nothing else — "only 0755 and 0644 are valid for
-    /// regular files" (gitformat-index) — and its other modes are not files a
+    /// regular file and nothing else ("only 0755 and 0644 are valid for
+    /// regular files", gitformat-index). Its other modes are not files a
     /// template renders: 120000 is a symlink, 160000 a gitlink, 040000 a tree.
     /// So there is no third state, and no mode field: unsaid means 0644.
     #[serde(default)]
@@ -83,8 +83,8 @@ pub fn write(
 
 /// Whether this repo serves anything from a template at all.
 ///
-/// A repo that serves nothing must not pay for what rendering needs — reading
-/// every package's manifest to build the version map — so the caller asks
+/// A repo that serves nothing must not pay for what rendering needs (reading
+/// every package's manifest to build the version map), so the caller asks
 /// first.
 ///
 /// # Errors
@@ -204,8 +204,8 @@ impl Declared {
 /// Only tracked, because `prepare` stages what it renders: a template git does
 /// not carry would put a served file on the tag with no source beside it, and
 /// `check` would have nothing to compare against on a fresh clone. But one that
-/// is present and untracked stops the run rather than rendering nothing —
-/// adding a served file and getting silence served the stale file instead.
+/// is present and untracked stops the run rather than rendering nothing.
+/// Adding a served file and getting silence served the stale file instead.
 fn sources(root: &Path, config: &Templates) -> Result<Vec<PathBuf>> {
     let tracked: Vec<PathBuf> = git::tracked(root)?
         .into_iter()
@@ -227,8 +227,8 @@ fn is_template(path: &Path, config: &Templates) -> bool {
 
 /// A template present in the source tree that the repo neither tracks nor
 /// ignores was written and forgotten. One it ignores was written and disowned,
-/// which is a repo saying it is not part of what it publishes — the same thing
-/// `git::tracked` reads the index for — so that one is left alone.
+/// which is a repo saying it is not part of what it publishes. That is the same
+/// thing `git::tracked` reads the index for, so that one is left alone.
 fn refuse_untracked(root: &Path, config: &Templates, tracked: &[PathBuf]) -> Result<()> {
     let loose: Vec<String> = present(&root.join(&config.source), &config.suffix)?
         .iter()
@@ -357,7 +357,7 @@ mod tests {
         fs::read_to_string(root.path().join(path)).unwrap()
     }
 
-    /// One template, one before, many releases — each asserted whole.
+    /// One template, one before, many releases: each asserted whole.
     #[test]
     fn one_template_serves_every_release_exactly() {
         let cases = [
@@ -748,12 +748,12 @@ mod tests {
     }
 
     /// A tree with no repository cannot serve a file by tag, so it has no
-    /// templates — `prepare` still works there, as it did before templates
+    /// templates. `prepare` still works there, as it did before templates
     /// existed. A repository whose index cannot be read is a different case,
     /// and `git::tracked` reports that as an error.
     /// One repository may hold several projects. The index speaks in paths from
     /// the working tree, so a project in a subdirectory has to be found by the
-    /// path it uses itself — and a sibling project's templates are not its.
+    /// path it uses itself, and a sibling project's templates are not its.
     #[test]
     fn a_project_below_the_repository_root_serves_its_own_templates() {
         let root = repo(&[
@@ -791,7 +791,7 @@ mod tests {
     }
 
     /// Ignoring a file is a repo disowning it, which is the same statement
-    /// `tracked` reads the index for — so nothing asks its author to commit it.
+    /// `tracked` reads the index for, so nothing asks its author to commit it.
     #[test]
     fn an_ignored_template_is_disowned_rather_than_forgotten() {
         let root = repo(&[(SERVED, BEFORE), (".gitignore", "*.local.jinja\n")]);
@@ -811,7 +811,7 @@ mod tests {
     }
 
     /// A symlink is not followed, so a directory outside this repository cannot
-    /// have its templates counted as ours — which would ask whoever ran the
+    /// have its templates counted as ours, which would ask whoever ran the
     /// release to commit a file that is not theirs.
     #[test]
     fn a_symlink_out_of_the_repository_serves_nothing_of_its_own() {
@@ -833,7 +833,7 @@ mod tests {
         );
     }
 
-    /// A template here is not untracked — there is no index to not carry it.
+    /// A template here is not untracked: there is no index to not carry it.
     /// Such a tree cannot serve a file by tag at all, so it renders nothing and
     /// says nothing, rather than failing the way a repository would.
     #[test]

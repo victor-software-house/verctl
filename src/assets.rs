@@ -2,7 +2,7 @@
 //!
 //! Each named entry is one target: the platform it produces and the single
 //! machine that builds it. One platform is one tarball is one machine, so
-//! `runner` names one machine from `runners` and is not a list — two machines
+//! `runner` names one machine from `runners` and is not a list: two machines
 //! under one target would overwrite each other's tarball.
 //!
 //! Omit `assets` when there is no host binary. Override `prepare`, `build`,
@@ -488,9 +488,9 @@ pub fn build_vendored(plan: &VendoredPlan, id: &str, root: &Path) -> Result<Path
 /// # Errors
 ///
 /// Returns an error when no token is set, the GitHub repository or HEAD cannot
-/// be read, the notes file cannot be read, the Release cannot be read or
-/// created, an upload fails, GitHub reports no digest for the archive, or the
-/// checksum file cannot be written.
+/// be read, or the notes file cannot be read. It also returns one when the
+/// Release cannot be read or created, an upload fails, GitHub reports no
+/// digest for the archive, or the checksum file cannot be written.
 pub fn upload_vendored(plan: &VendoredPlan, root: &Path, archive: &Path) -> Result<VendoredUpload> {
     let token = crate::release::resolve_token()?;
     let repo = github::repo(root)?;

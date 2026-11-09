@@ -445,14 +445,16 @@ async fn ensure_release_with(
 /// the first asset, not a version commit, so where it points is not checked.
 /// A new one is created with `make_latest: false`, because GitHub otherwise
 /// makes every new published Release the repository's latest
-/// (<https://docs.github.com/en/rest/releases/releases#create-a-release>),
-/// and a vendored library must not displace the repository's own.
+/// ([create a release]), and a vendored library must not displace the
+/// repository's own.
 ///
 /// # Errors
 ///
 /// Returns an error when the GitHub client cannot be built, when reading the
 /// Release fails with anything but 404, or when creating it fails for any
 /// reason other than another job having created it first.
+///
+/// [create a release]: https://docs.github.com/en/rest/releases/releases#create-a-release
 pub fn ensure_vendored_release(
     token: &str,
     repo: &Repo,
@@ -505,15 +507,17 @@ async fn ensure_vendored_release_with(
 }
 
 /// The hex SHA-256 GitHub holds for asset `name` of the Release for `tag`,
-/// from the asset's `digest` (`sha256:<hex>`,
-/// <https://docs.github.com/en/rest/releases/assets>). Reading GitHub's digest
-/// rather than hashing a local file keeps a checksum true to the stored asset
-/// when a rerun's build is not byte-identical to the one GitHub kept.
+/// from the asset's `digest` (`sha256:<hex>`, see [release assets]). Reading
+/// GitHub's digest rather than hashing a local file keeps a checksum true to
+/// the stored asset when a rerun's build is not byte-identical to the one
+/// GitHub kept.
 ///
 /// # Errors
 ///
 /// Returns an error when the GitHub client cannot be built, the Release cannot
 /// be read, it does not list `name`, or the asset has no SHA-256 digest.
+///
+/// [release assets]: https://docs.github.com/en/rest/releases/assets
 pub fn asset_sha256(token: &str, repo: &Repo, tag: &str, name: &str) -> Result<String> {
     block(async {
         let crab = client(token)?;
@@ -723,9 +727,10 @@ struct AssetName {
 /// # Errors
 ///
 /// Returns an error when `tarball` has no UTF-8 file name or cannot be read,
-/// the GitHub client cannot be built, the release for `tag` does not exist,
-/// the asset of that name exists but its upload does not complete within a
-/// minute, or the upload fails for a reason other than a duplicate asset.
+/// the GitHub client cannot be built, or the release for `tag` does not exist.
+/// It also returns one when the asset of that name exists but its upload does
+/// not complete within a minute, or the upload fails for a reason other than a
+/// duplicate asset.
 pub fn upload_release_asset(token: &str, repo: &Repo, tag: &str, tarball: &Path) -> Result<String> {
     let name = tarball
         .file_name()
@@ -742,9 +747,8 @@ pub fn upload_release_asset(token: &str, repo: &Repo, tag: &str, tarball: &Path)
 
 /// How long an upload refused as a duplicate waits for the other upload to
 /// finish. GitHub lists an asset as soon as its upload starts, in a state
-/// other than `uploaded`, and a tarball of a few megabytes uploads in seconds,
-/// so a minute covers a run that lost the race while the winner was still
-/// sending.
+/// other than `uploaded`. A tarball of a few megabytes uploads in seconds, so a
+/// minute covers a run that lost the race while the winner was still sending.
 const UPLOAD_SETTLE_DELAYS: [std::time::Duration; 12] = [std::time::Duration::from_secs(5); 12];
 
 /// The part of a Release an upload reads.
@@ -831,9 +835,11 @@ async fn upload_release_asset_with(
 }
 
 /// GitHub's 422 for an upload whose name the release already has, from
-/// <https://docs.github.com/en/rest/releases/assets#upload-a-release-asset>.
+/// [upload a release asset].
 /// The code is only in the error's body: octocrab displays a GitHub error as
 /// "GitHub", so its text never names it.
+///
+/// [upload a release asset]: https://docs.github.com/en/rest/releases/assets#upload-a-release-asset
 fn is_already_exists(error: &octocrab::Error) -> bool {
     matches!(error, octocrab::Error::GitHub { source, .. }
     if source.status_code.as_u16() == 422
@@ -855,13 +861,14 @@ pub struct PullAuthor {
 }
 
 /// The author of pull request `number`, from
-/// `GET /repos/{owner}/{repo}/pulls/{number}`
-/// (<https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request>).
+/// `GET /repos/{owner}/{repo}/pulls/{number}` ([get a pull request]).
 ///
 /// # Errors
 ///
 /// Returns an error when the GitHub client cannot be built or the request or
 /// its decoding fails, for example when pull request `number` does not exist.
+///
+/// [get a pull request]: https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request
 pub fn pull_author(token: &str, repo: &Repo, number: u64) -> Result<PullAuthor> {
     block(async {
         let crab = client(token)?;

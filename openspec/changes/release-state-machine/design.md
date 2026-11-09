@@ -93,11 +93,11 @@ or when a dependency that `p`'s published manifest keeps has a current release
 that does not publish, so `publish` could never proceed. verctl never waits on
 a fact that cannot arrive. The fragment rule in 2.2 keeps the second case from
 arising through pull requests that pass `check`. A package in `conflict` does
-not block `propose`, so a Version PR that resolves it can still be opened: a
-new version of the dependency, whose release commit publishes because the
-dependency publishes on the release branch (the load refuses the state
-otherwise), or a new version of `p` that drops the dependency or stops
-publishing.
+not block `propose`, so a Version PR that resolves it can still be opened. One
+option is a new version of the dependency, whose release commit publishes
+because the dependency publishes on the release branch (the load refuses the
+state otherwise). The other is a new version of `p` that drops the dependency
+or stops publishing.
 
 A package does not publish when it declares `publish = false` or
 `"private": true`, or uses a declared ecosystem with no publish block. Whether
@@ -121,9 +121,9 @@ otherwise.
 
 | Transition | Guard | Effect | Postcondition, checked after |
 |:--|:--|:--|:--|
-| `propose` | no open pull request on the proposal branch has a base other than `<base>`, checked before the version step runs; no package's current release is short of `released`, except one in `conflict` (a current release that does not publish and declares no assets is `released` at `merged`); a fragment is pending | run the version step on a tree at the release branch tip, commit it on the proposal branch, open or update the Version PR | the proposal branch passes `check` |
+| `propose` | No open pull request on the proposal branch has a base other than `<base>`, checked before the version step runs. No package's current release is short of `released`, except one in `conflict` (a current release that does not publish and declares no assets is `released` at `merged`). A fragment is pending | run the version step on a tree at the release branch tip, commit it on the proposal branch, open or update the Version PR | the proposal branch passes `check` |
 | `propose` (close) | no fragment is pending and a Version PR is open; a retargeted pull request is reported, never closed | close it with a comment naming why | no Version PR is open |
-| `publish` | HEAD is `R(p, v)`; every workspace dependency that `p`'s published manifest keeps and that the publish order puts before `p` is published (the load refuses a publishing package that depends that way on a package that does not publish); the `verify` steps pass; the registry does not list `p@v` | the package's publish block runs | the registry lists `p@v` |
+| `publish` | HEAD is `R(p, v)`. Every workspace dependency that `p`'s published manifest keeps and that the publish order puts before `p` is published (the load refuses a publishing package that depends that way on a package that does not publish). The `verify` steps pass. The registry does not list `p@v` | the package's publish block runs | the registry lists `p@v` |
 | `tag` | every publishing package the tag names is published | create the tags at `R(p, v)` and push all ready tags in one atomic push | each remote tag peels to `R(p, v)` |
 | `release` | the tag exists | create the GitHub Release as a draft when assets are declared, otherwise published; if one exists, update its body | the Release exists with the CHANGELOG section as its body |
 | `asset` | the Release is a draft; the asset is not uploaded | build at `R(p, v)` and upload | the asset is `uploaded` |
@@ -140,7 +140,7 @@ Rules that hold across all transitions:
 4. Publish happens before tag for a package with an unchecked upload, whose
    tag is the record that the upload ran. A package whose uploads all have a
    registry check is tagged first, in the run that merged the Version PR,
-   because the registry, not the tag, records the upload, and a rerun at an
+   because the registry, not the tag, records the upload. Also, a rerun at an
    older commit could not create the tag without `workflows: write`
    ([tag-at-merge](../archive/2026-10-24-tag-at-merge/design.md)).
 5. verctl never decides one fact from another. A published version does not
@@ -190,17 +190,16 @@ check is unchanged.
    must also add a fragment for that package, so the next Version PR moves it,
    together with its dependents, to a version that follows the new setting.
 2. **Content.** A Version PR's diff must be the version step applied to its
-   base and nothing else: it changes no path outside what the version step
+   base and nothing else. It changes no path outside what the version step
    writes (manifests, lockfiles, CHANGELOGs, served files, consumed fragments,
    and the declared `writes` of `version` steps, read from the configuration
-   at the merge-base); a manifest differs only in version fields and in the
-   dependency requirements the plan rewrites; every changed version equals the
-   plan of the fragments present at the merge-base and absent at HEAD; every
-   lockfile agrees with its manifests, and its parsed entries and header differ
+   at the merge-base). A manifest differs only in version fields and in the
+   dependency requirements the plan rewrites. Every changed version equals the
+   plan of the fragments present at the merge-base and absent at HEAD. Every
+   lockfile agrees with its manifests. Its parsed entries and header differ
    from the merge-base only in the versions of the workspace packages the plan
    bumps and in references that resolve to them, with no entry added or
-   removed; and
-   every served file equals its template's render. A workspace entry is told
+   removed. Every served file equals its template's render. A workspace entry is told
    from a registry entry of the same name by its source: no `source` in
    `Cargo.lock`, a workspace key in `bun.lock`. If an owner command
    re-resolves more than the bump, `propose` fails its own postcondition, and
@@ -236,7 +235,7 @@ The proposal branch is `verctl/release/<base>`, for example
 |:--|:--|:--|:--|
 | One Version PR per base branch | one place to review a release; dependents and the shared lockfile stay in one diff | packages release together | **chosen** |
 | One Version PR per package (release-please `separate-pull-requests`) | packages release on their own schedule | dependents span PRs that must merge in order; every PR rewrites the shared `Cargo.lock` or `bun.lock`, so each merge conflicts the others | rejected |
-| Branch named after the version (`release/v0.4.0`) | the name says what ships | the version changes while the PR is open (a `minor` fragment turns `0.3.13` into `0.4.0`), and a PR's head branch cannot be renamed, so each change would close the PR and open another, losing its review; with several packages there is no single version to name | rejected |
+| Branch named after the version (`release/v0.4.0`) | the name says what ships | the version changes while the PR is open (a `minor` fragment turns `0.3.13` into `0.4.0`). A PR's head branch cannot be renamed, so each change would close the PR and open another, losing its review. With several packages there is no single version to name | rejected |
 | Branch named after the base | deterministic; a maintenance base such as `release/0.3` gets its own PR without a rename | none found | **chosen** |
 
 Changesets uses the same rule (`changeset-release/<base>`); release-please
@@ -357,7 +356,7 @@ Option (b) is chosen. pnpm 12 and aube are working Rust references for the
 request body, the OIDC exchange, and provenance, but neither offers them as a
 library: pnpm's crates declare `publish = false`, and aube's registry crate
 has no publish. verctl therefore writes its own client on `reqwest`, signs
-provenance with the `sigstore-sign` crate, and follows the wire format npm,
+provenance with the `sigstore-sign` crate, and follows the message format npm,
 pnpm 12, and Bun all send.
 
 ## 4. mise
@@ -370,8 +369,8 @@ what it owns and keeps out of what it does not.
 | Install and verify verctl | mise `github:` backend | asset chosen by os and arch tokens in its name; checksum from the GitHub asset digest; GitHub artifact attestations checked by default on public GitHub |
 | Run an extension step | mise | `mise run --raw <task>`; the task's `#MISE tools` install first; the exit status is the outcome; `--raw` keeps stdout clean when a config sets redactions |
 | Order work inside a step | mise | a step's task may `depends` on other tasks; verctl never builds a task graph |
-| `mise.lock` | mise | verctl never edits it; only `mise lock` writes it; verctl compares its parsed entries, never its bytes, because mise 2026.10.3 and 2026.10.7 write the same two `rust` entries in opposite order, and `min_version` can set only a floor, not one version for every machine |
-| A repository's own tool pin | the built-in `mise-pin` step, listed under `released` | after `finalize`, it runs `mise lock <tool>@<version>` with `MISE_LOCKFILE_MODE=generate`, so a version with no release changes neither file (the default mode rewrites `mise.toml` before it fails); then verctl reads `mise.lock` and requires a URL and checksum for every platform the lock lists, because `mise lock` skips a platform with no asset and still exits 0, and `mise install --locked` checks only the runner's platform |
+| `mise.lock` | mise | verctl never edits it. Only `mise lock` writes it. verctl compares its parsed entries, never its bytes, because mise 2026.10.3 and 2026.10.7 write the same two `rust` entries in opposite order, and `min_version` can set only a floor, not one version for every machine |
+| A repository's own tool pin | the built-in `mise-pin` step, listed under `released` | after `finalize`, it runs `mise lock <tool>@<version>` with `MISE_LOCKFILE_MODE=generate`, so a version with no release changes neither file (the default mode rewrites `mise.toml` before it fails). Then verctl reads `mise.lock` and requires a URL and checksum for every platform the lock lists. That is because `mise lock` skips a platform with no asset and still exits 0, and `mise install --locked` checks only the runner's platform |
 | Package lockfiles | the package manager, called by verctl | `[deps]` is experimental and has no cargo provider, so verctl runs `cargo` and `bun` from PATH, where mise put them |
 | Versions, changelogs, the Version PR, publishing | verctl | mise has no model for them |
 
@@ -601,8 +600,8 @@ a release, and every block of a stack verctl does not ship.
 | W27 | schema rules the code does not keep: no `deny_unknown_fields` below the top level, silent pin skips, lazy runner names, `version_label` treating `None` and `""` alike | every struct refuses unknown keys; names resolve at load; `version_label` is gone |
 
 Ledger rows that propose more of the same close when the work that removes
-their cause lands: VER-013, VER-016, VER-020, VER-028, VER-029, VER-030,
-VER-031, VER-033, VER-034, VER-035, VER-036, VER-038, and VER-010.
+their cause lands. They are VER-013, VER-016, VER-020, VER-028, VER-029,
+VER-030, VER-031, VER-033, VER-034, VER-035, VER-036, VER-038, and VER-010.
 
 ## 11. Migration: one minor, then patches
 
@@ -651,7 +650,7 @@ their previous config from git.
    current version, for every package, tagged or not.
 3. [Bun below 1.4.1 leaves the lockfile stale] → The bun ecosystem refuses an
    older Bun by version.
-4. [verctl maintains an npm registry client] → It follows the documented wire
+4. [verctl maintains an npm registry client] → It follows the documented message
    format that npm, pnpm 12, and Bun all send, and it ships behind `auth` and
    `provenance` values that patches add.
 5. [`mise lock` can exit 0 with platforms missing] → The `mise-pin` step reads

@@ -40,7 +40,7 @@ pub enum Driver {
 /// How a command driver's filter is invoked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandSpec {
-    /// `mise run <task>` — stdin is the file, stdout is the version or new
+    /// `mise run <task>`: stdin is the file, stdout is the version or new
     /// file.
     Mise(String),
     /// Execvp. No shell.

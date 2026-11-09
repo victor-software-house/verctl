@@ -65,9 +65,9 @@ pub struct DocsLine {
     /// What docs.rs reported.
     pub status: DocsStatus,
     /// For a crate not built at the deadline, the error the last poll hit,
-    /// if it hit one: docs.rs was unreachable or answered with a server
-    /// error, so "unbuilt" may mean "could not ask", and "failed" may mean
-    /// docs.rs could not be asked again after it listed the version.
+    /// if it hit one. Such an error means docs.rs was unreachable or answered
+    /// with a server error, so "unbuilt" may mean "could not ask", and "failed"
+    /// may mean docs.rs could not be asked again after it listed the version.
     pub last_error: Option<String>,
 }
 
@@ -85,16 +85,16 @@ struct Wanted {
 /// library target, the tag `tags.template` names for its version names HEAD
 /// on GitHub, and the crates.io index lists the version. `publish` creates a
 /// crates.io package's tag before the upload, so the tag says which commit
-/// released the version and the index says the upload happened; the tag
+/// released the version and the index says the upload happened. The tag
 /// lookup goes to GitHub, never to local refs, because a CI checkout fetches
 /// no tags.
 ///
 /// # Errors
 ///
-/// Returns an error when no token is set, the plan, a manifest, a tag, or the
-/// crates.io index cannot be read, or any crate's build failed or was still
-/// missing when `timeout` ran out, with the last docs.rs error when polling hit
-/// one.
+/// Returns an error when no token is set, or when the plan, a manifest, a tag,
+/// or the crates.io index cannot be read. It also returns one when any crate's
+/// build failed or was still missing when `timeout` ran out, with the last
+/// docs.rs error when polling hit one.
 pub fn run(config: &Config, root: &Path, timeout: Duration) -> Result<Vec<DocsLine>> {
     let token = release::resolve_token()?;
     let wanted = released_crates(config, root, &token)?;
@@ -171,14 +171,15 @@ fn released_crates(config: &Config, root: &Path, token: &str) -> Result<Vec<Want
 }
 
 /// Whether the package in `manifest` has a library target, as Cargo resolves
-/// it: an explicit `[lib]` table, or `src/lib.rs` found by target
-/// auto-discovery unless `package.autolib` is `false`. docs.rs documents no
-/// binary-only crate.
-/// <https://doc.rust-lang.org/cargo/reference/cargo-targets.html#target-auto-discovery>
+/// it: an explicit `[lib]` table, or `src/lib.rs` found by
+/// [target auto-discovery] unless `package.autolib` is `false`. docs.rs
+/// documents no binary-only crate.
 ///
 /// # Errors
 ///
 /// Returns an error when the manifest cannot be read or parsed.
+///
+/// [target auto-discovery]: https://doc.rust-lang.org/cargo/reference/cargo-targets.html#target-auto-discovery
 pub fn has_library(manifest: &Path) -> Result<bool> {
     let raw = std::fs::read_to_string(manifest).with_context(|| manifest.display().to_string())?;
     let document = raw
@@ -265,9 +266,11 @@ fn wait_built(base: &str, wanted: &[Wanted], timeout: Duration, poll: Duration) 
 ///
 /// docs.rs adds a release when its build starts, and reports `doc_status`
 /// false until the build stores documentation, so `Some(false)` is a running
-/// build or a failed one; the endpoint says nothing else.
-/// <https://github.com/rust-lang/docs.rs/blob/4259a798bb58835b634f4d75c4481f2f17bdb1d5/crates/bin/docs_rs_builder/src/docbuilder/rustwide_builder.rs#L220>
-/// <https://github.com/rust-lang/docs.rs/blob/4259a798bb58835b634f4d75c4481f2f17bdb1d5/crates/bin/docs_rs_web/src/match_release.rs#L107-L109>
+/// build or a failed one; the endpoint says nothing else. The sources are the
+/// docs.rs [builder] and its [release matching].
+///
+/// [builder]: https://github.com/rust-lang/docs.rs/blob/4259a798bb58835b634f4d75c4481f2f17bdb1d5/crates/bin/docs_rs_builder/src/docbuilder/rustwide_builder.rs#L220
+/// [release matching]: https://github.com/rust-lang/docs.rs/blob/4259a798bb58835b634f4d75c4481f2f17bdb1d5/crates/bin/docs_rs_web/src/match_release.rs#L107-L109
 fn status(base: &str, name: &str, version: &str) -> Result<Option<bool>> {
     let url = format!(
         "{}/crate/{name}/{version}/status.json",

@@ -18,7 +18,7 @@ A tag is created before the uploads when no package under it has an
 unchecked upload: every upload has a crates.io index check or a `query`, or
 the package has no upload (`publisher: none`). `tags_before_upload` decides
 it from the same `publisher::uploads` the run executes, so the order and the
-uploads cannot disagree.
+uploads cannot conflict.
 
 For those tags the registry decides completeness, so a tag created first
 claims nothing `pending` reads: a retry still finds the package incomplete

@@ -13,7 +13,7 @@ Each set SHALL declare `version`, `dir`, `files`, and `targets`, and MAY declare
 
 ### Requirement: A vendored set is validated at load
 
-The load SHALL fail when an `archive` template lacks `{id}` or does not end in `.tar.gz`, when `files` or `targets` is empty, when `dir`, a `files` entry, or `notes` leaves the repository, when a target's `runner` is not declared in `runners`, or when a set name, a target key, or `version` is empty, `.`, `..`, or holds `/` or `\`.
+The load SHALL fail when an `archive` template lacks `{id}` or does not end in `.tar.gz`, when `files` or `targets` is empty, or when `dir`, a `files` entry, or `notes` leaves the repository. The load SHALL also fail when a target's `runner` is not declared in `runners`, or when a set name, a target key, or `version` is empty, `.`, `..`, or holds `/` or `\`.
 
 #### Scenario: Archive without the target
 

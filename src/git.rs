@@ -60,8 +60,9 @@ const NEED_FULL_FETCH: &str =
 /// # Errors
 ///
 /// Returns an error when `origin` exists but its default branch ref cannot be
-/// resolved, when HEAD names no commit, when there is no merge-base (a shallow
-/// clone, for one), or when the merge-base commit or its tree cannot be read.
+/// resolved, or when HEAD names no commit. It also returns one when there is no
+/// merge-base (a shallow clone, for one), or when the merge-base commit or its
+/// tree cannot be read.
 pub fn files_on_merge_base(
     root: &Path,
     rels: &[&Path],
@@ -132,7 +133,7 @@ pub struct AddedBy {
 /// squash merge is that commit, and its subject carries the pull request
 /// number. When that commit is a merge and another parent already has the
 /// file, the file arrived with the merged branch, so the walk continues down
-/// that parent's first-parent history: a fragment merged from `next` links the
+/// that parent's first-parent history. A fragment merged from `next` links the
 /// pull request that added it there, not the merge. A merge titled with its
 /// pull request, `Title (#12)`, whose branch commits name none is the commit
 /// named instead, so a repository that merges with merge commits keeps its
@@ -224,9 +225,10 @@ pub struct VersionCommit {
 /// # Errors
 ///
 /// Returns an error when `root` is in no repository, `path` is outside it,
-/// HEAD has no version in `path`, a commit or tree cannot be read, or the walk
-/// reaches a shallow clone's boundary before the version changes: the commit
-/// that set it is not in the clone, so a full fetch is needed.
+/// HEAD has no version in `path`, or a commit or tree cannot be read. It also
+/// returns one when the walk reaches a shallow clone's boundary before the
+/// version changes: the commit that set it is not in the clone, so a full fetch
+/// is needed.
 pub fn version_commit(
     root: &Path,
     path: &Path,
@@ -275,15 +277,15 @@ pub fn version_commit(
 /// when HEAD contains `sha` and `sha` carries that version.
 ///
 /// A release tag can name a commit other than [`version_commit`] and still be
-/// that version's release: a publish rerun after later commits tagged a newer
-/// HEAD at the same version, or a version set again after a revert keeps the
-/// tag from its first release. A tagged commit can also leave the first-parent
-/// history while HEAD keeps it: a branch rewritten and merged back with its old
-/// tip as the second parent, as a forkctl append publish does, holds the
-/// tagged commit only on that parent, and the new first-parent commit at the
-/// same version may change other files. In every case the registry already has
-/// the version, so the tag's commit is the release. Only the version is
-/// compared, never the tree.
+/// that version's release. One case is a publish rerun after later commits
+/// tagged a newer HEAD at the same version. Another is a version set again
+/// after a revert, which keeps the tag from its first release. A tagged commit
+/// can also leave the first-parent history while HEAD keeps it. A forkctl
+/// append publish rewrites a branch and merges it back with its old tip as the
+/// second parent, so only that parent holds the tagged commit. The new
+/// first-parent commit at the same version may change other files.
+/// In every case the registry already has the version, so the tag's commit is
+/// the release. Only the version is compared, never the tree.
 ///
 /// On the first-parent history the depth is the tagged commit's own. Off it,
 /// the depth is that of the oldest first-parent commit that contains the
@@ -293,9 +295,10 @@ pub fn version_commit(
 /// # Errors
 ///
 /// Returns an error when `root` is in no repository, `path` is outside it,
-/// HEAD has no version in `path`, a commit or tree cannot be read, the walk
-/// reaches a shallow clone's boundary before finding `sha`, or no merge-base
-/// can be computed between a first-parent commit and `sha`.
+/// HEAD has no version in `path`, or a commit or tree cannot be read. It also
+/// returns one when the walk reaches a shallow clone's boundary before finding
+/// `sha`, or when no merge-base can be computed between a first-parent commit
+/// and `sha`.
 pub fn tagged_commit(
     root: &Path,
     path: &Path,
@@ -408,7 +411,7 @@ pub fn upstream_default_branch(root: &Path) -> Option<String> {
 
 /// Fail unless HEAD is on the default-branch history.
 ///
-/// No repository, and no `origin` remote, is a skip — local fixtures
+/// No repository, and no `origin` remote, is a skip: local fixtures
 /// have nothing to prove. A repo that has `origin` but no peelable
 /// default-tracking ref fails closed. A shallow clone that cannot walk
 /// the graph also fails closed.
@@ -709,10 +712,10 @@ pub fn workdir_covering(dir: &Path) -> Option<PathBuf> {
 ///
 /// The index, not a directory walk: build output, vendored trees, and
 /// anything else gitignored is not part of what this repo publishes. The index
-/// speaks in paths from the working tree, and `root` is a project inside it —
-/// one repository may hold several — so anything outside `root` is not this
+/// speaks in paths from the working tree, and `root` is a project inside it
+/// (one repository may hold several), so anything outside `root` is not this
 /// project's, and what is left is rebased onto it. A tree with no repository
-/// tracks nothing — it cannot serve a file by tag — but a repository whose
+/// tracks nothing (it cannot serve a file by tag), but a repository whose
 /// index cannot be read is an error, never an empty answer.
 ///
 /// # Errors
@@ -734,11 +737,11 @@ pub fn tracked(root: &Path) -> Result<Vec<PathBuf>> {
 
 /// Whether the repository is told to ignore `rel`, a path relative to `root`.
 ///
-/// Ignoring a file is a repo saying it is not part of what it publishes — the
-/// same statement `tracked` already reads the index for. So an ignored file is
-/// not a forgotten one, and nothing should ask its author to commit it. A file
-/// under an ignored directory is ignored too, as git has it: gix matches the
-/// one path it is given, so each parent directory is asked first.
+/// Ignoring a file is a repo saying it is not part of what it publishes. It is
+/// the same statement `tracked` already reads the index for. So an ignored file
+/// is not a forgotten one, and nothing should ask its author to commit it. A
+/// file under an ignored directory is ignored too, as git has it: gix matches
+/// the one path it is given, so each parent directory is asked first.
 #[must_use]
 pub fn is_ignored(root: &Path, rel: &Path) -> bool {
     let Some(repo) = repo_covering(root) else {
@@ -1130,10 +1133,10 @@ pub enum PushOutcome {
 /// # Errors
 ///
 /// Returns an error when `root` is not inside a git repository, when the
-/// repository has no workdir or HEAD names no commit, when a path lies
-/// outside the workdir, is not UTF-8, or cannot be read or filtered, when the
-/// commit or branch ref cannot be written, or when `git push` fails or runs
-/// past five minutes.
+/// repository has no workdir or HEAD names no commit, or when a path lies
+/// outside the workdir, is not UTF-8, or cannot be read or filtered. It also
+/// returns one when the commit or branch ref cannot be written, or when
+/// `git push` fails or runs past five minutes.
 pub fn commit_branch_and_push(
     root: &Path,
     branch: &str,

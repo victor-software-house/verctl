@@ -48,7 +48,7 @@ a run of an official release binary. Nothing here is inferred.
 3. **`cargo update --workspace` is the documented lockfile refresh** after
    version edits. Editing Cargo.lock as text is exact when the bumped crate name
    appears once in the graph, and wrong when two versions of that name are in
-   the graph: references written as `"name version"` go stale and `--locked`
+   the graph. References written as `"name version"` go stale and `--locked`
    then refuses ([encode.rs][cargo-encode], [lockfile.rs][cargo-lockfile]).
 4. **bun.lock decides published dependency versions.** It records a `version`
    for every non-root workspace package ([bun.lock.rs][bun-lock]), and `bun pm
@@ -119,8 +119,8 @@ run in a scratch workspace.
 3. **Publish.** pnpm resolves `workspace:` from the dependency's current
    `package.json` and `catalog:` from `pnpm-workspace.yaml`, never from the
    lockfile. It sends `PUT /<name>` with the version manifest and the tarball
-   under `_attachments`, performs the npm OIDC exchange per package, signs
-   provenance with sigstore when the repository and package are public, skips
+   under `_attachments` and performs the npm OIDC exchange per package. It
+   signs provenance with sigstore when the repository and package are public, skips
    versions the packument already lists, and waits until the registry serves
    the new version.
 4. **Reuse.** The packing, publish, lockfile, and versioning crates are MIT but
@@ -218,7 +218,7 @@ environment.
 13. A Version PR identified by its head repository, head branch, and base,
     the facts a pull request cannot change, with one Version PR per base
     (Changesets).
-14. A registry client that sends the documented npm wire format: the `PUT`
+14. A registry client that sends the documented npm message format: the `PUT`
     with `_attachments`, staged publish, the per-package OIDC exchange, and a
     sigstore provenance bundle (npm, pnpm 12, aube).
 15. Skip versions the packument lists, then wait until the registry serves the

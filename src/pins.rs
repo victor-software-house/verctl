@@ -34,10 +34,10 @@ pub fn current_versions(root: &Path, config: &Config) -> Result<Vec<(String, Str
 /// # Errors
 ///
 /// Returns an error when a pin file lies outside `root` or is a symlink,
-/// cannot be read or written, has no `[tools]` entry for the pinned tool, or
-/// has a pattern that is malformed or matches a number of times its
-/// `occurrences` does not allow. Files rewritten before the failing pin stay
-/// changed.
+/// cannot be read or written, or has no `[tools]` entry for the pinned tool. It
+/// also returns one when a pin has a pattern that is malformed or matches a
+/// number of times its `occurrences` does not allow. Files rewritten before the
+/// failing pin stay changed.
 pub fn write(root: &Path, pins: &[Pin], versions: &[(String, String)]) -> Result<Vec<PathBuf>> {
     apply(root, pins, versions, true)
 }
@@ -139,7 +139,7 @@ fn rewrite_pattern(body: &str, pattern: &PinPattern, version: &str) -> Result<St
     }
     // `R` is CRLF mode: without it `$` sits only before `\n`, so a file checked
     // out with CRLF endings has a `\r` between the version and the line end and
-    // matches nothing — a correct file stopping a release.
+    // matches nothing: a correct file stopping a release.
     let (open, close) = if pattern.whole_line {
         ("(?mR)^", "$")
     } else {
@@ -629,7 +629,7 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), before);
     }
 
-    /// A tool entry and the includes that fetch it, in one file, at once —
+    /// A tool entry and the includes that fetch it, in one file, at once,
     /// including a sibling repo's include, which is not ours to move.
     #[test]
     fn a_tool_entry_and_its_own_includes_move_together() {

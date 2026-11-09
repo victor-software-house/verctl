@@ -1,5 +1,5 @@
 # Changes here will be overwritten by Copier; edit with `copier update --data`.
-_commit: v0.0.75
+_commit: v0.0.76
 _src_path: https://github.com/victor-software-house/templates.git
 ci_runner: github-hosted
 clippy_disallowed_methods: []
@@ -35,6 +35,7 @@ pieces:
 - lint_markdown
 - lint_toml
 - lint_typos
+- lint_prose
 - openspec
 - ci
 - drift_check

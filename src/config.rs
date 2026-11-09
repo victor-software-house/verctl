@@ -268,7 +268,7 @@ pub struct Assets {
 }
 
 /// One build target: the platform it produces and the single machine that
-/// builds it. One tarball, one machine — so `runner` is not a list.
+/// builds it. One tarball, one machine, so `runner` is not a list.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 #[non_exhaustive]
@@ -551,7 +551,7 @@ pub struct Config {
     #[serde(default)]
     #[garde(dive)]
     pub templates: Templates,
-    /// How release tags are named. Omit for `v{version}` — one tag when every
+    /// How release tags are named. Omit for `v{version}`: one tag when every
     /// released package shares a version. Put `{name}` in the template for one
     /// tag (and one Release) per package.
     #[serde(default)]
@@ -629,7 +629,7 @@ pub struct Pin {
         custom(something_to_rewrite(self.tool.is_some()))
     )]
     pub pattern_ids: Vec<String>,
-    /// The patterns those ids name, filled in by `Config::load` — the only way
+    /// The patterns those ids name, filled in by `Config::load`, the only way
     /// to build a pin that rewrites anything.
     #[serde(skip)]
     pub patterns: Vec<PinPattern>,
@@ -706,7 +706,7 @@ pub const DIR: &str = ".ctl";
 /// ver`) rather than after the crate that reads them.
 pub const FILE: &str = ".ctl/ver.yaml";
 
-/// The directory a config governs — what every `path` in it is relative to.
+/// The directory a config governs: what every `path` in it is relative to.
 ///
 /// Declarations sit in `<root>/.ctl/`, so the directory holding the file is a
 /// level too deep and its parent is the root. `-c crates/foo/.ctl/ver.yaml`
@@ -798,7 +798,7 @@ impl Default for Tags {
 }
 
 /// A tag template may only say `{version}` and `{name}`, must say at least one
-/// of them, and must say `{version}` — a name with no version cannot date a
+/// of them, and must say `{version}`. A name with no version cannot date a
 /// release.
 fn tag_template_placeholders(template: &str, _: &Config) -> garde::Result {
     let mut saw_version = false;
@@ -898,7 +898,7 @@ pub struct PinPattern {
     /// Whether the match is a whole line rather than text inside one.
     ///
     /// Unsaid, a pattern matches anywhere, which is what an inline spelling
-    /// wants — `github:org/tool@1.2.3` sits inside a longer line. A pattern
+    /// wants: `github:org/tool@1.2.3` sits inside a longer line. A pattern
     /// that owns its line says so instead of anchoring on whatever text
     /// happens to sit next to it: the alternative is spelling the neighbour
     /// into `match`, which then breaks when the neighbour moves. It also makes

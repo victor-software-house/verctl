@@ -5,7 +5,7 @@
 A release whose first publish run does not finish is retried at its version
 commit. By then a later merge may have changed `.github/workflows`, and
 GitHub then refuses to create the tag and Release with 403 "Resource not
-accessible by integration": the Releases API needs `workflows: write` for a
+accessible by integration". The Releases API needs `workflows: write` for a
 commit whose workflows differ from the default branch, and `GITHUB_TOKEN`
 cannot hold it.
 

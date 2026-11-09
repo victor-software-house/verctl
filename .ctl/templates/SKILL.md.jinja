@@ -70,7 +70,7 @@ A repo declares everything in `.ctl/ver.yaml`, the one file verctl reads;
 {% raw -%}
 Prefer a template over a pin: a served file is generated, and a `pins` entry
 admits a file is hand-authored. A template declares its own target with
-top-level `{%- set … -%}` exports. Commit it — one the repo neither tracks nor
+top-level `{%- set … -%}` exports. Commit it: one the repo neither tracks nor
 ignores fails the run, because rendering nothing would serve the stale file
 instead. An ignored one is disowned and left alone; one outside the source
 tree was never verctl's to render.
@@ -92,7 +92,7 @@ machine. Only `labels` reach `runs-on`; a name resolves against
 
 verctl decides how many jobs there are; the workflow file decides where a
 fixed job runs. `plan`, `crate`, and `prepare` are always one job
-each, so their `runs-on` is a literal in the consumer's workflow — not a
+each, so their `runs-on` is a literal in the consumer's workflow, not a
 config key. Do not add one, and do not add a `release` runner section.
 
 Stop when a 0.x package gets `major`, when verctl refuses a `0.0.0`

@@ -28,8 +28,8 @@ version already exists.
 
 A cargo package on the stock publisher whose publish target is crates.io and
 that declares no `query` SHALL be checked by reading its crates.io sparse
-index file, at the path built from the lowercased name, for a `vers` equal
-to the version. Any other package with a `query` SHALL be checked by running
+index file, at the path built from the lowercased name. The check SHALL look
+in that file for a `vers` equal to the version. Any other package with a `query` SHALL be checked by running
 it in the package's directory.
 
 #### Scenario: A workspace member is not the registry
@@ -75,7 +75,7 @@ whose target is another registry or unknown, SHALL have no registry check.
 
 #### Scenario: An overridden bun publisher
 
-- **WHEN** bun package `web` replaces the stock publisher with `npm publish --registry https://registry.example.com` and declares no `query`
+- **WHEN** bun package `web` replaces the stock publisher with `npm publish --registry` pointed at the [example registry][example-registry] and declares no `query`
 - **THEN** verctl runs no `bun pm view` query and runs the publisher
 
 #### Scenario: A crate on another registry
@@ -150,3 +150,5 @@ The JSON report SHALL carry `"outcome": "nothing-to-release"`.
 
 - **WHEN** the release of `demo@0.4.6` lacks only its `darwin-arm64` asset
 - **THEN** `verctl publish --plan` reports the version commit as pending, `verctl assets` plans only `darwin-arm64`, and `verctl publish` at that commit reports the publish, tag, and Release as `already`
+
+[example-registry]: https://registry.example.com

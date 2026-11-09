@@ -106,7 +106,7 @@ fn the_example_declares_nothing_a_package_does_not_use() {
 }
 
 /// Resolving each declared table by hand would skip the stock merge production
-/// applies, so a valid `[drivers.npm] after = "…"` — stock supplying the rest —
+/// applies, so a valid `[drivers.npm] after = "…"` (stock supplying the rest)
 /// would fail here while working in the field. Plan the publish instead: it is
 /// the path that resolves every driver, reads the version through it, and
 /// resolves every publisher. With the test above, no declared table escapes.
@@ -166,7 +166,7 @@ fn the_example_resolves_every_driver_and_publisher_it_declares() {
 
 /// The comment above `[drivers.plain]` promises both directions: stdin is the
 /// file, stdout is the version on read and the whole new file on write, and a
-/// write also gets `VERCTL_VERSION`. Run both — an argv that opens its own file
+/// write also gets `VERCTL_VERSION`. Run both: an argv that opens its own file
 /// or ignores the variable would document a protocol that does not exist.
 #[test]
 fn the_example_command_driver_reads_and_writes_through_stdio() {

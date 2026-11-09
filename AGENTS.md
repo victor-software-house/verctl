@@ -57,26 +57,26 @@ character, CRLF (`\r\n`) fixtures, or a one-line payload such as
 
 A repo writes its declarations in **`.ctl/ver.yaml`** and nowhere else, and its
 served-file templates in `.ctl/templates/`. `.ctl/` is shared with the other ctl
-CLIs — qctl reads `.ctl/q.yaml`, forkctl `.ctl/fork.yaml` — so nothing under it
+CLIs (qctl reads `.ctl/q.yaml`, forkctl `.ctl/fork.yaml`), so nothing under it
 is verctl's by virtue of sitting there. `verctl.toml` is gone: not read, not
 tolerated. Every `path` in the file is relative to the directory holding `.ctl/`,
 which `config::root_of` derives.
 
 A template in that tree must be tracked, and one the repo neither tracks nor
-ignores fails the run — rendering nothing would leave the stale file served, and
+ignores fails the run. Rendering nothing would leave the stale file served, and
 that is the failure served files exist to end. Ignored is disowned, a symlink is
 not followed, and outside the source tree was never ours to render. A served
 mise task execs its tool from PATH: `mise where` reads the surrounding config,
 so it ignores the task's own `#MISE tools` pin.
 
 Anything a repo or a template declares is **one struct**, parsed once at the
-boundary and validated there — never a series of lookups with conversions at use
+boundary and validated there, never a series of lookups with conversions at use
 sites.
 
 - `serde` parses shape and types. `garde` validates the parsed value
   (`#[garde(custom(…))]`), so a complaint names its field. Every schema is
-  validated once, at its boundary — `Config::parse` for the file a repo writes,
-  `Declared::parse` for what a template exports — and nothing downstream
+  validated once, at its boundary (`Config::parse` for the file a repo writes,
+  `Declared::parse` for what a template exports) and nothing downstream
   re-checks. A rule that needs the rest of the document takes it as garde's
   context (`#[garde(context(Config as config))]`).
 - YAML a repo writes (`.ctl/ver.yaml`, fragment frontmatter) is read through
@@ -105,7 +105,7 @@ sites.
 ## Comments
 
 Doc comments carry the why, on the item. Inline `//` prose inside a function
-body is litter — if a line needs explaining, name it better or lift it into the
+body is litter: if a line needs explaining, name it better or lift it into the
 item's doc comment.
 
 ## Presentation
@@ -161,9 +161,9 @@ workflow names a mise version other than `min_version` in `mise.toml`,
 including the `mise-version` default of `release.yml`, which the template
 does not render. `template.yml` calls the
 shared drift check of the public actions repository at the commit the
-template pins, reported as `template / Template`: it fails only a pull
-request that changes `.copier-answers.yml` without reaching the newest tag,
-and a push to `main` or the daily run keeps a "Template update available"
+template pins, reported as `template / Template`. It fails only a pull
+request that changes `.copier-answers.yml` without reaching the newest tag.
+A push to `main` or the daily run keeps a "Template update available"
 issue open while a newer tag would change a file. One local edit survives
 an update: `ci.yml` keeps its own `plan` and matrix `verify` jobs, because
 `mise run ver ci` plans the runners and `semver` skips pull requests into

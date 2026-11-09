@@ -6,7 +6,7 @@
 //!
 //! GitHub needs `runs-on` before a job exists, so a job cannot read its own
 //! machine from verctl. A small `plan` job emits this matrix and the real jobs
-//! consume it — the same bootstrap the publish lane uses for assets.
+//! consume it, the same bootstrap the publish lane uses for assets.
 
 use std::path::Path;
 

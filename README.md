@@ -2,7 +2,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/banner-dark.svg">
-  <img src="docs/banner.svg" alt="verctl — Version PRs from Changesets-format fragments. Any stack.">
+  <img src="docs/banner.svg" alt="verctl: Version PRs from Changesets-format fragments. Any stack.">
 </picture>
 
 It reads `.changeset/*.md`, bumps declared version files, writes
@@ -196,7 +196,7 @@ Two sections take runners and no others, because of what config is for here:
 
 A static YAML file cannot declare N jobs without knowing N, and only the repo
 knows N. That fan-out is what `ci` and `assets` buy; the machine rides along
-on it. Every other job verctl ships — `plan`, `crate`, `pin`, `prepare` — is
+on it. Every other job verctl ships (`plan`, `crate`, `pin`, `prepare`) is
 always exactly one job, so nothing decides its count and nothing needs to
 configure it. Its `runs-on` is one literal in a workflow you own and already
 copied from `examples/`:
@@ -208,7 +208,7 @@ copied from `examples/`:
 
 So a repo with no hosted runners at all is already served: edit those literals
 and declare `ci` / `assets`. `plan` could not read its machine from config
-anyway — `runs-on` resolves before the job exists, and `plan` is the job that
+anyway: `runs-on` resolves before the job exists, and `plan` is the job that
 reads the declarations.
 
 Names sort alphabetically, not in file order, so a `verify` job written above
@@ -218,7 +218,7 @@ display only.
 Only `labels` reaches GitHub. A runner **name** is a name in the file: it
 resolves against `runners` or fails there, listing what is declared, so a
 label can never pass itself off as a machine and verctl never invents a label.
-A label GitHub does not know queues the way any wrong label queues — verctl
+A label GitHub does not know queues the way any wrong label queues: verctl
 cannot tell which machines carry which labels, so it passes them through.
 
 Built-in target records, so a public repo needs no config to stay on free
@@ -231,8 +231,8 @@ hosted minutes:
 
 Each field is a default the repo overrides one at a time: naming a `runner`
 moves the machine and leaves the platform alone. A name outside that set
-describes a platform verctl knows nothing about, so it must describe all of it
-— `runner`, `os`, `arch`, and `triple` are all required, and a partial record
+describes a platform verctl knows nothing about, so it must describe all of it:
+`runner`, `os`, `arch`, and `triple` are all required, and a partial record
 is an error rather than a build against an empty target triple. `os: darwin`
 renders as `macos` in the filename; that is the only rename. `triple` stays
 its own field because the machine and what it builds need not match: an x64
@@ -242,7 +242,7 @@ linux runner can build `aarch64-unknown-linux-gnu`.
 `pull_request` event both come from the pull request's own tree, so a fork PR
 that can declare a label could equally have written that label into the
 workflow file. Neither is a reason to expose a self-hosted runner group to a
-public repository — keep `allows_public_repositories=false` there and keep
+public repository. Keep `allows_public_repositories=false` there and keep
 fork-PR approval on, and read declared labels as untrusted input in a repo
 where that is not true.
 
@@ -318,7 +318,7 @@ vendored:
 ```
 
 `--upload` creates the Release at `HEAD` when it is missing, never marked
-latest, and attaches the archive and `<archive>.sha256`, whose digest is the
+latest, and attaches the archive and `<archive>.sha256`. The digest in that file is the
 one GitHub reports for the stored archive, so a rerun whose build differs
 byte for byte still publishes a checksum that matches. An asset the Release
 already holds is reported as `already`. To replace an archive, delete it and
