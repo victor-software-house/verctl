@@ -13,17 +13,25 @@ Queue row: VER-083.
 
 ## What Changes
 
-1. A package entry may name a workspace instead of one manifest: `packages: [{workspace: package.json}]`, `{workspace: pnpm-workspace.yaml}`, `{workspace: Cargo.toml}`, `{workspace: go.work}`, or `{workspace: pyproject.toml}` for a uv workspace.
-   verctl reads the members from that file with the stack's own rules: `cargo metadata` for Cargo, as today; the globs of `workspaces` (array or `packages` object) for Bun and npm; `packages` for pnpm; `use` for `go.work`; `tool.uv.workspace.members` for uv.
-2. A package entry may also name globs for packages no workspace file lists, such as a directory of `VERSION` packages: `packages: [{glob: [actions/*, "!actions/internal"]}]`.
-3. Glob rules follow Turborepo and mise: a leading `!` excludes, `node_modules`, `.git`, and `target` are always excluded, each match is resolved to its real path, and a match outside the repository fails the load.
-4. A member is named by its manifest name (`package.name`, `name`, the module path's last element for Go), and by its directory for a `VERSION` package.
-   A duplicate name, or one manifest claimed twice, fails the load and names both paths.
-5. A member that does not publish (`"private": true`, `publish = false`) is still versioned, as today.
-6. Per-member settings, such as `publisher` or `first_minor`, go in an entry that names the member: `packages: [{workspace: package.json}, {name: "@scope/cli", publisher: bun}]`.
-7. Each package owns files: by default the directory of its version source and everything below it that no deeper package owns, the rule Turborepo uses to map a changed file to its package. `files` overrides it with globs, for a single-file package such as one reusable workflow.
-8. `check` reports a package whose owned files changed since the merge-base with no fragment naming it, so an unchanged package is never bumped and a changed one is not forgotten. A file no package owns is reported once, not counted against every package.
-9. `status` lists every discovered package with the file it came from.
+1. With no `packages` key, verctl infers the packages from the repository root, the way mise's workspace providers do (operator, 2026-11-09).
+   One provider per stack reads only root files: `Cargo.toml` with `[workspace]` (through `cargo metadata`, as today), `pnpm-workspace.yaml`, `package.json` `workspaces` (array or `packages` object, for Bun, npm, and Yarn), `go.work`, and `pyproject.toml` with `[tool.uv.workspace]`.
+   A root with no workspace file is one package: its root manifest, or `VERSION` when it has none.
+   No provider scans the tree; members come only from the globs a workspace file declares.
+2. Every provider runs. A root that holds both `Cargo.toml` and `package.json` gives two packages, never one fused package.
+   Providers run in a fixed order, members sort by path, and a provider that cannot read its file reports itself broken without hiding the others.
+3. A `packages` entry is keyed by the inferred name and overrides that package field by field; `remove: true` drops it.
+   An entry whose name nothing inferred needs a `path` and adds a package, so a repository can still list every package by hand.
+4. Root globs add packages no workspace file lists, such as a directory of `VERSION` packages: `discover: [actions/*, "!actions/internal"]`.
+5. Glob rules follow Turborepo and mise: a leading `!` excludes, `node_modules`, `.git`, and `target` are always excluded, each match is resolved to its real path, and a match outside the repository fails the load.
+6. A package is named by its manifest (`package.name`, `name`, the Go module path), and by its directory for a `VERSION` package, so moving a manifest keeps its name.
+   A duplicate name, or one manifest claimed twice, fails the load and names both files.
+   A manifest with no name fails and names the override that fixes it.
+7. A member that does not publish (`"private": true`, `publish = false`) is still versioned, as today.
+8. Each package owns files: by default the directory of its version source and everything below it that no deeper package owns, the rule Turborepo uses to map a changed file to its package.
+   `files` overrides it with globs, for a single-file package such as one reusable workflow.
+9. `check` reports a package whose owned files changed since the merge-base with no fragment naming it, as Bumpy's `check --strict` does, so an unchanged package is never bumped and a changed one is not forgotten.
+   A file no package owns is reported once, not counted against every package.
+10. `status` explains discovery: each package with its provider, its source file, and whether it was inferred, overridden, or added, plus the providers that found nothing and every path a rule skipped.
 
 ## Capabilities
 
@@ -38,5 +46,5 @@ Queue row: VER-083.
 ## Impact
 
 1. Code: `src/config.rs`, `src/members.rs` (generalized from Cargo), a workspace reader per stack, tests with a fixture per workspace kind.
-2. A repository that lists every package by hand keeps working unchanged.
+2. A repository that lists every package by hand keeps working unchanged: an explicit entry overrides inference.
 3. Depends on [`version-files`](../version-files/proposal.md) for the version file of each member.

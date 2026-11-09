@@ -623,6 +623,13 @@ horizon:
     kind: deferred
     outcome: Public npm uses trusted publishing, not NPM_TOKEN.
     open: bun publish --tolerate-republish already ships. OIDC is the remaining auth path.
+    notes:
+      - '2026-11-09, verctl has not absorbed bun-release (main a843405). bun-release has four things verctl lacks: the npm OIDC exchange (GitHub ID token with audience npm:<host>, then POST /-/npm/v1/oidc/token/exchange/package/<name>), the first-publication bootstrap (npm web login, PUT with the OTP challenge, polling until the version is visible), trusted-publisher registration through /-/package/<name>/trust, and an install smoke test in a clean HOME after publish.'
+      - '2026-11-09, verctl already matches or beats bun-release on the rest: the registry check before and after upload, --tolerate-republish, and the exact-SHA annotated tag and Release from the CHANGELOG section.'
+      - '2026-11-09, bun publish still has no OIDC and no provenance in bun 1.4.4 (oven-sh/bun#15601 open, #29374 closed unmerged, #30522 open). npm 11.5.1 and later exchanges OIDC itself and attaches provenance by default; pnpm 11.0.7 and later does too, per package in a recursive publish, and reads NPM_ID_TOKEN from any CI.'
+      - '2026-11-09, the common fix in bun repos is bun pm pack (it rewrites workspace: and catalog: ranges) followed by npm publish <tarball> (plannotator#170, cline b4efd49, nx#35756). Decide between that and the own registry client VER-011 names: the own client would also have to write Sigstore provenance.'
+      - 2026-11-09, npm 11.10 added npm trust for trusted publishers, with per-provider flags in 11.15, which could replace the trust half of the bootstrap. A new name still needs one non-OIDC publish first (npm/cli#8544).
+      - '2026-11-09, parity gaps in the stock bun recipe: npm 11 refuses a prerelease without --tag, so the dist-tag must come from the prerelease id; publishConfig access, registry, and tag are ignored because --access public is forced; members publish in config order, not dependency order (dependent-ranges takes that).'
 
   - id: VER-023
     title: Is this how a modern Rust CLI is built?
@@ -693,6 +700,55 @@ horizon:
       - '2026-11-09, operator, a version always lives in a tracked file: the stack manifest where one exists, a VERSION file as the fallback; it must work in monorepos the way Turborepo, mise, Bun, and pnpm workspaces find packages.'
       - '2026-11-09, operator, versioning is fine-grained with defaults that keep a simple repository simple, so complexity is opt-in: a consumer moves a pin only when the thing it pins changed, and the model composes small primitives (version source, package, discovery, group, tag).'
       - 2026-11-09, the research and five proposals are in openspec/changes/version-files/research.md and the version-files, package-discovery, release-groups, dependent-ranges, and release-immutability changes.
+    plan: openspec/changes/version-files/proposal.md
+
+  - id: VER-085
+    title: Find packages from workspace files and root globs
+    scope: verctl
+    outcome: >-
+      verctl finds every package of a Cargo, Bun, npm, pnpm, Go, or uv workspace with
+      no packages list, and names each by its manifest.
+    kind: research
+    open: >-
+      The operator has not agreed the design; decisions are asked one at a time on
+      VER-083.
+    plan: openspec/changes/package-discovery/proposal.md
+
+  - id: VER-086
+    title: Release groups and tag shapes
+    scope: verctl
+    outcome: >-
+      Packages that share a version are declared once as a group, each package or
+      group gets its own tag, and a repository adopting verctl keeps its tag history.
+    kind: research
+    open: >-
+      The operator has not agreed the design; decisions are asked one at a time on
+      VER-083.
+    plan: openspec/changes/release-groups/proposal.md
+
+  - id: VER-087
+    title: Internal dependency ranges and publish order
+    scope: verctl
+    outcome: >-
+      A release rewrites the ranges dependents hold on a bumped workspace package,
+      and publishes packages in dependency order.
+    kind: research
+    open: >-
+      The operator has not agreed the design; decisions are asked one at a time on
+      VER-083.
+    plan: openspec/changes/dependent-ranges/proposal.md
+
+  - id: VER-088
+    title: Immutable release tags
+    scope: verctl
+    outcome: >-
+      Every release tag is annotated and has a Release, and check reports a
+      repository whose tags are not protected.
+    kind: research
+    open: >-
+      The operator has not agreed the design; decisions are asked one at a time on
+      VER-083.
+    plan: openspec/changes/release-immutability/proposal.md
 
 archive:
   - id: VER-079

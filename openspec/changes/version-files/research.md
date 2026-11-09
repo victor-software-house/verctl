@@ -22,6 +22,13 @@ The five changes that follow from it are listed at the end.
 | [release-please][rp-manifest] | one root `.release-please-manifest.json`, plus each package's files | declared per path | `linked-versions` | `component-vX` | optional `version.go` |
 | [release-plz][rplz-next] | `Cargo.toml` | `cargo metadata` | per package | `v…`, `pkg-v…` | none |
 | [Changesets][cs-version] | `package.json` | manypkg | `fixed`, `linked` | `name@version` | none |
+| [monochange][monochange] | each ecosystem's native manifest; tags only for Go, Swift, and GitHub Actions | scans every supported ecosystem | `[group.<id>]` | configurable | `go.mod` discovered, versions in tags |
+| [Bumpy][bumpy] | `package.json` | package-manager workspaces | `fixed`, `linked` | `name@version` | none |
+
+monochange is the closest tool to verctl, and it is new. Its name dates from 2023, but its code is from 2026: about 1,060 commits by one author, up to v0.21.0 on 2026-10-23. On 2026-11-09 it had 3 stars and about 2,200 crate downloads. It is written in Rust, Changesets-format fragments, ten ecosystems (Cargo, npm, pnpm, Yarn, Bun, Deno, Dart, Python, Go, GitHub Actions, Swift, CocoaPods, Gradle), groups, and post-merge tags.
+It rewrites lockfiles directly by default, which verctl does not do: the package manager stays the only writer of its lockfile.
+Changesets v3 (2026-08-11) added topological publish order and `workspace:` resolution through the package manager ([Bumpy, differences from Changesets][bumpy]).
+Bumpy adds a local `check --strict` that maps changed files to packages and requires a fragment for each, branch-based prerelease channels instead of a committed pre mode, and `init`, which converts `.changeset/config.json`.
 
 Two models exist.
 Knope, Nx, release-plz, and Changesets keep each version in the package's own file.
@@ -83,7 +90,39 @@ The model is five small primitives that compose:
 
 A package that changed gets a fragment and a new version; a package that did not keeps its version and its tag, so its pins stay where they are.
 
-## 7. The changes
+The operator also ruled that verctl fits any workflow as if it were native to it:
+
+1. Each stack keeps its own files and idioms: the version sits where the stack's own tools look for it, and the stack's own command refreshes its lockfile.
+2. A repository needs no configuration until it wants something the defaults do not give.
+3. A repository leaving Changesets keeps working unchanged: verctl already reads `.changeset/*.md`, and it reads `.changeset/config.json` (`fixed`, `linked`, `ignore`) as its groups until `.ctl/ver.yaml` says otherwise.
+4. Nothing verctl does needs a bot, an App, or a separate action; the reusable workflow runs the same CLI a developer runs locally.
+
+## 7. How the best tools infer packages
+
+Read from source on 2026-11-09:
+
+1. [mise][mise-providers] runs one root-only provider per stack (Cargo `[workspace]`, uv `[tool.uv.workspace]`, `go.work`, Gradle settings, `pnpm-workspace.yaml` or `package.json` `workspaces`), sorts providers by id, and names each project `provider:name`.
+   An override is keyed by that id and changes it field by field; `remove` drops one; an unknown id needs a `root`.
+   A provider that cannot be read fails alone, and `graph --explain` names the provider and file behind each project.
+2. [Nx][nx-merge] merges every plugin's projects by root and applies `project.json` last, so a declared value wins over an inferred one.
+3. [moon][moon-builder] lists projects by globs or a map, detects each project's language from its files, and lets `moon.yml` override the detection.
+4. [axoproject][axoproject], the discovery library of cargo-dist, reports `Found`, `Broken`, and `Missing` per workspace kind.
+5. [Knope][knope-infer] fuses a root `Cargo.toml` and `package.json` into one package, and any Cargo error aborts all inference: the failure modes to avoid.
+
+## 8. Rivals and references
+
+A broad search on 2026-11-09 found many tools built on the Changesets model for several stacks: [monochange][monochange], [Bumpy][bumpy], [changesetter][changesetter], [callisto][callisto], [semifold][semifold], [changepacks][changepacks], [cursus][cursus], [dv][dv], [stamp][stamp], [intentional][intentional], and [releasekit][releasekit]. Commit-driven tools, release-please, semantic-release, [tallyrelease][tallyrelease], and [release-cli][release-cli], stand beside them.
+What each adds that verctl must match or beat:
+
+1. [FlowFuse][flowfuse] versions each reusable workflow and composite action of one repository on its own, keyed by a file or directory path. It tags an immutable `{name}/vX.Y.Z` and moves floating `{name}/vX.Y` and `{name}/vX` tags. Workflows and actions share one tag namespace, so names must be unique across both.
+2. [WIRE][wire] does the same with `{name}/v{version}` tags and floating majors, from one root JSON file of versions, the model section 2 rejects.
+3. [intentional][intentional] records releases as annotated tags and treats manifests as projections of them. It covers Dev Container Features and Templates, and its `init` adopts a repository already tagged by hand and one that uses Changesets.
+4. [tallyrelease][tallyrelease] keeps release-please's tag shapes, so a repository switches without retagging. It treats internal packages as build-only unless `release: true`, and absorbs their changes into the released packages that depend on them.
+5. Terraform and Go multi-module repositories tag `{dir}/v{version}` ([GOV.UK, module releases][govuk-tf]).
+
+Adoption without retagging, existing tag shapes kept, and a migration from Changesets are therefore table stakes.
+
+## 9. The changes
 
 They ship in slices, each useful on its own: `version-files` first, starting with `VERSION` and `path: .` so the templates and actions repositories can release as one package each, then its marker line, `go.mod`, and `pyproject.toml`; then `release-immutability`, `package-discovery`, `release-groups`, and `dependent-ranges`, in that order (operator, 2026-11-09).
 
@@ -121,3 +160,24 @@ They ship in slices, each useful on its own: `version-files` first, starting wit
 [copier-vcs]: https://github.com/copier-org/copier/blob/dbb2408ceefd6b32b8c6c3fb6524be1e8a1727a1/copier/_vcs.py#L165-L200
 [renovate-gha]: https://github.com/renovatebot/renovate/blob/677638d3f9a476b575a5d0a3c1e9c27e437dedad/lib/modules/manager/github-actions/readme.md
 [mise-git]: https://github.com/jdx/mise/blob/32c96c4d51d3abe9af0c868eda63aabe77efddb0/src/task/task_file_providers/remote_task_git.rs#L120-L127
+[monochange]: https://monochange.dev/book/guide/ecosystems
+[bumpy]: https://github.com/dmno-dev/bumpy/blob/main/docs/differences-from-changesets.md
+[mise-providers]: https://github.com/jdx/mise/blob/32c96c4d51d3abe9af0c868eda63aabe77efddb0/src/task/workspace.rs#L610-L691
+[nx-merge]: https://github.com/nrwl/nx/blob/b68115cd05cd2b79c36b216f6c03dafb8266f1e0/packages/nx/src/project-graph/utils/project-configuration-utils.ts#L359-L470
+[moon-builder]: https://github.com/moonrepo/moon/blob/6ef65c505823486fcbcea6491de3f7313e3c5190/crates/project-builder/src/project_builder.rs#L166-L220
+[axoproject]: https://github.com/axodotdev/axoproject/blob/addba38550dfb65707cb5b529bdbcea849fbd9cd/src/lib.rs#L37-L102
+[knope-infer]: https://github.com/knope-dev/knope/blob/7a906587d66e81c12d5e3e145a8536510c56f7aa/crates/knope/src/config/package.rs#L65-L99
+[changesetter]: https://github.com/Saturate/changesetter
+[callisto]: https://github.com/orin-dx/callisto
+[semifold]: https://github.com/noctisynth/semifold
+[changepacks]: https://github.com/changepacks/changepacks
+[cursus]: https://zantarix.github.io/cursus/
+[dv]: https://github.com/ben-laird/dv
+[stamp]: https://git.thokra.dev/thokra/stamp
+[intentional]: https://github.com/wyrd-company/intentional
+[releasekit]: https://github.com/goosewobbler/releasekit
+[tallyrelease]: https://abigroup.io/en/blog/tallyrelease
+[release-cli]: https://github.com/0x1306e6d/release-cli
+[flowfuse]: https://github.com/flowfuse/github-actions-workflows
+[wire]: https://github.com/albertodeago/wire
+[govuk-tf]: https://github.com/alphagov/gds-tech-and-security-github-actions/blob/main/docs/terraform-module-release.md
