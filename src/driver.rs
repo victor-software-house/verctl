@@ -137,17 +137,21 @@ impl Driver {
     ///
     /// A `VERSION` file that does not exist yet is empty text, which reads as
     /// `0.0.0`, so a new package needs no file before its first release:
-    /// `prepare` creates it, and `check` leaves the tree as it was.
+    /// `prepare` creates it, and `check` leaves the tree as it was. Its
+    /// directory must exist: a package whose directory is missing is a wrong
+    /// `path`, and `prepare` would otherwise fail halfway through its writes.
     ///
     /// # Errors
     ///
     /// Returns an error naming `path` when it cannot be read, or when it is
-    /// missing and the driver is not a `VERSION` file.
+    /// missing and the driver is not a `VERSION` file or its directory is
+    /// missing too.
     pub fn source(&self, path: &Path) -> Result<String> {
         match std::fs::read_to_string(path) {
             Ok(raw) => Ok(raw),
             Err(error)
                 if error.kind() == std::io::ErrorKind::NotFound
+                    && path.parent().is_some_and(Path::is_dir)
                     && matches!(
                         self,
                         Self::Text {

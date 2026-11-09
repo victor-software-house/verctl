@@ -799,6 +799,37 @@ fn a_version_file_with_more_than_a_version_fails() {
     }
 }
 
+/// A `VERSION` path whose directory is missing is a wrong path, not a new
+/// package: the plan fails before `prepare` writes anything.
+#[test]
+fn a_version_file_in_a_missing_directory_fails() {
+    let root = TempDir::new().expect("tmp");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: setup
+                path: actions/setup/VERSION
+        "},
+    );
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let fragment = parse_str(
+        indoc! {"
+            ---
+            setup: patch
+            ---
+
+            Patch.
+        "},
+        "a.md",
+    )
+    .expect("frag");
+    let error = prepare::plan(&config, &[fragment], root.path()).expect_err("plan");
+    let message = format!("{error:#}");
+    assert!(message.contains("package setup"), "{message}");
+    assert!(message.contains("actions/setup/VERSION"), "{message}");
+}
+
 /// A reusable workflow is a package of one file: `marker: true` moves its one
 /// `# version:` line and nothing else, and needs no publisher.
 #[test]

@@ -286,6 +286,54 @@ fn dry_run_of_a_package_at_0_0_0_has_nothing_to_release() {
     assert!(stdout.contains("nothing to release"), "{stdout}");
 }
 
+/// A `VERSION` package before its first release has no file yet, which
+/// reads as `0.0.0`: nothing to release, not a missing-file error.
+#[test]
+fn dry_run_of_a_missing_version_file_has_nothing_to_release() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: templates
+                path: VERSION
+        "},
+    );
+    let stdout = publish_stdout(root.path());
+    assert!(stdout.contains("nothing to release"), "{stdout}");
+}
+
+/// A version file `publish` cannot read fails and names the package, as
+/// `prepare` does.
+#[test]
+fn dry_run_names_the_package_whose_version_it_cannot_read() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: templates
+                path: VERSION
+        "},
+    );
+    fs::write(
+        root.path().join("VERSION"),
+        indoc! {"
+            1.2.3
+            notes
+        "},
+    )
+    .unwrap();
+    let output = common::verctl()
+        .current_dir(root.path())
+        .args(["publish", "--dry-run", "--color", "never"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("package templates"), "{stderr}");
+}
+
 #[test]
 fn dry_run_refuses_differing_versions_without_name() {
     let root = TempDir::new().unwrap();

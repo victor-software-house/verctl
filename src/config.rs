@@ -246,6 +246,44 @@ impl PackageSpec {
         }
         spec.into_driver(driver_name.unwrap_or(self.name.as_str()))
     }
+
+    /// The version this package's file holds now, read through its driver.
+    /// Every command that reads a current version reads it here, so each
+    /// error names the package and its file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error naming the package when its driver cannot be
+    /// resolved, its file cannot be read, or the driver finds no version in
+    /// it.
+    pub fn current(&self, config: &Config, root: &Path) -> Result<Current> {
+        let path = root.join(&self.path);
+        let context = || format!("package {}: {}", self.name, path.display());
+        let driver = self.resolve(config, root).with_context(context)?;
+        let raw = driver.source(&path).with_context(context)?;
+        let version = driver.read(&raw).with_context(context)?.trim().to_owned();
+        Ok(Current {
+            driver,
+            path,
+            raw,
+            version,
+        })
+    }
+}
+
+/// A package's version as its file holds it now, from
+/// [`PackageSpec::current`].
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct Current {
+    /// The driver that read the version and writes the next one.
+    pub driver: Driver,
+    /// The version file, joined to the repository root.
+    pub path: PathBuf,
+    /// The file's text: empty for a `VERSION` file that does not exist yet.
+    pub raw: String,
+    /// The version, trimmed.
+    pub version: String,
 }
 
 /// One machine, declared once under `runners`. The key names it; this

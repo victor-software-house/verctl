@@ -144,10 +144,7 @@ pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
         .packages
         .first()
         .context("the config declares no packages")?;
-    let driver = package.resolve(config, root)?;
-    let raw = fs::read_to_string(root.join(&package.path))
-        .with_context(|| package.path.display().to_string())?;
-    let version = driver.read(&raw)?.trim().to_owned();
+    let version = package.current(config, root)?.version;
     let tag = config.tags.render(
         &version,
         config.tags.uses_name().then_some(package.name.as_str()),

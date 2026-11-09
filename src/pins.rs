@@ -21,10 +21,7 @@ const VERSION: &str = r"[0-9]+(?:\.[0-9]+)*";
 pub fn current_versions(root: &Path, config: &Config) -> Result<Vec<(String, String)>> {
     let mut versions = Vec::new();
     for spec in &config.packages {
-        let path = root.join(&spec.path);
-        let driver = spec.resolve(config, root)?;
-        let raw = driver.source(&path)?;
-        versions.push((spec.name.clone(), driver.read(&raw)?.trim().to_owned()));
+        versions.push((spec.name.clone(), spec.current(config, root)?.version));
     }
     Ok(versions)
 }
