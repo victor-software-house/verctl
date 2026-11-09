@@ -759,9 +759,10 @@ fn release_only_names_no_registry(packages: &[PackageSpec], config: &Config) -> 
 }
 
 /// verctl has no stock Python publisher, so a `pyproject.toml` package that
-/// names none would release a tag while nothing reached PyPI. It names one,
-/// through `publisher`, `publish`, or a `publishers` entry under its own
-/// name, or says `publisher: none` to release on GitHub only.
+/// names none would release a tag while nothing reached the Python Package
+/// Index. It names one, through `publisher`, `publish`, or a `publishers`
+/// entry under its own name, or says `publisher: none` to release on GitHub
+/// only.
 /// `marker: true` says where the version is, so a `driver` or driver fields
 /// beside it would be a second answer nothing reads. `after` is the
 /// exception: it is what runs after the bump, not where the version is.
@@ -1369,8 +1370,8 @@ mod tests {
         .expect("after runs beside a marker");
     }
 
-    /// No stock recipe uploads to PyPI, so a Python package names its
-    /// publisher, or `none`, before anything is released.
+    /// No stock recipe uploads to the Python Package Index, so a Python
+    /// package names its publisher, or `none`, before anything is released.
     #[test]
     fn a_python_package_names_its_publisher() {
         let error = load(indoc! {"
