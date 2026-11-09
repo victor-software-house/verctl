@@ -1,5 +1,16 @@
 # Changelog
 
+## verctl 0.7.3
+
+### Added
+
+- `assets.dir` and `assets.files` in `.ctl/ver.yaml` pack several files into each package asset tarball, such as a daemon beside its client, a service unit, and a licence. `verctl assets --build` checks that each listed path exists, then packs `tar czf <asset> -C <dir> <files>` with the same placeholders as `binary`. Without them a tarball holds the one binary, as before ([#239](https://github.com/victor-software-house/verctl/pull/239)).
+- The reusable release workflow takes an `environment` input for its `publish` job, so a registry token can live only in a GitHub environment that admits the default branch. In an environment, with no `registry-token` secret, `publish` reads the secret named by `registry-token-env`, such as `CARGO_REGISTRY_TOKEN`, which the caller passes with `secrets: inherit`; trusted publishing skips that read. Without `environment` nothing changes ([#241](https://github.com/victor-software-house/verctl/pull/241)).
+
+### Fixed
+
+- `verctl publish --plan` accepts a release tag on a commit that HEAD holds only through a merge, when the package's version there equals its version at HEAD. A forkctl append publish leaves the tagged commit only on a merge's second parent, and the plan failed there with "not a first-parent commit". A tag on a commit HEAD does not contain, or at another version, still fails ([#249](https://github.com/victor-software-house/verctl/pull/249)).
+
 ## verctl 0.7.2
 
 ### Added
