@@ -382,6 +382,18 @@ queue:
       - 'Found by the serde-saphyr fork: after its 0.0.1 release, the next forkctl append publish kept the tagged commit only as a merge second parent, and every plan failed with "not a first-parent commit at vsh-serde-saphyr@0.0.1".'
       - 'Operator decision 2026-11-09: compare the manifest version only. A tree comparison rejects a later publish that changes a non-version file such as a workflow. Patch bump.'
 
+  - id: VER-085
+    title: Take ctl-core 0.7.0
+    scope: Cargo.toml, Cargo.lock, presentation
+    outcome: >-
+      verctl builds on ctl-core 0.7.0, with one serde-saphyr (vsh-serde-saphyr 0.0.3)
+      in the lock, and its own clap sets default-features = false
+    blocked_by: []
+    acceptance:
+      - cargo tree -d lists no serde-saphyr duplicate
+      - mise run verify passes on the branch
+      - Help and parse-error captures differ from main only by ctl-core 0.7.0 colour wording and table widths
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all

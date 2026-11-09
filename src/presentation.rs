@@ -1,4 +1,4 @@
-use ctl_core::prelude::{Document, Fields, MessageKind, Notice, NoticeLevel, Present, Table};
+use ctl_core::prelude::{Document, Fields, Notice, NoticeLevel, Outcome, Present, Table};
 use serde::Serialize;
 use verctl::{assets, ci, docsrs, publish, semver_check, versions};
 
@@ -37,9 +37,9 @@ impl Present for Report {
         }
     }
 
-    fn message_kind(&self) -> MessageKind {
+    fn outcome(&self) -> Outcome {
         match self {
-            Self::VersionCheck(report) => report.message_kind(),
+            Self::VersionCheck(report) => report.outcome(),
             Self::Instructions(_)
             | Self::Check(_)
             | Self::Status(_)
@@ -50,7 +50,7 @@ impl Present for Report {
             | Self::Vendored(_)
             | Self::Ci(_)
             | Self::Docs(_)
-            | Self::Semver(_) => MessageKind::Success,
+            | Self::Semver(_) => Outcome::Success,
         }
     }
 }
@@ -194,11 +194,11 @@ impl Present for VersionCheckReport {
         }
     }
 
-    fn message_kind(&self) -> MessageKind {
+    fn outcome(&self) -> Outcome {
         if self.drifted().is_empty() {
-            MessageKind::Success
+            Outcome::Success
         } else {
-            MessageKind::Error
+            Outcome::Error
         }
     }
 }
@@ -520,7 +520,7 @@ impl Present for CiReport {
 
 #[cfg(test)]
 mod tests {
-    use ctl_core::prelude::{ColorMode, OutputFormat, Stream, View};
+    use ctl_core::prelude::{ColorMode, Destination, OutputFormat, View};
     use indoc::formatdoc;
     use verctl::publish;
 
@@ -586,7 +586,7 @@ mod tests {
             .width(80)
             .capture(&report)
             .expect("pretty report");
-        assert_eq!(pretty.stream(), Stream::Stdout);
+        assert_eq!(pretty.stream(), Destination::Stdout);
         assert_eq!(
             pretty.text(),
             formatdoc! {"
@@ -597,7 +597,7 @@ mod tests {
         let json = View::new(OutputFormat::Json, ColorMode::Always)
             .capture(&report)
             .expect("JSON report");
-        assert_eq!(json.stream(), Stream::Stdout);
+        assert_eq!(json.stream(), Destination::Stdout);
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(json.text()).expect("JSON"),
             serde_json::json!({ "ok": 2 })
