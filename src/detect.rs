@@ -174,6 +174,22 @@ mod tests {
     }
 
     #[test]
+    fn a_uv_lock_at_the_repository_root_serves_a_python_package() {
+        let root = tree(&["uv.lock", "tools/cli/pyproject.toml"]);
+        repo_at(root.path());
+        assert_eq!(
+            follow_up(&root.path().join("tools/cli/pyproject.toml")),
+            Some("uv lock".into())
+        );
+    }
+
+    #[test]
+    fn a_python_package_without_a_uv_lock_has_no_follow_up() {
+        let root = tree(&["pyproject.toml"]);
+        assert_eq!(follow_up(&root.path().join("pyproject.toml")), None);
+    }
+
+    #[test]
     fn the_package_manager_field_outranks_the_lockfile() {
         let root = TempDir::new().unwrap();
         fs::write(root.path().join("bun.lock"), "").unwrap();

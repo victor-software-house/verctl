@@ -332,6 +332,7 @@ fn dry_run_names_the_package_whose_version_it_cannot_read() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "{stderr}");
     assert!(stderr.contains("package templates"), "{stderr}");
+    assert!(stderr.contains("not one version"), "{stderr}");
 }
 
 #[test]

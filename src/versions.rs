@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use serde::Serialize;
 
 use crate::config::Config;
@@ -219,15 +219,18 @@ pub fn report_with(
         let Ok(local_raw) = driver.source(&path) else {
             continue;
         };
-        let local = driver.read(&local_raw)?;
+        let context = || format!("package {}: {}", spec.name, spec.path.display());
+        let local = driver.read(&local_raw).with_context(context)?;
         let remote = remote_raw
             .as_deref()
             .map(|raw| driver.read(raw))
-            .transpose()?;
+            .transpose()
+            .with_context(|| format!("{} on the merge-base", context()))?;
         let released = released_raw
             .as_deref()
             .map(|raw| driver.read(raw))
-            .transpose()?;
+            .transpose()
+            .with_context(|| format!("{} at the last release", context()))?;
         rows.push(VersionRow {
             name: spec.name.clone(),
             path: spec.path.display().to_string(),
