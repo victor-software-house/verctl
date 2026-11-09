@@ -42,9 +42,10 @@ pub struct Dependency {
 /// The data one fragment contributes to a release entry.
 #[derive(Debug, Clone)]
 pub struct ReleaseInput {
-    /// The fragment's first line.
+    /// The fragment's first paragraph: every line before the first blank one.
     pub summary: String,
-    /// Fragment body lines after the summary, indented under the entry.
+    /// Fragment body lines after the first paragraph, starting with the blank
+    /// line that ends it, indented under the entry.
     pub continuations: Vec<String>,
     /// The pull request that added the fragment.
     pub pull_request: Option<PullRequest>,

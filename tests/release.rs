@@ -542,6 +542,25 @@ fn demo_fragment(summary: &str, group: Option<Group>) -> Fragment {
     }
 }
 
+/// A fragment with a second paragraph, a list, and a code fence stays one
+/// entry. Its wrapped first paragraph takes the period after its last line.
+/// Every later line is indented under the bullet, and blank lines stay
+/// blank. The next fragment is the next item of the same
+/// list. The fixtures are a recorded fragment and the section it renders.
+#[test]
+fn a_multi_paragraph_fragment_stays_inside_its_entry() {
+    let fragment = fragment::parse_str(
+        include_str!("testdata/changelog/multi-paragraph.fragment.md"),
+        "multi-paragraph.md",
+    )
+    .unwrap();
+    let fragments = [fragment, demo_fragment("Second", None)];
+    assert_eq!(
+        release::changelog_sections(&demo_plan(), &fragments).unwrap(),
+        include_str!("testdata/changelog/multi-paragraph.section.md")
+    );
+}
+
 #[test]
 fn a_section_with_no_group_stays_flat() {
     let fragments = [demo_fragment("First", None), demo_fragment("Second", None)];

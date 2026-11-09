@@ -85,6 +85,36 @@ fn release_template_varies_by_data() {
             },
         },
         ReleaseCase {
+            name: "a blank line between continuations stays blank",
+            input: ReleaseInput {
+                summary: "Restore mise.toml".into(),
+                continuations: vec!["More detail.".into(), String::new(), "- A list.".into()],
+                pull_request: Some(pr(false)),
+                commit: None,
+            },
+            authors: &[],
+            expected: indoc! {"
+                - Restore mise.toml ([#12](https://github.com/org/repo/pull/12)).
+                  More detail.
+
+                  - A list."
+            },
+        },
+        ReleaseCase {
+            name: "a wrapped summary takes the link after its last line",
+            input: ReleaseInput {
+                summary: "Restore the config file\nwhen it is missing.".into(),
+                continuations: vec![],
+                pull_request: Some(pr(false)),
+                commit: None,
+            },
+            authors: &[],
+            expected: indoc! {"
+                - Restore the config file
+                  when it is missing ([#12](https://github.com/org/repo/pull/12))."
+            },
+        },
+        ReleaseCase {
             name: "summary already terminal",
             input: ReleaseInput {
                 summary: "Restore mise.toml.".into(),

@@ -227,6 +227,14 @@ pub fn changelog_sections(plan: &[PlanEntry], fragments: &[Fragment]) -> Result<
 /// One `## name version` section per plan entry, each fragment a bullet that
 /// links where it came from when `origins` knows.
 ///
+/// A fragment's first paragraph is the bullet, so the link and the period
+/// follow its last line. Every later line is indented under the bullet, so a
+/// second paragraph, a nested list, or a code fence stays inside the entry
+/// ([CommonMark list items]). The GitHub Release body is the
+/// same section.
+///
+/// [CommonMark list items]: https://spec.commonmark.org/0.31.2/#list-items
+///
 /// # Errors
 ///
 /// Returns an error when a fragment's entry cannot be rendered, or when no
@@ -248,9 +256,15 @@ pub fn changelog_sections_with(
                 continue;
             }
             let origin = origins.by_path.get(&fragment.path);
+            let lines: Vec<&str> = fragment.summary.lines().collect();
+            let paragraph_end = lines
+                .iter()
+                .position(|line| line.trim().is_empty())
+                .unwrap_or(lines.len());
+            let (paragraph, rest) = lines.split_at(paragraph_end);
             let line = changelog::render_release(&ReleaseInput {
-                summary: fragment.summary.clone(),
-                continuations: Vec::new(),
+                summary: paragraph.join("\n"),
+                continuations: rest.iter().map(|line| (*line).to_owned()).collect(),
                 pull_request: match origin {
                     Some(Origin::PullRequest(pull_request)) => Some(pull_request.clone()),
                     Some(Origin::Commit(_)) | None => None,
