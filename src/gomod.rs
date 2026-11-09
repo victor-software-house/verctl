@@ -111,7 +111,8 @@ pub(crate) fn accepts(raw: &str, new_version: &str) -> Result<()> {
 ///
 /// # Errors
 ///
-/// Returns an error when `line` has a `Deprecated:` notice above it.
+/// Returns an error when `line` has a `Deprecated:` notice directly above
+/// it.
 fn refuse_deprecated(line: &ModuleLine<'_>) -> Result<()> {
     if line.deprecated {
         bail!(
@@ -121,15 +122,28 @@ fn refuse_deprecated(line: &ModuleLine<'_>) -> Result<()> {
     Ok(())
 }
 
-/// Whether a comment line in the block directly above the module line starts
-/// with `Deprecated:`. A blank line ends that block, as it does for Go.
+/// Whether the comment block directly above the module line holds a paragraph
+/// that starts with `Deprecated:`, the notice Go's [`deprecatedRE`] reads.
+///
+/// A blank line ends the block, as it does for Go. A paragraph starts at the
+/// block's first line or after an empty `//` line, so `Deprecated:` in the
+/// middle of a paragraph is not a notice.
+///
+/// [`deprecatedRE`]: https://github.com/golang/mod/blob/b5136e5ba156da612a1efc6e49b55988a134a5e0/modfile/rule.go#L877
 fn deprecated_above(above: &str) -> bool {
-    above
+    let block: Vec<&str> = above
         .lines()
         .rev()
         .map(str::trim)
         .map_while(|line| line.strip_prefix("//"))
-        .any(|text| text.trim_start().starts_with("Deprecated:"))
+        .map(str::trim)
+        .collect();
+    let mut paragraph_start = true;
+    block.iter().rev().any(|text| {
+        let notice = paragraph_start && text.starts_with("Deprecated:");
+        paragraph_start = text.is_empty();
+        notice
+    })
 }
 
 fn version_in(comment: &str) -> Result<String> {
@@ -301,6 +315,26 @@ mod tests {
         assert_eq!(
             write(apart, "0.0.1").unwrap(),
             apart.replace("demo\n", "demo // v0.0.1\n")
+        );
+        let later_paragraph = indoc! {"
+            // The demo module.
+            //
+            // Deprecated: use example.com/next.
+            module example.com/demo
+        "};
+        assert!(write(later_paragraph, "0.0.1").is_err());
+    }
+
+    #[test]
+    fn deprecated_mid_paragraph_is_not_a_notice() {
+        let raw = indoc! {"
+            // The demo module.
+            // Deprecated: is not a notice here, as Go reads it.
+            module example.com/demo
+        "};
+        assert_eq!(
+            write(raw, "0.0.1").unwrap(),
+            raw.replace("demo\n", "demo // v0.0.1\n")
         );
     }
 

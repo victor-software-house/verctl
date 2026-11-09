@@ -221,8 +221,8 @@ sets the version; write a static one, keep it in a `VERSION` file, or
 declare a driver. verctl has no stock Python publisher, so a
 `pyproject.toml` package names its `publisher`, or `none`. A `go.mod`
 keeps its version as a `// vX.Y.Z` comment at the end of its `module`
-line, and reads as `0.0.0` without one. A `Deprecated:` comment directly
-above that line fails the bump, because Go reads it together with the
+line, and reads as `0.0.0` without one. A `Deprecated:` notice in the comments
+directly above that line fails the bump, because Go reads it together with the
 version comment. A bump to v2 or later fails until
 the module path ends in `/v<major>`, and a Go module with no publisher
 releases on GitHub only. A lockfile
