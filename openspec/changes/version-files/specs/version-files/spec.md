@@ -44,6 +44,7 @@ When a `uv.lock` sits beside a `pyproject.toml` package or above it in the repos
 
 The stock `go.mod` driver SHALL read and write the version as a `// vX.Y.Z` comment at the end of the `module` line, and SHALL keep the rest of the file.
 A `module` line with no such comment SHALL read as `0.0.0`.
+verctl SHALL refuse to write that comment when a comment line directly above the `module` line starts with `Deprecated:`, because Go reads both as one deprecation notice.
 
 #### Scenario: prepare bumps a Go module
 
@@ -54,6 +55,11 @@ A `module` line with no such comment SHALL read as `0.0.0`.
 
 - **WHEN** `go.mod` holds `module example.com/demo` and `.changeset/first.md` holds `demo: patch`
 - **THEN** `verctl prepare` writes `module example.com/demo // v0.0.1`
+
+#### Scenario: A deprecation notice directly above the module line
+
+- **WHEN** `go.mod` holds `// Deprecated: use example.com/next.` directly above `module example.com/demo`, and `.changeset/fix.md` holds `demo: patch`
+- **THEN** `verctl prepare --dry-run` exits non-zero and its error names `Deprecated:`
 
 ### Requirement: A Go module's major version matches its module path
 

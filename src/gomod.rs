@@ -4,7 +4,8 @@
 //! Go itself records no version in `go.mod`: a release is a tag. The comment
 //! gives verctl a tracked line to read and bump, and Go ignores it. The
 //! [go.mod reference] gives a module-line comment meaning only when it starts
-//! with `Deprecated:`, which this format never writes.
+//! with `Deprecated:`, which this format never writes. A notice directly above
+//! the line is read together with that comment, so such a file is refused.
 //!
 //! [go.mod reference]: https://go.dev/ref/mod#go-mod-file-module-deprecation
 
@@ -24,6 +25,8 @@ struct ModuleLine<'a> {
     line_end: usize,
     /// The comment's text after `//`, trimmed.
     comment: Option<&'a str>,
+    /// Whether a `Deprecated:` notice sits in the comment lines directly above.
+    deprecated: bool,
 }
 
 /// The version on the `module` line, `0.0.0` when it carries no comment.
@@ -45,9 +48,11 @@ pub(crate) fn read(raw: &str) -> Result<String> {
 ///
 /// # Errors
 ///
-/// Fails on the same conditions as [`read`].
+/// Fails on the same conditions as [`read`], and when a `Deprecated:` notice
+/// sits directly above the module line, as [`refuse_deprecated`] explains.
 pub(crate) fn write(raw: &str, new_version: &str) -> Result<String> {
     let line = module_line(raw)?;
+    refuse_deprecated(&line)?;
     if let Some(comment) = line.comment {
         version_in(comment)?;
     }
@@ -71,9 +76,11 @@ pub(crate) fn write(raw: &str, new_version: &str) -> Result<String> {
 /// # Errors
 ///
 /// Returns an error when the file cannot be read as [`read`] describes, when
-/// `new_version` is not semver, or when its major conflicts with the path.
+/// `new_version` is not semver, when its major conflicts with the path, or
+/// when [`refuse_deprecated`] refuses the file.
 pub(crate) fn accepts(raw: &str, new_version: &str) -> Result<()> {
     let line = module_line(raw)?;
+    refuse_deprecated(&line)?;
     if line.path.starts_with("gopkg.in/") {
         return Ok(());
     }
@@ -91,6 +98,38 @@ pub(crate) fn accepts(raw: &str, new_version: &str) -> Result<()> {
         "go.mod declares module {}, but version {new_version} needs module {needed}: Go resolves a module from v2 on only at a path ending in /v<major>; change the module path in the same pull request",
         line.path
     )
+}
+
+/// Refuse a module whose deprecation notice sits directly above its line.
+///
+/// Go reads a notice from the comment lines directly above the `module`
+/// line and its trailing comment together, joined by newlines
+/// ([`parseDirectiveComment`]). A `// vX.Y.Z` comment there would end the
+/// notice every `go get` user sees, so the bump stops instead.
+///
+/// [`parseDirectiveComment`]: https://github.com/golang/mod/blob/b5136e5ba156da612a1efc6e49b55988a134a5e0/modfile/rule.go#L899
+///
+/// # Errors
+///
+/// Returns an error when `line` has a `Deprecated:` notice above it.
+fn refuse_deprecated(line: &ModuleLine<'_>) -> Result<()> {
+    if line.deprecated {
+        bail!(
+            "go.mod has a `Deprecated:` comment directly above its module line, and Go would read the `// vX.Y.Z` comment as part of that notice; keep this module's version in a VERSION file, or declare a driver"
+        );
+    }
+    Ok(())
+}
+
+/// Whether a comment line in the block directly above the module line starts
+/// with `Deprecated:`. A blank line ends that block, as it does for Go.
+fn deprecated_above(above: &str) -> bool {
+    above
+        .lines()
+        .rev()
+        .map(str::trim)
+        .map_while(|line| line.strip_prefix("//"))
+        .any(|text| text.trim_start().starts_with("Deprecated:"))
 }
 
 fn version_in(comment: &str) -> Result<String> {
@@ -127,14 +166,20 @@ fn module_line(raw: &str) -> Result<ModuleLine<'_>> {
             && rest.starts_with([' ', '\t', '"', '`', '('])
         {
             let rest_start = start + indent + "module".len();
-            return parse_module(raw, rest_start, line_end);
+            let deprecated = deprecated_above(&raw[..start]);
+            return parse_module(raw, rest_start, line_end, deprecated);
         }
         start += line.len();
     }
     bail!("go.mod has no module line")
 }
 
-fn parse_module(raw: &str, rest_start: usize, line_end: usize) -> Result<ModuleLine<'_>> {
+fn parse_module(
+    raw: &str,
+    rest_start: usize,
+    line_end: usize,
+    deprecated: bool,
+) -> Result<ModuleLine<'_>> {
     let rest = &raw[rest_start..line_end];
     let lead = rest.len() - rest.trim_start().len();
     let token = &rest[lead..];
@@ -167,6 +212,7 @@ fn parse_module(raw: &str, rest_start: usize, line_end: usize) -> Result<ModuleL
         path_end,
         line_end,
         comment,
+        deprecated,
     })
 }
 
@@ -235,6 +281,27 @@ mod tests {
         let error = read(raw).unwrap_err();
         assert!(format!("{error:#}").contains("Deprecated"), "{error:#}");
         assert!(write(raw, "1.0.0").is_err());
+    }
+
+    #[test]
+    fn a_deprecation_notice_directly_above_refuses_a_version() {
+        let raw = indoc! {"
+            // Deprecated: use example.com/next.
+            module example.com/demo
+        "};
+        assert_eq!(read(raw).unwrap(), "0.0.0");
+        let error = write(raw, "0.0.1").unwrap_err();
+        assert!(format!("{error:#}").contains("Deprecated:"), "{error:#}");
+        assert!(accepts(raw, "0.0.1").is_err());
+        let apart = indoc! {"
+            // Deprecated: use example.com/next.
+
+            module example.com/demo
+        "};
+        assert_eq!(
+            write(apart, "0.0.1").unwrap(),
+            apart.replace("demo\n", "demo // v0.0.1\n")
+        );
     }
 
     #[test]
