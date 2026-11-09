@@ -29,7 +29,7 @@ jobs:
   # takes that App's key and no other secret.
   template:
     if: ${{ !github.event.pull_request.draft }}
-    uses: victor-software-house/actions/.github/workflows/template-check.yml@dec9ec1aaa6b08b1424deb891c88ee50dd26da07 # main, 2026-11-09
+    uses: victor-software-house/actions/.github/workflows/template-check.yml@4d956dddb9db5d49df63949c0195c05f46dfa93b # main, 2026-11-09
     permissions:
       contents: read
       issues: write
