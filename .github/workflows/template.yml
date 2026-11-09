@@ -7,8 +7,8 @@ on:
   # A merge queue entry reports the check without running it: the shared
   # workflow skips the job, and the skip satisfies a required check.
   merge_group:
-  # A tag reaches the repository through this daily run's issue, not through
-  # a failing pull request. A push to the default branch runs nothing: its pull
+  # A tag reaches the repository through this daily run's issue, instead of
+  # through a failing pull request. A push to the default branch runs nothing: its pull
   # request already ran the check.
   schedule:
     - cron: "17 9 * * *"
@@ -29,7 +29,7 @@ jobs:
   # takes that App's key and no other secret.
   template:
     if: ${{ !github.event.pull_request.draft }}
-    uses: victor-software-house/actions/.github/workflows/template-check.yml@ed26bdf6dd82740d0be3e38942c6ecc638322cd8 # main, 2026-11-09
+    uses: victor-software-house/actions/.github/workflows/template-check.yml@c5ea40a355cb9e5ae9429827ccc1048d333c23b1 # main, 2026-11-09
     permissions:
       contents: read
       issues: write
@@ -37,9 +37,9 @@ jobs:
       mise-version: 2026.10.25
       runner: ubuntu-latest
       # A pull request that changes none of these files skips the check, which
-      # still reports. They are every file the template renders, whole or in
-      # part; check:template-paths keeps the list covering every file a
-      # render keeps in step, the starters left out.
+      # still reports. The list holds every file the template renders, whole
+      # or in part. check:template-paths keeps it covering every file a render
+      # keeps in step, the starters left out.
       paths: |
         .copier-answers.yml
         .changeset/config.json
@@ -73,3 +73,4 @@ jobs:
         tsdown.config.ts
     secrets:
       TEMPLATES_APP_PRIVATE_KEY: ${{ secrets.TEMPLATES_APP_PRIVATE_KEY }}
+      release-mirror-token: ${{ secrets.RELEASE_MIRROR_TOKEN }}

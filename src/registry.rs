@@ -98,7 +98,7 @@ pub enum CargoTarget {
 }
 
 /// The environment Cargo resolves `registry.default` from, passed in so a test
-/// can plant it: `std::env::set_var` is `unsafe`, which this crate forbids.
+/// can plant it: `std::env::set_var` is `unsafe`, which this crate denies.
 #[derive(Debug, Clone, Default)]
 pub struct CargoEnv {
     /// `CARGO_REGISTRY_DEFAULT`.

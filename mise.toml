@@ -13,7 +13,7 @@ lockfile_platforms = ["linux-x64", "macos-arm64"]
 [tool_config]
 locked = true
 
-# The toolchain lives here, not in mise.dev.toml, because CI loads only
+# The toolchain lives here instead of in mise.dev.toml, because CI loads only
 # MISE_ENV=ci. The stable pin equals rust-toolchain.toml and rust-version.
 [tools]
 rust = [
@@ -66,7 +66,7 @@ includes = [
   "mise-tasks",
   "git::https://github.com/victor-software-house/qctl.git//tasks/q?ref=v0.6.0",
   # The shared Rust tasks, at actions main, 2026-11-09.
-  "git::https://github.com/victor-software-house/actions.git//tasks/rust.toml?ref=ed26bdf6dd82740d0be3e38942c6ecc638322cd8",
+  "git::https://github.com/victor-software-house/actions.git//tasks/rust.toml?ref=c5ea40a355cb9e5ae9429827ccc1048d333c23b1",
   # template:check, template:off, and template:on, at actions main, 2026-11-09.
-  "git::https://github.com/victor-software-house/actions.git//tasks/template.toml?ref=ed26bdf6dd82740d0be3e38942c6ecc638322cd8",
+  "git::https://github.com/victor-software-house/actions.git//tasks/template.toml?ref=c5ea40a355cb9e5ae9429827ccc1048d333c23b1",
 ]
