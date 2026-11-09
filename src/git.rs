@@ -456,6 +456,7 @@ pub fn require_on_default_history(root: &Path) -> Result<()> {
 }
 
 /// How to fetch `origin/<branch>` when that ref is missing.
+#[non_exhaustive]
 pub enum FetchDefault {
     /// `git fetch origin`.
     Origin,
@@ -1147,6 +1148,7 @@ fn status_paths(
 
 /// What [`commit_branch_and_push`] did: `Empty` when the tree was unchanged.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum PushOutcome {
     /// No version files changed.
     Empty,

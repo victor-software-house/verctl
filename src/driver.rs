@@ -9,6 +9,7 @@ use crate::process;
 
 /// The file format a path driver edits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Format {
     /// A TOML file, edited with its comments and layout kept.
     Toml,
@@ -19,6 +20,7 @@ pub enum Format {
 /// A file whose version sits in its text, with a rule of its own that a key
 /// path cannot state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Text {
     /// A `go.mod` whose `module` line ends in `// vX.Y.Z`.
     GoMod,
@@ -74,6 +76,7 @@ fn read_version_file(raw: &str) -> Result<String> {
 
 /// How a package's version is read and written.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Driver {
     /// The version is in the file's text, in a place its format fixes.
     Text {
@@ -104,6 +107,7 @@ pub enum Driver {
 
 /// How a command driver's filter is invoked.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CommandSpec {
     /// `mise run <task>`: stdin is the file, stdout is the version or new
     /// file.

@@ -29,6 +29,7 @@ pub const POLL_EVERY: Duration = Duration::from_secs(30);
 /// What docs.rs reports for one crate version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum DocsStatus {
     /// docs.rs built the documentation.
     Built,

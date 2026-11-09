@@ -10,6 +10,7 @@ use crate::{git, release};
 
 /// Whether, and why, the version comparison is skipped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Skip {
     /// Compare versions.
     None,

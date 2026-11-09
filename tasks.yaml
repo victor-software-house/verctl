@@ -715,6 +715,7 @@ horizon:
       - '2026-11-09, operator, versioning is fine-grained with defaults that keep a simple repository simple, so complexity is opt-in: a consumer moves a pin only when the thing it pins changed, and the model composes small primitives (version source, package, discovery, group, tag).'
       - 2026-11-09, the research and five proposals are in openspec/changes/version-files/research.md and the version-files, package-discovery, release-groups, dependent-ranges, and release-immutability changes.
       - '2026-11-09, the operator chose all four new version sources for the first slice: VERSION, the marker line, pyproject.toml, and go.mod, besides Cargo.toml and package.json.'
+      - '2026-11-09, cargo-semver-checks failed the slice-1 stack: the library Driver enum gained a Text variant. The operator ruled it ships in the next minor with the rest of the minor backlog, and the Version PR is held until then; every public enum that can grow is sealed in the same release.'
     plan: openspec/changes/version-files/proposal.md
 
   - id: VER-085

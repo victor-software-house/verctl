@@ -15,6 +15,7 @@ use crate::publisher::PublisherSpec;
 /// A driver's read or write step: a mise task or an argv.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
+#[non_exhaustive]
 pub enum CommandField {
     /// A `mise run` task name.
     Mise(String),
@@ -1045,6 +1046,7 @@ pub struct PinPattern {
 /// shape: a document whose examples come and go needs "one or more", and a
 /// spelling that was retired needs "none".
 #[derive(Debug, Clone, Copy, Default)]
+#[non_exhaustive]
 pub enum Occurrences {
     /// Exactly one. What a pin normally is, so it is the default.
     #[default]

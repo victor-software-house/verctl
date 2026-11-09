@@ -32,6 +32,7 @@ pub const CHECK_TIMEOUT: Duration = Duration::from_mins(30);
 /// What `semver` decided for one crate.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum Decision {
     /// Checked with `--release-type minor`, and no lint failed.
     Passed,
