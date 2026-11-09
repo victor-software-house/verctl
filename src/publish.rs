@@ -2,7 +2,7 @@
 //!
 //! How each package is published comes from `[publishers.*]`. Cargo and
 //! bun are stock recipes, not the only stacks. How tags are named comes
-//! from `[tags].template` — see [`tags_for`].
+//! from `[tags].template`; see [`tags_for`].
 
 use std::collections::BTreeMap;
 use std::path::Path;

@@ -80,7 +80,7 @@ fn is_host_actions_key(key: &str) -> bool {
 /// environment it reads so the rule is testable against a planted one:
 /// `std::env` cannot be given a non-Unicode key without `set_var`, and
 /// `unsafe_code = "forbid"` rules that out. `vars()` would panic on such a key,
-/// so this never decodes one — a key we cannot read is not a key we are
+/// so this never decodes one: a key we cannot read is not a key we are
 /// stripping.
 fn inherited(
     vars: impl IntoIterator<Item = (OsString, OsString)>,

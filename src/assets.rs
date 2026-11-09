@@ -2,7 +2,7 @@
 //!
 //! Each named entry is one target: the platform it produces and the single
 //! machine that builds it. One platform is one tarball is one machine, so
-//! `runner` names one machine from `runners` and is not a list — two machines
+//! `runner` names one machine from `runners` and is not a list: two machines
 //! under one target would overwrite each other's tarball.
 //!
 //! Omit `assets` when there is no host binary. Override `prepare`, `build`,

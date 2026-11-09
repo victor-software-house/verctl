@@ -408,7 +408,7 @@ pub fn upstream_default_branch(root: &Path) -> Option<String> {
 
 /// Fail unless HEAD is on the default-branch history.
 ///
-/// No repository, and no `origin` remote, is a skip — local fixtures
+/// No repository, and no `origin` remote, is a skip: local fixtures
 /// have nothing to prove. A repo that has `origin` but no peelable
 /// default-tracking ref fails closed. A shallow clone that cannot walk
 /// the graph also fails closed.
@@ -709,10 +709,10 @@ pub fn workdir_covering(dir: &Path) -> Option<PathBuf> {
 ///
 /// The index, not a directory walk: build output, vendored trees, and
 /// anything else gitignored is not part of what this repo publishes. The index
-/// speaks in paths from the working tree, and `root` is a project inside it —
-/// one repository may hold several — so anything outside `root` is not this
+/// speaks in paths from the working tree, and `root` is a project inside it
+/// (one repository may hold several), so anything outside `root` is not this
 /// project's, and what is left is rebased onto it. A tree with no repository
-/// tracks nothing — it cannot serve a file by tag — but a repository whose
+/// tracks nothing (it cannot serve a file by tag), but a repository whose
 /// index cannot be read is an error, never an empty answer.
 ///
 /// # Errors
@@ -734,11 +734,11 @@ pub fn tracked(root: &Path) -> Result<Vec<PathBuf>> {
 
 /// Whether the repository is told to ignore `rel`, a path relative to `root`.
 ///
-/// Ignoring a file is a repo saying it is not part of what it publishes — the
-/// same statement `tracked` already reads the index for. So an ignored file is
-/// not a forgotten one, and nothing should ask its author to commit it. A file
-/// under an ignored directory is ignored too, as git has it: gix matches the
-/// one path it is given, so each parent directory is asked first.
+/// Ignoring a file is a repo saying it is not part of what it publishes. It is
+/// the same statement `tracked` already reads the index for. So an ignored file
+/// is not a forgotten one, and nothing should ask its author to commit it. A
+/// file under an ignored directory is ignored too, as git has it: gix matches
+/// the one path it is given, so each parent directory is asked first.
 #[must_use]
 pub fn is_ignored(root: &Path, rel: &Path) -> bool {
     let Some(repo) = repo_covering(root) else {

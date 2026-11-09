@@ -139,7 +139,7 @@ fn rewrite_pattern(body: &str, pattern: &PinPattern, version: &str) -> Result<St
     }
     // `R` is CRLF mode: without it `$` sits only before `\n`, so a file checked
     // out with CRLF endings has a `\r` between the version and the line end and
-    // matches nothing — a correct file stopping a release.
+    // matches nothing: a correct file stopping a release.
     let (open, close) = if pattern.whole_line {
         ("(?mR)^", "$")
     } else {
@@ -629,7 +629,7 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), before);
     }
 
-    /// A tool entry and the includes that fetch it, in one file, at once —
+    /// A tool entry and the includes that fetch it, in one file, at once,
     /// including a sibling repo's include, which is not ours to move.
     #[test]
     fn a_tool_entry_and_its_own_includes_move_together() {

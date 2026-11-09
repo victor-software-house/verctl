@@ -1,12 +1,12 @@
 //! Machines: declared once under `runners`, named by every job.
 //!
-//! A runner is one machine and `labels` is how GitHub finds it — every label
+//! A runner is one machine and `labels` is how GitHub finds it: every label
 //! at once, so `["self-hosted", "linux", "x64"]` is a single machine carrying
 //! three labels. Nothing here resolves a *label*: verctl cannot know which
 //! machines carry which, so labels pass through untouched.
 //!
 //! A runner *name*, by contrast, resolves here or fails here. It never reaches
-//! GitHub — only its labels do.
+//! GitHub. Only its labels do.
 
 use std::collections::{BTreeMap, BTreeSet};
 

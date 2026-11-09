@@ -67,7 +67,7 @@ pub(crate) fn env_token() -> Option<String> {
 ///
 /// A pin moves only what the release names, because everything else in that
 /// file is already right. A template renders a whole file, so it needs every
-/// version the file mentions — a served file that names a package no fragment
+/// version the file mentions. A served file that names a package no fragment
 /// bumped would otherwise have nothing to render.
 ///
 /// A manifest that cannot be read or resolved is left out rather than failing
@@ -634,7 +634,7 @@ mod tests {
     }
 
     /// A release that bumps one of two packages still has to render a served
-    /// file that mentions both, so the version map covers every package —
+    /// file that mentions both, so the version map covers every package:
     /// the release's version for what it bumps, the manifest's for the rest.
     #[test]
     fn a_partial_release_still_knows_every_version() {
