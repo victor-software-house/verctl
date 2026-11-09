@@ -691,20 +691,6 @@ horizon:
       - A proper OpenSpec spec follows this row.
 
 archive:
-  - id: VER-085
-    title: Take ctl-core 0.7.0
-    scope: Cargo.toml, Cargo.lock, presentation
-    outcome: >-
-      verctl builds on ctl-core 0.7.0, with one serde-saphyr (vsh-serde-saphyr 0.0.3)
-      in the lock, and its own clap sets default-features = false
-    completed: 2026-11-09T15:28:43
-    evidence:
-      - d4e9fc6
-      - 'mise run verify passed at d4e9fc6 on a fresh NixOS Linux VM with mise 2026.10.25, except one test that fails the same way at main there: a mise shim answers cargo in a temp directory'
-      - cargo tree -d lists one serde-saphyr (vsh-serde-saphyr 0.0.3), and the lock no longer holds usage-lib or comfy-table
-      - Help captures differ from main cb1be28 only by colour wording and table widths; unknown-flag and missing-value captures are byte-identical, exit 2
-    disposition: completed
-
   - id: VER-079
     title: Remove Version PR auto-merge
     scope: verctl prepare, release workflow, actions/version-pr
