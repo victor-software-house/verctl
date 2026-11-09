@@ -99,7 +99,7 @@ impl Driver {
     /// # Errors
     ///
     /// For a `go.mod`, returns an error when the new major version and the
-    /// module path's `/vN` suffix disagree. Other drivers accept any version.
+    /// module path's `/vN` suffix conflict. Other drivers accept any version.
     pub fn accepts(&self, raw: &str, new_version: &str) -> Result<()> {
         match self {
             Self::Text {

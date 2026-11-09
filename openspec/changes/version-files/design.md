@@ -77,7 +77,7 @@ It lost because it invents a file-name convention no other tool reads, and the e
 ## Risks / Trade-offs
 
 1. A `pyproject.toml` using Poetry 1's `tool.poetry.version` reads as having no `project.version` → the load fails and names the key; a `keys` override (`[tool.poetry.version]`) fixes it with no new code.
-2. A `go.mod` comment edited by hand to a version that disagrees with the last tag → `check --versions` already compares manifests to the merge-base, so the drift shows in review.
+2. A `go.mod` comment edited by hand to a version that conflicts with the last tag → `check --versions` already compares manifests to the merge-base, so the drift shows in review.
 3. Byte-preserving edits are only as good as the editor → TOML goes through `toml_edit`, as Cargo does; the three text formats rewrite one span and keep every other byte, and each gets a round-trip test.
 
 ## Migration Plan

@@ -71,7 +71,7 @@ pub(crate) fn write(raw: &str, new_version: &str) -> Result<String> {
 /// # Errors
 ///
 /// Returns an error when the file cannot be read as [`read`] describes, when
-/// `new_version` is not semver, or when its major and the path disagree.
+/// `new_version` is not semver, or when its major conflicts with the path.
 pub(crate) fn accepts(raw: &str, new_version: &str) -> Result<()> {
     let line = module_line(raw)?;
     if line.path.starts_with("gopkg.in/") {
