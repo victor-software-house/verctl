@@ -394,7 +394,7 @@ queue:
     notes:
       - '2026-11-09, Cargo.lock on main holds two versions of 21 crates: base64, bitflags, cpufeatures, defmt, getrandom, hashbrown, itertools, nom, syn, unicode-width, winnow, windows-sys, windows-targets, and its seven per-target crates. Each prints a dependency tree in verify, which buries the real output.'
       - "2026-11-09, windows-sys 0.52 comes through ring 0.17 under rustls 0.23 (octocrab, reqwest); windows-sys 0.60 through shared_child under duct. Start with cargo tree -d per crate: bump or replace the direct dependency that pins the old line (duct is verctl's own), and skip only what upstream forces."
-      - 2026-11-09, multiple-versions = "warn" is fixed in the template's deny.toml; making it deny, or an answer for it, is a templates change for that repository's owner session.
+      - '2026-11-09, the templates owner decided: the template moves to multiple-versions = "deny" with no new answer, in a later tag, after verctl passes under it. Send that session the final deny_skip list when this row lands, so it can check the answer''s shape against it.'
 
 horizon:
   - id: VER-038
