@@ -21,6 +21,7 @@ A Release that declares assets SHALL be created as a draft and published only af
 ### Requirement: check reads the repository's immutability settings
 
 `check --repository` SHALL report whether immutable Releases are on and whether a tag ruleset blocks updating and deleting release tags.
+The ruleset's patterns match full versions only, such as `v*.*.*` and `*/v*.*.*`, so a floating major tag stays movable.
 When `.ctl/ver.yaml` sets `tags.immutable: true`, a missing setting SHALL fail the check and name it.
 
 #### Scenario: Immutability declared but off

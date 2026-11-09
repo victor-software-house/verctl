@@ -83,4 +83,4 @@ It lost because it invents a file-name convention no other tool reads, and the e
 ## Migration Plan
 
 Additive: a repository whose packages name `Cargo.toml` or `package.json` sees no change.
-Shipped as patch fragments on the pending 0.7.x line, held with the rest of the backlog.
+Shipped as patch fragments on the 0.7.x line, released as soon as each lands: a patch release never waits (operator, 2026-11-09).
