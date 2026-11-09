@@ -3,11 +3,19 @@
 #MISE tools = { conftest = "0.71.1" }
 # conftest pulls the policy by commit into the git directory, so the
 # repository carries no copy; --absolute-paths keeps a linked worktree's
-# absolute git directory whole. conftest parses each workflow as YAML, and the
-# policy's texts.sh writes the workflows' text, which the pins rule reads for
-# comments, as data beside it. It reads the policy's defaults.yaml, the
-# repository's parameters and exceptions (.github/workflow-policy/config.yaml),
-# and .github/actionlint.yaml's runner labels. Each --namespace is a rule the
+# absolute git directory whole. Each pinned commit gets a folder of its own,
+# filled once and never rewritten, so verify runs offline after the first run
+# and no file of an older pin mixes in. Renders that share the git directory,
+# such as cli/ and worker/, may run at once: a mkdir lock lets one of them
+# pull, into a .part folder it renames when the pull is whole. An exit, or HUP,
+# INT, QUIT or TERM, while it holds the lock removes both; a run killed outright
+# leaves the lock, and the next run fails after 600 s with a message that
+# names it. Each run writes the workflows' text to a file of its own.
+# conftest parses each workflow as YAML, and the policy's texts.sh writes the
+# workflows' text, which the pins rule reads for comments, as data beside it.
+# It reads the policy's defaults.yaml, the repository's parameters and
+# exceptions (.github/workflow-policy/config.yaml), and
+# .github/actionlint.yaml's runner labels. Each --namespace is a rule the
 # workflow_policy answer chose, or one of the repository's own packages in
 # .github/workflow-policy/ that workflow_policy_namespaces names.
 # GitHub runs only the repository root's workflows, so, as lint:workflows
@@ -22,9 +30,31 @@ render=$(pwd)
 cd "$(git rev-parse --show-toplevel)" || exit 1
 files=$(git ls-files ':(glob).github/workflows/*.yml' ':(glob).github/workflows/*.yaml') || exit 1
 [ -n "$files" ] || exit 0
-policy=$(git rev-parse --git-path workflow-policy) || exit 1
-texts=$(git rev-parse --git-path workflow-texts.yaml) || exit 1
-conftest pull --absolute-paths -p "$policy" 'git::https://github.com/victor-software-house/actions.git//policy?ref=ca84425f5597bc5fd59e5614d0cf1f2f06194377' || exit 1
+policy=$(git rev-parse --git-path 'workflow-policy/ed26bdf6dd82740d0be3e38942c6ecc638322cd8') || exit 1
+texts=$(git rev-parse --git-path "workflow-texts.$$.yaml") || exit 1
+trap 'rm -f "$texts"' EXIT
+if [ ! -d "$policy" ]; then
+  mkdir -p "${policy%/*}" || exit 1
+  waited=0
+  until mkdir "$policy.lock" 2>/dev/null; do
+    waited=$((waited + 1))
+    [ "$waited" -le 600 ] || { echo "✘ $policy.lock has been held for 600 s; remove it if no run is pulling" >&2; exit 1; }
+    sleep 1
+  done
+  trap 'rm -rf "${policy:?}.part"; rmdir "$policy.lock" 2>/dev/null; rm -f "$texts"' EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 131' QUIT
+  trap 'exit 143' TERM
+  if [ ! -d "$policy" ]; then
+    rm -rf "${policy:?}.part"
+    if conftest pull --absolute-paths -p "$policy.part" 'git::https://github.com/victor-software-house/actions.git//policy?ref=ed26bdf6dd82740d0be3e38942c6ecc638322cd8'; then mv "$policy.part" "$policy"; fi
+  fi
+  trap 'rm -f "$texts"' EXIT
+  trap - HUP INT QUIT TERM
+  rmdir "$policy.lock"
+  [ -d "$policy" ] || exit 1
+fi
 sh "$policy/texts.sh" >"$texts" || exit 1
 settings=.github/workflow-policy
 if [ -d "$render/.github/workflow-policy" ]; then settings="$render/.github/workflow-policy"; fi
