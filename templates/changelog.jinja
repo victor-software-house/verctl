@@ -1,4 +1,4 @@
-- {% if pull_request or commit %}{{ summary_body }}{% else %}{{ summary }}{% endif -%}
+- {% if pull_request or commit %}{{ summary_body | indent(2) }}{% else %}{{ summary | indent(2) }}{% endif -%}
 {%- if pull_request -%}
 {{ " " }}([#{{ pull_request.number }}]({{ pull_request.url }})
 {%- if pull_request.external_author -%}

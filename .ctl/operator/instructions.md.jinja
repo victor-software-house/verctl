@@ -81,9 +81,10 @@ comes from a fork; without a token no one is credited. GitHub's
 `author_association` cannot decide it, because the App token behind a
 Version PR reads a private organization member as `CONTRIBUTOR`.
 
-Context: `summary` is a fragment's first line. `continuations` holds each
-later line, and the stock template indents them two spaces under the
-bullet. A second paragraph, a list, or a code fence then stays in the
+Context: `summary` is a fragment's first paragraph, and the link and
+period follow its last line. `continuations` holds each later line. The
+stock template indents every line after the first two spaces under the
+bullet, so a second paragraph, a list, or a code fence stays in the
 entry. The rest are `pull_request`, `commit`, `summary_has_terminal`,
 `dependencies`, and `summary_body`: the summary without one trailing
 period, for an entry that ends with a reference.

@@ -2,8 +2,8 @@
 demo: patch
 ---
 
-Read every flag from the environment.
-Each long option reads `DEMO_<LONG>`.
+Read every flag from the environment,
+so each long option reads `DEMO_<LONG>`
 
 - An empty variable is unset.
 - A flag wins over its variable.
