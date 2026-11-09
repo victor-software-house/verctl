@@ -393,7 +393,7 @@ queue:
       - '`Cargo.lock` holds one version of every crate, except crates listed in the `deny_skip` answer, each with the reason upstream forces it.'
       - cargo-deny reads `multiple-versions = "deny"` for verctl, set through the template, so a new duplicate fails verify.
     notes:
-      - '2026-11-09, Cargo.lock on main holds two versions of 21 crates: base64, bitflags, cpufeatures, defmt, getrandom, hashbrown, itertools, nom, syn, unicode-width, winnow, windows-sys, windows-targets, and its seven per-target crates. Each prints a dependency tree in verify, which buries the real output.'
+      - '2026-11-09, Cargo.lock on main holds two versions of 21 crates: base64, bitflags, cpufeatures, defmt, getrandom, hashbrown, itertools, nom, syn, unicode-width, winnow, windows-sys, windows-targets, and its eight per-target crates. Each prints a dependency tree in verify, which buries the real output.'
       - "2026-11-09, windows-sys 0.52 comes through ring 0.17 under rustls 0.23 (octocrab, reqwest); windows-sys 0.60 through shared_child under duct. Start with cargo tree -d per crate: bump or replace the direct dependency that pins the old line (duct is verctl's own), and skip only what upstream forces."
       - '2026-11-09, the templates owner decided: the template moves to multiple-versions = "deny" with no new answer, in a later tag, after verctl passes under it. Send that session the final deny_skip list when this row lands, so it can check the answer''s shape against it.'
 
@@ -714,7 +714,7 @@ horizon:
       - '2026-11-09, operator, a version always lives in a tracked file: the stack manifest where one exists, a VERSION file as the fallback; it must work in monorepos the way Turborepo, mise, Bun, and pnpm workspaces find packages.'
       - '2026-11-09, operator, versioning is fine-grained with defaults that keep a simple repository simple, so complexity is opt-in: a consumer moves a pin only when the thing it pins changed, and the model composes small primitives (version source, package, discovery, group, tag).'
       - 2026-11-09, the research and five proposals are in openspec/changes/version-files/research.md and the version-files, package-discovery, release-groups, dependent-ranges, and release-immutability changes.
-      - '2026-11-09, the operator chose all five version sources for the first slice: VERSION, the marker line, pyproject.toml, and go.mod, besides Cargo.toml and package.json.'
+      - '2026-11-09, the operator chose all four new version sources for the first slice: VERSION, the marker line, pyproject.toml, and go.mod, besides Cargo.toml and package.json.'
     plan: openspec/changes/version-files/proposal.md
 
   - id: VER-085
