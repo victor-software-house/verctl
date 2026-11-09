@@ -15,29 +15,29 @@ Queue row: VER-083.
 
 ## What Changes
 
+The operator chose all five version sources for the first slice (2026-11-09).
+
 1. A stock driver is chosen by the file a package's `path` names:
    1. `Cargo.toml` and `package.json`, as today.
-   2. `pyproject.toml`: `project.version`.
-   3. `go.mod`: a `// vX.Y.Z` comment on the `module` line, the form Knope reads and writes. A bump to a new major version is refused unless the module path already ends in that `/vN`.
+   2. `pyproject.toml`: `project.version`. A `project.dynamic` that lists `version` fails the load, because a build backend owns that version.
+   3. `go.mod`: a `// vX.Y.Z` comment on the `module` line, the form Knope reads and writes. A bump to major 2 or more is refused unless the module path already ends in that `/vN`, the rule the Go toolchain enforces.
    4. `VERSION`: a file that holds the version and a newline, and nothing else.
    5. Any other text file, with `marker: true`: the version sits on one marker line, `# version: X.Y.Z`, in the file's own comment syntax.
       It serves a component that is a single file, such as a reusable workflow under `.github/workflows/`, where no other file can sit beside it.
-2. A `path` that names a directory resolves to the manifest it holds, in that order, and to `<dir>/VERSION` when it holds none.
-   So `packages: [{name: templates, path: .}]` versions a repository with no manifest.
-3. A package with a `VERSION` file and no `publisher` releases on GitHub only (tag and Release), as `publisher: none` does today.
-4. A first release starts from `0.0.0`, as every package does: verctl writes `VERSION` with `0.0.0` when `check` or `prepare` finds the file missing and the package declared.
+2. A `path` that names a directory resolves to the one manifest it holds, and to `<dir>/VERSION` when it holds none.
+   So `packages: [{name: templates, path: .}]` versions a repository with no manifest. A directory with two manifests fails the load and asks for a file path.
+3. A package whose version lives in `VERSION`, a marker line, or `go.mod`, with no `publisher`, releases on GitHub only (tag and Release), as `publisher: none` does today. Go modules need no upload: the Go proxy reads the tag.
+   A `pyproject.toml` package must name its publisher until verctl ships a Python one.
+4. A missing `VERSION` file reads as `0.0.0`, as a new package does everywhere, and `prepare` creates it; `check` never writes it.
    A repository already tagged by hand, such as templates at `v0.0.75`, commits `VERSION` at its newest tag's version once, by hand, in the adoption pull request.
 5. `prepare` writes the next version into that file, the CHANGELOG heading, and nothing else for the package, so the Version PR stays the only writer.
+6. Two packages that resolve to the same changelog fail the load, which matters once single-file packages share a directory.
 
 ## Capabilities
 
 ### New Capabilities
 
 - `version-files`: which tracked file holds a package's version, chosen by file name, with `VERSION` as the fallback.
-
-### Modified Capabilities
-
-- `versioning`: a package's current version is read from its version file, whatever the stack.
 
 ## Impact
 
