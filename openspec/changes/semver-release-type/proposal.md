@@ -8,7 +8,7 @@ default, and a real API break bumps the minor.
 The shared `semver` task runs `cargo semver-checks` with no release type.
 cargo-semver-checks then infers the type from the version change, and on a
 0.0.z crate between releases it assumes a major release and runs none of
-its lints: a consumer at 0.0.2 reported "0 checks: 0 pass, 260 skip". Under
+its lints. A consumer at 0.0.2 reported "0 checks: 0 pass, 260 skip". Under
 Cargo's rules every 0.0.z release may break, so nothing enforces the rule
 there. On a 0.y.z crate it assumes a minor release, which happens to match
 the rule only while no minor fragment is pending.

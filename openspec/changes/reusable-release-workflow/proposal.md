@@ -27,8 +27,8 @@ one flow on push to the default branch plus dispatch, and the derived branch.
 The rest of that change stays paused.
 
 Queue row: VER-066. This change references [release-state-machine][rsm] and
-takes three of its decisions as a patch-sized slice on today's commands: the
-registry decides "published" (its decision 9), a push to the release branch
+takes three of its decisions as a patch-sized slice on today's commands. The
+three decisions: the registry decides "published" (its decision 9), a push to the release branch
 triggers release, then propose (its decision 5), and the proposal branch is
 `verctl/release/<base>` (its section 2.3). It does not rename commands, change
 `.ctl/ver.yaml`, or derive release state beyond what the slice needs.

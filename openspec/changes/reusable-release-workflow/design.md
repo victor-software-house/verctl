@@ -98,7 +98,7 @@ workflow declares, which is why they are inputs to nothing else.
    `verctl publish`. Concurrency group `verctl-publish` with
    `cancel-in-progress: false`, so a running leg is never cancelled. GitHub
    keeps one pending job per group, so a leg still waiting when a newer
-   run's leg arrives is cancelled; the newer run planned every incomplete
+   run's leg arrives is cancelled. The newer run planned every incomplete
    commit itself, so it publishes that commit, and the older run's `propose`
    is skipped. Workflow-level concurrency would not avoid this (it keeps one
    pending run the same way) and would make `plan` and `propose` wait too.
@@ -205,7 +205,7 @@ effect. The stock recipes:
 | `none` | nothing; the package publishes to no registry |
 
 A cargo package's publish target is crates.io only when every place Cargo
-reads it agrees: the package sets no `registry` in `.ctl/ver.yaml` (or sets
+reads it agrees. That is, the package sets no `registry` in `.ctl/ver.yaml` (or sets
 `crates-io`), its manifest's `publish` field is absent or names only
 `crates-io`, and the `registry.default` Cargo resolves for the publisher's
 working directory is unset or `crates-io`. verctl resolves it in Cargo's
@@ -323,8 +323,8 @@ verctl applies Cargo's documented rule itself rather than running
 package only when the tag `tags.template` names for that package's version
 at HEAD names HEAD on GitHub: the shared `v{version}` tag, or the package's
 own tag when the template has `{name}`. verctl reads the tag through the
-GitHub API, peeling an annotated tag to its commit, never from local refs:
-the `docs` job's checkout fetched no tags, the `publish` job pushed the tag
+GitHub API, peeling an annotated tag to its commit, never from local refs.
+That is because the `docs` job's checkout fetched no tags, the `publish` job pushed the tag
 from another runner, and the API needs no git credentials in the checkout.
 `verctl publish`
 creates tags only after the registry lists every version (section 2.1), so

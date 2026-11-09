@@ -5,7 +5,7 @@
 `.ctl/ver.yaml` SHALL declare each concern in exactly one place: the branch in
 `branch`, registries in `registries` named once and listed by name from
 `packages[].registry`, ecosystems in `ecosystems` listed by name from
-`packages[].ecosystem`, steps in `steps` listed by name from `at` and the
+`packages[].ecosystem`. Steps in `steps` listed by name from `at` and the
 blocks that use them, the tag shape in `tags`, the Version PR text in
 `proposal`, binaries in `packages[].assets`, and served files in `templates`.
 No key SHALL exist whose only effect is printed output.

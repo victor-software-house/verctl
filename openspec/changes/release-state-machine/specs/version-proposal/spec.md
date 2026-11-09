@@ -4,9 +4,9 @@
 
 `verctl version` SHALL apply the plan of the pending fragments to the working
 tree: each manifest, each dependent whose requirement no longer admits the new
-version, each lockfile through its owner, each `version` step, each package
-CHANGELOG, each served file, and the removal of every consumed fragment. It
-SHALL report the commands and steps it ran under `after`.
+version, each lockfile through its owner, and each `version` step. It SHALL
+apply each package CHANGELOG, each served file, and the removal of every
+consumed fragment. It SHALL report the commands and steps it ran under `after`.
 
 #### Scenario: A cargo package with a tracked Cargo.lock
 
@@ -134,9 +134,9 @@ PR's review covers.
 ### Requirement: A Version PR applies the plan
 
 A Version PR SHALL fail unless every changed manifest version equals the plan
-of the fragments present at the merge-base and absent at HEAD, every planned
-bump is applied, and each changed package's CHANGELOG carries the new
-version's section. A manifest SHALL differ only in version fields and in the
+of the fragments present at the merge-base and absent at HEAD, and every planned
+bump is applied. It SHALL also fail unless each changed package's CHANGELOG
+carries the new version's section. A manifest SHALL differ only in version fields and in the
 dependency requirements the plan rewrites.
 
 #### Scenario: The Version PR on its first CI run
@@ -151,11 +151,12 @@ dependency requirements the plan rewrites.
 
 ### Requirement: A Version PR leaves lockfiles and served files as the plan implies
 
-A Version PR SHALL fail unless every lockfile agrees with its manifests, a
-lockfile's parsed entries and header differ from the merge-base only in the
-versions of the workspace packages the plan bumps and in references that
-resolve to them, with no entry added or removed, and every served file equals
-its template's render at the versions on HEAD.
+A Version PR SHALL fail unless every lockfile agrees with its manifests. It
+SHALL also fail unless a lockfile's parsed entries and header differ from the
+merge-base only in the versions of the workspace packages the plan bumps and in
+references that resolve to them. It SHALL also fail if a lockfile has an entry
+added or removed. It SHALL also fail unless every served file equals its template's render at the versions on
+HEAD.
 
 #### Scenario: A stale lockfile
 

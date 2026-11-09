@@ -23,9 +23,9 @@ payload to decide a stage.
 
 verctl SHALL take the release commit of `p@v` to be the newest commit on the
 first-parent history of the branch named by `branch` where package `p`'s
-resolved version became `v`, resolving it at each commit from `p`'s manifest
-and, when the version is inherited, the workspace root manifest. It SHALL NOT
-take HEAD as the release commit.
+resolved version became `v`. It SHALL resolve it at each commit from `p`'s
+manifest and, when the version is inherited, the workspace root manifest. It
+SHALL NOT take HEAD as the release commit.
 
 #### Scenario: HEAD has moved past the release
 
@@ -58,12 +58,12 @@ the first failed transition without attempting anything that depends on it.
 ### Requirement: Publish precedes tag, and tags land on the release commit
 
 verctl SHALL create a tag that names a package with an unchecked upload only
-after every publishing package the tag names is published, SHALL create a tag
-whose packages all have a registry check before their uploads, as the
-tag-at-merge change specifies,
-SHALL create it at the release commit, SHALL push all ready tags of a run in one
-atomic push, and SHALL treat an existing tag that peels to another commit as a
-conflict that stops every transition for that package.
+after every publishing package the tag names is published. It SHALL create a
+tag whose packages all have a registry check before their uploads, as the
+tag-at-merge change specifies. It SHALL create each tag at the release commit
+and SHALL push all ready tags of a run in one atomic push. It SHALL treat an
+existing tag that peels to another commit as a conflict that stops every
+transition for that package.
 
 #### Scenario: A tag on another commit
 

@@ -39,8 +39,8 @@ step refreshes lockfiles itself, and the report field `next` becomes `after`.
 2. Every transition is guarded and repeatable: `propose`, `publish`, `tag`,
    `release`, `asset`, `finalize`. Publish precedes tag for a package with
    an unchecked upload, and a registry-checked package is tagged first
-   ([tag-at-merge](../archive/2026-10-24-tag-at-merge/proposal.md)); tags land on the
-   release commit in one atomic push; a release with assets is a draft until
+   ([tag-at-merge](../archive/2026-10-24-tag-at-merge/proposal.md)). Tags land on the
+   release commit in one atomic push. A release with assets is a draft until
    they are all uploaded.
 3. A Version PR is identified by its head repository and its head branch
    `verctl/release/<base>`, which a pull request cannot change, and by its

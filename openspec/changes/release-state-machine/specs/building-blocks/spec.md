@@ -150,9 +150,9 @@ a time. A package with `publish = false` SHALL never be published.
 
 For a `bun` package, verctl SHALL write `version`, find dependents through
 `workspace:` dependencies, refresh a tracked `bun.lock` with
-`bun install --lockfile-only`, refuse a Bun older than 1.4.1, pack with
-`bun pm pack`, inspect the packed `package.json`, and publish that tarball
-through its own npm registry client after querying the packument. A package
+`bun install --lockfile-only`, refuse a Bun older than 1.4.1, and pack with
+`bun pm pack`. It SHALL inspect the packed `package.json` and publish that
+tarball through its own npm registry client after querying the packument. A package
 with `"private": true` SHALL never be published.
 
 #### Scenario: A packed package still names a protocol

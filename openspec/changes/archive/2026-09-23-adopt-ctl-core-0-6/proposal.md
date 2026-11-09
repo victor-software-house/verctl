@@ -2,7 +2,7 @@
 
 ## Why
 
-verctl pins ctl-core 0.5.0. ctl-core 0.6.3 ships the look chosen in its
+verctl pins ctl-core 0.5.0. Version 0.6.3 of ctl-core ships the look chosen in its
 `choose-visual-identity` change: borderless records, an identifier role, pretty
 JSON, a two-column automatic-width buffer, and an 80-column fallback when no
 width is detected. On 0.5.0 a two-line `publish --dry-run` summary prints a
