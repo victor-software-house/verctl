@@ -37,15 +37,15 @@ The open change `reusable-release-workflow` drops `auto-merge` from its declared
 3. Docs: [`src/instructions.md`][instructions], [`skills/verctl/SKILL.md`][skill], their templates under `.ctl/`, [`README.md`][readme], [`AGENTS.md`][agents].
 4. Callers: each repository that passes `auto-merge: true` drops it when it moves its workflow ref to this release.
 
-[release-yml]: ../../../.github/workflows/release.yml
-[self-release]: ../../../.github/workflows/self-release.yml
-[version-pr-action]: ../../../actions/version-pr/action.yml
-[cli]: ../../../src/cli.rs
-[main]: ../../../src/main.rs
-[release]: ../../../src/release.rs
-[github]: ../../../src/github.rs
-[status-tests]: ../../../tests/status.rs
-[instructions]: ../../../src/instructions.md
-[skill]: ../../../skills/verctl/SKILL.md
-[readme]: ../../../README.md
-[agents]: ../../../AGENTS.md
+[release-yml]: ../../../../.github/workflows/release.yml
+[self-release]: ../../../../.github/workflows/self-release.yml
+[version-pr-action]: ../../../../actions/version-pr/action.yml
+[cli]: ../../../../src/cli.rs
+[main]: ../../../../src/main.rs
+[release]: ../../../../src/release.rs
+[github]: ../../../../src/github.rs
+[status-tests]: ../../../../tests/status.rs
+[instructions]: ../../../../src/instructions.md
+[skill]: ../../../../skills/verctl/SKILL.md
+[readme]: ../../../../README.md
+[agents]: ../../../../AGENTS.md
