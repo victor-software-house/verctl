@@ -48,7 +48,7 @@ packages:
   # named. This is what the `plain` driver and `publishers.twine` above are
   # for — nothing here is declared without a package that uses it.
   - name: py-tool
-    path: VERSION
+    path: release.txt
     driver: plain
     publisher: twine
 

@@ -51,7 +51,7 @@ pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<
         let spec = config.find(name)?;
         let driver = spec.resolve(config, root)?;
         let path = root.join(&spec.path);
-        let raw = std::fs::read_to_string(&path).with_context(|| path.display().to_string())?;
+        let raw = driver.source(&path)?;
         let from = driver
             .read(&raw)
             .with_context(|| format!("package {name}: {}", path.display()))?
@@ -88,8 +88,7 @@ pub fn apply_plan(entries: &[PlanEntry]) -> Result<Vec<String>> {
         if entry.from == entry.to {
             continue;
         }
-        let raw = std::fs::read_to_string(&entry.path)
-            .with_context(|| entry.path.display().to_string())?;
+        let raw = entry.driver.source(&entry.path)?;
         let updated = entry.driver.write(&raw, &entry.to)?;
         std::fs::write(&entry.path, updated).with_context(|| entry.path.display().to_string())?;
         if let Some(after) = entry.driver.after() {

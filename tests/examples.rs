@@ -40,7 +40,7 @@ fn planted() -> TempDir {
         "#},
     )
     .expect("npm");
-    fs::write(root.path().join("VERSION"), "4.5.6\n").expect("plain");
+    fs::write(root.path().join("release.txt"), "4.5.6\n").expect("plain");
     let skill = root.path().join("skills/verctl/SKILL.md");
     fs::create_dir_all(skill.parent().expect("parent")).expect("skill dir");
     fs::write(

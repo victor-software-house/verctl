@@ -494,3 +494,43 @@ fn an_empty_verctl_config_means_the_default() {
         String::from_utf8_lossy(&output.stdout)
     );
 }
+
+/// `check` plans without writing, so a package whose `VERSION` file does not
+/// exist yet passes and the file stays missing until `prepare` writes it.
+#[test]
+fn check_leaves_a_missing_version_file_missing() {
+    let root = TempDir::new().expect("tmp");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: setup
+                path: actions/setup/VERSION
+        "},
+    );
+    fs::create_dir_all(root.path().join("actions/setup")).expect("dir");
+    let changes = root.path().join(".changeset");
+    fs::create_dir_all(&changes).expect("dir");
+    fs::write(
+        changes.join("first.md"),
+        indoc! {"
+            ---
+            setup: patch
+            ---
+
+            First.
+        "},
+    )
+    .expect("frag");
+    let output = common::verctl()
+        .current_dir(root.path())
+        .args(["check", "--color", "never"])
+        .output()
+        .expect("spawn");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!root.path().join("actions/setup/VERSION").exists());
+}

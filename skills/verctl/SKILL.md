@@ -120,7 +120,9 @@ verctl has no stock Python publisher, so a `pyproject.toml` package names
 its `publisher`, or `none`; one whose `project.dynamic` lists `version`
 fails, because its build backend sets the version. A `go.mod` package keeps
 its version as `// vX.Y.Z` on the `module` line and, with no publisher,
-releases on GitHub only; a v2 bump needs the `/v2` module path first.
+releases on GitHub only; a v2 bump needs the `/v2` module path first. A
+`VERSION` file holds only the version; a missing one reads as `0.0.0` until
+`prepare` writes it, and with no publisher it releases on GitHub only.
 
 An `assets` tarball holds the one `binary`. Set `assets.dir` and
 `assets.files` instead when it holds more (a second executable, a service

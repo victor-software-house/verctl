@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use anyhow::{Context, Result, anyhow, bail};
 use jsonc_parser::ParseOptions;
 use jsonc_parser::cst::{CstInputValue, CstObject, CstRootNode};
@@ -20,6 +22,50 @@ pub enum Format {
 pub enum Text {
     /// A `go.mod` whose `module` line ends in `// vX.Y.Z`.
     GoMod,
+    /// A `VERSION` file that holds one version and nothing else.
+    Version,
+}
+
+impl Text {
+    fn read(self, raw: &str) -> Result<String> {
+        match self {
+            Self::GoMod => crate::gomod::read(raw),
+            Self::Version => read_version_file(raw),
+        }
+    }
+
+    fn write(self, raw: &str, new_version: &str) -> Result<String> {
+        match self {
+            Self::GoMod => crate::gomod::write(raw, new_version),
+            Self::Version => {
+                read_version_file(raw)?;
+                Ok(format!("{new_version}\n"))
+            }
+        }
+    }
+
+    fn accepts(self, raw: &str, new_version: &str) -> Result<()> {
+        match self {
+            Self::GoMod => crate::gomod::accepts(raw, new_version),
+            Self::Version => Ok(()),
+        }
+    }
+}
+
+/// The version a `VERSION` file holds: one version and an optional final
+/// newline. Empty text, such as a file that does not exist yet
+/// ([`Driver::source`]), reads as a new package's `0.0.0`.
+fn read_version_file(raw: &str) -> Result<String> {
+    let line = raw
+        .strip_suffix('\n')
+        .map_or(raw, |line| line.strip_suffix('\r').unwrap_or(line));
+    if line.is_empty() {
+        return Ok("0.0.0".to_owned());
+    }
+    if semver::Version::parse(line).is_ok() {
+        return Ok(line.to_owned());
+    }
+    bail!("holds {raw:?}, not one version and a newline")
 }
 
 /// How a package's version is read and written.
@@ -83,6 +129,35 @@ impl Driver {
         crate::config::stock_driver("npm")
     }
 
+    /// The text of `path`, the file this driver reads and writes.
+    ///
+    /// A `VERSION` file that does not exist yet is empty text, which reads as
+    /// `0.0.0`, so a new package needs no file before its first release:
+    /// `prepare` creates it, and `check` leaves the tree as it was.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error naming `path` when it cannot be read, or when it is
+    /// missing and the driver is not a `VERSION` file.
+    pub fn source(&self, path: &Path) -> Result<String> {
+        match std::fs::read_to_string(path) {
+            Ok(raw) => Ok(raw),
+            Err(error)
+                if error.kind() == std::io::ErrorKind::NotFound
+                    && matches!(
+                        self,
+                        Self::Text {
+                            text: Text::Version,
+                            ..
+                        }
+                    ) =>
+            {
+                Ok(String::new())
+            }
+            Err(error) => Err(error).with_context(|| path.display().to_string()),
+        }
+    }
+
     /// The follow-up command to run after the bump, if any.
     #[must_use]
     pub fn after(&self) -> Option<&str> {
@@ -102,9 +177,7 @@ impl Driver {
     /// module path's `/vN` suffix conflict. Other drivers accept any version.
     pub fn accepts(&self, raw: &str, new_version: &str) -> Result<()> {
         match self {
-            Self::Text {
-                text: Text::GoMod, ..
-            } => crate::gomod::accepts(raw, new_version),
+            Self::Text { text, .. } => text.accepts(raw, new_version),
             Self::Path { .. } | Self::Command { .. } => Ok(()),
         }
     }
@@ -119,9 +192,7 @@ impl Driver {
     /// exits unsuccessfully, or prints non-UTF-8 or oversized output.
     pub fn read(&self, raw: &str) -> Result<String> {
         match self {
-            Self::Text {
-                text: Text::GoMod, ..
-            } => crate::gomod::read(raw),
+            Self::Text { text, .. } => text.read(raw),
             Self::Path { format, keys, .. } => match format {
                 Format::Toml => read_toml(raw, keys),
                 Format::Json => read_json(raw, keys),
@@ -138,9 +209,7 @@ impl Driver {
     /// configured key holding a string, or a command filter that fails.
     pub fn write(&self, raw: &str, new_version: &str) -> Result<String> {
         match self {
-            Self::Text {
-                text: Text::GoMod, ..
-            } => crate::gomod::write(raw, new_version),
+            Self::Text { text, .. } => text.write(raw, new_version),
             Self::Path { format, keys, .. } => match format {
                 Format::Toml => write_toml(raw, keys, new_version),
                 Format::Json => write_json(raw, keys, new_version),
