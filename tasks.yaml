@@ -382,18 +382,6 @@ queue:
       - 'Found by the serde-saphyr fork: after its 0.0.1 release, the next forkctl append publish kept the tagged commit only as a merge second parent, and every plan failed with "not a first-parent commit at vsh-serde-saphyr@0.0.1".'
       - 'Operator decision 2026-11-09: compare the manifest version only. A tree comparison rejects a later publish that changes a non-version file such as a workflow. Patch bump.'
 
-  - id: VER-085
-    title: Take ctl-core 0.7.0
-    scope: Cargo.toml, Cargo.lock, presentation
-    outcome: >-
-      verctl builds on ctl-core 0.7.0, with one serde-saphyr (vsh-serde-saphyr 0.0.3)
-      in the lock, and its own clap sets default-features = false
-    blocked_by: []
-    acceptance:
-      - cargo tree -d lists no serde-saphyr duplicate
-      - mise run verify passes on the branch
-      - Help and parse-error captures differ from main only by ctl-core 0.7.0 colour wording and table widths
-
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
@@ -703,6 +691,20 @@ horizon:
       - A proper OpenSpec spec follows this row.
 
 archive:
+  - id: VER-085
+    title: Take ctl-core 0.7.0
+    scope: Cargo.toml, Cargo.lock, presentation
+    outcome: >-
+      verctl builds on ctl-core 0.7.0, with one serde-saphyr (vsh-serde-saphyr 0.0.3)
+      in the lock, and its own clap sets default-features = false
+    completed: 2026-11-09T15:28:43
+    evidence:
+      - d4e9fc6
+      - 'mise run verify passed at d4e9fc6 on a fresh NixOS Linux VM with mise 2026.10.25, except one test that fails the same way at main there: a mise shim answers cargo in a temp directory'
+      - cargo tree -d lists one serde-saphyr (vsh-serde-saphyr 0.0.3), and the lock no longer holds usage-lib or comfy-table
+      - Help captures differ from main cb1be28 only by colour wording and table widths; unknown-flag and missing-value captures are byte-identical, exit 2
+    disposition: completed
+
   - id: VER-079
     title: Remove Version PR auto-merge
     scope: verctl prepare, release workflow, actions/version-pr
