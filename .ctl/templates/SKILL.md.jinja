@@ -119,7 +119,9 @@ packages.
 version. `publish --plan` lists every one whose release is incomplete
 (registry, tag, Release, assets unless `--skip-assets`), oldest first, and
 `publish` releases only the packages whose version commit is HEAD. Both
-report `nothing to release` when every release is complete.
+report `nothing to release` when every release is complete. A release tag
+on a commit HEAD holds only through a merge passes when the version there
+matches HEAD's.
 
 `docs` waits for docs.rs to build each crates.io library crate released at
 HEAD and fails on a build that failed or never arrived (`--timeout`, minutes,

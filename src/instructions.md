@@ -100,9 +100,12 @@ comes from a fork; without a token no one is credited. GitHub's
 `author_association` cannot decide it, because the App token behind a
 Version PR reads a private organization member as `CONTRIBUTOR`.
 
-Context: `summary`, `pull_request`, `commit`, `continuations`,
-`summary_body` (the summary without one trailing period, for an entry
-that ends with a reference), `summary_has_terminal`, `dependencies`.
+Context: `summary` is a fragment's first line. `continuations` holds each
+later line, and the stock template indents them two spaces under the
+bullet. A second paragraph, a list, or a code fence then stays in the
+entry. The rest are `pull_request`, `commit`, `summary_has_terminal`,
+`dependencies`, and `summary_body`: the summary without one trailing
+period, for an entry that ends with a reference.
 
 ## Version PR
 
@@ -236,7 +239,11 @@ require GitHub auth.
 
 `publish` ships the versions already on HEAD, then a GitHub Release.
 A package's version commit is the newest commit on HEAD's first-parent
-history where its manifest version became the version at HEAD. A release
+history where its manifest version became the version at HEAD. Its release
+tag may instead sit on a commit that HEAD holds only through a merge, such
+as a forkctl append publish on a merge's second parent. That passes
+when the package's version there equals its version at HEAD. A tag on a
+commit HEAD does not contain, or at another version, fails. A release
 is complete when the registry lists the version and its tag, its Release,
 and every declared asset exist; `--skip-assets` (`VERCTL_SKIP_ASSETS`)
 leaves assets out. `publish --plan` lists every version commit with an

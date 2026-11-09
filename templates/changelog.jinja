@@ -10,8 +10,6 @@
 {%- elif not summary_has_terminal -%}
 .
 {%- endif %}
-{%- for line in continuations %}
-{%- if line %}
-  {{ line }}
-{%- endif %}
+{%- for line in continuations -%}
+{{ "\n  " ~ line if line else ("\n" if not loop.last else "") }}
 {%- endfor %}
