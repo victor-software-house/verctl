@@ -662,6 +662,23 @@ horizon:
     notes:
       - 'Raised in review of #130: pull_request_number reads only a trailing (#N), so that default subject yields a bare commit link, before and after VER-055.'
 
+  - id: VER-083
+    title: Version the templates and actions repositories, and any stack
+    scope: verctl
+    outcome: >-
+      verctl tags and versions the templates and actions repositories, which are
+      tagged by hand today, and one design names how it covers every stack the organization
+      ships, so it replaces Changesets and the other version tools.
+    kind: research
+    open: >-
+      Neither repository has a package manifest or registry; how verctl versions a
+      repository that ships a Copier template or GitHub Actions, and whether each action
+      gets its own version, is not designed.
+    notes:
+      - 'Operator, 2026-11-09, on hand-tagging templates v0.0.75: verctl should be the general tool that replaces Changesets and the best-known versioning tools for every stack.'
+      - 'Related: templates ledger row Version and tag the shared actions; pins stay on commit SHAs unless releases are immutable.'
+      - A proper OpenSpec spec follows this row.
+
 archive:
   - id: VER-073
     title: Tag at merge for registry-checked packages
