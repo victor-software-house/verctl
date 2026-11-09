@@ -9,7 +9,7 @@ A break is a change to `.ctl/ver.yaml` keys or meaning, to commands, flags, `VER
 
 ## Breaking items
 
-| Item | State on main | What it breaks | Waits on |
+| Breaking change | State on main | What it breaks | Waits on |
 |:--|:--|:--|:--|
 | BREAKING 8: commands become `status`, `check`, `version`, `propose`, `release`, `release asset`, `release bootstrap`, `render`, `ci`, `instructions` | Not started. The verbs are `instructions`, `status`, `check`, `prepare`, `publish`, `pin`, `assets`, `ci`, `docs`, `semver` ([`src/cli.rs:34-52`][cli]). `docs` and `semver` shipped later and are missing from the planned list | Commands: `prepare`, `publish`, `pin`, `assets` are renamed or removed | Decisions 2 and 8; the place of `docs` and `semver` in the new list is not decided |
 | BREAKING 9: one key per concern in `.ctl/ver.yaml` | Partly shipped. Strict parsing shipped: 9 structs refuse unknown keys, read through ctl-core `Input` ([`src/config.rs`][config]). Every key to remove is still there: `drivers`, `publishers`, `prepare`, `pins`, `patterns` ([`src/config.rs:517-569`][config]). None of `branch`, `registries`, `ecosystems`, `steps`, `at`, `proposal` exists. `runners`, `vendored`, `ci`, and `assets` shipped since and are absent from the plan | Config: removed and renamed keys | Decisions 5 and 6 |
@@ -48,7 +48,9 @@ Stack #258 seals the growable enums in 0.8.0, so later additions stay additive; 
 
 The proposal's eight decisions were approved as recommended on 2026-10-12 (VER-011 note).
 The audit leaves them as recorded and marks in [proposal.md](proposal.md) which ones shipped code settled or contradicts.
-Decision 8 (ship 0.4.0 from an integration branch `next`) is contradicted: 0.4.0 shipped on 2026-10-12 without this change, 0.4.1 to 0.7.4 shipped from `main`, no `next` branch exists, and the 0.8.0 minor is held on stack #258 instead.
+Decision 8 (ship 0.4.0 from an integration branch `next`) does not match what shipped.
+0.4.0 shipped on 2026-10-12 without this change, and 0.4.1 to 0.7.4 shipped from `main`.
+No `next` branch exists; the 0.8.0 minor is held on stack #258 instead.
 
 [main]: https://github.com/victor-software-house/verctl/commit/cb1be28
 [stack]: https://github.com/victor-software-house/verctl/pull/256
