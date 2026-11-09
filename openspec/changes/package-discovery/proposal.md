@@ -21,7 +21,9 @@ Queue row: VER-083.
    A duplicate name, or one manifest claimed twice, fails the load and names both paths.
 5. A member that does not publish (`"private": true`, `publish = false`) is still versioned, as today.
 6. Per-member settings, such as `publisher` or `first_minor`, go in an entry that names the member: `packages: [{workspace: package.json}, {name: "@scope/cli", publisher: bun}]`.
-7. `status` lists every discovered package with the file it came from.
+7. Each package owns files: by default the directory of its version source and everything below it that no deeper package owns, the rule Turborepo uses to map a changed file to its package. `files` overrides it with globs, for a single-file package such as one reusable workflow.
+8. `check` reports a package whose owned files changed since the merge-base with no fragment naming it, so an unchanged package is never bumped and a changed one is not forgotten. A file no package owns is reported once, not counted against every package.
+9. `status` lists every discovered package with the file it came from.
 
 ## Capabilities
 

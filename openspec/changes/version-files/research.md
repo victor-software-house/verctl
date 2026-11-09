@@ -67,7 +67,23 @@ A package is named by its manifest, and a directory that holds a manifest is the
    A regex custom manager can bump other references, such as a mise `git::…?ref=<sha>` include, untested here.
 6. [mise][mise-git] caches a remote task include by URL and ref, so a moving tag stays stale; a new SHA is a new key.
 
-## 6. The changes
+## 6. The model these changes build
+
+The operator ruled on 2026-11-09 that versioning is fine-grained, with defaults that keep a simple repository simple, so that complexity is opt-in.
+A consumer moves a pin only when the thing it pins changed.
+The model is five small primitives that compose:
+
+| Primitive | Holds | Default |
+|:--|:--|:--|
+| Version source | one tracked file and where the version sits in it: a manifest key, a `VERSION` file, or a marker line | chosen by file name |
+| Package | a name, a version source, and the files it owns | one package per repository; owned files are the version source's directory |
+| Discovery | where packages come from: a workspace file, root globs, or an explicit list | the explicit list, as today |
+| Group | packages that share one version | none: each package moves on its own |
+| Tag | the tag name of a package or group | `v{version}` for one package, `{name}@{version}` for several |
+
+A package that changed gets a fragment and a new version; a package that did not keeps its version and its tag, so its pins stay where they are.
+
+## 7. The changes
 
 | Change | Decides |
 |:--|:--|

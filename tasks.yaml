@@ -690,6 +690,9 @@ horizon:
       - 'Operator, 2026-11-09, on hand-tagging templates v0.0.75: verctl should be the general tool that replaces Changesets and the best-known versioning tools for every stack.'
       - 'Related: templates ledger row Version and tag the shared actions; pins stay on commit SHAs unless releases are immutable.'
       - A proper OpenSpec spec follows this row.
+      - '2026-11-09, operator, a version always lives in a tracked file: the stack manifest where one exists, a VERSION file as the fallback; it must work in monorepos the way Turborepo, mise, Bun, and pnpm workspaces find packages.'
+      - '2026-11-09, operator, versioning is fine-grained with defaults that keep a simple repository simple, so complexity is opt-in: a consumer moves a pin only when the thing it pins changed, and the model composes small primitives (version source, package, discovery, group, tag).'
+      - 2026-11-09, the research and five proposals are in openspec/changes/version-files/research.md and the version-files, package-discovery, release-groups, dependent-ranges, and release-immutability changes.
 
 archive:
   - id: VER-079

@@ -20,6 +20,7 @@ Queue row: VER-083.
    2. `pyproject.toml`: `project.version`.
    3. `go.mod`: a `// vX.Y.Z` comment on the `module` line, the form Knope reads and writes. A bump to a new major version is refused unless the module path already ends in that `/vN`.
    4. `VERSION`: a file that holds the version and a newline, and nothing else.
+   5. Any other text file, with `marker: true`: the version sits on one marker line, `# version: X.Y.Z` (or the file's own comment syntax), for a component that is a single file, such as a reusable workflow under `.github/workflows/`, where no other file can sit beside it.
 2. A `path` that names a directory resolves to the manifest it holds, in that order, and to `<dir>/VERSION` when it holds none.
    So `packages: [{name: templates, path: .}]` versions a repository with no manifest.
 3. A package with a `VERSION` file and no `publisher` releases on GitHub only (tag and Release), as `publisher: none` does today.
