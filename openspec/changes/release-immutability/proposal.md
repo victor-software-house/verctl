@@ -31,6 +31,6 @@ Queue row: VER-083.
 
 1. Code: `src/git.rs` (annotated tags), `src/github.rs` (repository settings reads), `src/publish.rs`, tests.
 2. Depends on the draft Release slice of VER-011.
-3. The actions and templates repositories turn on immutable Releases and the tag ruleset; their owner session does that.
+3. The actions and templates repositories turn on immutable Releases and the tag ruleset; their maintainers do that.
 
 [gh-immutable]: https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases
