@@ -99,9 +99,9 @@ impl VersionRow {
 pub struct VersionReport {
     /// The skip label, or `None` when versions were compared.
     pub skip: Option<String>,
-    /// One row per package whose manifest exists in the working tree. A
-    /// missing `VERSION` file in an existing directory reads as `0.0.0` and
-    /// gets a row too.
+    /// One row per package. A missing `VERSION` file in an existing directory
+    /// reads as `0.0.0`; any other file a package cannot read fails the
+    /// report, as it fails `prepare`.
     pub rows: Vec<VersionRow>,
 }
 
@@ -189,9 +189,10 @@ pub fn report(root: &Path, config: &Config) -> Result<VersionReport> {
 /// # Errors
 ///
 /// Returns an error when either merge-base cannot be found or read, as
-/// described for [`crate::git::files_on_merge_base`]. It also returns one when
-/// a package's driver cannot be resolved, or when the driver cannot read a
-/// version from the local manifest or from the merge-base copy.
+/// described for [`crate::git::files_on_merge_base`]. It also returns one,
+/// naming the package, when its current version cannot be read (see
+/// [`crate::config::PackageSpec::current`]) or its driver cannot read a
+/// version from the merge-base or release copy.
 pub fn report_with(
     root: &Path,
     config: &Config,
@@ -214,27 +215,28 @@ pub fn report_with(
     let released = git::files_on_merge_base(root, &rels, release_candidates)?;
     let mut rows = Vec::new();
     for ((spec, remote_raw), released_raw) in config.packages.iter().zip(remotes).zip(released) {
-        let path = root.join(&spec.path);
-        let driver = spec.resolve(config, root)?;
-        let Ok(local_raw) = driver.source(&path) else {
-            continue;
-        };
+        let current = spec.current(config, root)?;
         let context = || format!("package {}: {}", spec.name, spec.path.display());
-        let local = driver.read(&local_raw).with_context(context)?;
+        let read = |raw: &str| {
+            current
+                .driver
+                .read(raw)
+                .map(|version| version.trim().to_owned())
+        };
         let remote = remote_raw
             .as_deref()
-            .map(|raw| driver.read(raw))
+            .map(read)
             .transpose()
             .with_context(|| format!("{} on the merge-base", context()))?;
         let released = released_raw
             .as_deref()
-            .map(|raw| driver.read(raw))
+            .map(read)
             .transpose()
             .with_context(|| format!("{} at the last release", context()))?;
         rows.push(VersionRow {
             name: spec.name.clone(),
             path: spec.path.display().to_string(),
-            local,
+            local: current.version,
             remote,
             released,
         });

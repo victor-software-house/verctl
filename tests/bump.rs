@@ -659,9 +659,15 @@ fn a_dynamic_python_version_fails_the_plan() {
 }
 
 /// Plan and apply one `bump` fragment for `demo`, whose version lives in
-/// `module`, a `go.mod`; returns the plan and the file afterwards.
+/// `module`, a `go.mod`; returns the plan and the file afterwards. Only the
+/// plan and its writes return an error, so a test that expects one cannot
+/// pass on a broken fixture.
+#[expect(
+    clippy::expect_used,
+    reason = "fixture setup fails the test outright; only prepare's errors are the result"
+)]
 fn bump_go_module(module: &str, bump: &str) -> anyhow::Result<(Vec<prepare::PlanEntry>, String)> {
-    let root = TempDir::new()?;
+    let root = TempDir::new().expect("tmp");
     common::write_config(
         root.path(),
         indoc! {"
@@ -670,8 +676,8 @@ fn bump_go_module(module: &str, bump: &str) -> anyhow::Result<(Vec<prepare::Plan
                 path: go.mod
         "},
     );
-    fs::write(root.path().join("go.mod"), module)?;
-    let config = Config::load(&root.path().join(verctl::config::FILE))?;
+    fs::write(root.path().join("go.mod"), module).expect("go.mod");
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
     let fragment = formatdoc! {"
         ---
         demo: {bump}
@@ -679,10 +685,10 @@ fn bump_go_module(module: &str, bump: &str) -> anyhow::Result<(Vec<prepare::Plan
 
         Change.
     "};
-    let fragment = parse_str(&fragment, "a.md")?;
+    let fragment = parse_str(&fragment, "a.md").expect("frag");
     let plan = prepare::plan(&config, &[fragment], root.path())?;
     prepare::apply_plan(&plan)?;
-    let after = fs::read_to_string(root.path().join("go.mod"))?;
+    let after = fs::read_to_string(root.path().join("go.mod")).expect("read");
     Ok((plan, after))
 }
 
@@ -740,9 +746,14 @@ fn a_go_major_needs_the_module_path() {
 
 /// Plan and apply one `patch` fragment for `templates`, whose version lives
 /// in `VERSION`; `None` leaves the file missing. Returns the plan and the
-/// file afterwards.
+/// file afterwards. Only the plan and its writes return an error, as in
+/// [`bump_go_module`].
+#[expect(
+    clippy::expect_used,
+    reason = "fixture setup fails the test outright; only prepare's errors are the result"
+)]
 fn bump_version_file(raw: Option<&str>) -> anyhow::Result<(Vec<prepare::PlanEntry>, String)> {
-    let root = TempDir::new()?;
+    let root = TempDir::new().expect("tmp");
     common::write_config(
         root.path(),
         indoc! {"
@@ -752,9 +763,9 @@ fn bump_version_file(raw: Option<&str>) -> anyhow::Result<(Vec<prepare::PlanEntr
         "},
     );
     if let Some(raw) = raw {
-        fs::write(root.path().join("VERSION"), raw)?;
+        fs::write(root.path().join("VERSION"), raw).expect("VERSION");
     }
-    let config = Config::load(&root.path().join(verctl::config::FILE))?;
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---
@@ -764,10 +775,11 @@ fn bump_version_file(raw: Option<&str>) -> anyhow::Result<(Vec<prepare::PlanEntr
             Patch.
         "},
         "a.md",
-    )?;
+    )
+    .expect("frag");
     let plan = prepare::plan(&config, &[fragment], root.path())?;
     prepare::apply_plan(&plan)?;
-    let after = fs::read_to_string(root.path().join("VERSION"))?;
+    let after = fs::read_to_string(root.path().join("VERSION")).expect("read");
     Ok((plan, after))
 }
 

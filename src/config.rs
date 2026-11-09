@@ -758,11 +758,6 @@ fn release_only_names_no_registry(packages: &[PackageSpec], config: &Config) -> 
     Ok(())
 }
 
-/// verctl has no stock Python publisher, so a `pyproject.toml` package that
-/// names none would release a tag while nothing reached the Python Package
-/// Index. It names one, through `publisher`, `publish`, or a `publishers`
-/// entry under its own name, or says `publisher: none` to release on GitHub
-/// only.
 /// `marker: true` says where the version is, so a `driver` or driver fields
 /// beside it would be a second answer nothing reads. `after` is the
 /// exception: it is what runs after the bump, not where the version is.
@@ -785,6 +780,11 @@ fn a_marker_names_no_driver(packages: &[PackageSpec], _: &Config) -> garde::Resu
     Ok(())
 }
 
+/// verctl has no stock Python publisher, so a `pyproject.toml` package that
+/// names none would release a tag while nothing reached the Python Package
+/// Index. It names one, through `publisher`, `publish`, or a `publishers`
+/// entry under its own name, or says `publisher: none` to release on GitHub
+/// only.
 fn python_names_its_publisher(packages: &[PackageSpec], config: &Config) -> garde::Result {
     for package in packages {
         if package.path.file_name() == Some(OsStr::new("pyproject.toml"))
@@ -1346,7 +1346,13 @@ mod tests {
     /// it fails the load rather than being ignored; `after` still applies.
     #[test]
     fn a_marker_names_no_driver() {
-        for extra in ["driver: cargo", "format: toml", "read: [cat]"] {
+        for extra in [
+            "driver: cargo",
+            "format: toml",
+            "keys: [project.version]",
+            "read: [cat]",
+            "write: [cat]",
+        ] {
             let error = load(&formatdoc! {"
                 packages:
                   - name: ci
