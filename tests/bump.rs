@@ -661,7 +661,7 @@ fn a_dynamic_python_version_fails_the_plan() {
 /// Plan and apply one `bump` fragment for `demo`, whose version lives in
 /// `module`, a `go.mod`; returns the plan and the file afterwards.
 fn bump_go_module(module: &str, bump: &str) -> anyhow::Result<(Vec<prepare::PlanEntry>, String)> {
-    let root = TempDir::new().expect("tmp");
+    let root = TempDir::new()?;
     common::write_config(
         root.path(),
         indoc! {"
@@ -670,8 +670,8 @@ fn bump_go_module(module: &str, bump: &str) -> anyhow::Result<(Vec<prepare::Plan
                 path: go.mod
         "},
     );
-    fs::write(root.path().join("go.mod"), module).expect("go.mod");
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    fs::write(root.path().join("go.mod"), module)?;
+    let config = Config::load(&root.path().join(verctl::config::FILE))?;
     let fragment = formatdoc! {"
         ---
         demo: {bump}
@@ -679,10 +679,10 @@ fn bump_go_module(module: &str, bump: &str) -> anyhow::Result<(Vec<prepare::Plan
 
         Change.
     "};
-    let fragment = parse_str(&fragment, "a.md").expect("frag");
+    let fragment = parse_str(&fragment, "a.md")?;
     let plan = prepare::plan(&config, &[fragment], root.path())?;
     prepare::apply_plan(&plan)?;
-    let after = fs::read_to_string(root.path().join("go.mod")).expect("read");
+    let after = fs::read_to_string(root.path().join("go.mod"))?;
     Ok((plan, after))
 }
 
@@ -742,7 +742,7 @@ fn a_go_major_needs_the_module_path() {
 /// in `VERSION`; `None` leaves the file missing. Returns the plan and the
 /// file afterwards.
 fn bump_version_file(raw: Option<&str>) -> anyhow::Result<(Vec<prepare::PlanEntry>, String)> {
-    let root = TempDir::new().expect("tmp");
+    let root = TempDir::new()?;
     common::write_config(
         root.path(),
         indoc! {"
@@ -752,9 +752,9 @@ fn bump_version_file(raw: Option<&str>) -> anyhow::Result<(Vec<prepare::PlanEntr
         "},
     );
     if let Some(raw) = raw {
-        fs::write(root.path().join("VERSION"), raw).expect("VERSION");
+        fs::write(root.path().join("VERSION"), raw)?;
     }
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let config = Config::load(&root.path().join(verctl::config::FILE))?;
     let fragment = parse_str(
         indoc! {"
             ---
@@ -764,11 +764,10 @@ fn bump_version_file(raw: Option<&str>) -> anyhow::Result<(Vec<prepare::PlanEntr
             Patch.
         "},
         "a.md",
-    )
-    .expect("frag");
+    )?;
     let plan = prepare::plan(&config, &[fragment], root.path())?;
     prepare::apply_plan(&plan)?;
-    let after = fs::read_to_string(root.path().join("VERSION")).expect("read");
+    let after = fs::read_to_string(root.path().join("VERSION"))?;
     Ok((plan, after))
 }
 

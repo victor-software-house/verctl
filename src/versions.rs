@@ -99,7 +99,9 @@ impl VersionRow {
 pub struct VersionReport {
     /// The skip label, or `None` when versions were compared.
     pub skip: Option<String>,
-    /// One row per package whose manifest exists in the working tree.
+    /// One row per package whose manifest exists in the working tree. A
+    /// missing `VERSION` file in an existing directory reads as `0.0.0` and
+    /// gets a row too.
     pub rows: Vec<VersionRow>,
 }
 
