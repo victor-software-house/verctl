@@ -10,7 +10,7 @@
 ## 2. Configuration boundary
 
 - [ ] 2.1 Resolve a directory `path` in `Config::parse`, failing on two manifests → verify: config tests for `path: .` with `VERSION`, a single manifest, and two manifests.
-- [ ] 2.2 Infer `publisher: none` for `VERSION`, marker, and `go.mod` packages (`go.mod` lands with 1.2, `VERSION` with 1.3), and fail a `pyproject.toml` package with no publisher → verify: config and `publish --plan` tests.
+- [ ] 2.2 Infer `publisher: none` for `VERSION`, marker, and `go.mod` packages (`go.mod` lands with 1.2, `VERSION` with 1.3, the marker with 1.4), and fail a `pyproject.toml` package with no publisher → verify: config and `publish --plan` tests.
 - [ ] 2.3 Fail the load when two packages share a changelog → verify: a config test naming both packages and `changelog`.
 
 ## 3. Bundle

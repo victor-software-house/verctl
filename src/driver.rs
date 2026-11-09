@@ -24,6 +24,8 @@ pub enum Text {
     GoMod,
     /// A `VERSION` file that holds one version and nothing else.
     Version,
+    /// Any file, with the version on its one `version:` marker line.
+    Marker,
 }
 
 impl Text {
@@ -31,12 +33,14 @@ impl Text {
         match self {
             Self::GoMod => crate::gomod::read(raw),
             Self::Version => read_version_file(raw),
+            Self::Marker => crate::marker::read(raw),
         }
     }
 
     fn write(self, raw: &str, new_version: &str) -> Result<String> {
         match self {
             Self::GoMod => crate::gomod::write(raw, new_version),
+            Self::Marker => crate::marker::write(raw, new_version),
             Self::Version => {
                 read_version_file(raw)?;
                 Ok(format!("{new_version}\n"))
@@ -47,7 +51,7 @@ impl Text {
     fn accepts(self, raw: &str, new_version: &str) -> Result<()> {
         match self {
             Self::GoMod => crate::gomod::accepts(raw, new_version),
-            Self::Version => Ok(()),
+            Self::Version | Self::Marker => Ok(()),
         }
     }
 }

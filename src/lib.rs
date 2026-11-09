@@ -71,6 +71,8 @@ pub mod git;
 pub mod github;
 /// A Go module's version on its `go.mod` module line.
 pub(crate) mod gomod;
+/// A package's version on one marker line of any file.
+pub(crate) mod marker;
 pub mod members;
 pub mod pending;
 pub mod pins;

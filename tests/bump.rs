@@ -798,3 +798,47 @@ fn a_version_file_with_more_than_a_version_fails() {
         assert!(format!("{error:#}").contains("VERSION"), "{raw}: {error:#}");
     }
 }
+
+/// A reusable workflow is a package of one file: `marker: true` moves its one
+/// `# version:` line and nothing else, and needs no publisher.
+#[test]
+fn a_marker_line_versions_a_single_file() {
+    let root = TempDir::new().expect("tmp");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: ci
+                path: .github/workflows/ci.yml
+                marker: true
+                changelog: .github/workflows/ci.CHANGELOG.md
+        "},
+    );
+    let workflow = indoc! {"
+        # version: 1.2.0
+        name: CI
+        on:
+          workflow_call:
+    "};
+    fs::create_dir_all(root.path().join(".github/workflows")).expect("dir");
+    fs::write(root.path().join(".github/workflows/ci.yml"), workflow).expect("workflow");
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let fragment = parse_str(
+        indoc! {"
+            ---
+            ci: patch
+            ---
+
+            Patch.
+        "},
+        "a.md",
+    )
+    .expect("frag");
+    let plan = prepare::plan(&config, &[fragment], root.path()).expect("plan");
+    assert_eq!(plan[0].to, "1.2.1");
+    prepare::apply_plan(&plan).expect("apply");
+    assert_eq!(
+        fs::read_to_string(root.path().join(".github/workflows/ci.yml")).expect("read"),
+        workflow.replace("1.2.0", "1.2.1")
+    );
+}
