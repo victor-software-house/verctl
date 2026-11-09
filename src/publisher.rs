@@ -261,11 +261,11 @@ pub fn resolve(
     spec: &crate::config::PackageSpec,
     manifest: &Path,
 ) -> Result<(String, String, Vec<String>)> {
-    if spec.publisher.as_deref() == Some(RELEASE_ONLY) {
+    let name = publisher_name(config, spec);
+    if name == RELEASE_ONLY {
         let noun = spec.noun.clone().unwrap_or_else(|| "package".into());
         return Ok(("release only".into(), noun, Vec::new()));
     }
-    let name = publisher_name(spec);
     let mut publisher = match (PublisherSpec::stock(name), config.publishers.get(name)) {
         (Some(stock), Some(over)) => stock.merge(over.clone()),
         (Some(stock), None) => stock,
@@ -300,18 +300,32 @@ pub fn resolve(
     Ok((name.to_owned(), noun, argv))
 }
 
-/// The publisher a package names, or the stock one its manifest file implies,
-/// or a `publishers` entry under the package's own name.
-fn publisher_name(spec: &crate::config::PackageSpec) -> &str {
-    let inferred = spec
-        .path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .and_then(stock_publisher_for_file);
-    spec.publisher
-        .as_deref()
-        .or(inferred)
-        .unwrap_or(spec.name.as_str())
+/// The publisher a package names; else the stock one its manifest file
+/// implies; else a `publishers` entry or `publish` command under the
+/// package's own name; else `none` for a version source no registry reads,
+/// such as `go.mod`, whose release is its tag.
+pub(crate) fn publisher_name<'a>(
+    config: &crate::config::Config,
+    spec: &'a crate::config::PackageSpec,
+) -> &'a str {
+    if let Some(name) = spec.publisher.as_deref() {
+        return name;
+    }
+    let file_name = spec.path.file_name().and_then(|name| name.to_str());
+    if let Some(stock) = file_name.and_then(stock_publisher_for_file) {
+        return stock;
+    }
+    let names_its_own = spec.publish_argv.is_some() || config.publishers.contains_key(&spec.name);
+    if !names_its_own && file_name.is_some_and(releases_on_github_only) {
+        return RELEASE_ONLY;
+    }
+    spec.name.as_str()
+}
+
+/// Version sources whose release is a tag and a Release: a Go module is
+/// fetched from its tag, so no upload exists to run.
+fn releases_on_github_only(file_name: &str) -> bool {
+    file_name == "go.mod"
 }
 
 /// How `publish` decides whether `version` of a package is already on its
@@ -341,10 +355,10 @@ pub fn registry_check(
     root: &Path,
     version: &str,
 ) -> Result<RegistryCheck> {
-    if spec.publisher.as_deref() == Some(RELEASE_ONLY) {
+    let name = publisher_name(config, spec);
+    if name == RELEASE_ONLY {
         return Ok(RegistryCheck::Unchecked);
     }
-    let name = publisher_name(spec);
     let over = config.publishers.get(name);
     let publisher = match (PublisherSpec::stock(name), over) {
         (Some(stock), Some(over)) => stock.merge(over.clone()),
@@ -492,7 +506,7 @@ pub fn workspace_members(
         || spec.query.is_some()
         || over.is_some_and(|over| over.argv.is_some() || over.query.is_some());
     let manifest = root.join(&spec.path);
-    if publisher_name(spec) != "cargo" || overridden || !members::is_virtual(&manifest)? {
+    if publisher_name(config, spec) != "cargo" || overridden || !members::is_virtual(&manifest)? {
         return Ok(None);
     }
     members::members(&manifest).map(Some)
@@ -634,6 +648,41 @@ mod tests {
         let error = resolve(&config, &config.packages[1], manifest).unwrap_err();
         assert!(
             format!("{error:#}").contains("renders an empty command"),
+            "{error:#}"
+        );
+    }
+
+    /// A Go module is fetched from its tag, so with nothing said it releases
+    /// on GitHub only; a publisher it names still wins.
+    #[test]
+    fn a_go_module_releases_on_github_only() {
+        let config = crate::config::Config::parse(indoc! {"
+            packages:
+              - name: lib
+                path: go.mod
+              - name: tool
+                path: tools/go.mod
+                publish: [goreleaser, release]
+        "})
+        .unwrap();
+        let (label, _, argv) = resolve(&config, &config.packages[0], Path::new("go.mod")).unwrap();
+        assert_eq!((label.as_str(), argv.len()), ("release only", 0));
+        let (_, _, argv) =
+            resolve(&config, &config.packages[1], Path::new("tools/go.mod")).unwrap();
+        assert_eq!(argv, ["goreleaser", "release"]);
+        assert_eq!(
+            registry_check(&config, &config.packages[0], Path::new("."), "0.1.0").unwrap(),
+            RegistryCheck::Unchecked
+        );
+        let error = crate::config::Config::parse(indoc! {"
+            packages:
+              - name: lib
+                path: go.mod
+                registry: proxy
+        "})
+        .expect_err("a registry nothing reads");
+        assert!(
+            format!("{error:#}").contains("publisher: none"),
             "{error:#}"
         );
     }

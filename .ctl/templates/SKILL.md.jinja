@@ -102,7 +102,9 @@ package's bump, or when a fragment names a package that is not in `packages`.
 assets), with no registry upload; use it for private binaries.
 verctl has no stock Python publisher, so a `pyproject.toml` package names
 its `publisher`, or `none`; one whose `project.dynamic` lists `version`
-fails, because its build backend sets the version.
+fails, because its build backend sets the version. A `go.mod` package keeps
+its version as `// vX.Y.Z` on the `module` line and, with no publisher,
+releases on GitHub only; a v2 bump needs the `/v2` module path first.
 
 An `assets` tarball holds the one `binary`. Set `assets.dir` and
 `assets.files` instead when it holds more (a second executable, a service
