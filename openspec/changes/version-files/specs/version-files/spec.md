@@ -8,7 +8,8 @@ A `driver` key or inline driver fields SHALL still override the stock driver.
 #### Scenario: A Python package needs no driver
 
 - **WHEN** `.ctl/ver.yaml` declares `{name: demo, path: pyproject.toml, publisher: none}` and `pyproject.toml` holds `[project]` with `version = "0.3.1"`
-- **THEN** `verctl status --format json` reports `demo` at `0.3.1`
+- **AND** `.changeset/fix.md` holds `demo: patch`
+- **THEN** `verctl prepare --dry-run` plans `demo` from `0.3.1` to `0.3.2`
 
 #### Scenario: A declared driver still wins
 
@@ -18,17 +19,26 @@ A `driver` key or inline driver fields SHALL still override the stock driver.
 ### Requirement: pyproject.toml holds the version in project.version
 
 The stock `pyproject.toml` driver SHALL read and write `project.version`, and SHALL keep every other byte of the file.
-When `project.dynamic` lists `version`, verctl SHALL fail the load, name the package, and say that the version comes from a build backend and that a `VERSION` file or a driver fixes it.
+When `project.dynamic` lists `version`, every command that reads the version SHALL fail, name the package, and say that the version comes from a build backend and that a `VERSION` file or a driver fixes it.
 
 #### Scenario: prepare bumps a Python package
 
 - **WHEN** `pyproject.toml` holds `version = "0.3.1"` under `[project]` and `.changeset/fix.md` holds `demo: patch`
 - **THEN** `verctl prepare` writes `version = "0.3.2"` and leaves the rest of `pyproject.toml` byte for byte
 
-#### Scenario: A dynamic version fails the load
+#### Scenario: A dynamic version fails
 
-- **WHEN** `pyproject.toml` holds `dynamic = ["version"]` under `[project]`
+- **WHEN** `pyproject.toml` holds `dynamic = ["version"]` under `[project]`, and `.changeset/fix.md` holds `demo: patch`
 - **THEN** `verctl check` exits non-zero and its error names `demo`, `project.dynamic`, and `VERSION`
+
+### Requirement: prepare names the uv.lock refresh
+
+When a `uv.lock` sits beside a `pyproject.toml` package or above it in the repository, `prepare` SHALL name `uv lock` as the bump's follow-up, as it names `cargo update --workspace` for `Cargo.lock`, because the lockfile records the project's own version.
+
+#### Scenario: A uv project bumps
+
+- **WHEN** the repository root holds `uv.lock` beside `pyproject.toml`, and `.changeset/fix.md` holds `demo: patch`
+- **THEN** `verctl prepare` lists `uv lock` under its next steps
 
 ### Requirement: go.mod holds the version in a comment on the module line
 
@@ -115,7 +125,7 @@ A directory that holds more than one of those manifests SHALL fail the load, nam
 ### Requirement: Packages with no registry release on GitHub only
 
 A package whose version source is a `VERSION` file, a marker line, or `go.mod`, and that declares no `publisher`, SHALL release as `publisher: none` does: a tag and a Release, with no registry upload.
-A `pyproject.toml` package with no `publisher` SHALL fail the load and name the `publisher` key, because verctl has no stock Python publisher yet.
+A `pyproject.toml` package with no `publisher`, `publish`, or `publishers` entry under its name SHALL fail the load and name the `publisher` key, because verctl has no stock Python publisher yet.
 
 #### Scenario: A VERSION package releases on GitHub
 
@@ -124,8 +134,8 @@ A `pyproject.toml` package with no `publisher` SHALL fail the load and name the 
 
 #### Scenario: A Python package must name its publisher
 
-- **WHEN** a package has `path: pyproject.toml` and no `publisher`
-- **THEN** `verctl check` exits non-zero and its error names `publisher`
+- **WHEN** a package has `path: pyproject.toml`, no `publisher`, no `publish`, and no `publishers` entry under its name
+- **THEN** every command that loads `.ctl/ver.yaml` exits non-zero and its error names `publisher`
 
 ### Requirement: Two packages never share a changelog
 

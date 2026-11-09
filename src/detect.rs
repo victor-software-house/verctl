@@ -24,6 +24,15 @@ fn cargo_follow_up(dir: &Path) -> Option<String> {
     holds(dir, "Cargo.lock").then(|| "cargo update --workspace".into())
 }
 
+/// `uv.lock` records the project's own version, so a bump leaves it stale.
+/// `uv lock` keeps every locked dependency it can ([uv: upgrading locked
+/// package versions]), so only that version moves.
+///
+/// [uv: upgrading locked package versions]: https://docs.astral.sh/uv/concepts/projects/sync/#upgrading-locked-package-versions
+fn python_follow_up(dir: &Path) -> Option<String> {
+    holds(dir, "uv.lock").then(|| "uv lock".into())
+}
+
 fn javascript_follow_up(dir: &Path) -> Option<String> {
     if let Some(name) = package_manager_field(&dir.join("package.json")) {
         return Some(install_command(&name));

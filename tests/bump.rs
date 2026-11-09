@@ -565,3 +565,95 @@ fn prepare_reads_first_minor_from_the_package() {
     let plan = prepare::plan(&config, &[minor], root.path()).expect("plan");
     assert_eq!(plan[0].to, "0.1.0");
 }
+
+/// The stock `pyproject.toml` driver moves `project.version` and nothing
+/// else, comments and layout included.
+#[test]
+fn pyproject_changes_only_the_version() {
+    let raw = indoc! {r#"
+        [project]
+        name = "demo"
+        version = "0.3.1" # released by verctl
+        dependencies = ["httpx>=0.27"]
+
+        [tool.uv]
+        dev-dependencies = []
+    "#};
+    let root = TempDir::new().expect("tmp");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: pyproject.toml
+                publisher: none
+        "},
+    );
+    fs::write(root.path().join("pyproject.toml"), raw).expect("pyproject");
+    fs::write(root.path().join("uv.lock"), "version = 1\n").expect("lock");
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let fragment = parse_str(
+        indoc! {"
+            ---
+            demo: patch
+            ---
+
+            Patch.
+        "},
+        "a.md",
+    )
+    .expect("frag");
+    let plan = prepare::plan(&config, &[fragment], root.path()).expect("plan");
+    assert_eq!(
+        (plan[0].from.as_str(), plan[0].to.as_str()),
+        ("0.3.1", "0.3.2")
+    );
+    assert_eq!(plan[0].driver.after(), Some("uv lock"));
+    prepare::apply_plan(&plan).expect("apply");
+    assert_eq!(
+        fs::read_to_string(root.path().join("pyproject.toml")).expect("read"),
+        raw.replace(r#""0.3.1""#, r#""0.3.2""#)
+    );
+}
+
+/// A version the build backend computes is not verctl's to bump, so the
+/// plan stops and says what would make it so.
+#[test]
+fn a_dynamic_python_version_fails_the_plan() {
+    let root = TempDir::new().expect("tmp");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: pyproject.toml
+                publisher: none
+        "},
+    );
+    fs::write(
+        root.path().join("pyproject.toml"),
+        indoc! {r#"
+            [project]
+            name = "demo"
+            dynamic = ["version"]
+        "#},
+    )
+    .expect("pyproject");
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let fragment = parse_str(
+        indoc! {"
+            ---
+            demo: patch
+            ---
+
+            Patch.
+        "},
+        "a.md",
+    )
+    .expect("frag");
+    let error = prepare::plan(&config, &[fragment], root.path()).expect_err("dynamic");
+    let message = format!("{error:#}");
+    for word in ["demo", "project.dynamic", "VERSION"] {
+        assert!(message.contains(word), "{word}: {message}");
+    }
+}

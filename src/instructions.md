@@ -212,6 +212,18 @@ verctl they install is independent of the version they release.
 `?ref=v…` includes) to the versions on HEAD; `prepare` calls it, so
 the Version PR commit carries them.
 
+A package's `path` names the file that holds its version. `Cargo.toml`,
+`package.json`, and `pyproject.toml` need no driver: `prepare` rewrites
+`workspace.package.version` or `package.version`, `version`, and
+`project.version` in place and keeps every other byte. A `pyproject.toml`
+whose `project.dynamic` lists `version` fails, because its build backend
+sets the version; write a static one, keep it in a `VERSION` file, or
+declare a driver. verctl has no stock Python publisher, so a
+`pyproject.toml` package names its `publisher`, or `none`. A lockfile
+beside the manifest or above it in the repository adds its refresh to the
+next steps: `cargo update --workspace` for `Cargo.lock`, the package
+manager's install for a JavaScript lockfile, and `uv lock` for `uv.lock`.
+
 `prepare` writes versions, per-package CHANGELOG.md (next to each
 manifest), and consumes fragments (same as `changeset version`).
 `prepare.after` is one argv run after bumps; `prepare.stage`

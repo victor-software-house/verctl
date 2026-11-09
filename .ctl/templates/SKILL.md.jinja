@@ -100,6 +100,9 @@ package's bump, or when a fragment names a package that is not in `packages`.
 
 `publisher: none` on a package releases it on GitHub only (tag, Release,
 assets), with no registry upload; use it for private binaries.
+verctl has no stock Python publisher, so a `pyproject.toml` package names
+its `publisher`, or `none`; one whose `project.dynamic` lists `version`
+fails, because its build backend sets the version.
 
 An `assets` tarball holds the one `binary`. Set `assets.dir` and
 `assets.files` instead when it holds more (a second executable, a service
