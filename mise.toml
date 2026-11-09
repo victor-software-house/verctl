@@ -66,7 +66,7 @@ includes = [
   "mise-tasks",
   "git::https://github.com/victor-software-house/qctl.git//tasks/q?ref=v0.6.0",
   # The shared Rust tasks, at actions main, 2026-11-09.
-  "git::https://github.com/victor-software-house/actions.git//tasks/rust.toml?ref=4d956dddb9db5d49df63949c0195c05f46dfa93b",
+  "git::https://github.com/victor-software-house/actions.git//tasks/rust.toml?ref=a02d0e82d8003c63499e6d5dd526795830f20f1a",
   # template:check, template:off, and template:on, at actions main, 2026-11-09.
-  "git::https://github.com/victor-software-house/actions.git//tasks/template.toml?ref=4d956dddb9db5d49df63949c0195c05f46dfa93b",
+  "git::https://github.com/victor-software-house/actions.git//tasks/template.toml?ref=a02d0e82d8003c63499e6d5dd526795830f20f1a",
 ]
