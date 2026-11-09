@@ -664,7 +664,7 @@ horizon:
 
   - id: VER-083
     title: Version the templates and actions repositories, and any stack
-    scope: scope
+    scope: verctl
     outcome: >-
       verctl tags and versions the templates and actions repositories, which are
       tagged by hand today, and one design names how it covers every stack the organization
