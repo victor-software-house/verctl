@@ -42,7 +42,7 @@ render=$(pwd)
 cd "$(git rev-parse --show-toplevel)" || exit 1
 files=$(git ls-files ':(glob).github/workflows/*.yml' ':(glob).github/workflows/*.yaml') || exit 1
 [ -n "$files" ] || exit 0
-policy=$(git rev-parse --git-path 'workflow-policy/4d956dddb9db5d49df63949c0195c05f46dfa93b') || exit 1
+policy=$(git rev-parse --git-path 'workflow-policy/a02d0e82d8003c63499e6d5dd526795830f20f1a') || exit 1
 texts=$(git rev-parse --git-path "workflow-texts.$$.yaml") || exit 1
 trap 'rm -f "$texts"' EXIT
 trap 'exit 129' HUP
@@ -60,7 +60,7 @@ if [ ! -d "$policy" ]; then
   trap 'rm -rf "${policy:?}.part"; rmdir "$policy.lock" 2>/dev/null; rm -f "$texts"' EXIT
   if [ ! -d "$policy" ]; then
     rm -rf "${policy:?}.part"
-    if conftest pull --absolute-paths -p "$policy.part" 'git::https://github.com/victor-software-house/actions.git//policy?ref=4d956dddb9db5d49df63949c0195c05f46dfa93b'; then mv "$policy.part" "$policy"; fi
+    if conftest pull --absolute-paths -p "$policy.part" 'git::https://github.com/victor-software-house/actions.git//policy?ref=a02d0e82d8003c63499e6d5dd526795830f20f1a'; then mv "$policy.part" "$policy"; fi
   fi
   trap 'rm -f "$texts"' EXIT
   rmdir "$policy.lock"
