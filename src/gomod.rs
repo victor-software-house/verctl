@@ -122,12 +122,13 @@ fn refuse_deprecated(line: &ModuleLine<'_>) -> Result<()> {
     Ok(())
 }
 
-/// Whether the comment block directly above the module line holds a paragraph
-/// that starts with `Deprecated:`, the notice Go's [`deprecatedRE`] reads.
+/// Whether Go would read the module line's trailing comment as part of a
+/// deprecation notice in the comment block directly above it.
 ///
-/// A blank line ends the block, as it does for Go. A paragraph starts at the
-/// block's first line or after an empty `//` line, so `Deprecated:` in the
-/// middle of a paragraph is not a notice.
+/// A blank line ends the block, as it does for Go. Go's [`deprecatedRE`]
+/// takes the first paragraph that starts with `Deprecated:` and ends the
+/// notice at the next empty `//` line. The trailing comment joins the last
+/// paragraph, so only a notice in that paragraph would take the version.
 ///
 /// [`deprecatedRE`]: https://github.com/golang/mod/blob/b5136e5ba156da612a1efc6e49b55988a134a5e0/modfile/rule.go#L877
 fn deprecated_above(above: &str) -> bool {
@@ -138,12 +139,14 @@ fn deprecated_above(above: &str) -> bool {
         .map_while(|line| line.strip_prefix("//"))
         .map(str::trim)
         .collect();
-    let mut paragraph_start = true;
-    block.iter().rev().any(|text| {
-        let notice = paragraph_start && text.starts_with("Deprecated:");
-        paragraph_start = text.is_empty();
-        notice
-    })
+    let top_down: Vec<&str> = block.into_iter().rev().collect();
+    let paragraphs: Vec<&[&str]> = top_down.split(|text| text.is_empty()).collect();
+    let notice = paragraphs.iter().position(|paragraph| {
+        paragraph
+            .first()
+            .is_some_and(|text| text.starts_with("Deprecated:"))
+    });
+    notice.is_some() && notice == paragraphs.len().checked_sub(1)
 }
 
 fn version_in(comment: &str) -> Result<String> {
@@ -323,6 +326,16 @@ mod tests {
             module example.com/demo
         "};
         assert!(write(later_paragraph, "0.0.1").is_err());
+        let notice_then_docs = indoc! {"
+            // Deprecated: use example.com/next.
+            //
+            // More docs.
+            module example.com/demo
+        "};
+        assert_eq!(
+            write(notice_then_docs, "0.0.1").unwrap(),
+            notice_then_docs.replace("demo\n", "demo // v0.0.1\n")
+        );
     }
 
     #[test]
