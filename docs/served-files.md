@@ -3,7 +3,7 @@
 A **served file** is a file consumers read out of a tag: the task file a
 `?ref=` include fetches, the example catalog someone copies, the README line
 they paste. Its version must be correct in the tree the tag names, which is the
-Version PR commit — publish pushes nothing but the tag, so a version written
+Version PR commit: publish pushes nothing but the tag, so a version written
 after publish is never served. The tag is created at that commit
 (`target_commitish`), then re-read; a tag that names another commit fails
 instead of being reused.
@@ -16,7 +16,7 @@ This document is the contract for how those files stay correct. It is the design
 1. **The tag is right.** A consumer fetching any tag gets versions that agree
    with that release, in every file it serves.
 2. **A repo says almost nothing.** Serving one more file is one more file, not
-   another config entry — configuration does not grow with a repo's surface.
+   another config entry. Configuration does not grow with a repo's surface.
 3. **Wrong stops the release.** Drift is never served: it fails, naming the file
    and the field.
 4. **One place per fact.** A version lives in a manifest; a served file is
@@ -28,7 +28,7 @@ This document is the contract for how those files stay correct. It is the design
   and how.
 - **Generate what you can, match only what you cannot.** A generated file cannot
   drift. Patterns exist for files that must be hand-authored.
-- **Metadata belongs to the file it describes** — inside the template, not in a
+- **Metadata belongs to the file it describes**: inside the template, not in a
   shared manifest that every change has to edit. (chezmoi reaches the same
   conclusion and puts it in the file *name*; it has to know a file's attributes
   before parsing it, and verctl parses every template anyway.)
@@ -52,7 +52,7 @@ syntax:
 ```
 
 `q.jinja` above serves `tasks/q/q`. Jinja has no frontmatter, but a top-level
-`{% set %}` is its equivalent — an export, readable from the evaluated state —
+`{% set %}` is its equivalent (an export, readable from the evaluated state),
 so the metadata travels inside the file it describes. No manifest lists
 templates, no directory tree is mirrored to spell out a path, and nothing sits
 beside the file it generates.
@@ -63,11 +63,11 @@ The whole schema, and what each field means unsaid:
 |:--|:--|:--|
 | `path` | directory, relative, never upward | the repository root |
 | `name` | one file name | this template's own name, without the suffix |
-| `executable` | boolean | `false` — 0644 |
+| `executable` | boolean | `false` (0644) |
 
 `executable` is the only mode there is to declare: git records "only 0755 and
 0644 … for regular files" ([gitformat-index]), and its other modes are not files
-a template renders — 120000 is a symlink, 160000 a gitlink, 040000 a tree. So
+a template renders: 120000 is a symlink, 160000 a gitlink, 040000 a tree. So
 there is no `mode` field and no third state. Silence is a declaration, not an
 exception: a served file whose template says nothing is served 0644, and a stale
 0755 is corrected.
@@ -76,8 +76,8 @@ Declarations are checked at the boundary, once, before anything is written:
 serde parses the exports into one schema and [garde] validates it, so
 `path = 5`, `path = "../.."`, and `name = "tasks/q"` each fail the release
 naming the field. `.ctl/ver.yaml` is held to the same standard by the same
-validators — a pin that reaches out of the repository fails exactly the way a
-template that does would. Any other export is the template's own business — a `tool`
+validators: a pin that reaches out of the repository fails exactly the way a
+template that does would. Any other export is the template's own business: a `tool`
 name it uses to build a line is not a declaration.
 
 Trim declarations with `{%- … -%}`: a shebang has to stay on line one.
@@ -86,7 +86,7 @@ Committing one template adds a served file; deleting it retires it. Only a
 tracked template renders, because `prepare` stages what it writes: one git does
 not carry would put a served file on the tag with no source beside it, and
 `check` would have nothing to compare against on a fresh clone. An untracked
-template in the source tree therefore **fails the run, naming the file** —
+template in the source tree therefore **fails the run, naming the file**:
 commit it or delete it. A template *outside* the source tree is not verctl's to
 render, which is what keeps this crate's own changelog templates out of this, and
 that one is silent because it was never a claim to serve anything.
@@ -116,7 +116,7 @@ Reach for a `pins` entry only for a file that **cannot** be generated:
 - it must lag the release (a repo's own bootstrap pin names a tarball that has
   to exist already, so it can only move to a version that already shipped);
 - it is owned by a tool with its own format contract, where a structural edit
-  beats a rendered file — a mise `[tools]` table is the one built-in case.
+  beats a rendered file: a mise `[tools]` table is the one built-in case.
 
 If a file could be a template, make it one. A `pins` entry is a standing
 admission that a file is hand-authored.
@@ -165,7 +165,7 @@ pins:
 - **Give the version a right-hand boundary.** A match ending in literal text has
   one, so `verctl@{version} today` reads `verctl@1.0.0-rc.1 today` as no match
   at all and the arity stops the release. A match ending *at* the placeholder
-  has none, and will rewrite the numeric head of a longer version — leaving the
+  has none, and will rewrite the numeric head of a longer version, leaving the
   tail. `whole_line` is the boundary for a line the match owns; otherwise put
   the text that follows into `match`. Nothing can be inferred for you here:
   `download/v{version}` against `download/v1.2.3-linux-x64.tar.gz` is correct
@@ -177,7 +177,7 @@ pins:
   shell assignment is not: it owns its line, and saying so beats naming a
   neighbour, because a match that spells out the text after it breaks when that
   text moves. Owning the line also decides two cases the version alphabet
-  cannot: the same words inside a sentence are not the line, and a line ending
+  cannot. The same words inside a sentence are not the line. A line ending
   in `0.1.1-rc1` does not end where the version does, so it fails to match and
   the declared arity stops the release.
 - `occurrences` is **how often the file must say it**. A bare count is not
@@ -185,7 +185,7 @@ pins:
 
   | `occurrences` | Means | For |
   |:--|:--|:--|
-  | omitted | exactly one | a normal pin — the default |
+  | omitted | exactly one | a normal pin (the default) |
   | `"once"` | exactly one | the same thing, said out loud |
   | `"many"` | one or more, count unknown | a document whose examples come and go, where only "still tracked" is worth asserting |
   | `"never"` | none | a spelling that was retired and must stay gone |
@@ -204,7 +204,7 @@ pins:
 
 Exactly one thing is silently skipped: a `pins` entry for a package **no
 fragment bumped**. That version did not change, so the file must not either.
-Templates are not skipped — rendering the same versions twice produces the same
+Templates are not skipped: rendering the same versions twice produces the same
 bytes, and they are rendered from every package's version (§3), so a served file
 is written whole or the release stops.
 
@@ -213,7 +213,7 @@ Everything else fails the run, before anything is written:
 - a pattern whose arity does not match
 - a pattern with no placeholder, or more than one
 - a `patterns` name nothing under `patterns` declares, or one file lists twice
-- a declared pattern no file lists — dead configuration, not a spare
+- a declared pattern no file lists: dead configuration, not a spare
 - a `tool` pin whose `[tools]` table or entry is missing
 - a template that does not parse, or names something the release does not have
 - a template in the source tree that git does not track
@@ -224,12 +224,12 @@ written until every rewrite in it succeeds.
 
 ## 6. Validated at every moment that can serve a wrong version
 
-- **`prepare`** — rewrites pins and renders templates onto the Version PR
+- **`prepare`**: rewrites pins and renders templates onto the Version PR
   commit, the commit the tag will name, and stages them automatically. A repo
   never lists rendered outputs in `prepare.stage`.
-- **`prepare --dry-run` / `--preview`** — runs the same validation and writes
+- **`prepare --dry-run` / `--preview`**: runs the same validation and writes
   nothing.
-- **`check`** — every PR and push: patterns still match at their declared
+- **`check`** (every PR and push): patterns still match at their declared
   arity, and every served file still equals what its template renders at the
   versions on HEAD. This is the gate that catches a served file edited by hand
   instead of through its template.

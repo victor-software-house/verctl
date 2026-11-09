@@ -20,10 +20,10 @@ them appear in a single-package repo:
   edge case, it is their normal case.
 
 Their read of what already fits: the fragment format is identical, so no
-migration; the changelog templates render the same fields in the same branch
-order as theirs, including the internal-author filtering; the bun publisher is
-their exact invocation, and discovering `bunfig.toml` rather than requiring
-`.npmrc` matters to them because their repo forbids `.npmrc` outright — bun
+migration. The changelog templates render the same fields in the same branch
+order as theirs, including the internal-author filtering. The bun publisher is
+their exact invocation. Discovering `bunfig.toml` rather than requiring
+`.npmrc` matters to them, because their repo forbids `.npmrc` outright: bun
 honours it first and silently discards a committed scope-token contract.
 
 ## 1. A release must tag every artifact it shipped
@@ -42,7 +42,7 @@ for a tag that does not exist.
 Their tags and their Releases are two separate steps, never interleaved.
 
 **Tags first, git-side.** One annotated tag per released package at an explicit
-SHA — `git tag -a <name>@<version> <sha>` — then a single
+SHA (`git tag -a <name>@<version> <sha>`), then a single
 `git push --atomic origin refs/tags/a:refs/tags/a …` for the whole set. Three
 rules guard it: any expected tag already at another commit refuses, a *partial*
 set refuses rather than being completed, and a full set at the right SHA is
@@ -57,7 +57,7 @@ package's own changelog between its version heading and the next.
 That ordering matters more than it looks. Because the tag exists first, the
 Releases API's `target_commitish` is documented as unused, so the question of
 where a Release puts a tag never arises. The atomicity worth having is over the
-**tags**, not the Releases — a Release is derived state that can be recreated
+**tags**, not the Releases. A Release is derived state that can be recreated
 from a tag and a changelog section; a tag is what consumers resolve.
 
 Filed as **VER-039** (the shape) and **VER-038** (creating a set whole).
@@ -99,21 +99,21 @@ propagation delay and a registry that accepted a publish and served the previous
 version. Treating "already exists" as success is right for idempotency, and it
 means a retry can pass without anything downstream having been verified.
 
-Neither belongs in verctl — they are stack-specific. What they cannot do is wire
+Neither belongs in verctl: they are stack-specific. What they cannot do is wire
 them, because `prepare` has `after` and publish has no equivalent.
 
 Filed as **VER-034**.
 
 ## 4. The commit a release publishes from should be proved
 
-They keep both of verctl's checks and add three: the release SHA is an ancestor
-of the default branch, the workflow files at that SHA do not differ from the
-default branch, and the first-parent branch carries exactly one version commit.
+They keep both of verctl's checks and add three. The release SHA is an ancestor
+of the default branch. The workflow files at that SHA do not differ from the
+default branch. The first-parent branch carries exactly one version commit.
 
 The workflow-drift one is not obvious and it cost them a release. Retrying an
 old release SHA runs the workflow **at that SHA**. If permissions or steps
-changed since, the run can publish to the registry and then fail to create tags
-— the worst split available, because the registry is not revertible and the tags
+changed since, the run can publish to the registry and then fail to create tags.
+That is the worst split available, because the registry is not revertible and the tags
 are the audit trail.
 
 Two of the three have explicit waivers, and a waived run prints that it was
@@ -129,8 +129,8 @@ Filed as **VER-035**.
 Two sites, one law. `publisher::expand` drops any argv part containing an
 unresolved placeholder, so a typo shortens the command line instead of failing
 and the error surfaces downstream wearing someone else's name.
-`prove_default_history` returns success on four conditions — no repo, no head,
-unpeelable head, no upstream — each defensible alone, but together the check can
+`prove_default_history` returns success on four conditions (no repo, no head,
+unpeelable head, no upstream), each defensible alone, but together the check can
 pass by not running, in exactly the CI shapes where it matters most.
 
 Filed as **VER-036**.
@@ -141,7 +141,7 @@ Four, each of which cost them time:
 
 1. What `--access` does once a registry resolves, and whether a restricted
    package can be published as public by accident.
-2. What the token means locally, where a `gh` session is not it — the failure
+2. What the token means locally, where a `gh` session is not it: the failure
    lands at the Release step, *after* publishing.
 3. That a `permission_denied` on write is a package-settings problem rather than
    a token problem. For GitHub Packages, write permission on the workflow is
@@ -162,7 +162,7 @@ Filed as **VER-037**.
 their words, the best thing in the documentation, and the reason they could
 answer most of their own questions by reading one file.
 
-The `occurrences` vocabulary — `once`, `many`, `never`, `{exactly: N}` — is
+The `occurrences` vocabulary (`once`, `many`, `never`, `{exactly: N}`) is
 better than what they would have built.
 
 The split where verctl decides how many jobs and the workflow decides where a
