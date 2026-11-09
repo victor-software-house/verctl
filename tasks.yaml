@@ -383,6 +383,19 @@ queue:
       - 'Found by the serde-saphyr fork: after its 0.0.1 release, the next forkctl append publish kept the tagged commit only as a merge second parent, and every plan failed with "not a first-parent commit at vsh-serde-saphyr@0.0.1".'
       - 'Operator decision 2026-11-09: compare the manifest version only. A tree comparison rejects a later publish that changes a non-version file such as a workflow. Patch bump.'
 
+  - id: VER-089
+    title: No duplicate crate versions
+    scope: verctl
+    outcome: cargo-deny prints no duplicate-version warnings, and a new duplicate fails CI.
+    blocked_by: []
+    acceptance:
+      - '`Cargo.lock` holds one version of every crate, except crates listed in the `deny_skip` answer, each with the reason upstream forces it.'
+      - cargo-deny reads `multiple-versions = "deny"` for verctl, set through the template, so a new duplicate fails verify.
+    notes:
+      - '2026-11-09, Cargo.lock on main holds two versions of 21 crates: base64, bitflags, cpufeatures, defmt, getrandom, hashbrown, itertools, nom, syn, unicode-width, winnow, windows-sys, windows-targets, and its seven per-target crates. Each prints a dependency tree in verify, which buries the real output.'
+      - "2026-11-09, windows-sys 0.52 comes through ring 0.17 under rustls 0.23 (octocrab, reqwest); windows-sys 0.60 through shared_child under duct. Start with cargo tree -d per crate: bump or replace the direct dependency that pins the old line (duct is verctl's own), and skip only what upstream forces."
+      - 2026-11-09, multiple-versions = "warn" is fixed in the template's deny.toml; making it deny, or an answer for it, is a templates change for that repository's owner session.
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
