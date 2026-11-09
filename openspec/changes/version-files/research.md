@@ -84,7 +84,7 @@ The model is five small primitives that compose:
 |:--|:--|:--|
 | Version source | one tracked file and where the version sits in it: a manifest key, a `VERSION` file, or a marker line | chosen by file name |
 | Package | a name, a version source, and the files it owns | one package per repository; owned files are the version source's directory |
-| Discovery | where packages come from: a workspace file, root globs, or an explicit list | inferred from root workspace files; an explicit entry overrides or adds one |
+| Discovery | where packages come from: a workspace file, root globs, or an explicit list | inferred from root workspace files; an explicit entry overrides, adds, or removes one |
 | Group | packages that share one version | none: each package moves on its own |
 | Tag | the tag name of a package or group | `v{version}` for one package, `{name}/v{version}` for several |
 
@@ -94,7 +94,7 @@ The operator also ruled that verctl fits any workflow as if it were native to it
 
 1. Each stack keeps its own files and idioms: the version sits where the stack's own tools look for it, and the stack's own command refreshes its lockfile.
 2. A repository needs no configuration until it wants something the defaults do not give.
-3. A repository leaving Changesets keeps working unchanged: verctl already reads `.changeset/*.md`, and it reads `.changeset/config.json` (`fixed`, `ignore`) as its groups until `.ctl/ver.yaml` says otherwise, and a `linked` entry fails the load and names the group to write.
+3. A repository leaving Changesets keeps working unchanged unless its config uses `linked`: verctl already reads `.changeset/*.md`, and it reads `.changeset/config.json` (`fixed`, `ignore`) as its groups until `.ctl/ver.yaml` says otherwise, and a `linked` entry fails the load and names the group to write.
 4. Nothing verctl does needs a bot, an App, or a separate action; the reusable workflow runs the same CLI a developer runs locally.
 
 ## 7. How the best tools infer packages
