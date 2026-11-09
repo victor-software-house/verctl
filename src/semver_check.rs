@@ -30,9 +30,11 @@ use crate::{docsrs, process, publish, publisher};
 pub const CHECK_TIMEOUT: Duration = Duration::from_mins(30);
 
 /// What `semver` decided for one crate.
+///
+/// Not `#[non_exhaustive]`: the binary prints a label for every variant, and
+/// an exhaustive match makes a new variant fail the build until it has one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-#[non_exhaustive]
 pub enum Decision {
     /// Checked with `--release-type minor`, and no lint failed.
     Passed,

@@ -133,9 +133,11 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
 }
 
 /// Whether a publish run found anything to release.
+///
+/// Not `#[non_exhaustive]`: the binary prints each outcome, and an exhaustive
+/// match makes a new variant fail the build until it is printed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-#[non_exhaustive]
 pub enum Outcome {
     /// Every package's registry entry, tag, Release, and counted assets
     /// already exist, so the run did nothing.
