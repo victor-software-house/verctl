@@ -441,15 +441,18 @@ pub fn upstream_default_branch(root: &Path) -> Option<String> {
 
 /// Fail unless HEAD is on the default-branch history.
 ///
-/// No repository, and no `origin` remote, is a skip: local fixtures
-/// have nothing to prove. A repo that has `origin` but no peelable
-/// default-tracking ref fails closed. A shallow clone that cannot walk
-/// the graph also fails closed.
+/// A proof that cannot run fails, and says which fact is missing. A check
+/// that passed by skipping itself would let a release run from any commit,
+/// in exactly the CI shapes where the proof matters. Each of these fails: no
+/// repository, no HEAD commit, no `origin` remote, an `origin` with no
+/// peelable default-tracking ref, and a shallow clone that cannot walk the
+/// graph.
 ///
 /// # Errors
 ///
-/// Returns an error when `origin` exists but its default branch ref cannot be
-/// resolved, when HEAD is not an ancestor of the default branch, or when the
+/// Returns an error when no repository covers `root`, HEAD has no commit, or
+/// there is no `origin` remote. It also returns one when the default branch
+/// ref cannot be resolved, when HEAD is not an ancestor of it, or when the
 /// merge-base cannot be computed, as in a shallow clone.
 pub fn require_on_default_history(root: &Path) -> Result<()> {
     prove_default_history(root, &candidate_names(env_base_ref().as_deref()))
@@ -704,16 +707,20 @@ fn github_credentials(token: &str) -> impl FnMut(Action) -> gix::Result<Option<O
 }
 
 fn prove_default_history(root: &Path, candidates: &[String]) -> Result<()> {
-    let Some(repo) = repo_covering(root) else {
-        return Ok(());
-    };
-    let Ok(head) = repo.head_commit() else {
-        return Ok(());
-    };
-    let head = head.id().detach();
-    let Some(upstream) = default_upstream_commit(&repo, candidates)? else {
-        return Ok(());
-    };
+    let repo = repo_covering(root).with_context(|| {
+        format!(
+            "publish cannot prove HEAD is on the default branch: no git repository covers {}",
+            root.display()
+        )
+    })?;
+    let head = repo
+        .head_commit()
+        .context("publish cannot prove HEAD is on the default branch: HEAD has no commit")?
+        .id()
+        .detach();
+    let upstream = default_upstream_commit(&repo, candidates)?.context(
+        "publish cannot prove HEAD is on the default branch: there is no `origin` remote; add it and fetch the default branch",
+    )?;
     if head == upstream {
         return Ok(());
     }
@@ -2333,15 +2340,25 @@ mod tests {
     }
 
     #[test]
-    fn no_repository_skips() {
+    fn no_repository_refuses() {
         let dir = tempfile::TempDir::new().unwrap();
-        prove(dir.path(), &stock()).unwrap();
+        let err = prove(dir.path(), &stock()).unwrap_err();
+        assert!(format!("{err:#}").contains("no git repository"), "{err:#}");
     }
 
     #[test]
-    fn default_history_skips_when_origin_is_missing() {
+    fn no_head_commit_refuses() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        let err = prove(dir.path(), &stock()).unwrap_err();
+        assert!(format!("{err:#}").contains("HEAD has no commit"), "{err:#}");
+    }
+
+    #[test]
+    fn a_missing_origin_refuses() {
         let (dir, _) = fixture();
-        prove(dir.path(), &stock()).unwrap();
+        let err = prove(dir.path(), &stock()).unwrap_err();
+        assert!(format!("{err:#}").contains("no `origin` remote"), "{err:#}");
     }
 
     #[test]

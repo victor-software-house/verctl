@@ -15,14 +15,6 @@ inputs:
     description: Path to the declarations file. Empty means verctl's default, `.ctl/ver.yaml`.
     required: false
     default: ""
-  title:
-    description: Version PR title. Empty means verctl's default.
-    required: false
-    default: ""
-  commit-message:
-    description: Commit message on the Version PR. Empty means the title.
-    required: false
-    default: ""
   dry-run:
     description: Preview only. Set to `true` to write nothing.
     required: false
@@ -37,6 +29,4 @@ runs:
         GITHUB_TOKEN: ${{ inputs.token }}
         VERCTL_CONFIG: ${{ inputs.config }}
         VERCTL_DRY_RUN: ${{ inputs.dry-run }}
-        VERCTL_PR_TITLE: ${{ inputs.title }}
-        VERCTL_COMMIT_MESSAGE: ${{ inputs.commit-message }}
       run: exec verctl prepare --pr

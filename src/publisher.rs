@@ -2,8 +2,9 @@
 //!
 //! Override a `publishers` entry or set `publisher` + `argv` on a
 //! package. Placeholders: `{path}` `{dir}` `{registry}` `{config}`, and in a
-//! `query` also `{name}` `{version}`. [`RELEASE_ONLY`] publishes to no
-//! registry.
+//! `query` also `{name}` `{version}`. A placeholder with no value fails
+//! the run instead of dropping its argument. [`RELEASE_ONLY`] publishes to
+//! no registry.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -103,7 +104,8 @@ impl PublisherSpec {
     ///
     /// # Errors
     ///
-    /// Returns an error when the publisher declares no `argv`.
+    /// Returns an error when the publisher declares no `argv`, or when an
+    /// argument uses a placeholder with no value for this package.
     pub fn render(
         &self,
         name: &str,
@@ -114,7 +116,7 @@ impl PublisherSpec {
             .argv
             .as_ref()
             .with_context(|| format!("publisher {name:?} needs argv"))?;
-        let out = self.assemble(argv, manifest, registry, &[], Appended::Upload);
+        let out = self.assemble(argv, manifest, registry, &[], Appended::Upload)?;
         let noun = self.noun.clone().unwrap_or_else(|| "package".into());
         Ok((noun, out))
     }
@@ -128,7 +130,7 @@ impl PublisherSpec {
         registry: Option<&str>,
         extra: &[(&'static str, String)],
         appended: Appended,
-    ) -> Vec<String> {
+    ) -> Result<Vec<String>> {
         let dir = package_dir(manifest);
         let config = self
             .config_name
@@ -146,7 +148,7 @@ impl PublisherSpec {
         if let Some(registry) = &registry {
             ctx.insert("registry", registry.clone());
         }
-        let mut out = expand(argv, &ctx);
+        let mut out = expand(argv, &ctx)?;
         let (recipe, default) = match appended {
             Appended::Upload => (true, true),
             Appended::StockQuery => (true, false),
@@ -156,19 +158,19 @@ impl PublisherSpec {
             && config.is_some()
             && let Some(extra) = &self.config_argv
         {
-            out.extend(expand(extra, &ctx));
+            out.extend(expand(extra, &ctx)?);
         }
         if recipe && config.is_none() && registry.is_some() {
             if let Some(extra) = &self.registry_argv {
-                out.extend(expand(extra, &ctx));
+                out.extend(expand(extra, &ctx)?);
             }
         } else if default
             && registry.is_none()
             && let Some(extra) = &self.default_argv
         {
-            out.extend(expand(extra, &ctx));
+            out.extend(expand(extra, &ctx)?);
         }
-        out
+        Ok(out)
     }
 }
 
@@ -206,18 +208,62 @@ fn resolve_registry(aliases: &BTreeMap<String, String>, registry: Option<&str>) 
     }
 }
 
-fn expand(parts: &[String], ctx: &BTreeMap<&str, String>) -> Vec<String> {
-    parts
-        .iter()
-        .map(|part| {
-            let mut out = part.clone();
-            for (key, value) in ctx {
-                out = out.replace(&format!("{{{key}}}"), value);
-            }
-            out
-        })
-        .filter(|part| !part.is_empty() && !part.contains('{'))
-        .collect()
+/// Replace each `{placeholder}` in `parts` with its value in `ctx`.
+///
+/// A placeholder left after expansion fails the run instead of dropping its
+/// argument: dropping shortened the command line, so a typo such as
+/// `{registr}` surfaced later as another tool's error. A known placeholder
+/// with no value for this package, such as `{registry}` on a package with no
+/// registry, fails the same way. Text in braces that is not a placeholder
+/// name, such as a JSON argument, passes through.
+///
+/// # Errors
+///
+/// Returns an error naming the argument, the placeholder, and the
+/// placeholders that have a value here.
+fn expand(parts: &[String], ctx: &BTreeMap<&str, String>) -> Result<Vec<String>> {
+    let mut out = Vec::with_capacity(parts.len());
+    for part in parts {
+        let mut expanded = part.clone();
+        for (key, value) in ctx {
+            expanded = expanded.replace(&format!("{{{key}}}"), value);
+        }
+        if let Some(name) = placeholder_in(&expanded) {
+            let known = ctx
+                .keys()
+                .map(|key| format!("{{{key}}}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            bail!(
+                "argument {part:?} uses {{{name}}}, which has no value for this package; the placeholders with a value are {known}"
+            );
+        }
+        if !expanded.is_empty() {
+            out.push(expanded);
+        }
+    }
+    Ok(out)
+}
+
+/// The first `{name}` in `text` whose name is a placeholder name: a letter or
+/// underscore, then letters, digits, or underscores.
+fn placeholder_in(text: &str) -> Option<&str> {
+    let mut rest = text;
+    while let Some(open) = rest.find('{') {
+        let after = &rest[open + 1..];
+        let close = after.find('}')?;
+        let name = &after[..close];
+        let mut chars = name.chars();
+        if chars
+            .next()
+            .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return Some(name);
+        }
+        rest = after;
+    }
+    None
 }
 
 fn find_config(manifest: &Path, file_name: &str) -> Option<PathBuf> {
@@ -554,7 +600,7 @@ fn query_check(
     };
     let extra = [("name", name), ("version", version.to_owned())];
     Ok(RegistryCheck::Query {
-        argv: publisher.assemble(argv, manifest, spec.registry.as_deref(), &extra, appended),
+        argv: publisher.assemble(argv, manifest, spec.registry.as_deref(), &extra, appended)?,
         dir: package_dir(manifest).to_path_buf(),
     })
 }
@@ -593,12 +639,43 @@ fn stock_publisher_for_file(file_name: &str) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::path::Path;
 
     use indoc::indoc;
 
-    use super::{PublisherSpec, registry_check, resolve};
+    use super::{PublisherSpec, expand, registry_check, resolve};
     use crate::registry::RegistryCheck;
+
+    fn words(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|part| (*part).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_misspelt_placeholder_fails_instead_of_dropping_its_argument() {
+        let ctx = BTreeMap::from([("dir", "pkg".to_owned())]);
+        let error = expand(&words(&["publish", "--registry", "{registr}"]), &ctx)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("{registr}"), "{error}");
+        assert!(error.contains("{dir}"), "{error}");
+    }
+
+    #[test]
+    fn a_known_placeholder_without_a_value_fails() {
+        let ctx = BTreeMap::from([("dir", "pkg".to_owned())]);
+        let error = expand(&words(&["publish", "--registry", "{registry}"]), &ctx)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("{registry}"), "{error}");
+    }
+
+    #[test]
+    fn braces_that_are_not_a_placeholder_pass_through() {
+        let ctx = BTreeMap::from([("dir", "pkg".to_owned())]);
+        let argv = expand(&words(&["--meta", r#"{"a": 1}"#, "{dir}"]), &ctx).unwrap();
+        assert_eq!(argv, words(&["--meta", r#"{"a": 1}"#, "pkg"]));
+    }
 
     #[test]
     fn stock_cargo_and_bun_are_recipes() {

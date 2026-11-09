@@ -129,3 +129,21 @@ pub(crate) fn commit_all(dir: &Path, subject: &str) -> String {
     git(dir, &["commit", "-q", "--allow-empty", "-m", subject]);
     git(dir, &["rev-parse", "HEAD"])
 }
+
+/// Commit everything in `dir` as the tip of `main`, with an `origin` whose
+/// `main` is that commit, so a publish there can prove HEAD is on the
+/// default branch.
+pub(crate) fn on_default_branch(dir: &Path) {
+    init(dir);
+    let head = commit_all(dir, "release");
+    git(
+        dir,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/acme/demo.git",
+        ],
+    );
+    git(dir, &["update-ref", "refs/remotes/origin/main", &head]);
+}

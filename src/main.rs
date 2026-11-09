@@ -111,13 +111,14 @@ fn versions_for_templates(
 /// anything is written; `None` when the run opens no pull request.
 fn version_pr_target(
     args: &PrepareArgs,
+    config: &Config,
     root: &Path,
 ) -> Result<Option<(String, release::VersionPr)>> {
     if !args.open_pr() || args.dry_run() {
         return Ok(None);
     }
     let token = release::resolve_token()?;
-    let version_pr = release::VersionPr::from_env(root)?;
+    let version_pr = release::VersionPr::new(&config.proposal, root)?;
     Ok(Some((token, version_pr)))
 }
 
@@ -138,7 +139,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
             dry_run,
         });
     }
-    let target = version_pr_target(args, root)?;
+    let target = version_pr_target(args, &config, root)?;
     let token = target.as_ref().map(|(token, _)| token.as_str());
     let bumps: Vec<PrepareBump> = plan
         .iter()
@@ -203,14 +204,7 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
     release::consume_fragments(consumed)?;
     let mut pr = None;
     if let Some((token, version_pr)) = &target {
-        let opened = release::open_or_update_pr(
-            root,
-            token,
-            version_pr,
-            &paths,
-            &changelog,
-            config.prepare.version_label(),
-        )?;
+        let opened = release::open_or_update_pr(root, token, version_pr, &paths, &changelog)?;
         pr = opened.map(|opened| opened.url);
     }
     Ok(PrepareReport {

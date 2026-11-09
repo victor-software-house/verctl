@@ -118,11 +118,13 @@ commit, publishes each in history order, builds the assets each Release
 lacks, waits for docs.rs, then opens or updates the Version PR. Every
 input is optional and defaults to verctl's: `version-pr`, `publish`,
 `assets`, `docs`, `config`, `runner`, `mise-version`,
-`mise-env`, `mise-ignored-config-paths`, `title`, `commit-message`,
+`mise-env`, `mise-ignored-config-paths`,
 `registry-token-env`, `crates-io-trusted-publishing`, `environment`, and
 `verctl-artifact` (verctl's own release only: each job runs a verctl
 build from the calling run); secrets `app-client-id`, `app-private-key`,
-`registry-token`. `mise-ignored-config-paths` takes colon-separated
+`registry-token`. Each job first requires verctl 0.8.0 or later, unless
+`verctl-artifact` is set: the caller's pin chooses verctl apart from the
+workflow ref, so move both together. `mise-ignored-config-paths` takes colon-separated
 config paths relative to the repository root, such as `mise.toml`, that
 every job but propose ignores, so they install only the release tools;
 propose keeps them because `prepare.after` runs the repository's tasks.
@@ -244,9 +246,10 @@ lists extra globs that command may write. Any other dirty path
 fails. `--pr` also opens or force-updates `verctl/release/<base>` (body is
 the changelog), where `<base>` is the branch the PR targets. The PR targets `GITHUB_REF_NAME`, else `VERCTL_DEFAULT_BRANCH`,
 else the branch `origin/HEAD` names; with none of them, `--pr` fails
-rather than guess `main`. Title and commit message default to
-`chore(release): version packages`; `VERCTL_PR_TITLE` and
-`VERCTL_COMMIT_MESSAGE` override them, and an empty value is unset.
+rather than guess `main`. `proposal.title` and
+`proposal.commit_message` in `.ctl/ver.yaml` set the title and commit
+message; unset or empty, the title is `chore(release): version packages`
+and the message is the title. The Version PR gets no label.
 Auth is `GITHUB_TOKEN` / `GH_TOKEN` only. Push uses that token over
 HTTPS, not the machine git/ssh account: `--pr` runs `git push`, so it
 needs `git` on PATH, with a credential helper that reads the token from

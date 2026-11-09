@@ -46,10 +46,10 @@ Do not assemble changelog strings in ad-hoc Rust. Do not add a Node adapter.
 
 `prepare --pr` opens the Version PR against `GITHUB_REF_NAME`, else
 `VERCTL_DEFAULT_BRANCH`, else the branch `origin/HEAD` names, and fails before
-writing anything when none is set; it never guesses `main`. The title and
-commit message default to `chore(release): version packages`;
-`VERCTL_PR_TITLE` and `VERCTL_COMMIT_MESSAGE`, or the action's `title` and
-`commit-message` inputs, override them, and an empty value is unset.
+writing anything when none is set; it never guesses `main`. `proposal.title` and
+`proposal.commit_message` in `.ctl/ver.yaml` set the title and commit
+message; unset or empty, the title is `chore(release): version packages` and
+the message is the title. The Version PR gets no label.
 The PR comes from `verctl/release/<base>`, derived and never configured;
 `check --versions` exempts that branch locally. verctl never merges the
 Version PR or enables auto-merge on it: a release starts only when a person

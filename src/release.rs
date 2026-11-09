@@ -486,39 +486,29 @@ pub fn prepend_changelog(path: &Path, section: &str) -> Result<()> {
 /// base fails with the tree untouched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VersionPr {
-    /// `VERCTL_PR_TITLE`; unset or empty means `chore(release): version
-    /// packages`.
+    /// `proposal.title`; unset or empty means
+    /// [`Proposal::DEFAULT_TITLE`](crate::config::Proposal::DEFAULT_TITLE).
     pub title: String,
-    /// `VERCTL_COMMIT_MESSAGE`; unset or empty means the title.
+    /// `proposal.commit_message`; unset or empty means the title.
     pub message: String,
     /// The branch [`github::base_branch`] names.
     pub base: String,
 }
 
 impl VersionPr {
-    /// Read the title and message from the environment and resolve the base.
-    ///
-    /// An empty variable counts as unset: a composite action passes an input
-    /// it was not given as `""`.
+    /// Take the title and message from `proposal` and resolve the base.
     ///
     /// # Errors
     ///
     /// Returns an error when no base branch can be resolved, as
     /// [`github::base_branch`] describes.
-    pub fn from_env(root: &Path) -> Result<Self> {
-        let title = non_empty_env("VERCTL_PR_TITLE")
-            .unwrap_or_else(|| "chore(release): version packages".into());
-        let message = non_empty_env("VERCTL_COMMIT_MESSAGE").unwrap_or_else(|| title.clone());
+    pub fn new(proposal: &crate::config::Proposal, root: &Path) -> Result<Self> {
         Ok(Self {
-            title,
-            message,
+            title: proposal.title().to_owned(),
+            message: proposal.commit_message().to_owned(),
             base: github::base_branch(root)?,
         })
     }
-}
-
-fn non_empty_env(name: &str) -> Option<String> {
-    env::var(name).ok().filter(|value| !value.is_empty())
 }
 
 /// The Version PR `open_or_update_pr` opened or updated.
@@ -538,15 +528,14 @@ pub struct OpenedPr {
 ///
 /// Returns an error when the GitHub repository cannot be resolved, when the
 /// branch cannot be committed or pushed (see [`git::commit_branch_and_push`]),
-/// or when looking up, updating, or creating the pull request, or applying
-/// `version_label`, fails. A failure after the push leaves the branch pushed.
+/// or when looking up, updating, or creating the pull request fails. A failure
+/// after the push leaves the branch pushed.
 pub fn open_or_update_pr(
     root: &Path,
     token: &str,
     pr: &VersionPr,
     paths: &[std::path::PathBuf],
     changelog: &str,
-    version_label: &str,
 ) -> Result<Option<OpenedPr>> {
     let repo = github::repo(root)?;
     let branch = version_branch(&pr.base);
@@ -557,14 +546,12 @@ pub fn open_or_update_pr(
     let body = pr_body(changelog);
     if let Some(existing) = github::existing_pr(token, &repo, &branch)? {
         let url = github::update_pr(token, &repo, existing.number, &pr.title, &body)?;
-        github::ensure_version_label(token, &repo, existing.number, version_label)?;
         return Ok(Some(OpenedPr {
             number: existing.number,
             url,
         }));
     }
     let created = github::create_pr(token, &repo, &pr.title, &branch, &pr.base, &body)?;
-    github::ensure_version_label(token, &repo, created.number, version_label)?;
     Ok(Some(OpenedPr {
         number: created.number,
         url: created.url,
