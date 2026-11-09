@@ -725,6 +725,8 @@ horizon:
       The operator has not agreed the design; decisions are asked one at a time on
       VER-083.
     plan: openspec/changes/release-groups/proposal.md
+    notes:
+      - 2026-11-09, the operator chose {name}/v{version} as the default tag for a repository with several packages, on its own merits and not because Go requires it.
 
   - id: VER-087
     title: Internal dependency ranges and publish order
