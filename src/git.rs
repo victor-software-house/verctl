@@ -280,10 +280,10 @@ pub fn version_commit(
 /// that version's release. One case is a publish rerun after later commits
 /// tagged a newer HEAD at the same version. Another is a version set again
 /// after a revert, which keeps the tag from its first release. A tagged commit
-/// can also leave the first-parent history while HEAD keeps it. A branch
-/// rewritten and merged back with its old tip as the second parent, as a
-/// forkctl append publish does, holds the tagged commit only on that parent,
-/// and the new first-parent commit at the same version may change other files.
+/// can also leave the first-parent history while HEAD keeps it. A forkctl
+/// append publish rewrites a branch and merges it back with its old tip as the
+/// second parent, so only that parent holds the tagged commit. The new
+/// first-parent commit at the same version may change other files.
 /// In every case the registry already has the version, so the tag's commit is
 /// the release. Only the version is compared, never the tree.
 ///
@@ -295,9 +295,10 @@ pub fn version_commit(
 /// # Errors
 ///
 /// Returns an error when `root` is in no repository, `path` is outside it,
-/// HEAD has no version in `path`, a commit or tree cannot be read, the walk
-/// reaches a shallow clone's boundary before finding `sha`, or no merge-base
-/// can be computed between a first-parent commit and `sha`.
+/// HEAD has no version in `path`, or a commit or tree cannot be read. It also
+/// returns one when the walk reaches a shallow clone's boundary before finding
+/// `sha`, or when no merge-base can be computed between a first-parent commit
+/// and `sha`.
 pub fn tagged_commit(
     root: &Path,
     path: &Path,
