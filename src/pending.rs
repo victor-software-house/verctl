@@ -107,7 +107,7 @@ struct PackageState {
 /// resolved, its version commit cannot be found (see
 /// [`git::version_commit`]), the repository has no GitHub `origin`, a
 /// registry or GitHub lookup fails, or a package's tag names a commit that is
-/// neither its version commit nor another first-parent commit at the same
+/// neither its version commit nor another commit HEAD contains at the same
 /// version (see [`git::tagged_commit`]): that release was tagged in the wrong
 /// place, and counting it complete would hide it.
 pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> Result<Pending> {
