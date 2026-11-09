@@ -11,7 +11,8 @@ Compile, format, lint, and test tasks run in pull request CI with
 
 ## 2. Callers in this repository
 
-- [ ] 2.1 `.github/workflows/release.yml`, `actions/version-pr/action.yml`, `.ctl/ver.yaml`, and `.ctl/operator/instructions.md.jinja` call `version` and `render`; proof: `rg --hidden '\b(ver|verctl) (prepare|pin)\b'` outside `CHANGELOG.md` and archived changes prints nothing
+- [ ] 2.1 `.github/workflows/release.yml`, `actions/version-pr/action.yml`, `.ctl/ver.yaml`, and `.ctl/operator/instructions.md.jinja` call `version` and `render`; proof: `rg --hidden '\b(ver|verctl) (prepare|pin)\b'` outside `CHANGELOG.md` and archived changes prints nothing, except the removed-verb scenarios and the deltas this change replaces
+- [ ] 2.2 After `version-files`, `reusable-release-workflow`, `version-pr-proposal`, and this change are archived, in that order, no spec names the old verbs; proof: `rg '\b(ver|verctl) (prepare|pin)\b|`prepare` SHALL' openspec/specs/` prints only the removed-verb requirement
 
 ## 3. Bundle
 

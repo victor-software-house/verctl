@@ -39,12 +39,16 @@ continue.
 
 `verctl publish` SHALL refuse a package whose first-parent line from its
 newest release tag to the release commit holds more than one commit that
-changes its version. No flag SHALL allow it.
+changes its version. No flag SHALL allow it, so the refusal SHALL name the
+way out: the unreleased version, the commit that set it, and the command
+that publishes it first.
 
 #### Scenario: A skipped version
 
-- **WHEN** `demo` is tagged at 0.7.4, one first-parent commit sets it to 0.7.5, a later one sets 0.7.6, and `verctl publish` runs at the second
-- **THEN** it exits non-zero, names 0.7.5 as unreleased, and publishes nothing
+- **WHEN** `demo` is tagged at 0.7.4, commit `aaa1111` on the first-parent line sets it to 0.7.5, a later commit sets 0.7.6, and `verctl publish` runs at the later commit
+- **THEN** it exits non-zero and publishes nothing
+- **AND** the message names `demo` 0.7.5 as unreleased and `aaa1111` as the commit that set it
+- **AND** the message says to run `verctl publish --plan`, which lists `aaa1111` first, and to publish that commit before this one
 
 ### Requirement: The workflow passes the allow flags through env
 
