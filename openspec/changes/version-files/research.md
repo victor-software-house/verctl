@@ -85,6 +85,8 @@ A package that changed gets a fragment and a new version; a package that did not
 
 ## 7. The changes
 
+They ship in slices, each useful on its own: `version-files` first, starting with `VERSION` and `path: .` so the templates and actions repositories can release as one package each, then its marker line, `go.mod`, and `pyproject.toml`; then `release-immutability`, `package-discovery`, `release-groups`, and `dependent-ranges`, in that order (operator, 2026-11-09).
+
 | Change | Decides |
 |:--|:--|
 | [`version-files`](proposal.md) | the version lives in a tracked file: the stack's manifest, `go.mod`, or a `VERSION` file when nothing else declares one |
