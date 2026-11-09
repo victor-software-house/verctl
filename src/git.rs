@@ -272,20 +272,30 @@ pub fn version_commit(
 }
 
 /// `sha` as the release commit of the version `read` finds in `path` at HEAD,
-/// when `sha` is on HEAD's first-parent history and carries that version.
+/// when HEAD contains `sha` and `sha` carries that version.
 ///
 /// A release tag can name a commit other than [`version_commit`] and still be
 /// that version's release: a publish rerun after later commits tagged a newer
 /// HEAD at the same version, or a version set again after a revert keeps the
-/// tag from its first release. Either way the registry already has the
-/// version, so the tag's commit is the release. `None` means the tag is on a
-/// commit with another version, or off the first-parent history.
+/// tag from its first release. A tagged commit can also leave the first-parent
+/// history while HEAD keeps it: a branch rewritten and merged back with its old
+/// tip as the second parent, as a forkctl append publish does, holds the
+/// tagged commit only on that parent, and the new first-parent commit at the
+/// same version may change other files. In every case the registry already has
+/// the version, so the tag's commit is the release. Only the version is
+/// compared, never the tree.
+///
+/// On the first-parent history the depth is the tagged commit's own. Off it,
+/// the depth is that of the oldest first-parent commit that contains the
+/// tagged commit, the merge that brought it in. `None` means the tag is on a
+/// commit with another version, or on a commit HEAD does not contain.
 ///
 /// # Errors
 ///
 /// Returns an error when `root` is in no repository, `path` is outside it,
-/// HEAD has no version in `path`, a commit or tree cannot be read, or the walk
-/// reaches a shallow clone's boundary before finding `sha`.
+/// HEAD has no version in `path`, a commit or tree cannot be read, the walk
+/// reaches a shallow clone's boundary before finding `sha`, or no merge-base
+/// can be computed between a first-parent commit and `sha`.
 pub fn tagged_commit(
     root: &Path,
     path: &Path,
@@ -307,13 +317,13 @@ pub fn tagged_commit(
         .shallow_commits()?
         .map(|commits| commits.iter().copied().collect())
         .unwrap_or_default();
-    let mut depth = 0;
+    let mut line = Vec::new();
     loop {
         if commit.id().to_string().eq_ignore_ascii_case(sha) {
             return Ok(
                 (version_at(&commit)?.as_deref() == Some(wanted.as_str())).then(|| VersionCommit {
                     sha: commit.id().to_string(),
-                    depth,
+                    depth: line.len(),
                 }),
             );
         }
@@ -322,12 +332,52 @@ pub fn tagged_commit(
             "cannot find tagged commit {sha}: the clone is shallow; fetch the full history{}",
             shallow_hint()
         );
+        line.push(commit.id().detach());
         let Some(parent) = commit.parent_ids().next() else {
-            return Ok(None);
+            break;
         };
         commit = repo.find_commit(parent.detach())?;
-        depth += 1;
     }
+    merged_release(&repo, &line, sha, &wanted, &version_at)
+}
+
+/// `sha` as a release that HEAD holds only through a merge: a commit off the
+/// first-parent `line` (HEAD first) that carries `wanted`. Its depth is the
+/// index of the oldest commit on `line` that contains it.
+///
+/// Every commit on `line` newer than the merge that brought `sha` in contains
+/// it too, so the walk stops at the first one that does not. `None` when `sha`
+/// names no commit, carries another version, or HEAD does not contain it.
+fn merged_release(
+    repo: &gix::Repository,
+    line: &[gix::ObjectId],
+    sha: &str,
+    wanted: &str,
+    version_at: &dyn Fn(&gix::Commit<'_>) -> Result<Option<String>>,
+) -> Result<Option<VersionCommit>> {
+    let Ok(tagged) = gix::ObjectId::from_hex(sha.as_bytes()) else {
+        return Ok(None);
+    };
+    let Ok(commit) = repo.find_commit(tagged) else {
+        return Ok(None);
+    };
+    if version_at(&commit)?.as_deref() != Some(wanted) {
+        return Ok(None);
+    }
+    let mut depth = None;
+    for (index, at) in line.iter().enumerate() {
+        let base = repo.merge_base(*at, tagged).with_context(|| {
+            format!("cannot tell whether HEAD contains tagged commit {sha}; fetch the full history")
+        })?;
+        if base.is_none_or(|base| base != tagged) {
+            break;
+        }
+        depth = Some(index);
+    }
+    Ok(depth.map(|depth| VersionCommit {
+        sha: tagged.to_string(),
+        depth,
+    }))
 }
 
 fn has_path(commit: &gix::Commit<'_>, rel: &Path) -> Result<bool> {
@@ -1457,6 +1507,104 @@ mod tests {
         );
         assert_eq!(
             tagged_commit(dir.path(), &manifest, &"0".repeat(40), &version_line).unwrap(),
+            None
+        );
+    }
+
+    /// A history in the shape a forkctl append publish leaves: `set` starts at
+    /// `0.0.1`, `published` follows it with a workflow change, then the branch
+    /// is rewritten from `set` and merged back with `published` as the second
+    /// parent, keeping the rewritten tree. `published_version` is the version
+    /// `published` carries. Returns `published`.
+    fn rewritten_and_merged_back(dir: &Path, published_version: &str) -> String {
+        init(dir);
+        write_version(dir, "0.0.1");
+        std::fs::write(dir.join("publish.yml"), "one\n").unwrap();
+        let set = commit_all(dir, "chore: start");
+        write_version(dir, published_version);
+        std::fs::write(dir.join("publish.yml"), "two\n").unwrap();
+        let published = commit_all(dir, "ci: publish");
+        git(dir, &["checkout", "-q", "--detach", &set]);
+        std::fs::write(dir.join("publish.yml"), "three\n").unwrap();
+        commit_all(dir, "ci: rewritten publish");
+        git(
+            dir,
+            &[
+                "merge",
+                "-q",
+                "-s",
+                "ours",
+                "-m",
+                "forkctl: keep published history",
+                &published,
+            ],
+        );
+        published
+    }
+
+    #[test]
+    fn a_tag_on_a_merged_commit_at_the_same_version_is_the_release() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let published = rewritten_and_merged_back(dir.path(), "0.0.1");
+        assert_ne!(
+            git(dir.path(), &["rev-parse", "HEAD^1:publish.yml"]),
+            git(
+                dir.path(),
+                &["rev-parse", &format!("{published}:publish.yml")]
+            ),
+            "the first-parent commit at the same version changes another file"
+        );
+        let found = tagged_commit(
+            dir.path(),
+            &dir.path().join("Cargo.toml"),
+            &published,
+            &version_line,
+        )
+        .unwrap();
+        assert_eq!(
+            found,
+            Some(VersionCommit {
+                sha: published,
+                depth: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn a_tag_on_a_merged_commit_at_another_version_is_not_the_release() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let published = rewritten_and_merged_back(dir.path(), "0.0.2");
+        assert_eq!(
+            tagged_commit(
+                dir.path(),
+                &dir.path().join("Cargo.toml"),
+                &published,
+                &version_line,
+            )
+            .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn a_tag_on_a_commit_head_does_not_contain_is_not_the_release() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        write_version(dir.path(), "0.0.1");
+        let set = commit_all(dir.path(), "chore: start");
+        std::fs::write(dir.path().join("publish.yml"), "two\n").unwrap();
+        let abandoned = commit_all(dir.path(), "ci: publish");
+        git(dir.path(), &["checkout", "-q", "--detach", &set]);
+        std::fs::write(dir.path().join("publish.yml"), "three\n").unwrap();
+        commit_all(dir.path(), "ci: rewritten publish");
+        assert_eq!(
+            tagged_commit(
+                dir.path(),
+                &dir.path().join("Cargo.toml"),
+                &abandoned,
+                &version_line,
+            )
+            .unwrap(),
             None
         );
     }

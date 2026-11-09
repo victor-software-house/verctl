@@ -364,6 +364,24 @@ queue:
     notes:
       - 'Split from VER-069, which #174 completed on 2026-10-18; this row tracks only task 2.4 of openspec/changes/cargo-workspace-publish.'
 
+  - id: VER-084
+    title: A tag on a merged commit at the same version is the release
+    scope: src/git.rs, src/pending.rs
+    outcome: >-
+      verctl publish --plan accepts a release tag on a commit that HEAD holds only
+      through a merge, when the manifest version there equals the version at HEAD, as a
+      forkctl append publish leaves it.
+    blocked_by: []
+    acceptance:
+      - A tag on a commit that sits only on a merge second parent, at the version HEAD has, names the release, even when the first-parent commit at that version changes another file.
+      - A tag on a commit HEAD does not contain, or on a merged commit at another version, still fails the plan with the current message.
+      - The serde-saphyr fork plans past its v0.0.1 tag on a verctl release with this fix.
+    plan: openspec/changes/tag-on-merged-ancestor/proposal.md
+    notes:
+      - OpenSpec change tag-on-merged-ancestor.
+      - 'Found by the serde-saphyr fork: after its 0.0.1 release, the next forkctl append publish kept the tagged commit only as a merge second parent, and every plan failed with "not a first-parent commit at vsh-serde-saphyr@0.0.1".'
+      - 'Operator decision 2026-11-09: compare the manifest version only. A tree comparison rejects a later publish that changes a non-version file such as a workflow. Patch bump.'
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
