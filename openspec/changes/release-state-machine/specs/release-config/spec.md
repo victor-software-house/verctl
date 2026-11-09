@@ -52,7 +52,7 @@ it.
 - **WHEN** `.ctl/ver.yaml` declares `prepare: {after: [cargo, update, --workspace], stage: [Cargo.lock]}`
 - **THEN** `verctl status` exits non-zero and its error says the cargo Lockfile block refreshes `Cargo.lock`, and that other commands become `version` steps with `writes`
 
-#### Scenario: A leftover pin
+#### Scenario: A leftover pins section
 
 - **WHEN** `.ctl/ver.yaml` declares `pins`
 - **THEN** `verctl status` exits non-zero and its error names `templates` as the replacement

@@ -1,3 +1,8 @@
+## RENAMED Requirements
+
+- FROM: `### Requirement: check refuses what prepare refuses`
+- TO: `### Requirement: check refuses what version refuses`
+
 ## MODIFIED Requirements
 
 ### Requirement: A new package releases 0.0.1 first
@@ -27,7 +32,7 @@ refusal SHALL name the package and the `first_minor` key.
 - **WHEN** package `demo` at `0.0.0` has only `.changeset/first.md` holding `demo: none`
 - **THEN** `verctl version --dry-run` plans no bump and exits zero
 
-### Requirement: check refuses what prepare refuses
+### Requirement: check refuses what version refuses
 
 `verctl check` SHALL plan the pending fragments against `.ctl/ver.yaml` and the
 manifests it names when any fragment is pending, and SHALL fail on any bump

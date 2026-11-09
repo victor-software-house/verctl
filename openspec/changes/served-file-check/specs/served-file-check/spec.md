@@ -18,13 +18,13 @@ and SHALL name every differing target with its template before it exits.
 - **WHEN** each target equals its rendering and `verctl check` runs
 - **THEN** it exits zero
 
-### Requirement: check verifies each pin
+### Requirement: check verifies each pins entry
 
 `verctl check` SHALL fail when a `pins` entry's pattern no longer matches at
 its declared count, or when its file names a version other than the one the
 manifest holds.
 
-#### Scenario: A pin left behind
+#### Scenario: A pins entry left behind
 
 - **WHEN** a `pins` entry on `tools.toml` matches `demo` at 0.7.3, `Cargo.toml` holds `demo` 0.7.4, and `verctl check` runs
 - **THEN** it exits non-zero and names `tools.toml`
@@ -35,7 +35,7 @@ Loading `.ctl/ver.yaml` SHALL fail when a template's target is also the file
 of a `pins` entry. The message SHALL name the file, the template, and the
 `pins` entry.
 
-#### Scenario: A template and a pin claim one file
+#### Scenario: A template and a pins entry claim one file
 
 - **WHEN** `.ctl/templates/tools.toml.jinja` renders `tools.toml` and a `pins` entry names `tools.toml`
 - **THEN** `verctl status` exits non-zero before writing anything

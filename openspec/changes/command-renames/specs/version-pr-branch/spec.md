@@ -8,7 +8,7 @@ the pull request from that branch. No configuration SHALL name the branch.
 
 #### Scenario: A repository on main
 
-- **WHEN** `prepare --pr` runs on push to `main` with a pending fragment
+- **WHEN** `verctl version --pr` runs on push to `main` with a pending fragment
 - **THEN** it force-updates `verctl/release/main` and opens or updates the pull request from it into `main`
 
 #### Scenario: A repository on trunk

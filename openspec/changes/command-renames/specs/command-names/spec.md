@@ -2,23 +2,23 @@
 
 ### Requirement: The version step is the version command
 
-`verctl version` SHALL apply fragment bumps and take the flags and
-variables `prepare` took. Its report SHALL list follow-up commands under
-`after`.
+`verctl version` SHALL apply fragment bumps and take every flag and
+variable the version step took in verctl 0.7. Its report SHALL list
+follow-up commands under `after`.
 
 #### Scenario: A dry run in JSON
 
 - **WHEN** `.changeset/fix.md` names `demo: patch` and `verctl version --dry-run --format json` runs
 - **THEN** the report has an `after` array and no `next` field
 
-### Requirement: The pin rewrite is the render command
+### Requirement: The pins rewrite is the render command
 
 `verctl render` SHALL rewrite each `pins` entry to the versions on HEAD and
-take the flags `pin` took.
+take every flag the pins rewrite took in verctl 0.7.
 
 #### Scenario: A dry run
 
-- **WHEN** `.ctl/ver.yaml` declares a pin on `mise.release.toml` and `verctl render --dry-run` runs
+- **WHEN** `.ctl/ver.yaml` declares a `pins` entry for `mise.release.toml` and `verctl render --dry-run` runs
 - **THEN** it lists `mise.release.toml` and writes nothing
 
 ### Requirement: A removed verb names its replacement

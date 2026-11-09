@@ -12,7 +12,13 @@ Compile, format, lint, and test tasks run in pull request CI with
 ## 2. Callers in this repository
 
 - [ ] 2.1 `.github/workflows/release.yml`, `actions/version-pr/action.yml`, `.ctl/ver.yaml`, and `.ctl/operator/instructions.md.jinja` call `version` and `render`; proof: `rg --hidden '\b(ver|verctl) (prepare|pin)\b'` outside `CHANGELOG.md` and archived changes prints nothing, except the removed-verb scenarios and the deltas this change replaces
-- [ ] 2.2 After `version-files`, `reusable-release-workflow`, `version-pr-proposal`, and this change are archived, in that order, no spec names the old verbs; proof: `rg '\b(ver|verctl) (prepare|pin)\b|`prepare` SHALL' openspec/specs/` prints only the removed-verb requirement
+- [ ] 2.2 After `version-files`, `reusable-release-workflow`, `version-pr-proposal`, and this change are archived, in that order, no spec names the old verbs. The archive also rewrites the `versioning` Purpose, which no delta can change, to say `version` where it says `prepare`. Proof: `rg -nw 'prepare|pin' openspec/specs/ openspec/changes/ --glob '**/spec.md' --glob '!**/archive/**'` prints only these matches:
+  - the `prepare:` block and its `prepare.version_label` and `prepare.stages` keys in `version-pr-proposal`, which the config refusal names;
+  - the noun "the verctl pin" in `version-pr-proposal`'s older-verctl requirement, which quotes the workflow error;
+  - the requirement "A removed verb names its replacement" in `command-names`;
+  - the assets step key `prepare` in `package-asset-files`' `asset-contents`;
+  - the leftover `prepare:` section in `release-state-machine`'s `release-config`;
+  - the `mise-pin` step in `release-state-machine`'s `building-blocks`.
 
 ## 3. Bundle
 
