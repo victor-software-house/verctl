@@ -105,11 +105,11 @@ struct PackageState {
 ///
 /// Returns an error when a package's version, driver, or publisher cannot be
 /// resolved, its version commit cannot be found (see
-/// [`git::version_commit`]), the repository has no GitHub `origin`, a
-/// registry or GitHub lookup fails, or a package's tag names a commit that is
-/// neither its version commit nor another commit HEAD contains at the same
-/// version (see [`git::tagged_commit`]): that release was tagged in the wrong
-/// place, and counting it complete would hide it.
+/// [`git::version_commit`]), the repository has no GitHub `origin`, or a
+/// registry or GitHub lookup fails. It also returns one when a package's tag
+/// names a commit that is neither its version commit nor another commit HEAD
+/// contains at the same version (see [`git::tagged_commit`]). That release was
+/// tagged in the wrong place, and counting it complete would hide it.
 pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> Result<Pending> {
     let planned = publish::plan(config, root)?;
     let repo = github::repo(root)?;

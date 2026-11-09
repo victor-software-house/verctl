@@ -57,7 +57,7 @@ fn template_mount_is_ctl_core() {
 
 /// In prefix output mode, which mise uses for several tasks at once or when
 /// `MISE_TASK_OUTPUT=prefix` is set, mise relays a task's output itself unless
-/// the task is `raw`, and appends an SGR reset to every relayed line whenever
+/// the task is `raw`. It appends an SGR reset to every relayed line whenever
 /// its own colour is on, which `CLICOLOR_FORCE=1` turns on even into a pipe.
 /// A single task defaults to `interleave`, which passes output through, so the
 /// test forces prefix mode: without `raw` it fails. The served task, rendered

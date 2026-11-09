@@ -4,8 +4,9 @@
 //! time, so a rerun after a partial release uploads only what is missing:
 //! `cargo publish --workspace` refuses to run when any selected version
 //! exists. Cargo resolves member globs and workspace inheritance, so verctl
-//! reads only `cargo metadata`:
-//! <https://doc.rust-lang.org/cargo/commands/cargo-metadata.html>.
+//! reads only [`cargo metadata`].
+//!
+//! [`cargo metadata`]: https://doc.rust-lang.org/cargo/commands/cargo-metadata.html
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -62,7 +63,9 @@ pub fn is_virtual(manifest: &Path) -> Result<bool> {
 ///
 /// Returns an error when `cargo metadata` fails or prints something other than
 /// its JSON, or when the dependencies that order publishes form a cycle, which
-/// cargo cannot publish (<https://github.com/rust-lang/cargo/issues/4242>).
+/// cargo cannot publish ([cargo issue 4242]).
+///
+/// [cargo issue 4242]: https://github.com/rust-lang/cargo/issues/4242
 pub fn members(manifest: &Path) -> Result<Vec<Member>> {
     let path = manifest.display().to_string();
     let argv = process::argv(&[

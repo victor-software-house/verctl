@@ -56,8 +56,9 @@ pub struct PackageBump {
 }
 
 /// The changelog heading a fragment's entry goes under, from the optional
-/// frontmatter key [`Group::KEY`]. Headings follow Keep a Changelog's order
-/// (<https://keepachangelog.com/en/1.1.0/>).
+/// frontmatter key [`Group::KEY`]. Headings follow [Keep a Changelog]'s order.
+///
+/// [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Group {
     /// New functionality.

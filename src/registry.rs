@@ -18,7 +18,9 @@ use crate::process;
 /// The crates.io sparse index root.
 ///
 /// The index is public, needs no auth, and is Cargo's own source of truth for
-/// crates.io: <https://doc.rust-lang.org/cargo/reference/registry-index.html#sparse-protocol>.
+/// crates.io, as the [sparse protocol] documents.
+///
+/// [sparse protocol]: https://doc.rust-lang.org/cargo/reference/registry-index.html#sparse-protocol
 pub const CRATES_IO_INDEX: &str = "https://index.crates.io";
 
 /// The registry name Cargo gives crates.io, in `publish`, `--registry`, and
@@ -136,12 +138,13 @@ impl CargoEnv {
 /// sets it winning: `CARGO_REGISTRY_DEFAULT`, then `.cargo/config.toml` in
 /// `cwd` and each parent up to the filesystem root, then the one in
 /// `CARGO_HOME`. A directory with both `config` and `config.toml` is read from
-/// the extensionless file, as Cargo does:
-/// <https://doc.rust-lang.org/cargo/reference/config.html#hierarchical-structure>.
+/// the extensionless file, as Cargo does ([hierarchical structure]).
 ///
 /// # Errors
 ///
 /// Returns an error when the manifest cannot be read.
+///
+/// [hierarchical structure]: https://doc.rust-lang.org/cargo/reference/config.html#hierarchical-structure
 pub fn cargo_target(
     package_registry: Option<&str>,
     manifest: &Path,
@@ -394,8 +397,10 @@ async fn fetch_index(url: &str) -> Result<Option<String>> {
     }
 }
 
-/// crates.io asks automated clients to identify themselves:
-/// <https://crates.io/data-access>.
+/// crates.io asks automated clients to identify themselves, as its
+/// [data access policy] says.
+///
+/// [data access policy]: https://crates.io/data-access
 fn user_agent() -> String {
     format!(
         "verctl/{} (+{})",

@@ -236,7 +236,9 @@ fn find_config(manifest: &Path, file_name: &str) -> Option<PathBuf> {
 
 /// The stock bun query. `bun pm view` is an alias of `bun info`, which prints
 /// one property of the selected version and fails when the version does not
-/// exist: <https://bun.com/docs/pm/cli/info>.
+/// exist, as the [`bun info`] page documents.
+///
+/// [`bun info`]: https://bun.com/docs/pm/cli/info
 const BUN_QUERY: [&str; 5] = ["bun", "pm", "view", "{name}@{version}", "version"];
 
 /// The publisher name for a package released only on GitHub: a tag and a
@@ -320,8 +322,8 @@ fn publisher_name(spec: &crate::config::PackageSpec) -> &str {
 /// target is crates.io is read from the sparse index, and a stock recipe's
 /// query applies. A package with an overridden command, for any publisher, or
 /// a cargo package with a target verctl cannot tell, has no check unless it
-/// declares `query`: verctl cannot know the directory such a command runs in,
-/// nor the registry it uploads to.
+/// declares `query`. That is because verctl cannot know the directory such a
+/// command runs in, nor the registry it uploads to.
 ///
 /// The registry is asked for the name the manifest declares (`package.name`
 /// in `Cargo.toml`, `name` in `package.json`), not the label `.ctl/ver.yaml`

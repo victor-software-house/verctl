@@ -185,9 +185,10 @@ pub struct Waiting {
 /// # Errors
 ///
 /// Returns an error when the plan cannot be resolved, a changelog lacks the
-/// heading for a package version, HEAD is not on the default branch, no token
-/// is set, a registry or GitHub lookup fails, HEAD is not the version commit
-/// of an incomplete release, or a publisher, tag, or Release step fails.
+/// heading for a package version, HEAD is not on the default branch, or no
+/// token is set. It also returns one when a registry or GitHub lookup fails,
+/// HEAD is not the version commit of an incomplete release, or a publisher,
+/// tag, or Release step fails.
 pub fn run_pending(
     config: &Config,
     root: &Path,
@@ -492,7 +493,9 @@ fn publish_checked(upload: &Upload, delays: &[Duration]) -> Result<Option<String
 /// `message` is no rate limit.
 ///
 /// crates.io answers with status 429 and "Please try again after <time> or
-/// email help@crates.io": <https://crates.io/docs/rate-limits>.
+/// email help@crates.io", as its [rate limits] page documents.
+///
+/// [rate limits]: https://crates.io/docs/rate-limits
 fn rate_limited(message: &str) -> Option<String> {
     let lower = message.to_ascii_lowercase();
     if !lower.contains("too many requests") {

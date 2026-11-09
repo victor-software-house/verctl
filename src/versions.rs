@@ -188,9 +188,9 @@ pub fn report(root: &Path, config: &Config) -> Result<VersionReport> {
 /// # Errors
 ///
 /// Returns an error when either merge-base cannot be found or read, as
-/// described for [`crate::git::files_on_merge_base`], when a package's driver
-/// cannot be resolved, or when the driver cannot read a version from the local
-/// manifest or from the merge-base copy.
+/// described for [`crate::git::files_on_merge_base`]. It also returns one when
+/// a package's driver cannot be resolved, or when the driver cannot read a
+/// version from the local manifest or from the merge-base copy.
 pub fn report_with(
     root: &Path,
     config: &Config,

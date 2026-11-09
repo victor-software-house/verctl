@@ -34,10 +34,10 @@ pub fn current_versions(root: &Path, config: &Config) -> Result<Vec<(String, Str
 /// # Errors
 ///
 /// Returns an error when a pin file lies outside `root` or is a symlink,
-/// cannot be read or written, has no `[tools]` entry for the pinned tool, or
-/// has a pattern that is malformed or matches a number of times its
-/// `occurrences` does not allow. Files rewritten before the failing pin stay
-/// changed.
+/// cannot be read or written, or has no `[tools]` entry for the pinned tool. It
+/// also returns one when a pin has a pattern that is malformed or matches a
+/// number of times its `occurrences` does not allow. Files rewritten before the
+/// failing pin stay changed.
 pub fn write(root: &Path, pins: &[Pin], versions: &[(String, String)]) -> Result<Vec<PathBuf>> {
     apply(root, pins, versions, true)
 }

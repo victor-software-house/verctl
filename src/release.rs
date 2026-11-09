@@ -71,7 +71,7 @@ pub(crate) fn env_token() -> Option<String> {
 /// bumped would otherwise have nothing to render.
 ///
 /// A manifest that cannot be read or resolved is left out rather than failing
-/// the release: it is not this release's business unless something serves it,
+/// the release. It is not this release's business unless something serves it,
 /// and a template that names a missing version fails at render time, where the
 /// complaint says which template and which name.
 #[must_use]
