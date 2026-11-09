@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use std::env;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
@@ -89,13 +89,20 @@ pub fn files_on_merge_base(
         .collect())
 }
 
+/// `rel` as a path inside the repository. A relative path joins the
+/// canonical root rather than being canonicalized itself, so a file deleted
+/// from the working tree still finds its committed copy: the version guard
+/// has to see a manifest that a pull request removed.
 fn git_path(root: &Path, rel: &Path, workdir: Option<&Path>) -> Option<PathBuf> {
     let abs = if rel.is_absolute() {
-        rel.to_path_buf()
+        rel.canonicalize().ok()?
     } else {
-        root.join(rel)
+        let inside: PathBuf = rel
+            .components()
+            .filter(|part| !matches!(part, Component::CurDir))
+            .collect();
+        root.canonicalize().ok()?.join(inside)
     };
-    let abs = abs.canonicalize().ok()?;
     let workdir = workdir?.canonicalize().ok()?;
     abs.strip_prefix(workdir).ok().map(Path::to_path_buf)
 }
