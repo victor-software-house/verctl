@@ -13,7 +13,8 @@
    The search tests HEAD, then the commits 1, 2, 4, 8, … steps below it until one does not contain the tagged commit, and bisects that last interval.
    A merge `d` commits below HEAD then costs O(log d) merge-base walks; each forkctl publish after a release adds one to `d` until the next version bump.
    A linear walk from HEAD to the merge was considered and lost: it costs `d + 1` walks.
-   A binary search over the whole first-parent line was considered and lost: the line holds the entire history when the tag is off it, so it costs about log2 of the history length even when the merge is HEAD's parent.
+   A binary search over the whole first-parent line was considered and lost.
+   That line holds the entire history when the tag is off it, so the search costs about log2 of the history length even when the merge is HEAD's parent.
    A walk over every ancestor of HEAD was considered and lost: it reads the whole history to answer for one commit.
 3. **The depth is the merge's.**
    Depth orders releases oldest first.
