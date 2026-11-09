@@ -349,7 +349,9 @@ pub fn tagged_commit(
 /// index of the oldest commit on `line` that contains it.
 ///
 /// Every commit on `line` newer than the merge that brought `sha` in contains
-/// it too, so the walk stops at the first one that does not. `None` when `sha`
+/// it too. The search tests HEAD, then indices 1, 2, 4, 8, … until one does
+/// not contain `sha` or `line` ends, and bisects that last interval, so a merge
+/// `d` commits below HEAD costs O(log d) merge-base walks. `None` when `sha`
 /// names no commit, carries another version, or HEAD does not contain it.
 fn merged_release(
     repo: &gix::Repository,
@@ -367,19 +369,40 @@ fn merged_release(
     if version_at(&commit)?.as_deref() != Some(wanted) {
         return Ok(None);
     }
-    let mut depth = None;
-    for (index, at) in line.iter().enumerate() {
-        let base = repo.merge_base(*at, tagged).with_context(|| {
+    let contains = |at: gix::ObjectId| -> Result<bool> {
+        let base = repo.merge_base(at, tagged).with_context(|| {
             format!("cannot tell whether HEAD contains tagged commit {sha}; fetch the full history")
         })?;
-        if base.is_none_or(|base| base != tagged) {
+        Ok(base.is_some_and(|base| base == tagged))
+    };
+    let Some(&head) = line.first() else {
+        return Ok(None);
+    };
+    if !contains(head)? {
+        return Ok(None);
+    }
+    let mut inside = 0;
+    let mut outside = line.len();
+    let mut probe = 1;
+    while probe < line.len() {
+        if !contains(line[probe])? {
+            outside = probe;
             break;
         }
-        depth = Some(index);
+        inside = probe;
+        probe *= 2;
     }
-    Ok(depth.map(|depth| VersionCommit {
+    while outside - inside > 1 {
+        let mid = inside + (outside - inside) / 2;
+        if contains(line[mid])? {
+            inside = mid;
+        } else {
+            outside = mid;
+        }
+    }
+    Ok(Some(VersionCommit {
         sha: tagged.to_string(),
-        depth,
+        depth: inside,
     }))
 }
 
@@ -1569,6 +1592,30 @@ mod tests {
             Some(VersionCommit {
                 sha: published,
                 depth: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn a_tag_merged_several_commits_below_head_takes_the_depth_of_the_merge() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let published = rewritten_and_merged_back(dir.path(), "0.0.1");
+        for later in 1..=5 {
+            std::fs::write(dir.path().join("README"), format!("later {later}\n")).unwrap();
+            commit_all(dir.path(), &format!("docs: later {later}"));
+        }
+        let found = tagged_commit(
+            dir.path(),
+            &dir.path().join("Cargo.toml"),
+            &published,
+            &version_line,
+        )
+        .unwrap();
+        assert_eq!(
+            found,
+            Some(VersionCommit {
+                sha: published,
+                depth: 5,
             })
         );
     }
