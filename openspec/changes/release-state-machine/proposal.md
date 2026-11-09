@@ -61,16 +61,21 @@ step refreshes lockfiles itself, and the report field `next` becomes `after`.
    staging, trust, and provenance.
 8. **BREAKING:** commands become `status`, `check`, `version`, `propose`,
    `release`, `release asset`, `release bootstrap`, `render`, `ci`, and
-   `instructions`.
+   `instructions`. Not started; `docs` and `semver` shipped since and need a
+   place in this list ([audit](audit.md)).
 9. **BREAKING:** `.ctl/ver.yaml` keeps one place per concern and refuses
    unknown keys at every level. `drivers`, `publishers`, `prepare`, `pins`,
    `patterns`, and the per-package driver and publisher keys go; `branch`,
    `registries`, `ecosystems`, `steps`, `at`, `proposal`, `tags`, and
-   `packages[].assets` replace them.
+   `packages[].assets` replace them. Partly shipped: unknown keys are refused;
+   every removed key is still read ([audit](audit.md)).
 10. **BREAKING:** two workflows replace three, and the proposal branch becomes
-    `verctl/release/<base>`.
-11. All breaking changes ship in one minor, 0.4.0; later work ships as patches
-    that add without breaking.
+    `verctl/release/<base>`. Partly shipped: the branch and one reusable
+    `release.yml` are on main; the three actions remain ([audit](audit.md)).
+11. All breaking changes ship in one minor, 0.8.0, held with the rest of the
+    minor backlog; later work ships as patches that add without breaking.
+    0.4.0 to 0.7.4 shipped before this change, and the parts of it they
+    carried are listed in [audit.md](audit.md).
 
 ## Capabilities
 
@@ -93,33 +98,46 @@ rule.
 ## Decisions for the operator
 
 Agreed already: templates only (design decision 14) and command renames
-(design decision 15). Each open decision
-has a recommendation; the design gives the alternatives and trade-offs.
+(design decision 15). Each decision has a recommendation; the design gives
+the alternatives and trade-offs. The operator approved all eight as
+recommended on 2026-10-12 (VER-011 note) and confirms the 0.8.0 scope after
+the [audit](audit.md). The note after each decision says what shipped code
+settled.
 
 1. Derive state from facts on every run, with no state file or labels.
-2. Release on push to the release branch, then propose.
+   Partly settled: `publish` derives each version commit from first-parent
+   history, and no label is read.
+2. Release on push to the release branch, then propose. Settled: the
+   reusable `release.yml` publishes, then opens the Version PR, on push.
 3. Identify the Version PR by head repository, head branch, and base, and
-   verify its content too (design 2.2).
+   verify its content too (design 2.2). Identity settled by [#188][pr188]; the content
+   check is not built.
 4. One Version PR per base on `verctl/release/<base>`; no per-package PRs and
-   no version in the branch name (design 2.3).
+   no version in the branch name (design 2.3). Settled by [#161][pr161].
 5. Built-ins as providers of building blocks; extensions as steps run through
-   mise tasks or argv; declared ecosystems for other stacks (design 3).
+   mise tasks or argv; declared ecosystems for other stacks (design 3). Not
+   settled by code: drivers and publishers remain.
 6. mise installs, verifies, runs steps, and owns `mise.lock`; verctl writes no
-   lockfile (design 4).
+   lockfile (design 4). Partly settled: verctl writes no lockfile today.
 7. bun-release in Rust as option (b): Bun packs, verctl owns the registry
-   protocol (design 3.5).
+   protocol (design 3.5). Not settled by code.
 8. Ship 0.4.0 from an integration branch `next`, then patches (design 11).
+   Contradicted: 0.4.0 to 0.7.4 shipped from `main`, no `next` exists, and
+   the 0.8.0 minor is held on a stack instead.
 
 ## Impact
 
 1. Code: most of `src/`. `templates.rs` moves onto `ctl_core::served`, agreed
    with the session that owns CTC-008.
 2. Consumers: qctl, forkctl, ctl-core, unixd, and yamled change config and
-   workflows once, in the 0.4.0 window. bun-release retires once the bun
+   workflows once, in the 0.8.0 window. bun-release retires once the bun
    ecosystem publishes it.
 3. Actions: the three actions shrink to what the two workflows call. VER-043
    moves them to their own repositories.
 4. Identity: `propose` needs a token whose pull request events start CI without
    approval. VER-044 decides whether that is a dedicated GitHub App.
 5. Docs: README, the instructions, the operator skill, AGENTS.md, and
-   `docs/served-files.md` are rewritten for 0.4.0.
+   `docs/served-files.md` are rewritten for 0.8.0.
+
+[pr161]: https://github.com/victor-software-house/verctl/pull/161
+[pr188]: https://github.com/victor-software-house/verctl/pull/188
