@@ -176,6 +176,10 @@ name = "fragment"
 path = "tests/fragment.rs"
 
 [[test]]
+name = "lockfile"
+path = "tests/lockfile.rs"
+
+[[test]]
 name = "prepare_stage"
 path = "tests/prepare_stage.rs"
 

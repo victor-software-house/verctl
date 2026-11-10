@@ -1,0 +1,30 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "demo-root",
+    },
+    "packages/a": {
+      "name": "a",
+      "version": "1.1.0",
+      "dependencies": {
+        "is-number": "7.0.0",
+      },
+    },
+    "packages/b": {
+      "name": "b",
+      "version": "1.0.0",
+      "dependencies": {
+        "a": "workspace:*",
+      },
+    },
+  },
+  "packages": {
+    "a": ["a@workspace:packages/a"],
+
+    "b": ["b@workspace:packages/b"],
+
+    "is-number": ["is-number@7.0.0", "", {}, "sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng=="],
+  }
+}
