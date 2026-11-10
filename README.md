@@ -70,11 +70,14 @@ Restore mise.toml when later patches unapply.
 Allowed bumps: `major`, `minor`, `patch`, `none`.
 
 An optional `verctl:group` key, `added`, `changed`, or `fixed`, files the entry under that heading.  
-A section where no fragment names a group stays a flat list; once one does, the section gets `### Added`, `### Changed`, and `### Fixed` headings, and an ungrouped fragment goes under `### Changed`.
+A section where no fragment names a group stays a flat list.  
+Once one does, the section gets `### Added`, `### Changed`, and `### Fixed` headings, and an ungrouped fragment goes under `### Changed`.
 
 A new package starts at `0.0.0`, and its first fragment is a `patch`, so its first release is `0.0.1`.  
 Moving to `0.1.0` or `1.0.0` is a separate operator decision.  
-`version` and `check` refuse a `minor` or `major` fragment on a package at `0.0.0`, including its pre-releases and builds; to open at `0.1.0` on purpose, set `first_minor: true` on the package in `.ctl/ver.yaml`.  
+`version` and `check` refuse a `minor` or `major` fragment on a package at `0.0.0`, including its pre-releases and builds.  
+To open at `0.1.0` on purpose, set `first_minor: true` on the package in `.ctl/ver.yaml`.
+
 `release` and `status` leave a package at `0.0.0` out, so a repo can adopt the release workflow before its first release.
 
 ## Changelog
@@ -93,12 +96,16 @@ Commit only       - Summary ([`96fb0bc`](https://github.com/org/repo/commit/96fb
 No link           - Summary.
 ```
 
-An entry ends with a single period: a summary that already ends with one loses it before the reference, so `Summary.` with a pull request renders `- Summary ([#12](…)).`.
+An entry ends with a single period.  
+A summary that already ends with one loses it before the reference: `Summary.` with a pull request renders `- Summary ([#12](…)).`.
 
 No extra thanks line.  
 If a PR exists, the SHA is omitted.
 
-The pull request is the trailing `(#N)` in the subject of the commit that added the fragment, which GitHub's squash merge writes; without one the entry links that commit.  
+The pull request is the trailing `(#N)` in the subject of the commit that added the fragment.  
+GitHub's squash merge writes that `(#N)`.  
+Without one, the entry links the commit.
+
 Release notes credit no maintainer: list maintainers and the Apps that open pull requests in `changelog.internal_authors`.  
 With a token, a byline needs a login outside that list, a person rather than a bot, and a pull request from a fork.
 
@@ -106,14 +113,15 @@ With a token, a byline needs a login outside that list, a person rather than a b
 
 `verctl version` applies fragment bumps through **drivers**.  
 Local writes are the default.  
-`version --pr` is the Version PR (Action happy path; the token is `GITHUB_TOKEN`, not the `gh` account).  
+`version --pr` is the Version PR, the Action happy path; it uses `GITHUB_TOKEN` instead of the `gh` account.  
 `version --dry-run` / `--preview` prints the plan and writes nothing.  
-`version --pr --preview` also shows consumed fragments and open vs update.  
-Cargo, npm, `pyproject.toml`, `go.mod`, and `VERSION` are stock drivers, not a separate code path.  
+`version --pr --preview` also shows consumed fragments and open vs update.
+
+Cargo, npm, `pyproject.toml`, `go.mod`, and `VERSION` are stock drivers, which share one code path with declared drivers.  
 A `go.mod` keeps its version as `// vX.Y.Z` on its `module` line.  
-A `VERSION` file holds only the version, and a missing one reads as `0.0.0` until `version` writes it.  
+The version is the only content of a `VERSION` file, and a missing one reads as `0.0.0` until `version` writes it.  
 `marker: true` versions any file on its one `# version: X.Y.Z` line.  
-A `pyproject.toml` package names its `publisher`, or `none`: verctl has no stock Python publisher.
+Each `pyproject.toml` package names its `publisher`, or `none`: verctl has no stock Python publisher.
 
 A repo's declarations live in one file, `.ctl/ver.yaml`.  
 `.ctl/` is the directory every ctl CLI shares, so a repo root gains one entry however many of them it uses.
@@ -146,12 +154,14 @@ packages:
     write: [printenv, VERCTL_VERSION]
 ```
 
-A string is a **mise task**.  
-A list is execvp (no shell).  
+A string is a **mise task**, and a list is execvp (no shell).  
 Stdin is the file.  
 Write drivers also get `VERCTL_VERSION`.  
-Stdout is the version (read) or the new file (write).  
-`version` runs `after` once the versions are written: a detected lockfile refresh beside its lockfile, and a declared `after`, split on spaces with no shell, in the directory verctl runs from.  
+Stdout is the version (read) or the new file (write).
+
+`version` runs `after` once the versions are written.  
+A detected lockfile refresh runs beside its lockfile.  
+A declared `after` runs where verctl runs, split on spaces and without a shell.  
 The report's `after` lists each command it ran.
 
 `0.x` rejects a `major` fragment.
@@ -185,7 +195,7 @@ assets:
 | section | one entry is | its name is | with no `runners` / `runner` |
 |:--|:--|:--|:--|
 | `runners` | one machine | how jobs refer to it | — |
-| `ci` | a PR / push validation job | the check name | `ubuntu-latest` |
+| `ci` | a job that validates a PR or a push | the check name | `ubuntu-latest` |
 | `assets` | a release build job and its tarball | the check name, the `release asset` argument, part of the filename | the built-in record for that name |
 
 Two sections take runners and no others, because of what config is for here:
@@ -193,9 +203,11 @@ Two sections take runners and no others, because of what config is for here:
 > **verctl decides how many jobs there are. Your workflow file decides where a
 > fixed job runs.**
 
-A static YAML file cannot declare N jobs without knowing N, and only the repo knows N.  
+To declare N jobs, a static workflow has to hold N, and only the repo's config holds it.  
 That fan-out is what `ci` and `assets` buy; the machine rides along on it.  
-Every other job verctl ships (`plan`, `crate`, `render`, `version`) is always exactly one job, so nothing decides its count and nothing needs to configure it.  
+Every other job verctl ships (`plan`, `crate`, `render`, `version`) is always exactly one job.  
+So nothing decides its count, and nothing needs to configure it.
+
 Its `runs-on` is one literal in a workflow you own and already copied from `examples/`:
 
 ```yaml
@@ -210,8 +222,12 @@ Names sort alphabetically, not in file order, so a `verify` job written above an
 Checks are independent, so the order is display only.
 
 Only `labels` reaches GitHub.  
-A runner **name** is a name in the file: it resolves against `runners` or fails there, listing what is declared, so a label can never pass itself off as a machine and verctl never invents a label.  
-A label GitHub does not know queues the way any wrong label queues: verctl cannot tell which machines carry which labels, so it passes them through.
+A runner **name** is a name in the file.  
+It resolves against `runners`, or fails there and lists what is declared.  
+So a label can never pass itself off as a machine, and verctl never invents a label.
+
+A label GitHub does not know queues the way any wrong label queues.  
+verctl has no record of which machines carry which labels, so it passes them through.
 
 Built-in target records, so a public repo needs no config to stay on free hosted minutes:
 
@@ -221,13 +237,20 @@ Built-in target records, so a public repo needs no config to stay on free hosted
 | `linux-x64` | `["ubuntu-latest"]` | `linux` | `x64` | `x86_64-unknown-linux-gnu` |
 
 Each field is a default the repo overrides one at a time: naming a `runner` moves the machine and leaves the platform alone.  
-A name outside that set describes a platform verctl knows nothing about, so it must describe all of it: `runner`, `os`, `arch`, and `triple` are all required, and a partial record is an error rather than a build against an empty target triple.  
+verctl has no record for a name outside that set, so the entry must describe the whole platform.  
+`runner`, `os`, `arch`, and `triple` are all required there.  
+A partial record is an error, which stops a build against an empty target triple.
+
 `os: darwin` renders as `macos` in the filename; that is the only rename.  
 `triple` stays its own field because the machine and what it builds need not match: an x64 linux runner can build `aarch64-unknown-linux-gnu`.
 
-`ci` is exactly as trusted as `.github/workflows/ci.yml`: for a `pull_request` event both come from the pull request's own tree, so a fork PR that can declare a label could equally have written that label into the workflow file.  
+`ci` is exactly as trusted as `.github/workflows/ci.yml`.  
+For a `pull_request` event both come from the pull request's own tree.  
+So a fork PR that can declare a label could equally have written that label into the workflow file.
+
 Neither is a reason to expose a self-hosted runner group to a public repository.  
-Keep `allows_public_repositories=false` there and keep fork-PR approval on, and read declared labels as untrusted input in a repo where that is not true.
+Keep `allows_public_repositories=false` there and keep fork-PR approval on.  
+In a repo where that is not true, read declared labels as untrusted input.
 
 `verctl ci` and `verctl status` print what resolved, so a default is visible output rather than an assumption.  
 With `--github-output`, both also write a matrix: GitHub needs `runs-on` before a job exists, so a small `plan` job emits the labels and the real jobs consume them ([`examples/workflows/ci.yml`](examples/workflows/ci.yml)).
@@ -250,7 +273,8 @@ A file the build does not write, such as a licence, is copied into `dir` by the 
 
 ## Vendored assets
 
-A repository that builds someone else's library from a pinned upstream release can publish the result as Release assets, so mise installs it as a `github:` tool.  
+A repository can build someone else's library from a pinned upstream release.  
+It can then publish the result as Release assets, so mise installs it as a `github:` tool.  
 The set carries the upstream version; fragments never bump it and `release` never reads it.  
 A config that vendors may declare no packages.
 
@@ -292,7 +316,9 @@ In the build job:
 ```
 
 `release asset` builds the archive, then creates the Release at `HEAD` when it is missing, never marked latest, and attaches the archive and `<archive>.sha256`.  
-The digest in that file is the one GitHub reports for the stored archive, so a rerun whose build differs byte for byte still publishes a checksum that matches.  
+The digest in that file is the one GitHub reports for the stored archive.  
+So a rerun whose build output differs in any byte still publishes a checksum that matches.
+
 An asset the Release already holds is reported as `already`.  
 To replace an archive, delete it and its `.sha256` together.  
 `--dry-run` builds the archive and uploads nothing.
@@ -334,13 +360,17 @@ Adopt the caller when no release is pending, or merge the adoption before the Ve
 Each release runs at its version commit, and an older version commit lacks the `ver` task the reusable workflow runs.
 
 GitHub refuses a Release at a commit whose `.github/workflows` differs from the default branch unless the token holds `workflows: write`, which `GITHUB_TOKEN` cannot.  
-So a package whose uploads all have a registry check, or that has no upload, gets its tag and Release before its uploads, in the run that merged the Version PR, and a rerun after a failed upload finds them.  
+So some packages get their tag and Release before their uploads, in the run that merged the Version PR.
+
+These are the packages with no upload, and those whose uploads all have a registry check.  
+A rerun after a failed upload finds the tag and Release.
+
 A package with an unchecked upload is tagged after its upload, since its tag is the record that the upload ran.
 
 ## Actions
 
 These replace `changesets/action`.  
-They are **GitHub Actions, not a GitHub App**.  
+They are **GitHub Actions**, with no GitHub App.  
 The runner already has `git` and `GITHUB_TOKEN`.  
 PRs are opened with octocrab.  
 Commits are written with `gix`; the push runs `git push` with that token, passed through a credential helper and never on the command line or in a URL.  
@@ -355,18 +385,23 @@ There is no local token setup.
 For a hand-written workflow, use these actions; most repositories call the reusable workflow instead.
 
 The Version PR comes from `verctl/release/<base>`, one per base branch.  
-`check --versions` fails it when it changes anything the version step does not write from the merge-base: a source file, a manifest key no pin names, or a lockfile entry other than a workspace version the plan moves.  
-Any other pull request fails when it adds a CHANGELOG section for a version, or changes whether a package publishes without a fragment that bumps it. verctl never merges it or enables auto-merge on it: a release starts only when a person merges the Version PR.
+`check --versions` fails it when it changes anything the version step does not write from the merge-base.  
+That covers a source file, a manifest key no pin names, and a lockfile entry other than a workspace version the plan moves.
+
+Any other pull request fails when it adds a CHANGELOG section for a version.  
+It also fails when it changes whether a package publishes without a fragment that bumps it.  
+verctl never merges the Version PR or enables auto-merge on it: a release starts only when a person merges it.
 
 Mise owns tools.  
-Publish uses the registry's token secret (for crates.io, `CARGO_REGISTRY_TOKEN`) and the workflow's `GITHUB_TOKEN`; no PAT.
+Publish uses the registry's token secret (for crates.io, `CARGO_REGISTRY_TOKEN`) and the workflow's `GITHUB_TOKEN`, with no personal access token.
 
 A package with `publisher: none` is released on GitHub only: `release` creates its tag and Release, and `release asset` its tarballs, with no registry upload.  
 Use it for private binaries, such as a Cargo package with `publish = false`.
 
 ## Operator documents
 
-Clap remains the command grammar. ctl-core `Surface` renders the shared version, mounted invocation/no-`--`, and visible command-inventory fragments.  
+Clap remains the command grammar.  
+ctl-core `Surface` renders the shared version, mounted invocation/no-`--`, and visible command-inventory fragments.  
 Verctl's Jinja templates retain domain prose, and `operator_docs` byte-compares their renders with `skills/verctl/SKILL.md` and `src/instructions.md`.
 
 ## License
