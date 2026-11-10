@@ -2,7 +2,7 @@
 
 ## Motivation
 
-[docs/served-files.md](../../../docs/served-files.md) section 6 holds the rule
+[docs/served-files.md](../../../../docs/served-files.md) section 6 holds the rule
 that `check` compares every served file to what its template renders at the
 versions on HEAD.
 It does not.
@@ -45,4 +45,4 @@ Queue row: [VER-020][ver-020].
 3. A repository with a hand-edited served file fails `check` on its next pull
    request. The fix is `verctl render`.
 
-[ver-020]: ../../../tasks.yaml
+[ver-020]: ../../../../tasks.yaml

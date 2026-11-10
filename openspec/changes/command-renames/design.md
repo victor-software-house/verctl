@@ -29,7 +29,7 @@ labels the same rows `after`. No other report field is renamed.
 
 `render` rewrites the `pins` entries, as `pin` did, then renders
 `.ctl/templates/` at the versions on HEAD. The rendering half ships in
-[served-file-check](../served-file-check/design.md), which makes `check`
+[served-file-check](../archive/2026-11-10-served-file-check/design.md), which makes `check`
 fail on a served file that differs and needs one command that fixes it.
 Moving templates onto `ctl_core::served` is still a later change.
 

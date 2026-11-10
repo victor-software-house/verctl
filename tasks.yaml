@@ -142,22 +142,6 @@ queue:
     notes:
       - 2026-11-10, split from release-state-machine (VER-011) along the boundaries of its work, because each change stays within the templates specs:budget word budgets.
 
-  - id: VER-020
-    title: check validates served files, and one file has one owner
-    scope: verctl
-    outcome: >-
-      A served file edited by hand, or claimed by both a template and a
-      pin, fails on the PR that does it instead of at release time.
-    blocked_by: []
-    acceptance:
-      - '`check` runs the same validation prepare does: every pattern still matches at its declared arity.'
-      - '`check` compares every served file to what its template renders at the versions on HEAD.'
-      - A file that a template renders and a [[pins]] entry also names fails before anything is written.
-      - The failure names the file and which two declarations claim it.
-    notes:
-      - '2026-08-18: docs/served-files.md §6 describes check as designed, not implemented — only prepare and its dry run validate today, so drift introduced by hand survives until a release. The double-owner gap is real and silent: prepare_report rewrites pins first and renders templates second, so a template would clobber the rewrite without saying so.'
-    plan: openspec/changes/served-file-check/proposal.md
-
   - id: VER-021
     title: Every config file we own has a JSON Schema, at a URL an IDE can fetch
     scope: verctl
@@ -844,6 +828,20 @@ horizon:
       - It cites ledger rows by id, and docs/ ships in the crate.
 
 archive:
+  - id: VER-020
+    title: check validates served files, and one file has one owner
+    scope: verctl
+    outcome: >-
+      A served file edited by hand, or claimed by both a template and a
+      pin, fails on the PR that does it instead of at release time.
+    notes:
+      - '2026-08-18: docs/served-files.md §6 describes check as designed, not implemented — only prepare and its dry run validate today, so drift introduced by hand survives until a release. The double-owner gap is real and silent: prepare_report rewrites pins first and renders templates second, so a template would clobber the rewrite without saying so.'
+    plan: openspec/changes/archive/2026-11-10-served-file-check/proposal.md
+    completed: 2026-11-10T20:04:21
+    evidence:
+      - openspec/changes/archive/2026-11-10-served-file-check/
+    disposition: completed
+
   - id: VER-033
     title: Publish follows the dependency graph, not the declaration order
     scope: verctl
