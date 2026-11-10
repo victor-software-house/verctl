@@ -92,7 +92,7 @@ override.
 | `title` | string | `""` | Version PR title; empty means `chore(release): version packages` |
 | `commit-message` | string | `""` | Version PR commit message; empty means the title |
 | `registry-token-env` | string | `CARGO_REGISTRY_TOKEN` | the variable verctl hands the registry token to the publisher under |
-| `crates-io-trusted-publishing` | boolean | `false` | publish to crates.io with a trusted-publishing token from `rust-lang/crates-io-auth-action`, handed to the publisher as `registry-token-env`, in place of the `registry-token` secret (see the note after the tables) |
+| `crates-io-trusted-publishing` | boolean | `false` | publish to crates.io with a trusted-publishing token in place of the `registry-token` secret (see the note after the tables) |
 
 | Secret | Required | Without it |
 |:--|:--|:--|
@@ -104,7 +104,8 @@ in a repository are the caller's choice. GitHub fixes the names a called
 workflow declares, which is why they are inputs to nothing else.
 
 With `crates-io-trusted-publishing`, the token comes from
-`rust-lang/crates-io-auth-action` and is exported as `registry-token-env`.
+`rust-lang/crates-io-auth-action` and is handed to the publisher as
+`registry-token-env`.
 The publish job requests `id-token: write`, which every caller grants.
 
 ### 1.2 Jobs
@@ -214,9 +215,11 @@ The `plan` job checks each entry once and exposes the list as an output.
 In `plan`, `publish`, `assets`, and `docs`, a one-line step before the mise
 action writes the list to `MISE_IGNORED_CONFIG_PATHS` in `GITHUB_ENV`.
 So the action and every later step skip them.
+
 The entries stay relative.
-mise resolves a relative entry against the directory it runs in since 2026.8.9
-(jdx/mise#12169), and every step runs at the repository root.
+Since 2026.8.9, mise resolves a relative entry against the directory it runs
+in (jdx/mise#12169).
+Every step runs at the repository root.
 The input defaults to mise 2026.10.25, and every caller passed 2026.9.17 or
 later on 2026-11-10.
 
