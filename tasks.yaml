@@ -1032,17 +1032,17 @@ horizon:
       - 2026-11-10, split from package-discovery (VER-085) at one boundary of its work, because each change stays within the templates specs:budget word budgets.
 
   - id: VER-108
-    title: Split git.rs and config.rs by concept
+    title: Split verctl into crates and modules by concept
     scope: refactor
     outcome: >-
-      Each verctl module holds one concept, so no source file mixes branch
-      resolution, history walks, remotes, and worktree reads.
+      Each verctl concept has one home: a workspace crate where it carries its own heavy dependency or a consumer wants it alone, a module otherwise, released at one version as ctl-core is.
     kind: deferred
     open: verctl 0.8.0 is released.
     notes:
       - git.rs held 3481 lines and 30 public functions, config.rs 2524, github.rs 1638, at main 2665f11.
       - Split git.rs into branches, history, remote, and worktree; move the release proofs beside release; split config.rs per .ctl/ver.yaml section; move each in-file test module into its own file; move command handlers out of main.rs.
       - Each split is a pure move in its own pull request, proved by the existing tests (operator, 2026-11-10).
+      - 'Candidates for crates: git on gix, the GitHub client, config and drivers with lockfiles, registries and publishers; the verctl crate stays the facade and the binary (operator, 2026-11-10).'
 
   - id: VER-109
     title: Decide whether children inherit the mise mirror token
