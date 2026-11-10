@@ -103,12 +103,16 @@ without fragments, and `render` is the fix for both. A file that a template and
 a `pins` entry both claim fails `version`, `check`, and `render` before any
 write.
 
-Each side of `{version}` in a `patterns.match` needs text a version cannot
-hold. That is a character other than a digit or `.`, and after the version a
-`-` or `+` only with more text after it. `whole_line: true` lets the line
-start and end serve instead. The load refuses a pattern without both
-boundaries, so `0.1.1-rc1` fails to match rather than being half rewritten. A
-`?ref=v1.2.3-rc1` include fails too.
+A `patterns.match` needs a boundary on each side of `{version}`. A side's
+literal is the text between `{version}` and the pattern's edge, on that side.
+
+A side is bounded when its literal holds at least one character that is not a
+digit, `.`, `-`, or `+`. Under `whole_line: true`, the line start or end
+bounds the side, unless the literal on that side is made only of those four
+characters.
+
+The load refuses a pattern with an open side, so `0.1.1-rc1` fails to match
+rather than being half rewritten. A `?ref=v1.2.3-rc1` include fails too.
 
 Machines are `runners` entries with `labels`, declared once and named by
 the jobs that run on them: a `ci` job takes `runners`, one check each; an

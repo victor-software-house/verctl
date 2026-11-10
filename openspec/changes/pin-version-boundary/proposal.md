@@ -27,13 +27,10 @@ Queue row: [VER-031][ledger].
 
 ## What changes
 
-1. **BREAKING:** loading `.ctl/ver.yaml` fails on a pattern without a boundary on both sides of `{version}`.
-   A side has a boundary in one of three ways:
-   - a character next to `{version}` other than a digit, `.`, `-`, or `+`;
-   - after the placeholder, a `-` or `+` with more text after it;
-   - with `whole_line: true`, the line start or the line end.
-   The message names the pattern id, the side, and both fixes.
-
+1. **BREAKING:** loading `.ctl/ver.yaml` fails on a pattern with an open side of `{version}`.
+   A side's literal is the text between `{version}` and the pattern's edge, on that side.
+   A side is bounded when its literal holds at least one character that is not a digit, `.`, `-`, or `+`.
+   Under `whole_line: true`, the line start or end bounds the side, unless that literal is only those four.
 2. **BREAKING:** a `tool` pin fails when its own include's `?ref=v` starts with a version and goes on, and leaves the file untouched.
    A ref that is not a version, such as a branch, stays put as before.
 3. A test writes a prerelease into a pinned file and asserts that `version` fails and leaves the file untouched.

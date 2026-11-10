@@ -683,11 +683,11 @@ fn every_pattern_says_where_the_version_goes(
 }
 
 /// Where the version starts and ends, said by the pattern. `{version}` is
-/// digits and dots, so without text beside it that a version cannot hold,
-/// a longer version matches by its numeric head: `version: {version}` reads
-/// `version: 0.1.1-rc1` as 0.1.1 and keeps `-rc1` after the new version. The
-/// file cannot settle it, because `download/v{version}-linux` against
-/// `download/v1.2.3-linux-x64.tar.gz` is a correct pin of 1.2.3.
+/// digits and dots, so without literal text that a version cannot hold on
+/// each side, a longer version matches by its numeric head: `version:
+/// {version}` reads `version: 0.1.1-rc1` as 0.1.1 and keeps `-rc1` after the
+/// new version. The file cannot settle it, because `download/v{version}-linux`
+/// against `download/v1.2.3-linux-x64.tar.gz` is a correct pin of 1.2.3.
 fn every_pattern_bounds_the_version(
     patterns: &BTreeMap<String, PinPattern>,
     _: &Config,
@@ -706,40 +706,33 @@ fn every_pattern_bounds_the_version(
     Ok(())
 }
 
-/// What leaves one side of the placeholder open, if anything does. A digit
-/// or `.` beside it can be part of the version, and a lone `-` or `+` after
-/// it opens a prerelease or build that the rest of the file can continue.
-/// Under `whole_line` the line itself starts and ends the match.
+/// What leaves one side of the placeholder open, if anything does.
+///
+/// A side's literal is the text between `{version}` and the pattern's edge on
+/// that side. The side is bounded when its literal holds at least one
+/// character that is not a digit, `.`, `-`, or `+`. A version and its
+/// prerelease or build hold only those four, so any other character fixes
+/// where the version starts or ends. Under `whole_line` the line start or end
+/// bounds a side whose literal is empty. A literal made only of those four
+/// characters stays open.
 fn unbounded(before: &str, after: &str, whole_line: bool) -> Option<String> {
-    let continues = |next: &char| next.is_ascii_digit() || *next == '.';
-    let fixes = "add the text beside it to match, or set whole_line: true";
-    if before.is_empty() && !whole_line {
+    for (text, side, edge) in [(before, "before", "starts"), (after, "after", "ends")] {
+        if text
+            .chars()
+            .any(|next| !matches!(next, '0'..='9' | '.' | '-' | '+'))
+        {
+            continue;
+        }
+        if text.is_empty() {
+            if whole_line {
+                continue;
+            }
+            return Some(format!(
+                "nothing {side} {PLACEHOLDER} marks where the version {edge}: add the text {side} it to match, or set whole_line: true"
+            ));
+        }
         return Some(format!(
-            "nothing before {PLACEHOLDER} marks where the version starts: {fixes}"
-        ));
-    }
-    if let Some(next) = before.chars().next_back().filter(continues) {
-        return Some(format!(
-            "{next:?} before {PLACEHOLDER} can be part of the version: end the text before it with another character"
-        ));
-    }
-    if after.is_empty() && !whole_line {
-        return Some(format!(
-            "nothing after {PLACEHOLDER} marks where the version ends: {fixes}"
-        ));
-    }
-    let mut rest = after.chars();
-    let first = rest.next();
-    if let Some(next) = first.filter(continues) {
-        return Some(format!(
-            "{next:?} after {PLACEHOLDER} can be part of the version: start the text after it with another character"
-        ));
-    }
-    if let Some(next) = first.filter(|next| matches!(next, '-' | '+'))
-        && rest.next().is_none()
-    {
-        return Some(format!(
-            "{next:?} after {PLACEHOLDER} opens a prerelease or build: add the text that follows it to match"
+            "{text:?} {side} {PLACEHOLDER} holds only digits, '.', '-', and '+', which a version can continue into: add more of the text {side} it to match"
         ));
     }
     None
@@ -1093,10 +1086,11 @@ pub struct PinPattern {
     /// not a regex, so nothing about the file's format is assumed. Exactly one
     /// placeholder, checked over `patterns` so the complaint names the id.
     ///
-    /// Each side of the placeholder needs a character a version cannot hold:
-    /// not a digit or `.`, and after it a `-` or `+` only with more text
-    /// after that, since alone it opens a prerelease. Under `whole_line` the
-    /// line start and end count too. The load refuses a pattern without.
+    /// Each side is bounded when the literal text between `{version}` and
+    /// the pattern's edge on that side holds at least one character that is
+    /// not a digit, `.`, `-`, or `+`. Under `whole_line` the line start or end
+    /// bounds a side whose literal is empty. The load refuses a pattern with
+    /// an open side.
     pub r#match: String,
     /// How often the file must say it. A pin that lost its only mention, or
     /// drifted to one nobody declared, fails the release rather than serving
@@ -1728,44 +1722,66 @@ mod tests {
     /// under `whole_line`. Every refusal names the pattern and the side.
     #[test]
     fn a_pattern_marks_where_the_version_starts_and_ends() {
+        let only = "holds only digits, '.', '-', and '+'";
         let cases = [
+            ("name-{version}.tar.gz", false, None),
+            ("download/v{version}-linux", false, None),
+            ("v{version}.tar", false, None),
+            ("demo@{version} --", false, None),
+            ("`demo@{version}`", false, None),
+            ("verctl-{version}", true, None),
+            ("version: {version}", true, None),
+            ("{version}", true, None),
+            (
+                "{version}",
+                false,
+                Some("nothing before {version}".to_owned()),
+            ),
+            (
+                "verctl-{version}",
+                false,
+                Some("nothing after {version}".to_owned()),
+            ),
             (
                 "version: {version}",
                 false,
-                Some("skill: nothing after {version}"),
+                Some("skill: nothing after {version}".to_owned()),
             ),
             (
-                "{version} today",
+                "verctl@{version}.",
                 false,
-                Some("skill: nothing before {version}"),
-            ),
-            ("demo@{version}.", false, Some("'.' after {version}")),
-            ("demo@{version}1", false, Some("'1' after {version}")),
-            (
-                "release.{version} today",
-                false,
-                Some("'.' before {version}"),
+                Some(format!("\".\" after {{version}} {only}")),
             ),
             (
                 "v{version}-",
                 false,
-                Some("'-' after {version} opens a prerelease"),
+                Some(format!("\"-\" after {{version}} {only}")),
             ),
             (
                 "v{version}+",
                 false,
-                Some("'+' after {version} opens a prerelease"),
+                Some(format!("\"+\" after {{version}} {only}")),
             ),
             (
-                "v{version}-",
-                true,
-                Some("'-' after {version} opens a prerelease"),
+                "-{version}",
+                false,
+                Some(format!("\"-\" before {{version}} {only}")),
             ),
-            ("download/v{version}-linux", false, None),
-            ("demo@{version} --", false, None),
-            ("`demo@{version}`", false, None),
-            ("version: {version}", true, None),
-            ("{version}", true, None),
+            (
+                "{version}.1",
+                false,
+                Some("nothing before {version}".to_owned()),
+            ),
+            (
+                "{version}.1",
+                true,
+                Some(format!("\".1\" after {{version}} {only}")),
+            ),
+            (
+                "version: {version}-",
+                true,
+                Some(format!("\"-\" after {{version}} {only}")),
+            ),
         ];
         for (text, whole_line, refusal) in cases {
             let loaded = load(&formatdoc! {"
@@ -1784,7 +1800,7 @@ mod tests {
                 (Ok(_), None) => {}
                 (Err(error), Some(needle)) => {
                     let report = format!("{error:#}");
-                    assert!(report.contains(needle), "{text}: {report}");
+                    assert!(report.contains(needle.as_str()), "{text}: {report}");
                 }
                 (outcome, _) => panic!("{text} (whole_line: {whole_line}): {outcome:?}"),
             }

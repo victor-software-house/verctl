@@ -222,13 +222,18 @@ verctl they install is independent of the version they release.
 HEAD. `version` does the same at the versions it writes, so the
 Version PR commit carries them.
 
-A `patterns.match` needs a boundary on each side of `{version}`. That
-is a character other than a digit or `.`, and after the version a `-`
-or `+` only with more text after it. `whole_line: true` makes the line
-start and end boundaries too. Loading `.ctl/ver.yaml` refuses a
-pattern without one, naming it and the side. A prerelease such as
-`0.1.1-rc1` then fails to match instead of having its numeric head
-rewritten.
+A `patterns.match` needs a boundary on each side of `{version}`. A
+side's literal is the text between `{version}` and the pattern's edge,
+on that side.
+
+A side is bounded when its literal holds at least one character that
+is not a digit, `.`, `-`, or `+`. Under
+`whole_line: true`, the line start or end bounds the side, unless the
+literal on that side is made only of those four characters.
+
+Loading `.ctl/ver.yaml` refuses a pattern with an open side, naming it
+and the side. A prerelease such as `0.1.1-rc1` then fails to match
+instead of having its numeric head rewritten.
 
 An include whose `?ref=v…` starts with a version and goes on fails the
 same way.
