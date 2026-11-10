@@ -268,9 +268,10 @@ pub struct AssetArgs {
     /// `VERCTL_TARGET` and runs the bare verb.
     #[arg(env = "VERCTL_TARGET")]
     pub target: String,
-    /// Package map. Defaults to .ctl/ver.yaml in the current directory.
-    #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
-    pub config: PathBuf,
+    /// Package map. Defaults to the one named before `asset`, which defaults
+    /// to .ctl/ver.yaml in the current directory.
+    #[arg(short = 'c', long, value_hint = clap::ValueHint::FilePath)]
+    pub config: Option<PathBuf>,
     /// The shared `--dry-run` flag: build the tarball and upload nothing.
     #[command(flatten)]
     pub dry: DryRunArgs,
@@ -310,11 +311,7 @@ impl AssetArgs {
     /// The config named after `asset`, or else the one named before it.
     #[must_use]
     pub fn config_under<'a>(&'a self, release: &'a ReleaseArgs) -> &'a Path {
-        if self.config.as_os_str() == crate::config::FILE {
-            &release.config
-        } else {
-            &self.config
-        }
+        self.config.as_deref().unwrap_or(&release.config)
     }
 }
 

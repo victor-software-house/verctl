@@ -237,6 +237,29 @@ fn a_dry_run_before_asset_uploads_nothing() {
     assert!(report["uploaded"].is_null(), "{report}");
 }
 
+/// A `--config` written after `asset` wins over one written before it, even
+/// when it names the default path.
+#[test]
+fn a_config_after_asset_wins_over_one_before_it() {
+    let root = files_root();
+    let report = json(&run(
+        root.path(),
+        &[
+            "release",
+            "-c",
+            "missing.yaml",
+            "asset",
+            "linux-x64",
+            "-c",
+            ".ctl/ver.yaml",
+            "--dry-run",
+            "--format",
+            "json",
+        ],
+    ));
+    assert_eq!(report["tarball"], "./demo_1.2.3_linux_x64.tar.gz");
+}
+
 /// The build runs as a child of a job that holds a `GITHUB_TOKEN` able to
 /// write contents, and sees neither GitHub credential.
 #[test]
