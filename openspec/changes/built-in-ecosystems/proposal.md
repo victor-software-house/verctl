@@ -7,7 +7,7 @@ ranges raw, and Bun's own lockfile, not package.json, decides the dependency
 versions it publishes. bun-release covers that in TypeScript beside verctl,
 and verctl's own tool pin moves by hand.
 
-Queue row: VER-011. This change is one part of
+Queue row [VER-011][ver-011]. This change is one part of
 [release-state-machine][rsm]; the blocks it provides are
 [building-blocks][bb].
 
@@ -17,7 +17,7 @@ Queue row: VER-011. This change is one part of
    and Registry blocks.
 2. mise installs and verifies verctl, runs every step, and owns `mise.lock`.
    A repository's own tool pin moves through the built-in `mise-pin` step.
-3. bun-release becomes Rust inside verctl: Bun packs, and verctl's own npm
+3. bun-release becomes Rust inside verctl. Bun packs. verctl's own npm
    registry client queries, publishes, exchanges OIDC tokens, and handles
    staging, trust, and provenance.
 
@@ -49,3 +49,4 @@ The operator approved these as decisions 6 and 7 of
 
 [rsm]: ../release-state-machine/proposal.md
 [bb]: ../building-blocks/proposal.md
+[ver-011]: ../../../tasks.yaml

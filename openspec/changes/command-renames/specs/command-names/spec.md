@@ -2,7 +2,7 @@
 
 ### Requirement: The version step is the version command
 
-`verctl version` SHALL apply fragment bumps and take every flag and
+`verctl version` SHALL apply fragment bumps. It SHALL take every flag and
 variable the version step took in verctl 0.7. Its report SHALL list
 follow-up commands under `after`.
 
@@ -117,7 +117,7 @@ them. None SHALL appear in `--help`. The usage spec SHALL mark each
 #### Scenario: The old pin verb under JSON
 
 - **WHEN** a user runs `verctl --format json pin --dry-run`
-- **THEN** it exits 2 and the JSON error on stdout says `pin is now render: run verctl render`
+- **THEN** it exits 2 and the JSON error on stdout shows `pin is now render: run verctl render`
 
 #### Scenario: The old assets verb
 

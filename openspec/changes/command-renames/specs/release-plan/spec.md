@@ -2,7 +2,8 @@
 
 ### Requirement: A package at 0.0.0 is not planned
 
-`verctl status` and `verctl release` SHALL leave out every package whose version is `0.0.0`, with or without a pre-release or build suffix, and SHALL do so before any registry or GitHub lookup for it.
+`verctl status` and `verctl release` SHALL leave out every package whose version is `0.0.0`, with or without a pre-release or build suffix.
+They SHALL do so before any registry or GitHub lookup for it.
 `verctl release` SHALL NOT require a changelog section for such a package.
 
 #### Scenario: A crate adopted at 0.0.0

@@ -2,23 +2,27 @@
 
 ## Why
 
-`prepare` is the step that writes versions, changelogs, and served files, and
-its report lists the follow-up commands under `next`. The
-[release-state-machine](../release-state-machine/proposal.md) plan names that
-step `version` and the field `after`. The operator approved both names on
-2026-10-12, with `render` for `pin`. On 2026-11-09 the operator placed the
-three renames in the 0.8.0 minor, with no change to what each command does
-(operator, 2026-11-09). On 2026-11-10 the operator added `publish` to
-`release` and `assets` to `release asset`, the surface of
-[derived-release-state](../derived-release-state/design.md) §4, and moved
-the release plan into `status` now, so 0.9.0 needs no second CLI break
-(operator, 2026-11-10).
+`prepare` is the step that writes versions, changelogs, and served files.
+Its report lists the follow-up commands under `next`.
+The [release-state-machine](../release-state-machine/proposal.md) plan names
+that step `version` and the field `after`.
+
+The operator decided the scope in three steps:
+
+1. On 2026-10-12 the operator approved both names, with `render` for `pin`.
+2. On 2026-11-09 the operator placed the three renames in the 0.8.0 minor.
+   No command changes what it does (operator, 2026-11-09).
+3. On 2026-11-10 the operator added `publish` to `release` and `assets` to
+   `release asset`, the surface of
+   [derived-release-state](../derived-release-state/design.md) §4.
+   The operator also moved the release plan into `status` now, so 0.9.0
+   needs no second CLI break (operator, 2026-11-10).
 
 Every caller names these verbs: the reusable `release.yml`,
 `actions/version-pr`, and each consumer's own scripts. A rename breaks each
 of them once, so it belongs in the one minor that carries every break.
 
-Queue row: VER-091.
+Queue row [VER-091][ver-091].
 
 ## What changes
 
@@ -51,7 +55,7 @@ Queue row: VER-091.
 10. The `prepare`, `pins`, `assets`, and `publish` keys in `.ctl/ver.yaml`
     keep their names; the config reshape is a later change. The workflow
     job ids and the `actions/publish` directory keep theirs too, so check
-    names do not change; moving the actions is VER-043.
+    names do not change; moving the actions is queue row [VER-043][ver-043].
 
 ## Impact
 
@@ -65,3 +69,6 @@ Queue row: VER-091.
    `AGENTS.md`, `examples/ver.yaml`, the pending fragments, and the specs
    that name a renamed verb.
 4. Consumers rename their calls in their 0.8.0 adoption pull requests.
+
+[ver-043]: ../../../tasks.yaml
+[ver-091]: ../../../tasks.yaml

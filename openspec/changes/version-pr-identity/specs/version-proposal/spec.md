@@ -2,12 +2,15 @@
 
 ### Requirement: A Version PR is identified by facts that cannot change
 
-verctl SHALL identify a Version PR as a pull request whose head repository is
-the repository itself, whose head branch is `verctl/release/<base>`, and whose
-current base, read from the pull request when verctl runs, is the branch named
-by `branch` and equals `<base>`. It SHALL NOT read a pull request's title,
-body, or labels to identify it, and SHALL NOT take the base from an event
-payload.
+verctl SHALL identify a Version PR as a pull request that meets all of these:
+
+- its head repository is the repository itself;
+- its head branch is `verctl/release/<base>`;
+- its current base, read from the pull request when verctl runs, is the
+  branch named by `branch` and equals `<base>`.
+
+verctl SHALL NOT read a pull request's title, body, or labels to identify it.
+It SHALL NOT take the base from an event payload.
 
 #### Scenario: A fork uses the same branch name
 
@@ -29,10 +32,13 @@ payload.
 
 `verctl propose` SHALL run the version step on a tree at the tip of `branch`,
 commit it on `verctl/release/<branch>`, and open or update the Version PR
-titled `proposal.title`. It SHALL close an open Version PR when no fragment is
-pending, and SHALL refuse to open or update one while any package's current
-release is short of `released`, except a package in `conflict`, which needs a
-new version to resolve.
+titled `proposal.title`.
+
+It SHALL close an open Version PR when no fragment is pending.
+
+It SHALL refuse to open or update one while any package's current release is
+short of `released`. A package in `conflict` is the exception, because it
+needs a new version to resolve.
 
 #### Scenario: The owner command re-resolves more than the bump
 
@@ -57,12 +63,15 @@ new version to resolve.
 
 ### Requirement: check requires identity and content
 
-`verctl check` SHALL compare HEAD with its merge-base on `branch`. A pull
-request that is not a Version PR SHALL fail when it changes a manifest version
-or adds a CHANGELOG heading for a version; it may add or remove fragments.
-A manifest version or a CHANGELOG version present at the merge-base of HEAD
-and the release branch SHALL NOT count as changed or added, whatever the pull
-request's base.
+`verctl check` SHALL compare HEAD with its merge-base on `branch`.
+
+A pull request that is not a Version PR SHALL fail when it changes a manifest
+version or adds a CHANGELOG heading for a version. It may add or remove
+fragments.
+
+A version present at the merge-base of HEAD and the release branch SHALL NOT
+count as changed or added. This covers a manifest version and a CHANGELOG
+version, whatever the pull request's base.
 
 #### Scenario: A hand-edited version on a feature branch
 
@@ -91,10 +100,11 @@ request's base.
 
 ### Requirement: check requires a release for a publish change
 
-A pull request that is not a Version PR SHALL fail when it changes whether a
-package publishes, unless it adds a fragment that bumps that package above
-`none`. A publish setting equal to the package's setting at the merge-base of
-HEAD and the release branch SHALL NOT count as changed.
+A pull request that is not a Version PR SHALL fail when it changes whether
+a package publishes. The exception is a pull request that adds a fragment
+that bumps that package above `none`. A publish setting equal to the
+package's setting at the merge-base of HEAD and the release branch SHALL
+NOT count as changed.
 
 #### Scenario: Publishing turned on without a fragment
 
