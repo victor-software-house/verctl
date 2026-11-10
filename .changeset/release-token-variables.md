@@ -8,6 +8,8 @@ It gives the token to each publisher and its registry `query` under `--registry-
 The queries that decide whether a release is complete or a version was skipped get it too.  
 No other command it starts gets either variable, and no flag takes the token.
 
+In the library, `publish::run_pending` takes an `Option<&RegistryToken>`, and `pending::pending` takes one for those queries.
+
 No command verctl starts inherits `GITHUB_TOKEN` or `GH_TOKEN` either: not a publisher, not a build script it runs, not `assets.prepare` or `assets.build`, and not `prepare.after`.  
 Before, each ran with the job's token, which can write contents.  
 verctl keeps the token for its own GitHub calls, and its own `git push` takes it through a private variable.  

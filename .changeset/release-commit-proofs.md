@@ -38,3 +38,5 @@ An abandoned version, one that a later downward change superseded, is not listed
 The workflow then releases it before the newer one.
 
 The reusable `release.yml` takes two boolean inputs, `allow-workflow-change` and `allow-off-default-branch`, default `false`, and passes them to verctl through `env:`.
+
+In the library, `publish::run_pending` takes an `Allow` argument, and the report it returns lists `allowed`.

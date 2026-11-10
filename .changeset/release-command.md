@@ -3,10 +3,12 @@ verctl: minor
 verctl:group: changed
 ---
 
-`verctl publish` is now `verctl release`, with the same flags, variables, and behaviour.  
+`verctl publish` is now `verctl release`, with the same flags and variables, except `--plan`, which moved to `status --github-output`.  
+Its JSON report drops `pending`, which `status` holds as `unreleased`, and gains `allowed`.  
 `verctl assets` is now `verctl release asset <target>`.  
 It reads the target from `VERCTL_TARGET`, builds the tarball, and uploads it.  
-`--dry-run` builds it and uploads nothing, and `--vendored <name>` builds and uploads a vendored set.  
+`--dry-run` builds the tarball and uploads nothing, written before or after `asset`, and `--vendored <name>` builds and uploads a vendored set.  
+
 The old verbs are hidden and exit 2 with an error that names the new one.  
 `--build`, `--upload`, and their variables are gone.
 

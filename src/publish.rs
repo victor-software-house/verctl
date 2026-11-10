@@ -590,7 +590,7 @@ fn publish_checked(
     }
     if let Some(limit) = rate_limited(&message) {
         bail!(
-            "{coord}: the registry's rate limit stopped the publish ({limit}). Nothing was tagged. Rerun the publish then: it skips every crate the registry already lists."
+            "{coord}: the registry's rate limit stopped the upload ({limit}). A package whose uploads all have a registry check is tagged before its upload, so its tag may exist. Rerun release then: it skips every crate the registry already lists."
         );
     }
     Err(error).context(coord)
@@ -709,7 +709,7 @@ fn refuse_skipped_versions(
     for package in &here.packages {
         if let Some(skipped) = waiting.iter().find(|left| left.name == package.name) {
             bail!(
-                "{name} {version} was never released: {sha} set it, and publishing {name} {current} at {head} would skip it; run `verctl status --github-output`, which lists {sha} first, and release that commit before this one",
+                "{name} {version} was never released: {sha} set it, and releasing {name} {current} at {head} would skip it; run `verctl status --github-output`, which lists {sha} first, and release that commit before this one",
                 name = package.name,
                 version = skipped.version,
                 sha = skipped.commit,
@@ -1159,7 +1159,8 @@ mod tests {
                 message.contains("try again after Sat, 19 Oct 2026 01:23:45 GMT)"),
                 "{message}"
             );
-            assert!(message.contains("Nothing was tagged"), "{message}");
+            assert!(message.contains("its tag may exist"), "{message}");
+            assert!(!message.contains("Nothing was tagged"), "{message}");
         }
 
         #[test]
