@@ -784,6 +784,47 @@ fn a_refreshed_bun_lock_passes() {
     repo.passes();
 }
 
+/// bun records no version for the root workspace, so a versioned root
+/// `package.json` that the plan bumps leaves `bun.lock` as it was.
+#[test]
+fn a_bun_lock_needs_no_version_for_the_root_workspace() {
+    let repo = Repo::new(indoc! {"
+        packages:
+          - name: demo-root
+            path: package.json
+    "});
+    repo.write(
+        "package.json",
+        indoc! {r#"
+            {
+              "name": "demo-root",
+              "version": "1.0.0",
+              "private": true
+            }
+        "#},
+    );
+    repo.write(
+        "bun.lock",
+        indoc! {r#"
+            {
+              "lockfileVersion": 1,
+              "workspaces": {
+                "": {
+                  "name": "demo-root",
+                },
+              },
+              "packages": {
+              }
+            }
+        "#},
+    );
+    repo.write(".changeset/feat.md", &fragment("demo-root: minor"));
+    repo.branch();
+    repo.version_step();
+    repo.commit();
+    repo.passes();
+}
+
 #[test]
 fn a_stale_bun_lock_fails() {
     let repo = js_repo("bun.lock", &testdata("workspace.before.bun.lock"));
@@ -830,6 +871,54 @@ fn a_staged_lockfile_verctl_cannot_read_may_change() {
 
             "a@workspace:packages/a":
               version "1.1.0"
+        "#},
+    );
+    repo.commit();
+    repo.passes();
+}
+
+/// uv writes the normalized project name, so `My_Tool` is `my-tool` in
+/// `uv.lock`, and the bump of its own entry is still the version step's.
+#[test]
+fn a_uv_lock_entry_is_matched_by_its_normalized_name() {
+    let repo = Repo::new(indoc! {"
+        packages:
+          - name: My_Tool
+            path: pyproject.toml
+    "});
+    repo.write(
+        "pyproject.toml",
+        indoc! {r#"
+            [project]
+            name = "My_Tool"
+            version = "1.0.0"
+        "#},
+    );
+    repo.write(
+        "uv.lock",
+        indoc! {r#"
+            version = 1
+            revision = 5
+
+            [[package]]
+            name = "my-tool"
+            version = "1.0.0"
+            source = { virtual = "." }
+        "#},
+    );
+    repo.write(".changeset/feat.md", &fragment("My_Tool: minor"));
+    repo.branch();
+    repo.version_step();
+    repo.write(
+        "uv.lock",
+        indoc! {r#"
+            version = 1
+            revision = 5
+
+            [[package]]
+            name = "my-tool"
+            version = "1.1.0"
+            source = { virtual = "." }
         "#},
     );
     repo.commit();

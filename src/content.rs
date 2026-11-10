@@ -190,10 +190,32 @@ impl Moved {
     /// member.
     fn records(&self, format: Format, lock_dir: &Path, name: &str, label: &str) -> bool {
         match format {
-            Format::Cargo | Format::Uv => self.names.contains(name),
+            Format::Cargo => self.names.contains(name),
+            Format::Uv => {
+                let name = pep503(name);
+                self.names.iter().any(|known| pep503(known) == name)
+            }
             Format::Bun | Format::Npm => self.label(lock_dir).as_deref() == Some(label),
         }
     }
+}
+
+/// A Python project name as uv writes it in `uv.lock`: lowercase, with each
+/// run of `-`, `_`, and `.` as one `-` ([PEP 503]).
+///
+/// [PEP 503]: https://peps.python.org/pep-0503/#normalized-names
+fn pep503(name: &str) -> String {
+    let mut normalized = String::with_capacity(name.len());
+    for character in name.chars() {
+        if matches!(character, '-' | '_' | '.') {
+            if !normalized.ends_with('-') {
+                normalized.push('-');
+            }
+        } else {
+            normalized.extend(character.to_lowercase());
+        }
+    }
+    normalized
 }
 
 impl Replay {
@@ -446,6 +468,9 @@ fn stale_locks(base: &MergeBase, moved: &[Moved]) -> Result<Vec<String>> {
         let lock_dir = Path::new(&rel).parent().unwrap_or_else(|| Path::new(""));
         for entry in lockfile.members() {
             if !member.records(*format, lock_dir, &entry.name, &entry.label) {
+                continue;
+            }
+            if *format == Format::Bun && entry.label == "." && entry.version.is_none() {
                 continue;
             }
             if entry.version.as_deref() != Some(member.to.as_str()) {
