@@ -1,5 +1,6 @@
 ---
 verctl: patch
+verctl:group: added
 ---
 
 Each release carries a `linux_arm64` tarball for `aarch64-unknown-linux-gnu`.  

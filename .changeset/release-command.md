@@ -11,7 +11,9 @@ The old verbs are hidden and exit 2 with an error that names the new one.
 `--build`, `--upload`, and their variables are gone.
 
 `verctl status` now holds the release plan.  
-Its report shows the asset plan and lists each version commit with an incomplete release under `unreleased`.
+Its report shows the asset plan and lists each version commit with an incomplete release under `unreleased`.  
+It reads `.ctl/ver.yaml`, so it fails with no config or an invalid one, and it takes `--config` and `--skip-assets`.  
+With a token it reads GitHub and runs each package's registry `query`.
 
 Without `GITHUB_TOKEN` or `GH_TOKEN` it does not ask GitHub: JSON holds `"unreleased": null` and `unreleased_unchecked` holds the reason.
 
@@ -23,7 +25,7 @@ Any other error, such as a release tag on the wrong commit or a 401 from a bad t
 `status --github-output <file>` fetches the history the plan needs.  
 It writes `has_assets`, `tag`, `matrix`, `commits`, `pending`, and `assets`, the outputs `assets --github-output` and `publish --plan` wrote.  
 `status --vendored <name>` plans a vendored set.  
-`verctl release --plan` exits 2 and names `verctl status --github-output`.  
+`verctl release --plan`, or `VERCTL_PLAN` set for it, exits 2 and names `verctl status --github-output`.  
 Without `--github-output`, `status` never fetches.
 
 The reusable `release.yml`, `actions/publish`, and `actions/asset` call the new verbs; their job ids, inputs, and the `actions/publish` path keep their names.  

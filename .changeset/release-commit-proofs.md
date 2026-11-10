@@ -8,7 +8,10 @@ A retry of an old version commit runs its workflows as they were then, and could
 `--allow-workflow-change` (`VERCTL_ALLOW_WORKFLOW_CHANGE`) lets the run go on.
 
 `--allow-off-default-branch` (`VERCTL_ALLOW_OFF_DEFAULT_BRANCH`) lets `verctl release` run from a commit the default branch does not contain.  
-A check that cannot run still refuses.  
+A check that cannot run still refuses.
+
+Before, `release` skipped the default-branch proof when it could not run.  
+The error names the cause: no git repository, no HEAD commit, or no `origin` remote.  
 A run that uses either flag lists what it went past under `allowed`, as a row in the human view and as `allowed: [{check, reason}]` in JSON.
 
 `verctl release` now refuses a package with a skipped version, because publishing past it would skip that release for good.  

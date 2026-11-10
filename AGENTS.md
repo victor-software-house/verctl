@@ -184,6 +184,16 @@ It calls `release.yml` with `verctl-artifact: verctl` and `MISE_ENV=ci,release`,
 Build verctl from source only there, never in every job.  
 `.miserc.toml` defaults local `MISE_ENV` to `dev`.
 
+verctl decides how many jobs there are; the workflow file decides where a fixed job runs.  
+`ci` and `assets` exist because the number of verify checks or tarballs differs per repo.  
+A workflow file is static, so it cannot list a number of jobs that is unknown when it is written.
+
+The release workflow's fixed jobs run on its `runner` input.  
+So do not add a `.ctl/ver.yaml` runner key for them, and do not add a `release` runner section.  
+Publishing a crate twice is wrong the same way two machines per tarball is wrong.
+
+The changelog adapter does not concatenate Markdown in Rust beyond a typed context.
+
 ### Release proofs
 
 `version` rewrites `pins` onto the Version PR commit, because the tag names that commit and publish pushes nothing but the tag.  
