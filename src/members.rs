@@ -1,10 +1,10 @@
 //! The members a virtual cargo workspace publishes, in publish order.
 //!
 //! A package whose manifest is a virtual workspace publishes one member at a
-//! time, so a rerun after a partial release uploads only what is missing:
-//! `cargo publish --workspace` refuses to run when any selected version
-//! exists. Cargo resolves member globs and workspace inheritance, so verctl
-//! reads only [`cargo metadata`].
+//! time. A rerun after a partial release then uploads only what is missing,
+//! because `cargo publish --workspace` refuses to run when any selected
+//! version exists. Cargo resolves member globs and workspace inheritance, so
+//! verctl reads only [`cargo metadata`].
 //!
 //! [`cargo metadata`]: https://doc.rust-lang.org/cargo/commands/cargo-metadata.html
 
@@ -54,17 +54,17 @@ pub fn is_virtual(manifest: &Path) -> Result<bool> {
 /// published members it depends on.
 ///
 /// A member with `publish = false` is left out. A normal or build dependency
-/// orders publishes, and so does a development dependency that declares a
-/// version, which `cargo publish` keeps; a path-only development dependency
-/// does not, since `cargo publish` strips it. Members with no such dependency
-/// between them keep the order of `workspace_members`. `--offline` with
-/// `--no-deps` reads only manifests, so it never reaches a registry.
+/// orders publishes. So does a development dependency that declares a
+/// version, because `cargo publish` keeps it. A path-only development
+/// dependency does not, since `cargo publish` strips it. Members with no such
+/// dependency between them keep the order of `workspace_members`. `--offline`
+/// with `--no-deps` reads only manifests, so it never reaches a registry.
 ///
 /// # Errors
 ///
 /// Returns an error when `cargo metadata` fails or prints something other than
-/// its JSON, or when the dependencies that order publishes form a cycle, which
-/// cargo cannot publish ([cargo issue 4242]).
+/// its JSON. It also returns an error when the dependencies that order
+/// publishes form a cycle, which cargo cannot publish ([cargo issue 4242]).
 ///
 /// [cargo issue 4242]: https://github.com/rust-lang/cargo/issues/4242
 pub fn members(manifest: &Path) -> Result<Vec<Member>> {

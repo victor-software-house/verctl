@@ -191,9 +191,11 @@ pub struct PackageSpec {
     #[serde(default)]
     pub first_minor: bool,
     /// The version is on one marker line of the file, such as
-    /// `# version: 1.2.0`, `// version: 1.2.0`, or `<!-- version: 1.2.0 -->`,
-    /// so a file of any type can be a package: one reusable workflow, one
-    /// script. Unsaid, a file is read by its stock or named driver; a stray
+    /// `# version: 1.2.0`, `// version: 1.2.0`, or `<!-- version: 1.2.0 -->`.
+    /// So a file of any type can be a package, such as one reusable workflow
+    /// or one script.
+    ///
+    /// When unset, a file is read by its stock or named driver, and a stray
     /// marker line in it means nothing. It takes no `driver` or driver fields,
     /// and with no publisher the package releases on GitHub only.
     #[serde(default)]
@@ -216,8 +218,8 @@ impl PackageSpec {
             .join("CHANGELOG.md")
     }
 
-    /// The version driver: the stock or named driver with this package's own
-    /// fields over it, and a lockfile follow-up inferred when none is set.
+    /// The version driver. It is the stock or named driver with this package's
+    /// own fields over it. A lockfile follow-up is inferred when none is set.
     ///
     /// # Errors
     ///
@@ -315,9 +317,9 @@ pub struct Job {
 /// Native GitHub Release tarballs, plus the recipe every target shares. Omit
 /// for libraries. Each named sub-mapping is one target.
 ///
-/// A tarball holds either the one `binary`, or the `files` packed from `dir`
-/// when a release needs more than its binary: a second executable, a service
-/// unit, a licence.
+/// A tarball holds the one `binary`, or the `files` packed from `dir`. Use
+/// `files` when a release needs more than its binary, such as a second
+/// executable, a service unit, or a licence.
 #[derive(Debug, Clone, Deserialize, Default, Validate)]
 #[garde(context(Config))]
 #[garde(allow_unvalidated)]
@@ -329,9 +331,9 @@ pub struct Assets {
     pub prepare: Option<Vec<String>>,
     /// How to produce the binary. Stock rust recipe is `cargo build --release`.
     pub build: Option<Vec<String>>,
-    /// Path to the built binary, with `{bin}` `{triple}` `{os}` `{arch}`.
-    /// Omit for `target/{triple}/release/{bin}`. Unused when `dir` and
-    /// `files` say what to pack, so it may not be set beside them.
+    /// Path to the built binary, with `{bin}`, `{triple}`, `{os}`, and
+    /// `{arch}`. Omit for `target/{triple}/release/{bin}`. Unused when `dir`
+    /// and `files` say what to pack, so it may not be set beside them.
     #[garde(custom(binary_is_not_beside_files))]
     pub binary: Option<String>,
     /// The directory `files` are packed from, relative to the directory
@@ -340,8 +342,8 @@ pub struct Assets {
     #[serde(default)]
     #[garde(custom(dir_comes_with_files), inner(custom(inside_the_repo)))]
     pub dir: Option<PathBuf>,
-    /// Paths under `dir` packed into every target's tarball, each kept at its
-    /// place under `dir`, with the same placeholders. A directory is packed
+    /// Paths under `dir` packed into every target's tarball, with the same
+    /// placeholders. Each keeps its place under `dir`. A directory is packed
     /// whole. Omit, with `dir`, to pack the one `binary`.
     #[serde(default)]
     #[garde(custom(files_come_with_dir), inner(custom(inside_the_repo)))]
@@ -368,11 +370,12 @@ pub struct AssetTarget {
     pub triple: Option<String>,
 }
 
-/// Release assets built from someone else's source, at that source's version:
-/// a library built from a pinned upstream release, so mise can install it as a
-/// `github:` tool. The key is the set's `{name}`. Fragments never bump it, and
-/// `release` never reads it; `status --vendored <name>` plans it, and
-/// `release asset <target> --vendored <name>` builds and uploads it.
+/// Release assets built from someone else's source, at that source's version,
+/// such as a library built from a pinned upstream release. Mise can then
+/// install it as a `github:` tool. The key is the set's `{name}`. Fragments
+/// never bump it, and `release` never reads it; `status --vendored <name>`
+/// plans it, and `release asset <target> --vendored <name>` builds and uploads
+/// it.
 #[derive(Debug, Clone, Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
 #[garde(context(Config))]
@@ -401,8 +404,8 @@ pub struct Vendored {
         custom(only_placeholders(&["{name}", "{version}", "{id}"]))
     )]
     pub archive: String,
-    /// Run once per target before packing, without a shell, with `{name}`,
-    /// `{version}`, and `{id}` replaced. Omit when an earlier workflow step
+    /// Run once per target before packing. It uses no shell, and `{name}`,
+    /// `{version}`, and `{id}` are replaced. Omit when an earlier workflow step
     /// builds.
     #[serde(default)]
     pub build: Vec<String>,
@@ -440,7 +443,7 @@ impl Vendored {
 #[non_exhaustive]
 pub struct VendoredTarget {
     /// Name from `runners` of the machine that builds this target. verctl
-    /// knows no vendored platform, so there is no default machine.
+    /// has no built-in vendored platform, so there is no default machine.
     #[garde(custom(runner_is_declared))]
     pub runner: String,
 }
@@ -463,7 +466,7 @@ fn one_archive_per_target(archive: &str, config: &Config) -> garde::Result {
 }
 
 /// A brace left after the known placeholders is a typo that would reach a tag
-/// or a file name verbatim. The tag takes no `{id}`, since every target
+/// or a file name unchanged. The tag takes no `{id}`, since every target
 /// uploads to one Release.
 fn only_placeholders(allowed: &'static [&'static str]) -> impl Fn(&str, &Config) -> garde::Result {
     move |template, _| {
@@ -483,9 +486,9 @@ fn only_placeholders(allowed: &'static [&'static str]) -> impl Fn(&str, &Config)
 }
 
 /// `{name}`, `{version}`, and `{id}` are substituted into `archive` and
-/// `dir` after the load checked those templates, so a value holding a path
-/// separator or a parent step would move the archive or the packed directory
-/// outside the repository.
+/// `dir` after the load checked those templates. A value holding a path
+/// separator or a parent step would therefore move the archive or the packed
+/// directory outside the repository.
 fn one_plain_name(value: &str, _: &Config) -> garde::Result {
     if value.is_empty() || value == "." || value == ".." || value.contains(['/', '\\']) {
         return Err(garde::Error::new(format!(
@@ -582,14 +585,14 @@ fn something_to_release(packages: &[PackageSpec], config: &Config) -> garde::Res
     Ok(())
 }
 
-/// The whole file, and the context every rule in it is checked against: a
+/// The whole file, and the context every rule in it is checked against. A
 /// pattern is only unused, and an id only unknown, relative to the rest of the
 /// config. `Config::parse` reads the shape with serde and then validates it
 /// once, here, so a complaint names the field that has to change.
 ///
-/// A section verctl does not know stops the load rather than being dropped:
-/// silently ignoring `pattern:` for `patterns:` would ship a release with the
-/// pins it declares never rewritten.
+/// A section verctl does not know stops the load instead of being dropped.
+/// Ignoring `pattern:` for `patterns:` would ship a release with the pins it
+/// declares never rewritten.
 #[derive(Debug, Clone, Deserialize, Default, Validate)]
 #[serde(deny_unknown_fields)]
 #[garde(context(Self as config))]
@@ -682,12 +685,14 @@ fn every_pattern_says_where_the_version_goes(
     Ok(())
 }
 
-/// Where the version starts and ends, said by the pattern. `{version}` is
-/// digits and dots, so without literal text that a version cannot hold on
-/// each side, a longer version matches by its numeric head: `version:
-/// {version}` reads `version: 0.1.1-rc1` as 0.1.1 and keeps `-rc1` after the
-/// new version. The file cannot settle it, because `download/v{version}-linux`
-/// against `download/v1.2.3-linux-x64.tar.gz` is a correct pin of 1.2.3.
+/// Where the version starts and ends, as the pattern declares it.
+/// `{version}` is digits and dots. Without literal text on each side that a
+/// version cannot hold, a longer version matches by its numeric head.
+///
+/// For example, `version: {version}` reads `version: 0.1.1-rc1` as 0.1.1 and
+/// keeps `-rc1` after the new version. The file cannot settle it, because
+/// `download/v{version}-linux` against `download/v1.2.3-linux-x64.tar.gz` is a
+/// correct pin of 1.2.3.
 fn every_pattern_bounds_the_version(
     patterns: &BTreeMap<String, PinPattern>,
     _: &Config,
@@ -757,9 +762,8 @@ fn unbounded(before: &str, after: &str, whole_line: bool) -> Option<String> {
     None
 }
 
-/// A declared pattern nothing lists is dead configuration, not a spare: it
-/// would sit there reading like a tracked spelling while no file is checked
-/// against it.
+/// A declared pattern nothing lists is dead configuration instead of a spare.
+/// It reads like a tracked spelling while no file is checked against it.
 fn every_pattern_is_listed(
     patterns: &BTreeMap<String, PinPattern>,
     config: &Config,
@@ -791,8 +795,8 @@ pub struct Pin {
     /// A mise `[tools]` entry, in a file that parses as TOML. Its own
     /// `?ref=v…` includes move with it.
     pub tool: Option<String>,
-    /// `patterns` ids this file carries, so which file a spelling belongs to
-    /// is written down rather than implied by where a table sits.
+    /// `patterns` ids this file lists, so the file a spelling belongs to is
+    /// written down instead of implied by table placement.
     #[serde(default, rename = "patterns")]
     #[garde(
         custom(each_id_is_declared),
@@ -808,9 +812,9 @@ pub struct Pin {
     pub package: String,
 }
 
-/// A name is only a name if something declares it.
-/// `none` names release-only packages, so a `publishers.none` recipe could
-/// never run: every package that names it uploads nothing.
+/// A name is only a name if something declares it. `none` names release-only
+/// packages. A `publishers.none` recipe could never run, because every package
+/// that names it uploads nothing.
 fn none_is_not_a_publisher(
     publishers: &BTreeMap<String, PublisherSpec>,
     _: &Config,
@@ -823,9 +827,9 @@ fn none_is_not_a_publisher(
     Ok(())
 }
 
-/// `publisher: none`, said or inferred from its version source, uploads
-/// nothing, so a registry or an upload command on the same package would be
-/// a setting nothing reads.
+/// `publisher: none`, declared or inferred from its version source, uploads
+/// nothing. A registry or an upload command on the same package would be a
+/// setting nothing reads.
 fn release_only_names_no_registry(packages: &[PackageSpec], config: &Config) -> garde::Result {
     for package in packages {
         if crate::publisher::publisher_name(config, package) == crate::publisher::RELEASE_ONLY
@@ -892,7 +896,7 @@ fn each_id_is_declared(ids: &[String], config: &Config) -> garde::Result {
     Ok(())
 }
 
-/// Listing a spelling twice says nothing twice: arity belongs to the pattern.
+/// Listing a spelling twice does not set a count: arity belongs to the pattern.
 fn no_id_is_listed_twice(ids: &[String], _: &Config) -> garde::Result {
     let mut seen = BTreeSet::new();
     for id in ids {
@@ -1101,16 +1105,18 @@ impl Default for Templates {
 #[derive(Debug, Clone, Deserialize)]
 #[non_exhaustive]
 pub struct PinPattern {
-    /// The text around a version, `{version}` where the version is. Literal,
-    /// not a regex, so nothing about the file's format is assumed. Exactly one
-    /// placeholder, checked over `patterns` so the complaint names the id.
+    /// The text around a version, `{version}` where the version is. Literal
+    /// text instead of a regex, so nothing about the file's format is
+    /// assumed. Exactly one placeholder, checked over `patterns` so the
+    /// complaint names the id.
     ///
-    /// Each side is bounded when the literal text between `{version}` and
-    /// the pattern's edge on that side holds at least one character that is
-    /// not a digit, `.`, `-`, or `+`. The character next to `{version}` must
-    /// not be a digit, or a `.` with a digit beyond it. Under `whole_line` the
-    /// line start or end bounds a side whose literal is empty. The load
-    /// refuses a pattern with an open side.
+    /// A side is bounded when the text between `{version}` and the pattern's
+    /// edge holds a character that is not a digit, `.`, `-`, or `+`. The
+    /// character next to `{version}` must not be a digit, or a `.` with a
+    /// digit beyond it.
+    ///
+    /// Under `whole_line` the line start or end bounds a side whose literal is
+    /// empty. The load refuses a pattern with an open side.
     pub r#match: String,
     /// How often the file must say it. A pin that lost its only mention, or
     /// drifted to one nobody declared, fails the release rather than serving
@@ -1119,20 +1125,23 @@ pub struct PinPattern {
     pub occurrences: Occurrences,
     /// Whether the match is a whole line rather than text inside one.
     ///
-    /// Unsaid, a pattern matches anywhere, which is what an inline spelling
-    /// wants: `github:org/tool@1.2.3` sits inside a longer line. A pattern
-    /// that owns its line says so instead of anchoring on whatever text
-    /// happens to sit next to it: the alternative is spelling the neighbour
-    /// into `match`, which then breaks when the neighbour moves. It also makes
-    /// a partial version fail rather than rewrite, because a line ending in
-    /// `0.1.1-rc1` does not end where the version does.
+    /// When unset, a pattern matches anywhere, which is what an inline
+    /// spelling wants: `github:org/tool@1.2.3` is inside a longer line.
+    ///
+    /// A pattern that owns its line sets this flag instead of anchoring on
+    /// whatever text happens to be next to it. The alternative is spelling the
+    /// neighbour into `match`, which then breaks when the neighbour moves.
+    ///
+    /// The flag also makes a partial version fail instead of rewriting,
+    /// because a line ending in `0.1.1-rc1` does not end where the version
+    /// does.
     #[serde(default)]
     pub whole_line: bool,
 }
 
 /// How many times a pattern must match. A count is not always the useful
-/// shape: a document whose examples come and go needs "one or more", and a
-/// spelling that was retired needs "none".
+/// shape. A document whose examples come and go needs "one or more".
+/// Retiring a spelling needs "none".
 #[derive(Debug, Clone, Copy, Default)]
 #[non_exhaustive]
 pub enum Occurrences {
@@ -1152,10 +1161,12 @@ pub enum Occurrences {
 }
 
 /// The vocabulary, spelled out. A derived enum cannot read both shapes a repo
-/// writes: an unbounded word is a plain scalar, and a bound is a mapping that a
-/// newtype variant would only accept as a YAML tag (`!exactly 2`). Untagged
-/// reads both and then reports "matched no variant", naming a type nobody
-/// wrote, so the arity is read here and complains in the words a repo uses.
+/// writes. An unbounded word is a plain scalar. A bound is a mapping that a
+/// newtype variant would only accept as a YAML tag (`!exactly 2`).
+///
+/// Untagged reads both and then reports "matched no variant", naming a type
+/// nobody wrote. So the arity is read here and reports errors in the words a
+/// repo uses.
 const ARITY: &str = "once, many, never, {exactly: N}, or {at_least: N}";
 
 impl<'de> Deserialize<'de> for Occurrences {
@@ -1232,7 +1243,7 @@ impl fmt::Display for Occurrences {
 }
 
 /// Whose names changelog entries never credit. Release notes credit no
-/// maintainer, and only this list says who one is: GitHub's
+/// maintainer, and only this list identifies who one is: GitHub's
 /// `author_association` reads a private organization member as `CONTRIBUTOR`
 /// through an App token.
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -1262,7 +1273,7 @@ impl Changelog {
 #[serde(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct Prepare {
-    /// argv after all bumps (e.g. `["mise", "run", "version-sync"]`).
+    /// argv after all bumps (for example `["mise", "run", "version-sync"]`).
     pub after: Option<Vec<String>>,
     /// Extra paths `after` may write. Anything else dirty fails.
     #[serde(default)]
@@ -1270,19 +1281,19 @@ pub struct Prepare {
     /// Collect gitignored paths that match `stage`. Off by default.
     #[serde(default)]
     pub stage_ignored: bool,
-    /// Removed: the Version PR is no longer labeled, since nothing reads the
-    /// label. Kept only so a file that still sets it fails the load with a
-    /// message that says to delete it, instead of serde's bare unknown-field
-    /// error. `true` when the key is present with any value, null included;
+    /// Removed: the Version PR is not labeled, since nothing reads the label.
+    /// Kept only for files that still set it. Such a file fails the load with
+    /// a message to delete it, instead of serde's bare unknown-field error.
+    /// `true` when the key is present with any value, null included;
     /// absent means the file is current.
     #[serde(default, deserialize_with = "key_present")]
     version_label: bool,
 }
 
 /// Whether a key is present, whatever its value. serde reads an explicit null
-/// into `Option::None`, the same as an absent key, so an `Option` cannot tell
-/// `version_label: ~` from a file that never set it; serde calls this only
-/// when the key is in the document.
+/// into `Option::None`, the same as an absent key. An `Option` therefore holds
+/// the same value for `version_label: ~` as for a file that never set it.
+/// serde calls this only when the key is in the document.
 fn key_present<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
     serde::de::IgnoredAny::deserialize(deserializer).map(|_| true)
 }
@@ -1361,9 +1372,9 @@ impl Config {
         Self::from_input(&Input::new(".ctl/ver.yaml", raw))
     }
 
-    /// The one parse boundary: ctl-core's declared input reads the shape and
+    /// The one parse boundary. ctl-core's declared input reads the shape and
     /// validates it once against the whole document, placing each complaint
-    /// on its line, so a document is read exactly one way.
+    /// on its line. A document is therefore read exactly one way.
     fn from_input(input: &Input) -> Result<Self> {
         let mut config: Self = input.parse()?;
         input.check(&config, &config)?;
@@ -1446,7 +1457,7 @@ mod tests {
     "};
 
     /// `publisher: none` uploads nothing, so a registry or an upload command
-    /// beside it fails the load instead of being silently ignored.
+    /// beside it fails the load instead of being ignored.
     #[test]
     fn a_release_only_package_names_no_registry() {
         let config = load(indoc! {"
@@ -1484,8 +1495,8 @@ mod tests {
         }
     }
 
-    /// `marker: true` already says where the version is, so a driver beside
-    /// it fails the load rather than being ignored; `after` still applies.
+    /// `marker: true` already marks where the version is. A driver beside it
+    /// fails the load instead of being ignored. `after` still applies.
     #[test]
     fn a_marker_names_no_driver() {
         for extra in [
@@ -1623,8 +1634,8 @@ mod tests {
         );
     }
 
-    /// A section verctl does not know is a typo, and a typo that loads is a
-    /// release that quietly does none of what the section asked for.
+    /// A section verctl does not know is a typo. A typo that loads is a
+    /// release that does none of what the section was meant to do.
     #[test]
     fn a_misspelled_section_stops_the_load() {
         let error = load(&formatdoc! {r#"
@@ -1659,7 +1670,7 @@ mod tests {
     }
 
     /// A count that is not a whole number is the same mistake as a wrong
-    /// key, and says so in the same words rather than serde's.
+    /// key. It is reported in the same words instead of serde's.
     #[test]
     fn a_bound_with_a_bad_count_names_the_arity() {
         for count in ["-1", "many"] {
