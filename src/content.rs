@@ -90,19 +90,16 @@ pub fn check(root: &Path, config: &Config, inputs: &Inputs, candidates: &[String
     );
 }
 
-/// Whether the working tree deletes a fragment that exists at the merge-base,
-/// as a Version PR does when it consumes one. A Version PR that bumps no
-/// version still consumes its fragments, so `check --versions` asks whether
-/// such a pull request is the Version PR.
+/// Whether the working tree deletes a fragment that exists at `base`, as a
+/// Version PR does when it consumes one. A Version PR that bumps no version
+/// still consumes its fragments, so `check --versions` asks whether such a
+/// pull request is the Version PR.
 ///
 /// # Errors
 ///
-/// Returns an error when the merge-base cannot be read (see
-/// [`MergeBase::read`]).
-pub fn removes_fragment(root: &Path, inputs: &Inputs, candidates: &[String]) -> Result<bool> {
-    let Some(base) = MergeBase::read(root, candidates)? else {
-        return Ok(false);
-    };
+/// Returns an error when the fragment directory cannot be placed inside the
+/// working tree.
+pub fn removes_fragment(base: &MergeBase, inputs: &Inputs) -> Result<bool> {
     let dir = inside(base.workdir(), &inputs.dir)?;
     Ok(base.changed().iter().any(|path| {
         let path = Path::new(path);

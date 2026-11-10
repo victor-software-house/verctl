@@ -1008,3 +1008,63 @@ fn a_workspace_member_that_starts_to_publish_needs_a_fragment() {
         "{text}"
     );
 }
+
+/// With no merge-base to compare with, a CHANGELOG's released sections are
+/// not additions.
+#[test]
+fn a_changelog_with_no_origin_passes() {
+    let dir = TempDir::new().unwrap();
+    common::init(dir.path());
+    write_crate(dir.path(), "1.0.0");
+    write_changelog(
+        dir.path(),
+        indoc! {"
+            # Changelog
+
+            ## 1.0.0
+        "},
+    );
+    common::commit_all(dir.path(), "init");
+    let (passed, text) = run(check_cmd(dir.path()));
+    assert!(passed, "{text}");
+}
+
+/// `main` released demo 1.0.1 with publishing turned on after `next`
+/// branched from it, and `next` merges `main`: the publish change came with
+/// its release, whose fragment the Version PR consumed.
+#[test]
+fn a_released_publish_change_merged_into_next_passes() {
+    let dir = unpublished_crate();
+    common::git(dir.path(), &["checkout", "-q", "--", "."]);
+    common::git(dir.path(), &["checkout", "-q", "-b", "next"]);
+    fs::write(dir.path().join("next.txt"), "next").unwrap();
+    let next = common::commit_all(dir.path(), "next work");
+    common::git(
+        dir.path(),
+        &["update-ref", "refs/remotes/origin/next", &next],
+    );
+    common::git(dir.path(), &["checkout", "-q", "main"]);
+    write_crate(dir.path(), "1.0.1");
+    write_changelog(
+        dir.path(),
+        indoc! {"
+            # Changelog
+
+            ## 1.0.1
+
+            - Publish.
+        "},
+    );
+    let main = common::commit_all(dir.path(), "release 1.0.1");
+    common::git(
+        dir.path(),
+        &["update-ref", "refs/remotes/origin/main", &main],
+    );
+    common::git(dir.path(), &["checkout", "-q", "next"]);
+    common::git(dir.path(), &["merge", "-q", "--no-edit", "main"]);
+    let mut cmd = check_cmd(dir.path());
+    cmd.env("GITHUB_ACTIONS", "true")
+        .env("GITHUB_BASE_REF", "next");
+    let (passed, text) = run(cmd);
+    assert!(passed, "{text}");
+}

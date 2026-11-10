@@ -185,19 +185,24 @@ impl MergeBase {
     }
 
     /// Whether `rel` differs from the merge-base. A regular file compares by
-    /// its bytes in the working tree. A symlink or a submodule holds no bytes
-    /// the version step writes, so it compares by its entry on HEAD: its
-    /// target or commit, and its mode.
+    /// its bytes in the working tree, and a symlink by its target there, so an
+    /// uncommitted edit counts. A submodule compares by its commit on HEAD:
+    /// an uncommitted submodule move is out of scope, since CI checks out a
+    /// commit.
     fn differs(&self, rel: &str, head: Option<&(gix::ObjectId, EntryKind)>) -> Result<bool> {
         let base = self.files.get(rel);
-        let regular = |entry: Option<&(gix::ObjectId, EntryKind)>| {
-            entry
-                .is_none_or(|(_, kind)| matches!(kind, EntryKind::Blob | EntryKind::BlobExecutable))
+        let gitlink = |entry: Option<&(gix::ObjectId, EntryKind)>| {
+            entry.is_some_and(|(_, kind)| *kind == EntryKind::Commit)
         };
-        if regular(base) && regular(head) {
-            return Ok(self.base_bytes(rel)? != self.worktree_bytes(rel)?);
+        if gitlink(base) || gitlink(head) {
+            return Ok(base != head);
         }
-        Ok(base != head)
+        let expected = match base {
+            None => Worktree::Missing,
+            Some((_, EntryKind::Link)) => Worktree::Link(self.base_bytes(rel)?.unwrap_or_default()),
+            Some(_) => Worktree::File(self.base_bytes(rel)?.unwrap_or_default()),
+        };
+        Ok(expected != Worktree::read(&self.workdir.join(rel))?)
     }
 
     /// The working tree's root, canonical.
@@ -206,8 +211,9 @@ impl MergeBase {
         &self.workdir
     }
 
-    /// Each path, relative to the working tree's root, whose bytes differ
-    /// from the merge-base.
+    /// Each path, relative to the working tree's root, that differs from the
+    /// merge-base: a file by its bytes, a symlink by its target, and a
+    /// submodule by its commit.
     #[must_use]
     pub fn changed(&self) -> &BTreeSet<String> {
         &self.changed
@@ -241,6 +247,11 @@ impl MergeBase {
     /// Write every regular file of the merge-base tree under `dir`, with its
     /// executable bit.
     ///
+    /// The whole tree is written because the replay's readers are not a fixed
+    /// list: `cargo metadata` expands member globs and needs each member's
+    /// target files, and a pin or a served file can name any path. Symlinks
+    /// are not recreated, so no write through one leaves `dir`.
+    ///
     /// # Errors
     ///
     /// Returns an error when a blob cannot be read or a file cannot be
@@ -264,6 +275,32 @@ impl MergeBase {
                 .with_context(|| format!("chmod {}", path.display()))?;
         }
         Ok(())
+    }
+}
+
+/// What the working tree holds at a path, as the merge-base tree records it:
+/// a symlink's target, or a file's bytes.
+#[derive(Debug, PartialEq, Eq)]
+enum Worktree {
+    Missing,
+    Link(Vec<u8>),
+    File(Vec<u8>),
+}
+
+impl Worktree {
+    fn read(path: &Path) -> Result<Self> {
+        use std::os::unix::ffi::OsStrExt as _;
+        let metadata = match std::fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Self::Missing),
+            Err(error) => return Err(error).with_context(|| path.display().to_string()),
+        };
+        if metadata.file_type().is_symlink() {
+            let target = std::fs::read_link(path).with_context(|| path.display().to_string())?;
+            return Ok(Self::Link(target.as_os_str().as_bytes().to_vec()));
+        }
+        let bytes = std::fs::read(path).with_context(|| path.display().to_string())?;
+        Ok(Self::File(bytes))
     }
 }
 

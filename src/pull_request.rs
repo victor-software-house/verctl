@@ -8,7 +8,7 @@
 
 use std::collections::BTreeSet;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use semver::Version;
@@ -20,30 +20,38 @@ use crate::fragment::{self, Bump};
 use crate::git::{self, MergeBase};
 use crate::publisher;
 
-/// Each change the working tree makes that only the Version PR may make: a
-/// CHANGELOG section for a version, and a package's publish setting changed
-/// without an added fragment that bumps it. [`crate::versions::report`] fails
-/// with them unless the pull request is the Version PR.
+/// Each change against `base` that only the Version PR may make. One is a
+/// CHANGELOG section for a version. Another is a package's publish setting
+/// changed without an added fragment that bumps it. [`crate::versions::report`]
+/// fails with them unless the pull request is the Version PR.
 ///
-/// `candidates` name the pull request's base, and `release_candidates` the
-/// release branch. A section the CHANGELOG already holds where HEAD branched
-/// from the release branch came with a merge of that branch, so it does not
-/// count.
+/// `base` is the merge-base with the pull request's base, and
+/// `release_candidates` name the release branch. A section or a publish
+/// setting that HEAD's merge-base with the release branch already holds came
+/// with a merge of that branch, so it does not count.
 ///
 /// # Errors
 ///
-/// Returns an error when a merge-base or a CHANGELOG cannot be read, when the
-/// config at the merge-base cannot be loaded, or when a manifest there or in
-/// the working tree cannot be read or parsed.
+/// Returns an error when any of these cannot be read:
+///
+/// - the release branch's merge-base, or a CHANGELOG;
+/// - the config at a merge-base;
+/// - a manifest there or in the working tree, which must also parse.
 pub fn problems(
     root: &Path,
     config: &Config,
     inputs: &Inputs,
-    candidates: &[String],
+    base: &MergeBase,
     release_candidates: &[String],
 ) -> Result<Vec<String>> {
-    let mut problems = added_sections(root, config, candidates, release_candidates)?;
-    problems.extend(publish_changes(root, config, inputs, candidates)?);
+    let mut problems = added_sections(root, config, base, release_candidates)?;
+    problems.extend(publish_changes(
+        root,
+        config,
+        inputs,
+        base,
+        release_candidates,
+    )?);
     Ok(problems)
 }
 
@@ -51,29 +59,32 @@ pub fn problems(
 fn added_sections(
     root: &Path,
     config: &Config,
-    candidates: &[String],
+    base: &MergeBase,
     release_candidates: &[String],
 ) -> Result<Vec<String>> {
-    let mut rels = BTreeSet::new();
-    for spec in &config.packages {
-        let path = spec.changelog_path(root);
-        let rel = path
-            .strip_prefix(root)
-            .with_context(|| format!("{} is outside {}", path.display(), root.display()))?;
-        rels.insert(rel.to_path_buf());
-    }
-    let rels: Vec<&Path> = rels.iter().map(std::path::PathBuf::as_path).collect();
-    let base = git::files_on_merge_base(root, &rels, candidates)?;
-    let released = git::files_on_merge_base(root, &rels, release_candidates)?;
+    let root = root.canonicalize().context("the config root")?;
+    let paths: BTreeSet<PathBuf> = config
+        .packages
+        .iter()
+        .map(|spec| spec.changelog_path(&root))
+        .collect();
+    let rels = paths
+        .iter()
+        .map(|path| {
+            path.strip_prefix(&root)
+                .with_context(|| format!("{} is outside {}", path.display(), root.display()))
+        })
+        .collect::<Result<Vec<&Path>>>()?;
+    let released = git::files_on_merge_base(&root, &rels, release_candidates)?;
     let mut problems = Vec::new();
-    for ((rel, base), released) in rels.iter().zip(base).zip(released) {
-        let Some(head) = git::read_optional(&root.join(rel))? else {
+    for ((path, rel), released) in paths.iter().zip(&rels).zip(released) {
+        let Some(head) = git::read_optional(path)? else {
             continue;
         };
-        let head = String::from_utf8_lossy(&head);
-        let mut known = section_versions(base.as_deref().unwrap_or_default());
+        let at_base = base.base_bytes(&content::relative(path, base.workdir())?)?;
+        let mut known = section_versions(&String::from_utf8_lossy(&at_base.unwrap_or_default()));
         known.extend(section_versions(released.as_deref().unwrap_or_default()));
-        for version in section_versions(&head).difference(&known) {
+        for version in section_versions(&String::from_utf8_lossy(&head)).difference(&known) {
             problems.push(format!(
                 "{}: adds the section for {version}, which only the Version PR writes",
                 rel.display()
@@ -97,18 +108,16 @@ fn section_versions(changelog: &str) -> BTreeSet<Version> {
 }
 
 /// Each package, declared at the merge-base and in the working tree, whose
-/// publish setting differs between them while no added fragment bumps it.
+/// publish setting differs between them while no added fragment bumps it,
+/// unless HEAD's merge-base with the release branch already holds the setting.
 fn publish_changes(
     root: &Path,
     config: &Config,
     inputs: &Inputs,
-    candidates: &[String],
+    base: &MergeBase,
+    release_candidates: &[String],
 ) -> Result<Vec<String>> {
-    let Some(base) = MergeBase::read(root, candidates)? else {
-        return Ok(Vec::new());
-    };
-    let workdir = base.workdir();
-    let config_rel = content::inside(workdir, &inputs.config)?;
+    let config_rel = content::inside(base.workdir(), &inputs.config)?;
     let settings_changed = base.changed().iter().any(|path| {
         Path::new(path) == config_rel
             || Path::new(path)
@@ -121,35 +130,78 @@ fn publish_changes(
     if !settings_changed {
         return Ok(Vec::new());
     }
-    let scratch = Scratch::new()?;
-    base.write_to(scratch.path())?;
-    let base_config_path = scratch.path().join(&config_rel);
-    if !base_config_path.is_file() {
+    let Some(before) = Snapshot::of(base, &config_rel)? else {
         return Ok(Vec::new());
-    }
-    let base_config = Config::load(&base_config_path).context("the config at the merge-base")?;
-    let base_root = config::root_of(&base_config_path);
+    };
     let root = root.canonicalize().context("the config root")?;
-    let bumped = bumped_by_added_fragments(&base, inputs)?;
-    let mut problems = Vec::new();
+    let bumped = bumped_by_added_fragments(base, inputs)?;
+    let mut changed = Vec::new();
     for spec in &config.packages {
-        let Ok(before_spec) = base_config.find(&spec.name) else {
-            continue;
-        };
-        let (Some(before), Some(after)) = (
-            publishes(&base_config, before_spec, &base_root)?,
+        let (Some(was), Some(now)) = (
+            before.publishes(&spec.name)?,
             publishes(config, spec, &root)?,
         ) else {
             continue;
         };
-        if before != after && !bumped.contains(&spec.name) {
-            problems.push(format!(
-                "{name}: {before} at the merge-base and {after} now, and no added fragment bumps it; add a fragment that bumps {name}, so the next Version PR releases it under the new setting",
-                name = spec.name,
-            ));
+        if was != now && !bumped.contains(&spec.name) {
+            changed.push((spec.name.as_str(), was, now));
         }
     }
+    if changed.is_empty() {
+        return Ok(Vec::new());
+    }
+    let released = match MergeBase::read(&root, release_candidates)? {
+        Some(released) => Snapshot::of(&released, &config_rel)?,
+        None => None,
+    };
+    let mut problems = Vec::new();
+    for (name, was, now) in changed {
+        if let Some(released) = &released
+            && released.publishes(name)?.as_ref() == Some(&now)
+        {
+            continue;
+        }
+        problems.push(format!(
+            "{name}: {was} at the merge-base and {now} now, and no added fragment bumps it; add a fragment that bumps {name}, so the next Version PR releases it under the new setting",
+        ));
+    }
     Ok(problems)
+}
+
+/// The config at a merge-base, read from a scratch copy of its tree.
+struct Snapshot {
+    /// Holds the copy until the snapshot drops.
+    _scratch: Scratch,
+    config: Config,
+    root: PathBuf,
+}
+
+impl Snapshot {
+    /// `None` when the merge-base has no file at `config_rel`.
+    fn of(base: &MergeBase, config_rel: &Path) -> Result<Option<Self>> {
+        let scratch = Scratch::new()?;
+        base.write_to(scratch.path())?;
+        let path = scratch.path().join(config_rel);
+        if !path.is_file() {
+            return Ok(None);
+        }
+        let config = Config::load(&path).context("the config at a merge-base")?;
+        let root = config::root_of(&path);
+        Ok(Some(Self {
+            _scratch: scratch,
+            config,
+            root,
+        }))
+    }
+
+    /// What the package `name` publishes here, or `None` when it is not
+    /// declared or its manifest is missing.
+    fn publishes(&self, name: &str) -> Result<Option<Publishes>> {
+        let Ok(spec) = self.config.find(name) else {
+            return Ok(None);
+        };
+        publishes(&self.config, spec, &self.root)
+    }
 }
 
 /// The packages that a fragment added since the merge-base bumps above
@@ -223,7 +275,7 @@ fn publishes(config: &Config, spec: &PackageSpec, root: &Path) -> Result<Option<
     let text = String::from_utf8(bytes).with_context(|| manifest.display().to_string())?;
     let opts_out = match manifest.file_name().and_then(|name| name.to_str()) {
         Some("Cargo.toml") => {
-            cargo_opts_out(&text).with_context(|| manifest.display().to_string())?
+            cargo_opts_out(&manifest, &text).with_context(|| manifest.display().to_string())?
         }
         Some("package.json") => {
             let json: serde_json::Value =
@@ -239,40 +291,78 @@ fn publishes(config: &Config, spec: &PackageSpec, root: &Path) -> Result<Option<
     }))
 }
 
-/// Whether a `Cargo.toml` sets `package.publish` to `false` or `[]`, directly
-/// or through `publish.workspace = true` and the same file's
-/// `workspace.package.publish`.
-fn cargo_opts_out(text: &str) -> Result<bool> {
+/// Whether the `Cargo.toml` at `manifest`, holding `text`, sets
+/// `package.publish` to `false` or `[]`. With `publish.workspace = true` the
+/// value is `workspace.package.publish` of its workspace root: the file
+/// `package.workspace` names, else the same file when it holds a
+/// `[workspace]`, else the nearest ancestor manifest that does, as Cargo
+/// finds it.
+fn cargo_opts_out(manifest: &Path, text: &str) -> Result<bool> {
     let document = text.parse::<DocumentMut>()?;
-    let Some(publish) = document
-        .get("package")
-        .and_then(|package| package.get("publish"))
-    else {
+    let Some(package) = document.get("package") else {
         return Ok(false);
     };
-    let inherits = publish
-        .get("workspace")
-        .and_then(Item::as_bool)
-        .unwrap_or(false);
-    let publish = if inherits {
-        match document
-            .get("workspace")
-            .and_then(|workspace| workspace.get("package"))
-            .and_then(|package| package.get("publish"))
-        {
-            Some(publish) => publish,
-            None => return Ok(false),
-        }
-    } else {
-        publish
+    let Some(publish) = package.get("publish") else {
+        return Ok(false);
     };
-    Ok(publish.as_bool() == Some(false)
-        || publish.as_array().is_some_and(toml_edit::Array::is_empty))
+    if publish.get("workspace").and_then(Item::as_bool) != Some(true) {
+        return Ok(denies(publish));
+    }
+    let Some(workspace) = workspace_root(manifest, &document)? else {
+        return Ok(false);
+    };
+    Ok(workspace
+        .get("workspace")
+        .and_then(|table| table.get("package"))
+        .and_then(|package| package.get("publish"))
+        .is_some_and(denies))
+}
+
+/// `false`, or an empty list of registries.
+fn denies(publish: &Item) -> bool {
+    publish.as_bool() == Some(false) || publish.as_array().is_some_and(toml_edit::Array::is_empty)
+}
+
+/// The workspace root manifest of the package at `manifest`, parsed.
+fn workspace_root(manifest: &Path, document: &DocumentMut) -> Result<Option<DocumentMut>> {
+    if document.contains_key("workspace") {
+        return Ok(Some(document.clone()));
+    }
+    let dir = manifest.parent().unwrap_or_else(|| Path::new("."));
+    let named = document
+        .get("package")
+        .and_then(|package| package.get("workspace"))
+        .and_then(Item::as_str);
+    let candidates: Vec<PathBuf> = match named {
+        Some(path) => vec![dir.join(path).join("Cargo.toml")],
+        None => dir
+            .ancestors()
+            .skip(1)
+            .map(|ancestor| ancestor.join("Cargo.toml"))
+            .collect(),
+    };
+    for candidate in candidates {
+        let Some(bytes) = git::read_optional(&candidate)? else {
+            continue;
+        };
+        let text = String::from_utf8(bytes).with_context(|| candidate.display().to_string())?;
+        let parsed = text
+            .parse::<DocumentMut>()
+            .with_context(|| candidate.display().to_string())?;
+        if parsed.contains_key("workspace") {
+            return Ok(Some(parsed));
+        }
+    }
+    Ok(None)
 }
 
 #[cfg(test)]
 mod tests {
-    use indoc::indoc;
+    use std::fs;
+    use std::path::Path;
+
+    use indoc::{formatdoc, indoc};
+    use tempfile::TempDir;
 
     use super::{cargo_opts_out, section_versions};
 
@@ -293,7 +383,7 @@ mod tests {
 
     #[test]
     fn publish_false_and_an_empty_list_opt_out() {
-        let opts_out = |text: &str| cargo_opts_out(text).expect("toml");
+        let opts_out = |text: &str| cargo_opts_out(Path::new("Cargo.toml"), text).expect("toml");
         assert!(opts_out(indoc! {r#"
             [package]
             name = "a"
@@ -317,5 +407,36 @@ mod tests {
             [workspace.package]
             publish = false
         "#}));
+    }
+
+    /// A member that inherits `publish` reads it from the workspace root,
+    /// as Cargo does.
+    #[test]
+    fn an_inherited_publish_reads_the_workspace_root() {
+        let dir = TempDir::new().expect("tempdir");
+        let member = dir.path().join("crates/a/Cargo.toml");
+        fs::create_dir_all(member.parent().expect("parent")).expect("dir");
+        let root = |line: &str| {
+            fs::write(
+                dir.path().join("Cargo.toml"),
+                formatdoc! {r#"
+                    [workspace]
+                    members = ["crates/a"]
+
+                    [workspace.package]
+                    {line}
+                "#},
+            )
+            .expect("write");
+        };
+        let text = indoc! {r#"
+            [package]
+            name = "a"
+            publish.workspace = true
+        "#};
+        root("publish = false");
+        assert!(cargo_opts_out(&member, text).expect("toml"));
+        root(r#"edition = "2024""#);
+        assert!(!cargo_opts_out(&member, text).expect("toml"));
     }
 }
