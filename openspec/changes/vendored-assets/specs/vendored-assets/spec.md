@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: A vendored set declares its own version and names
+### Requirement: A vendored set declares a version and asset names
 
 `.ctl/ver.yaml` SHALL accept a `vendored` mapping whose keys name asset sets.
 Each set SHALL declare `version`, `dir`, `files`, and `targets`, and MAY declare `tag`, `archive`, `build`, and `notes`.
@@ -50,7 +50,7 @@ It SHALL fail naming the path when a listed file is missing after the build.
 - **WHEN** a set declares `dir: out/{id}` and `files: [lib/libexample.a, include, LICENSE]`, and those paths exist under `out/linux-x64`
 - **THEN** `verctl assets --vendored libexample --build linux-x64` writes `libexample-1.4.0-linux-x64.tar.gz` whose entries start with `lib/libexample.a`, `include/`, and `LICENSE`
 
-### Requirement: Uploading creates the Release when it is missing
+### Requirement: Uploading creates a missing Release
 
 `--upload` with `--vendored` SHALL create the set's Release at `HEAD` when the tag has none.
 The Release SHALL be named after the tag, with the `notes` file as its body, and with `make_latest` set to `false`.

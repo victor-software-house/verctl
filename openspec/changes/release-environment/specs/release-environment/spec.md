@@ -15,7 +15,7 @@ No other job SHALL take it.
 - **WHEN** a caller passes no `environment`
 - **THEN** the `publish` job runs in no environment and records no deployment
 
-### Requirement: Inside an environment the token is read under its stored name
+### Requirement: Inside an environment the token is read under the stored name
 
 When `environment` is set, `crates-io-trusted-publishing` is false, and the `registry-token` secret is empty, the `publish` job SHALL read the secret named by `registry-token-env`.
 Otherwise it SHALL read only `registry-token`.

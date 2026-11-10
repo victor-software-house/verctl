@@ -25,7 +25,7 @@ A range the new version still satisfies SHALL stay as written.
 - **WHEN** `app` depends on `"core": "^1.2.0"` and `core` moves to `1.3.0`
 - **THEN** `verctl version` leaves the range and does not bump `app`
 
-### Requirement: check asks for the workspace protocol
+### Requirement: check requires the workspace protocol
 
 `check` SHALL warn about an internal production dependency that does not use `workspace:`.
 `dependents.require_workspace_protocol: true` SHALL make that warning a failure.

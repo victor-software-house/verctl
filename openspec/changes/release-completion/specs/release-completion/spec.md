@@ -19,7 +19,7 @@ An existing Release for the tag SHALL be updated and SHALL NOT be duplicated.
 - **WHEN** a GitHub Release for `v0.4.0` exists and its body differs from the `## verctl 0.4.0` CHANGELOG section
 - **THEN** `verctl release` updates that Release's body and creates no second Release
 
-### Requirement: A first publication is a stop, not a guess
+### Requirement: A first publication stops for registry setup
 
 When a package has never been published and its registry's `auth` is `oidc`,
 verctl SHALL report the package at stage `bootstrap`.
@@ -48,7 +48,7 @@ released like any other package.
 - **AND** `verctl release` creates no tag and no Release for `xtask`
 - **AND** a later `verctl propose` is not blocked by `xtask`
 
-### Requirement: Whether a release publishes is decided at its release commit
+### Requirement: Whether a release publishes is decided at the release commit
 
 verctl SHALL decide whether a release publishes from the package's manifest
 and `.ctl/ver.yaml` at its release commit only.

@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: A directory path resolves to the version source it holds
+### Requirement: A directory path resolves to the version source inside
 
 When a package's `path` names a directory, verctl SHALL use the one manifest in it from `Cargo.toml`, `package.json`, `pyproject.toml`, and `go.mod`, and `<dir>/VERSION` when it holds none.
 A directory that holds more than one of those manifests SHALL fail the load, naming each one and asking for a file path.
@@ -28,7 +28,7 @@ A `pyproject.toml` package with no `publisher`, `publish`, or `publishers` entry
 - **WHEN** package `templates` has `path: VERSION`, no `publisher`, and its Version PR has merged
 - **THEN** `verctl publish --plan` lists the tag and the Release for `templates` and no upload
 
-#### Scenario: A Python package must name its publisher
+#### Scenario: A Python package must name a publisher
 
 - **WHEN** a package has `path: pyproject.toml`, no `publisher`, no `publish`, and no `publishers` entry under its name
 - **THEN** every command that loads `.ctl/ver.yaml` exits non-zero and its error names `publisher`

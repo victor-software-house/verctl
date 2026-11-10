@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: A package's file name picks its stock driver
+### Requirement: A package's file name picks the stock driver
 
 verctl SHALL pick a stock driver from the file name a package's `path` names, with no `driver` key: `Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, and `VERSION`.
 A `driver` key or inline driver fields SHALL still override the stock driver.
@@ -67,7 +67,7 @@ Go then reads both as one deprecation notice.
 - **WHEN** `go.mod` holds `// Deprecated: use example.com/next.` directly above `module example.com/demo`, and `.changeset/fix.md` holds `demo: patch`
 - **THEN** `verctl prepare --dry-run` exits non-zero and its error names `Deprecated:`
 
-### Requirement: A Go module's major version matches its module path
+### Requirement: A Go module's major version matches the module path
 
 From major version 2, the Go toolchain reads a module only when its path ends in `/v<major>`.
 verctl SHALL refuse a bump whose new major version is 2 or more and differs from the `/vN` suffix of the module path.

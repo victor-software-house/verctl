@@ -6,7 +6,7 @@ How each changelog entry links the pull request or commit that added it.
 
 ## Requirements
 
-### Requirement: Each changelog entry links its pull request or commit
+### Requirement: Each changelog entry links a pull request or commit
 
 verctl SHALL link each changelog entry to the pull request named by a
 trailing `(#N)` in the commit subject.

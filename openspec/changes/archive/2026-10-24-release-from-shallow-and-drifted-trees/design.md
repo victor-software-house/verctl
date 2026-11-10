@@ -58,7 +58,7 @@ Granting it widens what that App can change in every installed repository,
 so it was an operator decision.
 
 The operator decided on 2026-10-19 that no App gets `workflows: write`.
-A registry-checked package is tagged before its uploads instead,
+A registry-checked package is tagged before the uploads instead,
 in the run that merged the Version PR
 ([tag-at-merge](../2026-10-24-tag-at-merge/design.md), queue row
 [VER-073][ver-073]).

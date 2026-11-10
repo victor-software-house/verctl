@@ -101,7 +101,7 @@ or unshallow the clone.
 - **WHEN** `.ctl/ver.yaml` declares only `demo` at `0.0.0` and `verctl status --github-output out` runs with a token
 - **THEN** `out` holds `pending=false` and `commits=[]`
 
-### Requirement: A removed verb names its replacement
+### Requirement: A removed verb names the replacement verb
 
 `verctl prepare`, `pin`, `publish`, and `assets` SHALL exit 2 without
 reading the config, and their error SHALL name the command that replaced

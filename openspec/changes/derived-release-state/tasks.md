@@ -14,7 +14,7 @@ State notes are from the code on `main` at [cb1be28][main], read on 2026-11-09 (
   - 2026-11-09, partly shipped: `publish` derives each version commit from first-parent history (3452801, 2026-08-17), and no label is read ([#188][pr188]). Remaining: `status` reporting both axes.
 - [ ] 2.2 `release` and `release asset` run verify, publish, tag, release, asset, and finalize with their guards. The `released` steps run after finalize. Proof: the release-state transition scenarios and the release-completion draft scenarios pass against a local bare remote and mocked registry and GitHub APIs
   - 2026-11-09, partly shipped under `publish` and `assets`: registry, tag, Release, and asset steps that report `already` on a rerun.
-    A registry-checked package is tagged before its uploads (`src/publish.rs:350`).
+    A registry-checked package is tagged before the uploads (`src/publish.rs:350`).
     Remaining:
     - the `release` verb
     - one atomic tag push

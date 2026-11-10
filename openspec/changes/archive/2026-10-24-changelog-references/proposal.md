@@ -1,4 +1,4 @@
-# Link each changelog entry to its pull request
+# Link each changelog entry to the pull request
 
 ## Why
 

@@ -1,6 +1,6 @@
 ## RENAMED Requirements
 
-- FROM: `### Requirement: Inside an environment the token is read under its stored name`
+- FROM: `### Requirement: Inside an environment the token is read under the stored name`
 - TO: `### Requirement: The caller maps the token by name`
 
 ## MODIFIED Requirements

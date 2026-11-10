@@ -42,7 +42,7 @@ line.
 - **WHEN** a package declares `chnagelog: docs/CHANGELOG.md`
 - **THEN** `verctl status` exits non-zero and its error names `chnagelog` on its line
 
-### Requirement: A removed key names its replacement
+### Requirement: A removed key names the replacement key
 
 verctl SHALL refuse every key this change removes and SHALL name what replaces
 it.

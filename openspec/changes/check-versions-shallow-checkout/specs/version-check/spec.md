@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: The version check fetches the branches it compares against
+### Requirement: The version check fetches the branches of the comparison
 
 Before comparing versions, `verctl check --versions` SHALL fetch
 `origin/<branch>` with its whole history when that ref is missing or the clone

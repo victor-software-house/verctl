@@ -42,7 +42,7 @@ A tag shape that `tags.template` cannot match SHALL fail `check` and name a temp
 - **WHEN** the newest tag is `v0.0.75` and the repository now declares two packages
 - **THEN** the next release of the package that owns those tags is tagged `v0.0.76`
 
-### Requirement: A Go module in a subdirectory is tagged by its directory
+### Requirement: A Go module in a subdirectory is tagged by the directory
 
 A `go.mod` package outside the root SHALL be tagged `{dir}/v{version}`, the only form the Go toolchain reads.
 A template that gives it another tag SHALL fail the load.

@@ -17,7 +17,7 @@ Compile, format, lint, and test tasks run in pull request CI with
 - [ ] 2.2 After `version-files`, `derived-version-pr-branch`, `version-pr-proposal`, and this change are archived, in that order, no spec names the old verbs. The archive also rewrites the `versioning` Purpose to use `version` where it uses `prepare`, and the `release-plan` Purpose to use `status` and `release`, since no delta can change a Purpose. Proof: `rg -nw 'prepare|pin' openspec/specs/ openspec/changes/ --glob '**/spec.md' --glob '!**/archive/**'` prints only these matches:
   - the `prepare:` block and its `prepare.version_label` and `prepare.stages` keys in `version-pr-proposal`, which the config refusal names;
   - the noun "the verctl pin" in `version-pr-proposal`'s older-verctl requirement, which quotes the workflow error;
-  - the requirement "A removed verb names its replacement" in `command-names`;
+  - the requirement "A removed verb names the replacement verb" in `command-names`;
   - the assets step key `prepare` in `package-asset-files`' `asset-contents`;
   - the leftover `prepare:` section in `release-state-machine`'s `release-config`;
   - the `mise-pin` step in `built-in-ecosystems`.

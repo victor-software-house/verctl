@@ -2010,7 +2010,7 @@ mod tests {
 
     /// The definition over each history the review raised:
     ///
-    /// - A skipped version is listed at its oldest commit in the range, even
+    /// - A skipped version is listed at the oldest commit in the range, even
     ///   below a revert.
     /// - An abandoned version, one a later commit took strictly below, is not
     ///   listed.

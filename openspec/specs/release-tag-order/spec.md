@@ -6,7 +6,7 @@ When a release tag and Release are created relative to the package uploads.
 
 ## Requirements
 
-### Requirement: A registry-checked package is tagged before its uploads
+### Requirement: A registry-checked package is tagged before the uploads
 
 `verctl publish` SHALL create a tag and its GitHub Release before running any
 upload of the run.
@@ -35,7 +35,7 @@ It SHALL then fail, naming the refusal.
 - **WHEN** `app` declares `publisher: none`
 - **THEN** `verctl publish` creates its tag and Release before any upload of the run
 
-### Requirement: An unchecked upload keeps its tag after the upload
+### Requirement: An unchecked upload is tagged only after the upload
 
 `verctl publish` SHALL create a tag that names a package with an unchecked
 upload only after that upload succeeds.

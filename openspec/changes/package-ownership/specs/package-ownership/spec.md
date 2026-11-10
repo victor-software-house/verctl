@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: A package owns the files under its version source
+### Requirement: A package owns the files under the version source
 
 A package SHALL own the directory of its version source and every file below it that no deeper package owns.
 `files` SHALL replace that set with globs.

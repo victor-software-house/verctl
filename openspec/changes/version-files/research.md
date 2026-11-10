@@ -73,7 +73,7 @@ On a bump to v2 or later it rewrites the module path, and it tags `v{version}` o
 
 The common rule: discovery is declared once at the root, as the stack's own declaration or as globs.
 No tool scans every manifest on disk.
-A package is named by its manifest, and a directory that holds a manifest is the unit.
+A package is named by the manifest, and a directory that holds a manifest is the unit.
 
 ## 4. Internal dependency ranges and publish order
 

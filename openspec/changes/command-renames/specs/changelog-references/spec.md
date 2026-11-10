@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: Each changelog entry links its pull request or commit
+### Requirement: Each changelog entry links a pull request or commit
 
 verctl SHALL link each
 changelog entry to a pull request.

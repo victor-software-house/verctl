@@ -37,7 +37,7 @@ The files each package owns, and the `check` that uses them, are in [`package-ow
    - `node_modules`, `.git`, and `target` are always excluded;
    - each match is resolved to its real path;
    - a match outside the repository fails the load.
-6. A package is named by its manifest (`package.name`, `name`, the Go module path), and by its directory for a `VERSION` package, so moving a manifest keeps its name.
+6. A package is named by the manifest (`package.name`, `name`, the Go module path), and by its directory for a `VERSION` package, so moving a manifest keeps its name.
    A duplicate name, or one manifest claimed twice, fails the load and names both files.
    A manifest with no name fails and names the override that fixes it.
 7. A member that does not publish (`"private": true`, `publish = false`) is still versioned, as today.

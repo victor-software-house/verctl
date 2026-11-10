@@ -47,7 +47,7 @@ with `"private": true` SHALL never be published.
 - **WHEN** `bun --version` prints `1.4.0`
 - **THEN** `verctl version` exits non-zero before writing any file and names `1.4.1`
 
-### Requirement: A repository's own locked tool version moves after its release exists
+### Requirement: A repository's own locked tool version moves after the release exists
 
 The built-in `mise-pin` step SHALL run only after `finalize`.
 

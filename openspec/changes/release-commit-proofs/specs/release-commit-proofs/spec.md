@@ -35,7 +35,7 @@ SHALL let the run continue.
 - **WHEN** the same run passes `--allow-workflow-change`
 - **THEN** it publishes, and the JSON report lists `workflow-change` under `allowed`
 
-### Requirement: A package has no skipped version since its last release
+### Requirement: A package has no skipped version since the last release
 
 `verctl publish` SHALL refuse a package that has a skipped version in the
 range from the release commit back to the newest release tag. The next
@@ -74,7 +74,7 @@ skipped when all of these hold:
 - **WHEN** `demo` is tagged at 0.7.4. Commit `aaa1111` sets 0.7.5 and a later commit sets 0.7.7. Commit `ccc3333` sets 0.7.6, and the release commit sets 0.7.8
 - **THEN** `verctl publish --plan` lists 0.7.5 at `aaa1111` and 0.7.6 at `ccc3333`, and does not list 0.7.7
 
-### Requirement: A skipped version is listed at its oldest commit
+### Requirement: A skipped version is listed at the oldest commit
 
 `verctl publish --plan` SHALL list each skipped v once, at the oldest commit
 in the range whose version is v. A revert is then a later commit that
