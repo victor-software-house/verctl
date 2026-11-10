@@ -49,26 +49,20 @@ pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<
             continue;
         }
         let spec = config.find(name)?;
-        let driver = spec.resolve(config, root)?;
-        let path = root.join(&spec.path);
-        let raw = driver.source(&path)?;
-        let from = driver
-            .read(&raw)
-            .with_context(|| format!("package {name}: {}", path.display()))?
-            .trim()
-            .to_owned();
-        let to = bump::apply(&from, bump, spec.first_minor)
+        let current = spec.current(config, root)?;
+        let to = bump::apply(&current.version, bump, spec.first_minor)
             .with_context(|| format!("package {name}"))?;
-        driver
-            .accepts(&raw, &to)
-            .with_context(|| format!("package {name}: {}", path.display()))?;
+        current
+            .driver
+            .accepts(&current.raw, &to)
+            .with_context(|| format!("package {name}: {}", current.path.display()))?;
         plan.push(PlanEntry {
             name: name.to_owned(),
-            from,
+            from: current.version,
             to,
             bump,
-            path,
-            driver,
+            path: current.path,
+            driver: current.driver,
         });
     }
     Ok(plan)

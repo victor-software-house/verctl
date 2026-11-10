@@ -84,10 +84,8 @@ pub fn served_versions(
         .packages
         .iter()
         .filter_map(|spec| {
-            let driver = spec.resolve(config, root).ok()?;
-            let raw = driver.source(&root.join(&spec.path)).ok()?;
-            let version = driver.read(&raw).ok()?;
-            Some((spec.name.clone(), version.trim().to_owned()))
+            let current = spec.current(config, root).ok()?;
+            Some((spec.name.clone(), current.version))
         })
         .collect();
     for (name, version) in planned {

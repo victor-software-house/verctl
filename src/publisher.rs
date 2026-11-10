@@ -303,7 +303,8 @@ pub fn resolve(
 /// The publisher a package names, tried in order.
 ///
 /// 1. The `publisher` it declares.
-/// 2. The stock one its manifest file implies.
+/// 2. The stock one its manifest file implies, unless the version is on a
+///    marker line: a marker in a `Cargo.toml` says nothing about crates.io.
 /// 3. A `publishers` entry or `publish` command under the package's own name.
 /// 4. `none` for a version source no registry reads, such as `go.mod`,
 ///    `VERSION`, or a marker line, whose release is its tag.
@@ -315,7 +316,9 @@ pub(crate) fn publisher_name<'a>(
         return name;
     }
     let file_name = spec.path.file_name().and_then(|name| name.to_str());
-    if let Some(stock) = file_name.and_then(stock_publisher_for_file) {
+    if !spec.marker
+        && let Some(stock) = file_name.and_then(stock_publisher_for_file)
+    {
         return stock;
     }
     let names_its_own = spec.publish_argv.is_some() || config.publishers.contains_key(&spec.name);
@@ -673,9 +676,15 @@ mod tests {
               - name: ci
                 path: ci.yml
                 marker: true
+              - name: sample
+                path: sample/Cargo.toml
+                marker: true
         "})
         .unwrap();
         let (label, _, _) = resolve(&config, &config.packages[3], Path::new("ci.yml")).unwrap();
+        assert_eq!(label, "release only");
+        let (label, _, _) =
+            resolve(&config, &config.packages[4], Path::new("sample/Cargo.toml")).unwrap();
         assert_eq!(label, "release only");
         let (label, _, argv) = resolve(&config, &config.packages[0], Path::new("go.mod")).unwrap();
         assert_eq!((label.as_str(), argv.len()), ("release only", 0));

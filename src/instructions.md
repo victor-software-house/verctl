@@ -227,7 +227,8 @@ version comment. A bump to v2 or later fails until
 the module path ends in `/v<major>`, and a Go module with no publisher
 releases on GitHub only. A `VERSION` file holds one version and a newline.
 A missing one reads as `0.0.0`: `check` leaves it missing and `prepare`
-writes it. With no publisher, a `VERSION` package releases on GitHub only.
+writes it. Its directory must exist, or the plan fails before any write.
+With no publisher, a `VERSION` package releases on GitHub only.
 `marker: true` makes any file a package: its version is the one line such
 as `# version: 1.2.0`, `// version: 1.2.0`, or `<!-- version: 1.2.0 -->`,
 and no such line, or two, fails. It takes no driver, and with no publisher

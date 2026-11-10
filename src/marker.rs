@@ -90,9 +90,9 @@ fn parse_line(line: &str, offset: usize) -> Option<Marker<'_>> {
     let after_opener = trimmed[opener.len()..].trim_start();
     let value = after_opener.strip_prefix(KEY)?.strip_prefix(' ')?;
     let version = value.split_whitespace().next()?;
-    let rest = value[version.len()..].trim();
+    let rest = value.strip_prefix(version)?.trim();
     let closes = rest.is_empty() || (opener == "<!--" && rest == "-->");
-    if !closes || !value.starts_with(version) {
+    if !closes {
         return None;
     }
     let start = offset + (content.len() - value.len());
@@ -176,6 +176,17 @@ mod tests {
             # The version: 2.0.0 changed things.
             # version:2.0.0
             # version: 3.0.0 and more
+        "};
+        assert_eq!(read(raw).unwrap(), "1.0.0");
+    }
+
+    /// A value past extra whitespace is not a marker, and a multibyte
+    /// character there must not split mid-byte.
+    #[test]
+    fn extra_space_before_a_multibyte_value_is_not_a_marker() {
+        let raw = indoc! {"
+            # version: 1.0.0
+            # version:  é
         "};
         assert_eq!(read(raw).unwrap(), "1.0.0");
     }

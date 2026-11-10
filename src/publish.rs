@@ -93,11 +93,9 @@ pub struct PublishLine {
 pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
     let mut packages = Vec::new();
     for spec in &config.packages {
-        let path = root.join(&spec.path);
-        let driver = spec.resolve(config, root)?;
-        let raw = std::fs::read_to_string(&path).with_context(|| path.display().to_string())?;
-        let version = driver.read(&raw)?.trim().to_owned();
-        let (label, noun, argv) = publisher::resolve(config, spec, &path)?;
+        let current = spec.current(config, root)?;
+        let version = current.version;
+        let (label, noun, argv) = publisher::resolve(config, spec, &current.path)?;
         let label = match spec.registry.as_deref() {
             Some(registry) if !registry.is_empty() => format!("{label} {registry}"),
             _ => label,
@@ -135,6 +133,9 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
 }
 
 /// Whether a publish run found anything to release.
+///
+/// Not `#[non_exhaustive]`: the binary prints each outcome, and an exhaustive
+/// match makes a new variant fail the build until it is printed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Outcome {

@@ -27,6 +27,9 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 pub const POLL_EVERY: Duration = Duration::from_secs(30);
 
 /// What docs.rs reports for one crate version.
+///
+/// Not `#[non_exhaustive]`: the binary prints a label for every variant, and
+/// an exhaustive match makes a new variant fail the build until it has one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DocsStatus {

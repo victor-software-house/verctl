@@ -2,7 +2,8 @@
 
 ### Requirement: Every release tag is annotated and has a Release
 
-`publish` SHALL create annotated tags only, and SHALL create a GitHub Release for every tag it makes, `publisher: none` packages included, so immutable Releases cover every tag.
+`publish` SHALL create every release tag as an annotated tag, and SHALL create a GitHub Release for every release tag it makes, `publisher: none` packages included, so immutable Releases cover every release.
+A floating major tag is not a release tag, and this requirement does not cover it.
 
 #### Scenario: A GitHub-only package
 
@@ -21,9 +22,12 @@ A Release that declares assets SHALL be created as a draft and published only af
 ### Requirement: check reads the repository's immutability settings
 
 `check --repository` SHALL report whether immutable Releases are on and whether a tag ruleset blocks updating and deleting release tags.
+The ruleset's patterns match full versions only, `v*.*.*` and `**/v*.*.*`, so a floating major tag stays movable; `**` crosses the `/` in a scoped npm name, which `*` does not ([GitHub fnmatch rules][fnmatch]).
 When `.ctl/ver.yaml` sets `tags.immutable: true`, a missing setting SHALL fail the check and name it.
 
 #### Scenario: Immutability declared but off
 
 - **WHEN** `tags.immutable` is `true` and the repository has immutable Releases off
 - **THEN** `verctl check --repository` exits non-zero and names immutable Releases
+
+[fnmatch]: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository#using-fnmatch-syntax

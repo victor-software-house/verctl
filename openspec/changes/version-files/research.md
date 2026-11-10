@@ -25,7 +25,7 @@ The five changes that follow from it are listed at the end.
 | [monochange][monochange] | each ecosystem's native manifest; tags only for Go, Swift, and GitHub Actions | scans every supported ecosystem | `[group.<id>]` | configurable | `go.mod` discovered, versions in tags |
 | [Bumpy][bumpy] | `package.json` | package-manager workspaces | `fixed`, `linked` | `name@version` | none |
 
-monochange is the closest tool to verctl, and it is new. Its name dates from 2023, but its code is from 2026: about 1,060 commits by one author, up to v0.21.0 on 2026-10-23. On 2026-11-09 it had 3 stars and about 2,200 crate downloads. It is written in Rust, Changesets-format fragments, ten ecosystems (Cargo, npm, pnpm, Yarn, Bun, Deno, Dart, Python, Go, GitHub Actions, Swift, CocoaPods, Gradle), groups, and post-merge tags.
+monochange is the closest tool to verctl, and it is new. Its name dates from 2023, but its code is from 2026: about 1,060 commits by one author, up to v0.21.0 on 2026-10-23. On 2026-11-09 it had 3 stars and about 2,200 crate downloads. It is written in Rust, Changesets-format fragments, ten ecosystems (Cargo; npm, pnpm, Yarn, and Bun as one npm family; Deno; Dart; Python; Go; GitHub Actions; Swift; CocoaPods; Gradle), groups, and post-merge tags.
 It rewrites lockfiles directly by default, which verctl does not do: the package manager stays the only writer of its lockfile.
 Changesets v3 (2026-08-11) added topological publish order and `workspace:` resolution through the package manager ([Bumpy, differences from Changesets][bumpy]).
 Bumpy adds a local `check --strict` that maps changed files to packages and requires a fragment for each, branch-based prerelease channels instead of a committed pre mode, and `init`, which converts `.changeset/config.json`.
@@ -84,9 +84,9 @@ The model is five small primitives that compose:
 |:--|:--|:--|
 | Version source | one tracked file and where the version sits in it: a manifest key, a `VERSION` file, or a marker line | chosen by file name |
 | Package | a name, a version source, and the files it owns | one package per repository; owned files are the version source's directory |
-| Discovery | where packages come from: a workspace file, root globs, or an explicit list | the explicit list, as today |
+| Discovery | where packages come from: a workspace file, root globs, or an explicit list | inferred from root workspace files; an explicit entry overrides, adds, or removes one |
 | Group | packages that share one version | none: each package moves on its own |
-| Tag | the tag name of a package or group | `v{version}` for one package, `{name}@{version}` for several |
+| Tag | the tag name of a package or group | `v{version}` for one package, `{name}/v{version}` for several |
 
 A package that changed gets a fragment and a new version; a package that did not keeps its version and its tag, so its pins stay where they are.
 
@@ -94,7 +94,7 @@ The operator also ruled that verctl fits any workflow as if it were native to it
 
 1. Each stack keeps its own files and idioms: the version sits where the stack's own tools look for it, and the stack's own command refreshes its lockfile.
 2. A repository needs no configuration until it wants something the defaults do not give.
-3. A repository leaving Changesets keeps working unchanged: verctl already reads `.changeset/*.md`, and it reads `.changeset/config.json` (`fixed`, `linked`, `ignore`) as its groups until `.ctl/ver.yaml` says otherwise.
+3. A repository leaving Changesets keeps working unchanged unless its config uses `linked`: verctl already reads `.changeset/*.md`, and it reads `.changeset/config.json` (`fixed`, `ignore`) as its groups until `.ctl/ver.yaml` says otherwise, and a `linked` entry fails the load and names the group to write.
 4. Nothing verctl does needs a bot, an App, or a separate action; the reusable workflow runs the same CLI a developer runs locally.
 
 ## 7. How the best tools infer packages

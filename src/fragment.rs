@@ -60,6 +60,7 @@ pub struct PackageBump {
 ///
 /// [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[non_exhaustive]
 pub enum Group {
     /// New functionality.
     Added,

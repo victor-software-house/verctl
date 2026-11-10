@@ -64,6 +64,7 @@ A group SHALL get one tag and one Release, whose body holds each member's CHANGE
 
 `tags.floating: [major]` SHALL move a lightweight `v<major>` tag, or `{name}/v<major>`, to each new release in that major.
 No Release SHALL name a floating tag.
+A floating tag is not a release tag: the annotated-only rule and the release-tag ruleset do not cover it, so `publish` can move it while `tags.immutable` is `true`.
 
 #### Scenario: A reusable workflow consumers pin by major
 

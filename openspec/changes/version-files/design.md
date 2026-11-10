@@ -83,4 +83,4 @@ It lost because it invents a file-name convention no other tool reads, and the e
 ## Migration Plan
 
 Additive: a repository whose packages name `Cargo.toml` or `package.json` sees no change.
-Shipped as patch fragments on the pending 0.7.x line, held with the rest of the backlog.
+Ships in the next minor, not as 0.7.x patches, because the `Driver` enum gains a variant, an API break. The slice waits with the rest of the minor backlog (operator, 2026-11-09). Every public enum that can grow is sealed in the same release.

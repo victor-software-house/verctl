@@ -116,6 +116,41 @@ fn hand_edited_version_fails() {
     );
 }
 
+/// Deleting a released `VERSION` file is drift, not a new package: the next
+/// `prepare` would read `0.0.0` and write `0.0.1` over `1.2.0`.
+#[test]
+fn deleting_a_released_version_file_fails() {
+    let dir = TempDir::new().unwrap();
+    common::init(dir.path());
+    common::write_config(
+        dir.path(),
+        indoc! {"
+            packages:
+              - name: templates
+                path: VERSION
+        "},
+    );
+    fs::write(dir.path().join("VERSION"), "1.2.0\n").unwrap();
+    let sha = common::commit_all(dir.path(), "init");
+    track_origin_main(dir.path(), &sha);
+    fs::remove_file(dir.path().join("VERSION")).unwrap();
+    let err = check(dir.path(), Skip::None).unwrap_err();
+    assert!(
+        format!("{err:#}").contains("templates 1.2.0 -> 0.0.0"),
+        "{err:#}"
+    );
+}
+
+/// A declared package whose manifest is gone fails the check and names it,
+/// as `prepare` would, instead of dropping out of the report.
+#[test]
+fn a_missing_manifest_fails_and_names_the_package() {
+    let dir = repo_with_origin_main("1.0.0");
+    fs::remove_file(dir.path().join("Cargo.toml")).unwrap();
+    let err = check(dir.path(), Skip::None).unwrap_err();
+    assert!(format!("{err:#}").contains("package demo"), "{err:#}");
+}
+
 #[test]
 fn fragment_only_change_still_matches() {
     let dir = repo_with_origin_main("1.0.0");

@@ -49,6 +49,7 @@ pub const LISTING_DELAYS: [Duration; 6] = [
 
 /// How `publish` decides whether a package version is already published.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RegistryCheck {
     /// Read the crate's file in the crates.io sparse index.
     CratesIo {
@@ -89,6 +90,7 @@ impl RegistryCheck {
 
 /// Where a cargo package publishes, as far as verctl can tell.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CargoTarget {
     /// Every place Cargo reads the target agrees on crates.io.
     CratesIo,

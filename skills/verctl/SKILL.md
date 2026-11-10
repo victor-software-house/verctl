@@ -121,8 +121,9 @@ its `publisher`, or `none`; one whose `project.dynamic` lists `version`
 fails, because its build backend sets the version. A `go.mod` package keeps
 its version as `// vX.Y.Z` on the `module` line and, with no publisher,
 releases on GitHub only; a v2 bump needs the `/v2` module path first. A
-`VERSION` file holds only the version; a missing one reads as `0.0.0` until
-`prepare` writes it, and with no publisher it releases on GitHub only.
+`VERSION` file holds only the version; a missing one in an existing
+directory reads as `0.0.0` until `prepare` writes it, and with no publisher
+it releases on GitHub only.
 `marker: true` versions any one file, such as a reusable workflow, on its
 one `# version: X.Y.Z` line, and also releases on GitHub only.
 
