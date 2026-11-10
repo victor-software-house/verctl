@@ -11,7 +11,10 @@
 # remote-tracking ref or the remote sha already holds, such as a tag on a
 # pushed commit, was checked when those commits were pushed. The worktree
 # is checked out with no hooks, so a checkout hook of the repository's own
-# does not run in it. Run by hand, with no pre-push lines,
+# does not run in it. The pre-push wrapper passes the argument `pre-push`.
+# git runs pre-push with no lines when a push sends nothing, as in
+# "Everything up-to-date", and then there is nothing to check.
+# Run by hand, with no argument and no pre-push lines,
 # it locks the working tree in place and fails when a lockfile then differs
 # from HEAD, which leaves the new locks to commit. `mise lock --dry-run`
 # reports only version changes and misses a missing platform entry or
@@ -34,6 +37,15 @@
 # machine's own mise.local.toml. Only tracked files count, so an untracked
 # profile the push does not carry cannot fail it. hooks pieces always render
 # mise.dev.toml.
+caller=${1:-}
+case $caller in
+  "" | pre-push) ;;
+  *)
+    usage="the pre-push wrapper passes pre-push, and a run by hand passes none"
+    echo "✘ unknown argument $caller; $usage"
+    exit 2
+    ;;
+esac
 scratch=$(mktemp -d) || { echo "✘ mktemp failed; see its error above"; exit 1; }
 trap 'rm -rf "$scratch"; git worktree prune' EXIT
 # sh runs the EXIT trap on a signal only when a trap for it exits.
@@ -109,6 +121,7 @@ else
   lines=$(cat) || { echo "✘ reading the pre-push lines failed; see its error above"; exit 1; }
 fi
 if [ -z "$lines" ]; then
+  [ "$caller" = pre-push ] && exit 0
   changed=$(check .) || exit 1
   if [ -n "$changed" ]; then
     printf '%s\n' "$changed"
@@ -132,7 +145,16 @@ printf '%s\n' "$lines" | {
     [ -d "$tree" ] && continue
     git -c core.hooksPath=/dev/null worktree add --quiet --detach "$tree" "$sha" </dev/null ||
       { echo "✘ git worktree add failed for $ref; see its error above"; exit 1; }
-    changed=$(check "$tree" </dev/null) || exit 1
+    # git runs pre-push with GIT_DIR set in a linked worktree, and a caller
+    # can also export GIT_WORK_TREE or GIT_INDEX_FILE. Each names the
+    # pusher's checkout, so git in the scratch worktree would compare it with
+    # the pusher's index. The substitution's subshell unsets them, so git
+    # finds that worktree's repository from its path. A run by hand keeps
+    # the caller's own layout.
+    changed=$(
+      unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+      check "$tree" </dev/null
+    ) || exit 1
     if [ -n "$changed" ]; then
       printf '%s\n' "$changed"
       echo "✘ $ref: these lockfiles differ from its commit after mise lock:" \

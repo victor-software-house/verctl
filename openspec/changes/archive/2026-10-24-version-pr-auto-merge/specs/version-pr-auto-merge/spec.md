@@ -12,7 +12,7 @@ state.
 #### Scenario: Opted in with a required check
 
 - **WHEN** the workflow runs the action with `auto-merge: true`, the base branch `main` requires the status check `Verify`, and the action opens Version [PR 42][verctl#42] titled `chore(release): version packages`
-- **THEN** Version [PR 42][verctl#42] has auto-merge enabled with the squash subject `chore(release): version packages (#42)`
+- **THEN** Version [PR 42][verctl#42] has auto-merge enabled with the squash subject `chore(release): version packages` and the pull request reference `#42` in parentheses
 
 #### Scenario: Not opted in
 

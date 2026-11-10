@@ -85,22 +85,6 @@ queue:
     notes:
       - 2026-11-10, split from release-state-machine (VER-011) along the boundaries of its work, because each change stays within the templates specs:budget word budgets.
 
-  - id: VER-095
-    title: Require a Version PR to be the version step and nothing else
-    scope: verctl version, check
-    outcome: >-
-      A hand edit cannot ride a Version PR, and the version step writes every file a
-      release changes.
-    blocked_by: []
-    acceptance:
-      - '`check` requires a Version PR diff to equal the version step applied to its base.'
-      - '`verctl version` writes every manifest, lockfile, CHANGELOG section, and served file a release changes, removes the consumed fragments, and reports the commands and steps it ran under `after`.'
-      - '`check` fails a pull request that is not a Version PR when it adds a CHANGELOG section for a version, or when it changes whether a package publishes unless it adds a fragment that bumps that package above `none`.'
-    plan: openspec/changes/version-pr-content/proposal.md
-    notes:
-      - 2026-11-10, split from release-state-machine (VER-011) along the boundaries of its work, because each change stays within the templates specs:budget word budgets.
-      - 2026-11-10, dependent requirement rewrites moved to VER-105. The two non-Version-PR rules of version-pr-identity task 3.2 ship here, since a stricter check shipped after 0.8.0 would force 0.9.0.
-
   - id: VER-105
     title: Rewrite a dependent requirement the version step no longer admits
     scope: verctl version, check
@@ -158,78 +142,6 @@ queue:
     notes:
       - 2026-11-10, split from release-state-machine (VER-011) along the boundaries of its work, because each change stays within the templates specs:budget word budgets.
 
-  - id: VER-080
-    title: Publish vendored builds as Release assets
-    scope: verctl assets, .ctl/ver.yaml
-    outcome: >-
-      A repository publishes a third-party build, at its upstream version, as GitHub
-      Release assets with verctl assets, with no gh release step or release action.
-    blocked_by: []
-    acceptance:
-      - '`vendored.<name>` in `.ctl/ver.yaml` declares a version, tag and archive templates, a build argv, the files to pack, notes, and one runner per target.'
-      - '`verctl assets --vendored <name> --build <id> --upload` creates the Release when it is missing and attaches the archive and its `.sha256`, and a rerun reports both as already.'
-      - '`verctl assets` without `--vendored` plans, names, packs, and uploads exactly as before.'
-    plan: openspec/changes/vendored-assets/proposal.md
-
-  - id: VER-081
-    title: Pack several files into a package asset tarball
-    scope: verctl assets, .ctl/ver.yaml
-    outcome: >-
-      A package release ships every file it needs, such as a daemon, its client, a
-      service unit, and a licence, in each asset tarball.
-    blocked_by: []
-    acceptance:
-      - '`assets.dir` and `assets.files` in `.ctl/ver.yaml` make `verctl assets --build <id>` pack `tar czf <asset> -C <dir> <files>` with the binary placeholders replaced, and fail naming a listed path missing after the build.'
-      - The load fails when `dir` comes without `files`, `files` without `dir`, `binary` beside them, or a path leaves the repository.
-      - '`verctl assets` without `dir` and `files` plans, names, and packs exactly as before.'
-    plan: openspec/changes/package-asset-files/proposal.md
-
-  - id: VER-107
-    title: Let an asset target pack its own files
-    scope: src/config.rs, src/assets.rs
-    outcome: >-
-      A release whose platforms ship different files declares a list on each target
-      that differs from the shared one.
-    blocked_by: []
-    acceptance:
-      - An `assets` target that declares `files` makes `verctl release asset <target>` pack exactly that list from `assets.dir`, with the placeholders replaced, and fail naming that list when a path is missing after the build.
-      - An `assets` target without `files` packs the shared `assets.files`, as before.
-      - The load fails, naming the target, when its `files` comes without `assets.dir`, is empty, sits beside `assets.binary`, or holds a path that leaves the repository.
-    plan: openspec/changes/asset-target-files/proposal.md
-
-  - id: VER-082
-    title: Run the registry publish in a caller-named environment
-    scope: release.yml publish job
-    outcome: >-
-      A caller keeps its registry token in a GitHub environment that admits only the
-      default branch, and the reusable workflow still publishes with it.
-    blocked_by: []
-    acceptance:
-      - '`release.yml` takes an `environment` input, default empty, set on the `publish` job only.'
-      - In an environment, with no `registry-token` secret, `publish` reads the secret named by `registry-token-env`; without one, it reads only `registry-token`, as before.
-      - 'A caller publishes from an environment with `secrets: inherit`.'
-    plan: openspec/changes/release-environment/proposal.md
-    notes:
-      - '2026-11-10, VER-104 replaces the stored-name read and secrets: inherit with a token mapped by name.'
-
-  - id: VER-015
-    title: Asset runners are configuration, not a hardcoded map
-    scope: verctl
-    outcome: >-
-      Each [assets] target names the runner that builds it. The plan
-      emits what the repo declared, so a public repo stays on free
-      hosted minutes and a private one can point at its own labels.
-    blocked_by: []
-    acceptance:
-      - A machine is declared once as [runners.NAME] with labels; [ci.NAME] names several, [assets.NAME] exactly one.
-      - verctl ci and verctl assets print what resolved and the matrix carries it.
-      - A public repo needs no config to keep macos-latest / ubuntu-latest, and no [ci] to keep one verify job.
-      - A declared self-hosted or nscloud label set reaches runs-on unchanged, in order.
-      - An undeclared machine name fails listing the declared ones; a label is never accepted as a name.
-      - Tests cover default, override, multi-label, fan-out naming, empty list, and a partial undeclared target.
-    notes:
-      - '2026-08-17: found while adopting the lane in qctl (qctl#3). Two claims first written here were wrong and are corrected: a per-target `runner` override already existed, and a job can be told its runner by an earlier job. The real defects are that `runner` is one string where GitHub takes a label set, that CI has no configuration surface at all, and that an unknown id with a partial record is accepted and reaches `cargo build --target ""`. Shape settled after several wrong turns, recorded so they are not retried: anonymous list rows needing an `id` field (`[[ci.jobs]]`, `runners = [{ labels = [...] }]`) were rejected as ceremony — names are table headers instead; a `runners` list on an asset target was rejected because two machines would overwrite one tarball, which the shape now makes unsayable; and one identical shape per phase was abandoned once it put `os`/`arch` on a job while its labels sat a level below. A name→labels registry is deliberately not the alias table rejected earlier: an alias made an invented word look like a resolved label, whereas a machine name resolves against `[runners]` or fails and never reaches GitHub. M1 (generating ci.yml) and M3 (a repo variable) were considered and rejected for M2, the plan-job bootstrap the publish lane already uses; M3 would move the value out of verctl.toml entirely. Asked why `plan` is not configurable, the inventory settled the law: verctl decides how many jobs there are, the workflow file decides where a fixed job runs. Unary jobs (`plan`, `crate`, `pin`, `prepare`) all have literal machines; only `verify` and `assets`, whose count the repo decides, read config. A static YAML file cannot declare N jobs without knowing N — that fan-out is what config buys, and the machine rides along on it. So `[release]` is dropped, not deferred: publish and pin are inherently unary, nothing decides their count, and a self-hosted-only repo is already served by editing three literals in workflows it owns. `verctl check --ci` was rejected with it — verifying those literals needs a YAML dependency this crate does not have, to check a value the law puts there on purpose.'
-
   - id: VER-020
     title: check validates served files, and one file has one owner
     scope: verctl
@@ -264,22 +176,6 @@ queue:
       - "2026-08-18, decided with Victor: free and already versioned wins over a prettier host, so this follows the pattern that already exists rather than inventing one. Evidence: qctl ships schema/tasks.schema.json as a release asset, ctl-core's tasks.yaml already points $schema at `releases/download/v0.0.1/tasks.schema.json`, and qctl's own ledger already decided the URL is a pinned tag and never /latest — a schema that changes under an unchanged file is worse than an old one. What is missing is the rest: verctl.toml and changeset fragments have no schema at all, qctl's is hand-written JSON rather than generated from the types, and every pinned URL is bumped by hand. The staleness objection is what VER-018 just answered: a schema URL is a version site like any other, so it becomes a [patterns] entry and prepare keeps it current on the Version PR. mise ships its own schema and we only reference it; template declarations are not a file an editor validates by URL."
       - '2026-08-18, blocker found by running it: every qctl mutation deletes the schema line it is supposed to protect. `qctl start` on a copy of this file rewrote it through serde_yaml and dropped every comment, line 1 included, so `# yaml-language-server: $schema=…` survives only until the next `q start` or `q archive`. tasks.yaml cannot carry a schema pointer until qctl writes comments back. The same applies to every comment here: none of them survive a verb, which is why an archived blocker is recorded in notes rather than beside the key.'
 
-  - id: VER-022
-    title: Move the reusable schema layer into ctl-core
-    scope: verctl
-    outcome: >-
-      Every ctl CLI parses and validates declared input the same way,
-      from one implementation, instead of three that drift.
-    blocked_by: []
-    acceptance:
-      - The shared validators (`inside_the_repo`, `one_file_name`, `at_least_one`, `cannot_be_empty`) live in ctl-core and verctl uses them from there.
-      - Config loading — read, parse with serde, validate once with garde against the whole document — is one ctl-core entry point.
-      - The template renderer's declare-your-own-target mechanism is available to any ctl CLI, not just verctl.
-      - No verctl-specific vocabulary leaks into ctl-core, and no copy of the layer is left behind here.
-    notes:
-      - "2026-08-18: src/schema.rs is already shared between verctl's TOML config and its Jinja template declarations, which is the proof it is not verctl-shaped. ctl-core carries the matching row, CTC-008, merged 2026-08-18 as ctl-core#7, so the destination is agreed before anything moves."
-      - '2026-09-28: the validators and config loading moved. ctl-core 0.6.5 ships `validate` and `input`; verctl reads `.ctl/ver.yaml` and fragment frontmatter through `Input`, drops src/schema.rs, gray_matter, and yaml_serde. The template renderer is the part still here.'
-
   - id: VER-028
     title: Decide who owns a template in the shared .ctl/templates
     scope: verctl
@@ -304,32 +200,6 @@ queue:
     notes:
       - "2026-08-20, noticed while proving VER-027 at the tag: a clean directory holding only `git show v0.1.1:examples/mise.toml` installs and runs `mise run ver` — but it cannot prove the task's own pin won, because the example's `[tools]` entry names the same version. qctl already settled this as a rule and wrote it into its AGENTS.md: a consumer wires one pin, the `?ref=` tag, because the served task carries its own `#MISE tools` version and wins on PATH, so a `[tools]` entry can only disagree with it — and it needs a lockfile row to survive `mise install --locked`, which is the failure ctl-core#9 hit. qctl queued the same removal for its own example as QCTL-018. This repo's example still teaches two, and it is the example everyone copies, so it teaches the wrong thing twice over. Removing it also makes the pin provable: with no surrounding entry, a consumer that runs the task is running what the task named."
 
-  - id: VER-031
-    title: A pattern that cannot rewrite a whole version refuses it
-    scope: verctl
-    outcome: The rule docs/served-files.md states — a prerelease or floating pin fails the release rather than having its numeric head rewritten — is true of the code, not only of the document.
-    blocked_by: []
-    acceptance:
-      - A pattern whose match is immediately followed by more version-ish text fails the release naming the file and the pattern, instead of rewriting the head and leaving the tail.
-      - A test writes a real prerelease into a pinned file and asserts the release stops and the file is untouched.
-      - If the engine cannot refuse, docs/served-files.md stops promising it, and says what a pattern author must anchor instead.
-    notes:
-      - '2026-08-20, found in review of verctl#50 and measured rather than reasoned about. docs/served-files.md §4 says a version is dotted numerics and nothing else, and that "a prerelease or a floating pin is not a version this rewrites: it fails the release rather than rewriting a numeric head and dropping the tail". It does not. With an unanchored `match: "version: {version}"` and a file reading `version: 0.1.1-rc1`, prepare exited 0 and wrote `version: 0.1.2-rc1` — the head moved, the tail stayed, and the release carried on. Kody raised it, our own document contradicted it, and the run settled it: the implementation is the evidence and the document is currently a promise nobody keeps. The condition is exact, and narrower than first written here. A pattern whose `match` ends in literal text already refuses: the test `a_prerelease_pin_fails_instead_of_half_rewriting` uses `"verctl@{version} today"`, and against `verctl@1.0.0-rc.1 today` the digits match but ` today` does not follow, so it fails at arity. Only a match that ends *at* the placeholder has no right-hand boundary, and that is the case that rewrites the head. The author-side answer shipped in #50 as `whole_line: true`, after the first attempt — spelling the closing `---` into the match — was rejected by Victor as a hack: it only worked because `version:` happened to be the last frontmatter key, so adding a key after it would have broken the release. A line-owning pattern supplies the boundary from the line, which is unambiguous. What is left is an inline pattern ending at the placeholder. Do not "fix" it by refusing when the next character continues the version: the discriminator is not local. `download/v{version}` against `download/v1.2.3-linux-x64.tar.gz` has `-` right after the match and is completely correct — the version is 1.2.3 and the rest is the filename. Refusing there would stop real releases, which is why this is a row and not a one-line guard. Either the engine grows a boundary an author can state (as `whole_line` does), or docs/served-files.md stops promising unconditionally and says which shapes are safe.'
-    plan: openspec/changes/pin-version-boundary/proposal.md
-
-  - id: VER-033
-    title: Publish follows the dependency graph, not the declaration order
-    scope: verctl
-    outcome: A workspace whose packages depend on each other publishes every dependency before its consumers, and says which order it resolved.
-    blocked_by: []
-    acceptance:
-      - Order comes from the manifests verctl already parses, or from a declared list.
-      - The resolved order is printed, the way ci and assets print what they resolved.
-      - A cycle fails the run naming the packages in it.
-      - A single-package repo sees no change.
-    notes:
-      - 'docs/adoption-report.md §2. `publish::plan` iterates `config.packages` in declaration order (src/publish.rs), so a consumer published before its dependency leaves a window where its pinned version does not resolve. Their build tool derives the order from the real dependency graph today, which is what they would be giving up. Their request, verbatim: if it is inferred, print it — "a silent topological sort is a thing nobody debugs until it is wrong".'
-
   - id: VER-034
     title: Publish declares its own before and after, the way prepare does
     scope: verctl
@@ -342,33 +212,6 @@ queue:
       - Neither key set is the same run as today.
     notes:
       - 'docs/adoption-report.md §3, filed as one row because it is one hook pair. They keep 247 lines they are not asking us to absorb: a packed-artifact gate that proves the tarball rewrote every `workspace:` and `catalog:` dep into a concrete version, and a post-publish smoke that installs the published version from the registry and imports every export. Both are stack-specific and should stay theirs. What they cannot do is wire them, because `Prepare` has `after` (src/config.rs:519) and publish has no equivalent. Closing that asymmetry is the whole ask.'
-
-  - id: VER-035
-    title: The commit a release publishes from is proved, and a waiver is said out loud
-    scope: verctl
-    outcome: A release refuses a commit whose shape says it is not the one the version tool generated, and an operator who overrides that leaves a line in the log saying so.
-    blocked_by: []
-    acceptance:
-      - The release SHA is an ancestor of the default branch.
-      - Workflow files at the release SHA do not differ from the default branch.
-      - The first-parent branch carries exactly one version commit; two always refuse.
-      - Workflow drift and ancestry each have a flag named for what it allows, and a run that uses one prints which check it skipped; the one-version-commit check has none.
-    notes:
-      - 'docs/adoption-report.md §4. `prove_version_commit` (src/publish.rs:136) is `require_changelog_versions` plus `require_on_default_history` — they keep both and want three more. The workflow-drift one is the non-obvious one and it cost them a release: retrying an old release SHA runs the workflow *at that SHA*, so if permissions changed since, the run can publish to the registry and then fail to tag — the registry is not revertible and the tags are the audit trail. Their waivers are workflow_dispatch booleans and the run prints `waived: …`. Their warning about building it: bind a dispatch input to a step-level `env:` and quote it, never interpolate `${{ inputs.x }}` into a `run:` string — inputs arrive as strings over REST and are not coerced to booleans, in a job holding contents/packages/id-token write.'
-      - 2026-11-09, flags are named for what they allow (`--allow-workflow-change`, `--allow-off-default-branch`), per the naming rule; a skipped version has no flag because publishing the next version cannot fix it.
-    plan: openspec/changes/release-commit-proofs/proposal.md
-
-  - id: VER-036
-    title: A check that cannot run says so instead of passing
-    scope: verctl
-    outcome: No verctl guard reports success by having skipped itself.
-    blocked_by: []
-    acceptance:
-      - expand fails on an unresolved {placeholder} instead of dropping the argument.
-      - prove_default_history prints which condition made it skip.
-      - One test per site proves the silence is gone.
-    notes:
-      - Two sites the consumer report raised separately; they are one law, so they are one row. `publisher::expand` filters out any part containing `{` (src/publisher.rs:151), so a typo'd `{registr}` in a custom argv shortens the command line instead of failing, and the error surfaces downstream wearing someone else's name. `prove_default_history` returns `Ok(())` on four conditions — no repo, no head, unpeelable head, no upstream (src/git.rs:95-104) — each defensible alone, but together the check can pass by not running, in exactly the CI shapes where it matters most. Its doc comment already calls two of them skips; the run does not.
 
   - id: VER-037
     title: The README answers the questions a first publish asks
@@ -411,16 +254,6 @@ queue:
       - 'Related: VER-029, the Version PR label race.'
       - '2026-10-12 (UTC): the decision also covers whether verctl should verify the ruleset that limits pushes on the proposal branch `verctl/release/<base>` to the release identity, in `check` or a separate command. The release-state-machine design documents that ruleset but does not verify it.'
 
-  - id: VER-071
-    title: Every action loads as YAML
-    scope: actions/version-pr/action.yml, tests/action_publish.rs
-    outcome: A consumer that uses any verctl action gets past "Set up job".
-    blocked_by: []
-    acceptance:
-      - Every `actions/*/action.yml` parses as YAML in a test, so a file GitHub cannot load fails CI.
-    notes:
-      - 'VER-064 (#155) added an unquoted `: ` to the version-pr `title` description, so v0.4.6 to v0.4.8 shipped an action that GitHub refuses ("Mapping values are not allowed in this context"). Found in shrub run 39190679995. actionlint reads only workflows, so nothing caught it.'
-
   - id: VER-074
     title: release.yml input for mise config paths the release jobs ignore
     scope: >-
@@ -437,145 +270,6 @@ queue:
     notes:
       - Design section 1.4 and task 3.4 of OpenSpec change reusable-release-workflow.
     plan: openspec/changes/reusable-release-workflow/proposal.md
-
-  - id: VER-101
-    title: Derive the Version PR branch from its base
-    scope: verctl prepare --pr, check --versions
-    outcome: The Version PR branch is verctl/release/<base>, and auto-merge runs in Rust.
-    blocked_by: []
-    acceptance:
-      - The change is archived, so its spec is in `openspec/specs/`.
-    plan: openspec/changes/derived-version-pr-branch/proposal.md
-    notes:
-      - 'Shipped in #161 on 2026-10-17 as part of VER-066; every task of the change is checked.'
-      - Archive it before command-renames (VER-091), whose version-pr-branch delta needs this spec.
-      - 2026-11-10, split from reusable-release-workflow (VER-066) at its capability boundaries, because each change stays within the templates specs:budget word budgets.
-
-  - id: VER-100
-    title: Check the docs.rs build of each released crate
-    scope: verctl docs, the docs job
-    outcome: >-
-      A crates.io release whose docs.rs build fails or never arrives fails the docs
-      job.
-    blocked_by: []
-    acceptance:
-      - The change is archived, so its spec is in `openspec/specs/`.
-    plan: openspec/changes/docs-build-check/proposal.md
-    notes:
-      - 'Shipped in #165 and #171 on 2026-10-17 as part of VER-066; every task of the change is checked.'
-      - 2026-11-10, split from reusable-release-workflow (VER-066) at its capability boundaries, because each change stays within the templates specs:budget word budgets.
-
-  - id: VER-099
-    title: Publish at the commit that set each version
-    scope: verctl publish, publish --plan
-    outcome: >-
-      A publish acts only on the version commit of each package, and a complete
-      release reports nothing to release.
-    blocked_by: []
-    acceptance:
-      - The change is archived, so its spec is in `openspec/specs/`.
-    plan: openspec/changes/release-at-version-commit/proposal.md
-    notes:
-      - 'Shipped in #164 on 2026-10-17 as part of VER-066; every task of the change is checked.'
-      - 2026-11-10, split from reusable-release-workflow (VER-066) at its capability boundaries, because each change stays within the templates specs:budget word budgets.
-
-  - id: VER-098
-    title: Ask the registry whether a version is published
-    scope: verctl publish, publisher recipes
-    outcome: >-
-      verctl publish decides already published from the registry, not from publisher
-      stderr.
-    blocked_by: []
-    acceptance:
-      - The change is archived, so its spec is in `openspec/specs/`.
-    plan: openspec/changes/registry-publish-check/proposal.md
-    notes:
-      - 'Shipped in #162 on 2026-10-17 as part of VER-066; every task of the change is checked.'
-      - 2026-11-10, split from reusable-release-workflow (VER-066) at its capability boundaries, because each change stays within the templates specs:budget word budgets.
-
-  - id: VER-075
-    title: 'verctl semver: cargo-semver-checks at the release type the pending release allows'
-    scope: >-
-      src/semver_check.rs, src/registry.rs, src/cli.rs, src/main.rs,
-      src/presentation.rs, operator docs
-    outcome: >-
-      verctl semver fails a crates.io crate whose next release is a patch when its
-      public API breaks, and skips a crate whose next release already moves the minor.
-    blocked_by: []
-    acceptance:
-      - A crate whose pending fragments are at most patch, at the baseline's major.minor, is checked with cargo semver-checks --release-type minor against its crates.io baseline.
-      - A crate is skipped when a pending fragment for its package is minor or major, when its manifest's major.minor differs from the baseline, or when crates.io has no release of it.
-      - A crate at 1.0 or later fails the run, naming the rule.
-      - A crate with no library target, or a proc-macro, is left out with no check, so a workspace package with a binary member passes.
-    notes:
-      - OpenSpec change semver-release-type in openspec/changes/semver-release-type.
-      - 'shrub#26, on verctl 0.5.1, failed its semver step: verctl ran cargo semver-checks --package shrub on the binary-only crate shrub, and cargo-semver-checks refused with "no crates with library targets selected".'
-      - ctl-core's shared semver task calls mise run ver semver; a repository that does not serve the ver task runs its own verctl.
-    plan: openspec/changes/semver-release-type/proposal.md
-
-  - id: VER-070
-    title: A duplicate release asset upload reports already
-    scope: src/github.rs
-    outcome: A release run whose asset another run already uploaded reports `already` and passes, so a release that is complete never reports red.
-    blocked_by: []
-    acceptance:
-      - An upload refused with GitHub's 422 `already_exists` code, for an asset the release lists as `uploaded`, returns `already <name>`.
-      - An asset of that name in another state is re-read for up to a minute, since another run may still be sending it; one that never reaches `uploaded` fails and says to delete it and rerun.
-      - Any other upload failure still fails.
-    notes:
-      - Self-release runs 39188632481 and 39188754557 both released 2a7b33d (v0.4.8) and each lost one asset race with `already_exists`. The duplicate check text-matched `format!("{error:#}")`, but octocrab 0.54.1 displays `Error::GitHub` as "GitHub", so the code in `GitHubError.errors` never reached it.
-      - Digests cannot decide a duplicate, because two builds of one commit produce different tarballs. No concurrency group on the asset legs; the idempotent upload makes it unnecessary.
-
-  - id: VER-076
-    title: check --versions fetches the branches it compares against
-    scope: src/git.rs, src/github.rs, src/versions.rs, operator docs
-    outcome: >-
-      verctl check --versions compares versions in the depth-1 pull request checkout
-      of actions/checkout, with no fetch-depth set.
-    blocked_by: []
-    acceptance:
-      - In a depth-1 checkout of refs/pull/<n>/merge with no origin/<base>, the check fetches the base with HEAD's parents and compares against HEAD's merge-base with it.
-      - A pull request to a branch other than the default fetches the event's default branch too, so the released baseline matches a full clone.
-      - A full clone that has the ref, and a run that names no branch, fetch nothing.
-      - ctl-core's shared check:versions passes in a pull request Verify job with the default checkout.
-    plan: openspec/changes/check-versions-shallow-checkout/proposal.md
-    notes:
-      - OpenSpec change check-versions-shallow-checkout.
-      - 'Found by ctl-core#149, whose Verify job failed with: cannot resolve the default branch (origin exists but origin/HEAD, origin/main, and origin/master are missing).'
-      - 'Orchestrator decision 2026-10-19: fix it in verctl as publish already does, over a template fetch-depth: 0 on every Verify checkout. Patch bump.'
-
-  - id: VER-078
-    title: A workspace release proves member-complete pending and docs
-    scope: src/pending.rs, src/registry.rs, src/docsrs.rs
-    outcome: >-
-      The first cargo workspace release shows that pending counts a workspace package
-      complete only when every member is listed, and that docs waits for every library
-      member.
-    blocked_by: []
-    acceptance:
-      - A code review of registry_lists and released_crates confirms both rules
-      - The first workspace release reports each member
-    plan: openspec/changes/cargo-workspace-publish/proposal.md
-    notes:
-      - 'Split from VER-069, which #174 completed on 2026-10-18; this row tracks only task 2.4 of openspec/changes/cargo-workspace-publish.'
-
-  - id: VER-084
-    title: A tag on a merged commit at the same version is the release
-    scope: src/git.rs, src/pending.rs
-    outcome: >-
-      verctl publish --plan accepts a release tag on a commit that HEAD holds only
-      through a merge, when the manifest version there equals the version at HEAD, as a
-      forkctl append publish leaves it.
-    blocked_by: []
-    acceptance:
-      - A tag on a commit that sits only on a merge second parent, at the version HEAD has, names the release, even when the first-parent commit at that version changes another file.
-      - A tag on a commit HEAD does not contain, or on a merged commit at another version, still fails the plan with the current message.
-      - The serde-saphyr fork plans past its v0.0.1 tag on a verctl release with this fix.
-    plan: openspec/changes/tag-on-merged-ancestor/proposal.md
-    notes:
-      - OpenSpec change tag-on-merged-ancestor.
-      - 'Found by the serde-saphyr fork: after its 0.0.1 release, the next forkctl append publish kept the tagged commit only as a merge second parent, and every plan failed with "not a first-parent commit at vsh-serde-saphyr@0.0.1".'
-      - 'Operator decision 2026-11-09: compare the manifest version only. A tree comparison rejects a later publish that changes a non-version file such as a workflow. Patch bump.'
 
   - id: VER-089
     title: No duplicate crate versions
@@ -972,7 +666,7 @@ horizon:
       - 2026-11-09, the research and five proposals are in openspec/changes/version-files/research.md and the version-files, package-discovery, release-groups, dependent-ranges, and release-immutability changes.
       - '2026-11-09, the operator chose all four new version sources for the first slice: VERSION, the marker line, pyproject.toml, and go.mod, besides Cargo.toml and package.json.'
       - '2026-11-09, cargo-semver-checks failed the slice-1 stack: the library Driver enum gained a Text variant. The operator ruled it ships in the next minor with the rest of the minor backlog, and the Version PR is held until then; every public enum that can grow is sealed in the same release.'
-    plan: openspec/changes/version-files/proposal.md
+    plan: openspec/changes/archive/2026-11-10-version-files/research.md
 
   - id: VER-085
     title: Find packages from workspace files and root globs
@@ -1150,6 +844,294 @@ horizon:
       - It cites ledger rows by id, and docs/ ships in the crate.
 
 archive:
+  - id: VER-033
+    title: Publish follows the dependency graph, not the declaration order
+    scope: verctl
+    outcome: A workspace whose packages depend on each other publishes every dependency before its consumers, and says which order it resolved.
+    notes:
+      - 'docs/adoption-report.md §2. `publish::plan` iterates `config.packages` in declaration order (src/publish.rs), so a consumer published before its dependency leaves a window where its pinned version does not resolve. Their build tool derives the order from the real dependency graph today, which is what they would be giving up. Their request, verbatim: if it is inferred, print it — "a silent topological sort is a thing nobody debugs until it is wrong".'
+    completed: 2026-11-10T18:39:07
+    evidence:
+      - Cargo workspace members publish in dependency order since https://github.com/victor-software-house/verctl/pull/174; order across packages belongs to VER-087 (dependent-ranges).
+    disposition: dropped
+
+  - id: VER-022
+    title: Move the reusable schema layer into ctl-core
+    scope: verctl
+    outcome: >-
+      Every ctl CLI parses and validates declared input the same way,
+      from one implementation, instead of three that drift.
+    notes:
+      - "2026-08-18: src/schema.rs is already shared between verctl's TOML config and its Jinja template declarations, which is the proof it is not verctl-shaped. ctl-core carries the matching row, CTC-008, merged 2026-08-18 as ctl-core#7, so the destination is agreed before anything moves."
+      - '2026-09-28: the validators and config loading moved. ctl-core 0.6.5 ships `validate` and `input`; verctl reads `.ctl/ver.yaml` and fragment frontmatter through `Input`, drops src/schema.rs, gray_matter, and yaml_serde. The template renderer is the part still here.'
+    completed: 2026-11-10T18:39:07
+    evidence:
+      - Validators and config loading moved to ctl-core in https://github.com/victor-software-house/verctl/pull/90; the renderer move is release-state-machine task 4.2.
+    disposition: dropped
+
+  - id: VER-071
+    title: Every action loads as YAML
+    scope: actions/version-pr/action.yml, tests/action_publish.rs
+    outcome: A consumer that uses any verctl action gets past "Set up job".
+    notes:
+      - 'VER-064 (#155) added an unquoted `: ` to the version-pr `title` description, so v0.4.6 to v0.4.8 shipped an action that GitHub refuses ("Mapping values are not allowed in this context"). Found in shrub run 39190679995. actionlint reads only workflows, so nothing caught it.'
+    completed: 2026-11-10T18:39:07
+    evidence:
+      - 'tests/action_publish.rs every_action_is_yaml parses each action.yml: https://github.com/victor-software-house/verctl/pull/178'
+    disposition: completed
+
+  - id: VER-070
+    title: A duplicate release asset upload reports already
+    scope: src/github.rs
+    outcome: A release run whose asset another run already uploaded reports `already` and passes, so a release that is complete never reports red.
+    notes:
+      - Self-release runs 39188632481 and 39188754557 both released 2a7b33d (v0.4.8) and each lost one asset race with `already_exists`. The duplicate check text-matched `format!("{error:#}")`, but octocrab 0.54.1 displays `Error::GitHub` as "GitHub", so the code in `GitHubError.errors` never reached it.
+      - Digests cannot decide a duplicate, because two builds of one commit produce different tarballs. No concurrency group on the asset legs; the idempotent upload makes it unnecessary.
+    completed: 2026-11-10T18:39:07
+    evidence:
+      - 'A duplicate asset upload reports already, waits for an upload in progress, and fails other states, with four tests in src/github.rs: https://github.com/victor-software-house/verctl/pull/177'
+    disposition: completed
+
+  - id: VER-036
+    title: A check that cannot run says so instead of passing
+    scope: verctl
+    outcome: No verctl guard reports success by having skipped itself.
+    notes:
+      - Two sites the consumer report raised separately; they are one law, so they are one row. `publisher::expand` filters out any part containing `{` (src/publisher.rs:151), so a typo'd `{registr}` in a custom argv shortens the command line instead of failing, and the error surfaces downstream wearing someone else's name. `prove_default_history` returns `Ok(())` on four conditions — no repo, no head, unpeelable head, no upstream (src/git.rs:95-104) — each defensible alone, but together the check can pass by not running, in exactly the CI shapes where it matters most. Its doc comment already calls two of them skips; the run does not.
+    completed: 2026-11-10T18:39:06
+    evidence:
+      - 'expand fails on a placeholder with no value, and prove_default_history names the missing fact, each with tests: https://github.com/victor-software-house/verctl/pull/274'
+    disposition: completed
+
+  - id: VER-015
+    title: Asset runners are configuration, not a hardcoded map
+    scope: verctl
+    outcome: >-
+      Each [assets] target names the runner that builds it. The plan
+      emits what the repo declared, so a public repo stays on free
+      hosted minutes and a private one can point at its own labels.
+    notes:
+      - '2026-08-17: found while adopting the lane in qctl (qctl#3). Two claims first written here were wrong and are corrected: a per-target `runner` override already existed, and a job can be told its runner by an earlier job. The real defects are that `runner` is one string where GitHub takes a label set, that CI has no configuration surface at all, and that an unknown id with a partial record is accepted and reaches `cargo build --target ""`. Shape settled after several wrong turns, recorded so they are not retried: anonymous list rows needing an `id` field (`[[ci.jobs]]`, `runners = [{ labels = [...] }]`) were rejected as ceremony — names are table headers instead; a `runners` list on an asset target was rejected because two machines would overwrite one tarball, which the shape now makes unsayable; and one identical shape per phase was abandoned once it put `os`/`arch` on a job while its labels sat a level below. A name→labels registry is deliberately not the alias table rejected earlier: an alias made an invented word look like a resolved label, whereas a machine name resolves against `[runners]` or fails and never reaches GitHub. M1 (generating ci.yml) and M3 (a repo variable) were considered and rejected for M2, the plan-job bootstrap the publish lane already uses; M3 would move the value out of verctl.toml entirely. Asked why `plan` is not configurable, the inventory settled the law: verctl decides how many jobs there are, the workflow file decides where a fixed job runs. Unary jobs (`plan`, `crate`, `pin`, `prepare`) all have literal machines; only `verify` and `assets`, whose count the repo decides, read config. A static YAML file cannot declare N jobs without knowing N — that fan-out is what config buys, and the machine rides along on it. So `[release]` is dropped, not deferred: publish and pin are inherently unary, nothing decides their count, and a self-hosted-only repo is already served by editing three literals in workflows it owns. `verctl check --ci` was rejected with it — verifying those literals needs a YAML dependency this crate does not have, to check a value the law puts there on purpose.'
+    completed: 2026-11-10T18:39:06
+    evidence:
+      - 'Runners are declared once in .ctl/ver.yaml and resolved by name for ci and assets, with tests in src/runners.rs, src/ci.rs and src/assets.rs: https://github.com/victor-software-house/verctl/pull/22'
+    disposition: completed
+
+  - id: VER-084
+    title: A tag on a merged commit at the same version is the release
+    scope: src/git.rs, src/pending.rs
+    outcome: >-
+      verctl publish --plan accepts a release tag on a commit that HEAD holds only
+      through a merge, when the manifest version there equals the version at HEAD, as a
+      forkctl append publish leaves it.
+    plan: openspec/changes/archive/2026-11-10-tag-on-merged-ancestor/proposal.md
+    notes:
+      - OpenSpec change tag-on-merged-ancestor.
+      - 'Found by the serde-saphyr fork: after its 0.0.1 release, the next forkctl append publish kept the tagged commit only as a merge second parent, and every plan failed with "not a first-parent commit at vsh-serde-saphyr@0.0.1".'
+      - 'Operator decision 2026-11-09: compare the manifest version only. A tree comparison rejects a later publish that changes a non-version file such as a workflow. Patch bump.'
+    completed: 2026-11-10T18:38:40
+    evidence:
+      - openspec/changes/archive/2026-11-10-tag-on-merged-ancestor/
+    disposition: completed
+
+  - id: VER-078
+    title: A workspace release proves member-complete pending and docs
+    scope: src/pending.rs, src/registry.rs, src/docsrs.rs
+    outcome: >-
+      The first cargo workspace release shows that pending counts a workspace package
+      complete only when every member is listed, and that docs waits for every library
+      member.
+    plan: openspec/changes/archive/2026-11-10-cargo-workspace-publish/proposal.md
+    notes:
+      - 'Split from VER-069, which #174 completed on 2026-10-18; this row tracks only task 2.4 of openspec/changes/cargo-workspace-publish.'
+    completed: 2026-11-10T18:38:40
+    evidence:
+      - openspec/changes/archive/2026-11-10-cargo-workspace-publish/
+    disposition: completed
+
+  - id: VER-076
+    title: check --versions fetches the branches it compares against
+    scope: src/git.rs, src/github.rs, src/versions.rs, operator docs
+    outcome: >-
+      verctl check --versions compares versions in the depth-1 pull request checkout
+      of actions/checkout, with no fetch-depth set.
+    plan: openspec/changes/archive/2026-11-10-check-versions-shallow-checkout/proposal.md
+    notes:
+      - OpenSpec change check-versions-shallow-checkout.
+      - 'Found by ctl-core#149, whose Verify job failed with: cannot resolve the default branch (origin exists but origin/HEAD, origin/main, and origin/master are missing).'
+      - 'Orchestrator decision 2026-10-19: fix it in verctl as publish already does, over a template fetch-depth: 0 on every Verify checkout. Patch bump.'
+    completed: 2026-11-10T18:38:40
+    evidence:
+      - openspec/changes/archive/2026-11-10-check-versions-shallow-checkout/
+    disposition: completed
+
+  - id: VER-075
+    title: 'verctl semver: cargo-semver-checks at the release type the pending release allows'
+    scope: >-
+      src/semver_check.rs, src/registry.rs, src/cli.rs, src/main.rs,
+      src/presentation.rs, operator docs
+    outcome: >-
+      verctl semver fails a crates.io crate whose next release is a patch when its
+      public API breaks, and skips a crate whose next release already moves the minor.
+    notes:
+      - OpenSpec change semver-release-type in openspec/changes/semver-release-type.
+      - 'shrub#26, on verctl 0.5.1, failed its semver step: verctl ran cargo semver-checks --package shrub on the binary-only crate shrub, and cargo-semver-checks refused with "no crates with library targets selected".'
+      - ctl-core's shared semver task calls mise run ver semver; a repository that does not serve the ver task runs its own verctl.
+    plan: openspec/changes/archive/2026-11-10-semver-release-type/proposal.md
+    completed: 2026-11-10T18:38:40
+    evidence:
+      - openspec/changes/archive/2026-11-10-semver-release-type/
+    disposition: completed
+
+  - id: VER-098
+    title: Ask the registry whether a version is published
+    scope: verctl publish, publisher recipes
+    outcome: >-
+      verctl publish decides already published from the registry, not from publisher
+      stderr.
+    plan: openspec/changes/archive/2026-11-10-registry-publish-check/proposal.md
+    notes:
+      - 'Shipped in #162 on 2026-10-17 as part of VER-066; every task of the change is checked.'
+      - 2026-11-10, split from reusable-release-workflow (VER-066) at its capability boundaries, because each change stays within the templates specs:budget word budgets.
+    completed: 2026-11-10T18:38:40
+    evidence:
+      - openspec/changes/archive/2026-11-10-registry-publish-check/
+    disposition: completed
+
+  - id: VER-099
+    title: Publish at the commit that set each version
+    scope: verctl publish, publish --plan
+    outcome: >-
+      A publish acts only on the version commit of each package, and a complete
+      release reports nothing to release.
+    plan: openspec/changes/archive/2026-11-10-release-at-version-commit/proposal.md
+    notes:
+      - 'Shipped in #164 on 2026-10-17 as part of VER-066; every task of the change is checked.'
+      - 2026-11-10, split from reusable-release-workflow (VER-066) at its capability boundaries, because each change stays within the templates specs:budget word budgets.
+    completed: 2026-11-10T18:38:40
+    evidence:
+      - openspec/changes/archive/2026-11-10-release-at-version-commit/
+    disposition: completed
+
+  - id: VER-100
+    title: Check the docs.rs build of each released crate
+    scope: verctl docs, the docs job
+    outcome: >-
+      A crates.io release whose docs.rs build fails or never arrives fails the docs
+      job.
+    plan: openspec/changes/archive/2026-11-10-docs-build-check/proposal.md
+    notes:
+      - 'Shipped in #165 and #171 on 2026-10-17 as part of VER-066; every task of the change is checked.'
+      - 2026-11-10, split from reusable-release-workflow (VER-066) at its capability boundaries, because each change stays within the templates specs:budget word budgets.
+    completed: 2026-11-10T18:38:40
+    evidence:
+      - openspec/changes/archive/2026-11-10-docs-build-check/
+    disposition: completed
+
+  - id: VER-101
+    title: Derive the Version PR branch from its base
+    scope: verctl prepare --pr, check --versions
+    outcome: The Version PR branch is verctl/release/<base>, and auto-merge runs in Rust.
+    plan: openspec/changes/archive/2026-11-10-derived-version-pr-branch/proposal.md
+    notes:
+      - 'Shipped in #161 on 2026-10-17 as part of VER-066; every task of the change is checked.'
+      - Archive it before command-renames (VER-091), whose version-pr-branch delta needs this spec.
+      - 2026-11-10, split from reusable-release-workflow (VER-066) at its capability boundaries, because each change stays within the templates specs:budget word budgets.
+    completed: 2026-11-10T18:38:40
+    evidence:
+      - openspec/changes/archive/2026-11-10-derived-version-pr-branch/
+    disposition: completed
+
+  - id: VER-035
+    title: The commit a release publishes from is proved, and a waiver is said out loud
+    scope: verctl
+    outcome: A release refuses a commit whose shape says it is not the one the version tool generated, and an operator who overrides that leaves a line in the log saying so.
+    notes:
+      - 'docs/adoption-report.md §4. `prove_version_commit` (src/publish.rs:136) is `require_changelog_versions` plus `require_on_default_history` — they keep both and want three more. The workflow-drift one is the non-obvious one and it cost them a release: retrying an old release SHA runs the workflow *at that SHA*, so if permissions changed since, the run can publish to the registry and then fail to tag — the registry is not revertible and the tags are the audit trail. Their waivers are workflow_dispatch booleans and the run prints `waived: …`. Their warning about building it: bind a dispatch input to a step-level `env:` and quote it, never interpolate `${{ inputs.x }}` into a `run:` string — inputs arrive as strings over REST and are not coerced to booleans, in a job holding contents/packages/id-token write.'
+      - 2026-11-09, flags are named for what they allow (`--allow-workflow-change`, `--allow-off-default-branch`), per the naming rule; a skipped version has no flag because publishing the next version cannot fix it.
+    plan: openspec/changes/archive/2026-11-10-release-commit-proofs/proposal.md
+    completed: 2026-11-10T18:38:40
+    evidence:
+      - openspec/changes/archive/2026-11-10-release-commit-proofs/
+    disposition: completed
+
+  - id: VER-031
+    title: A pattern that cannot rewrite a whole version refuses it
+    scope: verctl
+    outcome: The rule docs/served-files.md states — a prerelease or floating pin fails the release rather than having its numeric head rewritten — is true of the code, not only of the document.
+    notes:
+      - '2026-08-20, found in review of verctl#50 and measured rather than reasoned about. docs/served-files.md §4 says a version is dotted numerics and nothing else, and that "a prerelease or a floating pin is not a version this rewrites: it fails the release rather than rewriting a numeric head and dropping the tail". It does not. With an unanchored `match: "version: {version}"` and a file reading `version: 0.1.1-rc1`, prepare exited 0 and wrote `version: 0.1.2-rc1` — the head moved, the tail stayed, and the release carried on. Kody raised it, our own document contradicted it, and the run settled it: the implementation is the evidence and the document is currently a promise nobody keeps. The condition is exact, and narrower than first written here. A pattern whose `match` ends in literal text already refuses: the test `a_prerelease_pin_fails_instead_of_half_rewriting` uses `"verctl@{version} today"`, and against `verctl@1.0.0-rc.1 today` the digits match but ` today` does not follow, so it fails at arity. Only a match that ends *at* the placeholder has no right-hand boundary, and that is the case that rewrites the head. The author-side answer shipped in #50 as `whole_line: true`, after the first attempt — spelling the closing `---` into the match — was rejected by Victor as a hack: it only worked because `version:` happened to be the last frontmatter key, so adding a key after it would have broken the release. A line-owning pattern supplies the boundary from the line, which is unambiguous. What is left is an inline pattern ending at the placeholder. Do not "fix" it by refusing when the next character continues the version: the discriminator is not local. `download/v{version}` against `download/v1.2.3-linux-x64.tar.gz` has `-` right after the match and is completely correct — the version is 1.2.3 and the rest is the filename. Refusing there would stop real releases, which is why this is a row and not a one-line guard. Either the engine grows a boundary an author can state (as `whole_line` does), or docs/served-files.md stops promising unconditionally and says which shapes are safe.'
+    plan: openspec/changes/archive/2026-11-10-pin-version-boundary/proposal.md
+    completed: 2026-11-10T18:38:40
+    evidence:
+      - openspec/changes/archive/2026-11-10-pin-version-boundary/
+    disposition: completed
+
+  - id: VER-082
+    title: Run the registry publish in a caller-named environment
+    scope: release.yml publish job
+    outcome: >-
+      A caller keeps its registry token in a GitHub environment that admits only the
+      default branch, and the reusable workflow still publishes with it.
+    plan: openspec/changes/archive/2026-11-10-release-environment/proposal.md
+    notes:
+      - '2026-11-10, VER-104 replaces the stored-name read and secrets: inherit with a token mapped by name.'
+    completed: 2026-11-10T18:38:40
+    evidence:
+      - openspec/changes/archive/2026-11-10-release-environment/
+    disposition: completed
+
+  - id: VER-107
+    title: Let an asset target pack its own files
+    scope: src/config.rs, src/assets.rs
+    outcome: >-
+      A release whose platforms ship different files declares a list on each target
+      that differs from the shared one.
+    plan: openspec/changes/archive/2026-11-10-asset-target-files/proposal.md
+    completed: 2026-11-10T18:38:40
+    evidence:
+      - openspec/changes/archive/2026-11-10-asset-target-files/
+    disposition: completed
+
+  - id: VER-081
+    title: Pack several files into a package asset tarball
+    scope: verctl assets, .ctl/ver.yaml
+    outcome: >-
+      A package release ships every file it needs, such as a daemon, its client, a
+      service unit, and a licence, in each asset tarball.
+    plan: openspec/changes/archive/2026-11-10-package-asset-files/proposal.md
+    completed: 2026-11-10T18:38:40
+    evidence:
+      - openspec/changes/archive/2026-11-10-package-asset-files/
+    disposition: completed
+
+  - id: VER-080
+    title: Publish vendored builds as Release assets
+    scope: verctl assets, .ctl/ver.yaml
+    outcome: >-
+      A repository publishes a third-party build, at its upstream version, as GitHub
+      Release assets with verctl assets, with no gh release step or release action.
+    plan: openspec/changes/archive/2026-11-10-vendored-assets/proposal.md
+    completed: 2026-11-10T18:38:40
+    evidence:
+      - openspec/changes/archive/2026-11-10-vendored-assets/
+    disposition: completed
+
+  - id: VER-095
+    title: Require a Version PR to be the version step and nothing else
+    scope: verctl version, check
+    outcome: >-
+      A hand edit cannot ride a Version PR, and the version step writes every file a
+      release changes.
+    plan: openspec/changes/archive/2026-11-10-version-pr-content/proposal.md
+    notes:
+      - 2026-11-10, split from release-state-machine (VER-011) along the boundaries of its work, because each change stays within the templates specs:budget word budgets.
+      - 2026-11-10, dependent requirement rewrites moved to VER-105. The two non-Version-PR rules of version-pr-identity task 3.2 ship here, since a stricter check shipped after 0.8.0 would force 0.9.0.
+    completed: 2026-11-10T18:38:40
+    evidence:
+      - openspec/changes/archive/2026-11-10-version-pr-content/
+    disposition: completed
+
   - id: VER-079
     title: Remove Version PR auto-merge
     scope: verctl prepare, release workflow, actions/version-pr

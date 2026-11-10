@@ -77,7 +77,7 @@ None.
    removes, so none has to change its call for this item.
 5. Archive order: after [release-environment][re], whose spec this changes.
 
-[re]: ../release-environment/proposal.md
+[re]: ../archive/2026-11-10-release-environment/proposal.md
 [ver-104]: ../../../tasks.yaml
 [run]: https://github.com/victor-software-house/verctl/actions/runs/42780696593
 [reuse]: https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows

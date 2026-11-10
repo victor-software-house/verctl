@@ -5,9 +5,7 @@ all-features = true
 yanked = "deny"
 unmaintained = "all"
 # RUSTSEC ids and yanked crates that cannot be upgraded yet. Not a lint-level downgrade.
-ignore = [
-    { id = "RUSTSEC-2023-0071", reason = "rsa code is linked but never run: verctl signs no JWT. octocrab requires a JWT backend, and the other one builds aws-lc with C and cmake. Remove when rsa ships a fix or octocrab no longer requires it." },
-]
+ignore = []
 
 [licenses]
 allow = [
@@ -35,6 +33,14 @@ highlight = "all"
 deny = [
     { crate = "openssl", reason = "TLS is rustls" },
     { crate = "native-tls", reason = "TLS is rustls" },
+]
+skip = [
+    { crate = "base64@0.22", reason = "octocrab 0.54.9, the latest release, requires base64 0.22, and reqwest 0.13.5 requires 0.23" },
+    { crate = "getrandom@0.2", reason = "ring 0.17.14 and octocrab 0.54.9, their latest releases, require getrandom 0.2" },
+    { crate = "hashbrown@0.14", reason = "dashmap 6.2.1, the latest release, which gix-tempfile takes, requires hashbrown 0.14" },
+    { crate = "hashbrown@0.16", reason = "clru 0.6.3 and gix-status 0.37.0, the latest releases, require hashbrown 0.16" },
+    { crate = "syn@2", reason = "garde_derive 0.23.0, the latest release, and other derive crates require syn 2" },
+    { crate = "windows-sys@0.52", reason = "ring 0.17.14, the latest release, requires windows-sys 0.52" },
 ]
 
 # Declarations repeated outside [workspace.dependencies], and unused entries.

@@ -6,7 +6,7 @@ See [proposal.md](proposal.md) for why, and [the spec](specs/package-resolution/
 Today a package's `path` must name a manifest file.
 The stock publisher is chosen from the file name: `cargo` for `Cargo.toml`, `bun` for `package.json`.
 `.ctl/ver.yaml` is parsed and validated once, at `Config::parse`, and nothing downstream checks it again.
-The version sources a path can resolve to are in [`version-files`](../version-files/design.md).
+The version sources a path can resolve to are in [`version-files`](../archive/2026-11-10-version-files/design.md).
 
 ## Decisions
 
@@ -40,4 +40,4 @@ It lost because it invents a file-name convention no other tool reads, and the e
 ## Migration Plan
 
 Additive: a repository whose packages name `Cargo.toml` or `package.json` sees no change.
-It ships in the next minor with [`version-files`](../version-files/design.md), whose version sources it resolves.
+It ships in the next minor with [`version-files`](../archive/2026-11-10-version-files/design.md), whose version sources it resolves.

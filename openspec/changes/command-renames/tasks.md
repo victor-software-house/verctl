@@ -22,6 +22,8 @@ Compile, format, lint, and test tasks run in pull request CI with
   - the leftover `prepare:` section in `release-state-machine`'s `release-config`;
   - the `mise-pin` step in `built-in-ecosystems`.
 
+  The archive also rewrites `verctl publish` to `verctl release` and `verctl assets` to `verctl release asset` in every spec, since no delta here renames them. Proof: `rg -n 'verctl (publish|assets)' openspec/specs/` prints nothing.
+
 ## 3. Bundle
 
 - [ ] 3.1 `src/instructions.md`, `skills/verctl/SKILL.md`, `README.md`, `AGENTS.md`, and rustdoc use the new names; proof: `UPDATE_OPERATOR_DOCS=1 cargo test operator_docs` output is committed and `operator_docs` passes in CI

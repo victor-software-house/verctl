@@ -7,7 +7,7 @@ A Cargo workspace is the one exception: its members come from `cargo metadata`.
 A Bun or pnpm workspace is not read.
 Each member would have to be listed again beside the `workspaces` field that already lists it, and the two lists drift.
 
-Every monorepo tool read for the [research](../version-files/research.md) declares its members once, at the root.
+Every monorepo tool read for the [research](../archive/2026-11-10-version-files/research.md) declares its members once, at the root.
 Turborepo and manypkg read the package manager's own declaration.
 mise reads root globs and has deprecated scanning every directory.
 Each names a package by its manifest and fails on a duplicate name.
@@ -60,7 +60,7 @@ The files each package owns, and the `check` that uses them, are in [`package-ow
 
 1. Code: `src/config.rs`, `src/members.rs` (generalized from Cargo), a workspace reader per stack, tests with a fixture per workspace kind.
 2. A repository that lists every package by hand keeps working unchanged: an explicit entry overrides inference.
-3. Depends on [`version-files`](../version-files/proposal.md) for the version file of each member.
+3. Depends on [`version-files`](../archive/2026-11-10-version-files/proposal.md) for the version file of each member.
 
 [ver-083]: ../../../tasks.yaml
 [ver-085]: ../../../tasks.yaml

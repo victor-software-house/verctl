@@ -68,10 +68,10 @@ None.
 
 [examples]: ../../../examples/workflows/
 [rsm]: ../release-state-machine/proposal.md
-[rpc]: ../registry-publish-check/proposal.md
-[ravc]: ../release-at-version-commit/proposal.md
-[docs]: ../docs-build-check/proposal.md
-[dvpb]: ../derived-version-pr-branch/proposal.md
+[rpc]: ../archive/2026-11-10-registry-publish-check/proposal.md
+[ravc]: ../archive/2026-11-10-release-at-version-commit/proposal.md
+[docs]: ../archive/2026-11-10-docs-build-check/proposal.md
+[dvpb]: ../archive/2026-11-10-derived-version-pr-branch/proposal.md
 [queue]: ../../../tasks.yaml
 [ctc-022]: https://github.com/victor-software-house/ctl-core/blob/main/tasks.yaml
 [ver-062]: https://github.com/victor-software-house/verctl/pull/153

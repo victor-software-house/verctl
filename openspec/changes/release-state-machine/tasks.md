@@ -5,11 +5,11 @@ The pull request's CI verifies every compile, format, lint, and test task.
 On 2026-11-09 the operator limited 0.8.0 to the breaks that can be built soon.
 The larger rewrites ship later in increments (operator, 2026-11-09).
 
-The 0.8.0 slices are the changes [version-pr-proposal](../version-pr-proposal/proposal.md), [command-renames](../command-renames/proposal.md), [served-file-check](../served-file-check/proposal.md), and [release-commit-proofs](../release-commit-proofs/proposal.md), plus queue row [VER-036][queue].
+The 0.8.0 slices are the changes [version-pr-proposal](../version-pr-proposal/proposal.md), [command-renames](../command-renames/proposal.md), [served-file-check](../served-file-check/proposal.md), and [release-commit-proofs](../archive/2026-11-10-release-commit-proofs/proposal.md), plus queue row [VER-036][queue].
 
 Section 5 releases 0.8.0.
 Sections 1 to 3 and 6 moved to six parts, which keep the task numbers.
-The parts are [derived-release-state](../derived-release-state/tasks.md), [release-completion](../release-completion/tasks.md), [`version-pr-identity`](../version-pr-identity/tasks.md), [version-pr-content](../version-pr-content/tasks.md), [building-blocks](../building-blocks/tasks.md), and [built-in-ecosystems](../built-in-ecosystems/tasks.md).
+The parts are [derived-release-state](../derived-release-state/tasks.md), [release-completion](../release-completion/tasks.md), [`version-pr-identity`](../version-pr-identity/tasks.md), [version-pr-content](../archive/2026-11-10-version-pr-content/tasks.md), [building-blocks](../building-blocks/tasks.md), and [built-in-ecosystems](../built-in-ecosystems/tasks.md).
 
 0.4.0 to 0.7.4 shipped from `main` before this change.
 The parts of it they carried are checked in each part with their evidence.

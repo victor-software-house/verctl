@@ -198,5 +198,5 @@ The decision on whether verctl gets its own App sits in queue row
 
 [rsm]: ../release-state-machine/design.md
 [rc]: ../release-completion/design.md
-[vpc]: ../version-pr-content/design.md
+[vpc]: ../archive/2026-11-10-version-pr-content/design.md
 [ver-044]: ../../../tasks.yaml

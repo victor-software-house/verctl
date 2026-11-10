@@ -48,7 +48,7 @@ The operator approved these as decisions 3 and 4 of
 2. CI: the `labeled` and `unlabeled` trigger types go.
 
 [rsm]: ../release-state-machine/proposal.md
-[vpc]: ../version-pr-content/proposal.md
+[vpc]: ../archive/2026-11-10-version-pr-content/proposal.md
 [ver-011]: ../../../tasks.yaml
 [ver-029]: ../../../tasks.yaml
 [pr161]: https://github.com/victor-software-house/verctl/pull/161

@@ -77,7 +77,7 @@ what shipped code settled.
 [drs]: ../derived-release-state/proposal.md
 [rc]: ../release-completion/proposal.md
 [vpi]: ../version-pr-identity/proposal.md
-[vpc]: ../version-pr-content/proposal.md
+[vpc]: ../archive/2026-11-10-version-pr-content/proposal.md
 [bb]: ../building-blocks/proposal.md
 [bie]: ../built-in-ecosystems/proposal.md
 [ver-011]: ../../../tasks.yaml
