@@ -76,7 +76,7 @@ queue:
     acceptance:
       - '`check` requires a Version PR diff to equal the version step applied to its base.'
       - '`verctl version` writes every manifest, lockfile, CHANGELOG section, and served file a release changes, removes the consumed fragments, and reports the commands and steps it ran under `after`.'
-      - '`check` fails a pull request that is not a Version PR when it adds a CHANGELOG section, and any pull request that changes whether a package publishes unless it adds a fragment for that package.'
+      - '`check` fails a pull request that is not a Version PR when it adds a CHANGELOG section for a version, or when it changes whether a package publishes unless it adds a fragment that bumps that package above `none`.'
     plan: openspec/changes/version-pr-content/proposal.md
     notes:
       - 2026-11-10, split from release-state-machine (VER-011) along the boundaries of its work, because each change stays within the templates specs:budget word budgets.
