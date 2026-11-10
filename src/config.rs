@@ -1190,9 +1190,18 @@ pub struct Prepare {
     /// Removed: the Version PR is no longer labeled, since nothing reads the
     /// label. Kept only so a file that still sets it fails the load with a
     /// message that says to delete it, instead of serde's bare unknown-field
-    /// error. Unset means the file is current.
-    #[serde(default)]
-    version_label: Option<serde::de::IgnoredAny>,
+    /// error. `true` when the key is present with any value, null included;
+    /// absent means the file is current.
+    #[serde(default, deserialize_with = "key_present")]
+    version_label: bool,
+}
+
+/// Whether a key is present, whatever its value. serde reads an explicit null
+/// into `Option::None`, the same as an absent key, so an `Option` cannot tell
+/// `version_label: ~` from a file that never set it; serde calls this only
+/// when the key is in the document.
+fn key_present<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+    serde::de::IgnoredAny::deserialize(deserializer).map(|_| true)
 }
 
 /// The Version PR's title and commit message.
@@ -1239,7 +1248,7 @@ impl Proposal {
 /// `prepare.version_label` labeled the Version PR until nothing read the
 /// label; a file that still sets it is told to delete it.
 fn no_version_label(prepare: &Prepare, _: &Config) -> garde::Result {
-    if prepare.version_label.is_some() {
+    if prepare.version_label {
         return Err(garde::Error::new(
             "prepare.version_label is removed: the Version PR is no longer labeled; delete this key",
         ));
@@ -2114,18 +2123,20 @@ mod tests {
 
     #[test]
     fn a_version_label_is_refused_with_what_to_do() {
-        let error = load(&formatdoc! {"
-            {ONE_PACKAGE}prepare:
-              version_label: release
-        "})
-        .unwrap_err();
-        let error = format!("{error:#}");
-        assert!(
-            error.contains("prepare.version_label is removed"),
-            "{error}"
-        );
-        assert!(error.contains("no longer labeled"), "{error}");
-        assert!(error.contains("delete this key"), "{error}");
+        for value in [" release", "", " ~", " null"] {
+            let error = load(&formatdoc! {"
+                {ONE_PACKAGE}prepare:
+                  version_label:{value}
+            "})
+            .unwrap_err();
+            let error = format!("{error:#}");
+            assert!(
+                error.contains("prepare.version_label is removed"),
+                "{value:?}: {error}"
+            );
+            assert!(error.contains("no longer labeled"), "{value:?}: {error}");
+            assert!(error.contains("delete this key"), "{value:?}: {error}");
+        }
     }
 
     #[test]
