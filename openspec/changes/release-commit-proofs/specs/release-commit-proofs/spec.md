@@ -35,13 +35,13 @@ continue.
 - **WHEN** the same run passes `--allow-workflow-change`
 - **THEN** it publishes, and the JSON report lists `workflow-change` under `allowed`
 
-### Requirement: A package has one version commit since its last release
+### Requirement: A package has no skipped version since its last release
 
-`verctl publish` SHALL refuse a package whose first-parent line from its
-newest release tag to the release commit holds more than one commit that
-changes its version. No flag SHALL allow it, so the refusal SHALL name the
-way out: the unreleased version, the commit that set it, and the command
-that publishes it first.
+`verctl publish` SHALL refuse a package with a skipped version: one a commit
+set on the first-parent line after the newest release tag, with no tag of
+its own, below the release commit's version. No flag SHALL allow it, so the
+refusal SHALL name the way out: the unreleased version, the commit that set
+it, and the command that publishes it first.
 
 #### Scenario: A skipped version
 
@@ -49,6 +49,23 @@ that publishes it first.
 - **THEN** it exits non-zero and publishes nothing
 - **AND** the message names `demo` 0.7.5 as unreleased and `aaa1111` as the commit that set it
 - **AND** the message says to run `verctl publish --plan`, which lists `aaa1111` first, and to publish that commit before this one
+
+### Requirement: An abandoned version is not skipped
+
+A version that a later commit on that line takes strictly below SHALL count
+as abandoned, not skipped. A version only set again, as a revert does to its
+target, SHALL count once, at the commit that first set it.
+
+#### Scenario: A version skipped before a revert
+
+- **WHEN** `demo` is tagged at 0.7.4, commit `aaa1111` sets 0.7.5, a later commit sets 0.7.6, the next reverts it to 0.7.5, and the release commit sets 0.7.6 again
+- **THEN** `verctl publish` at the release commit refuses, naming 0.7.5 and `aaa1111`, the commit that first set it, not the revert
+
+#### Scenario: An abandoned version
+
+- **WHEN** `demo` is tagged at 0.7.4, commit `aaa1111` sets 0.7.5, a later commit sets 0.7.6, the next reverts it to 0.7.5, and the release commit sets 0.7.7
+- **THEN** 0.7.6 is abandoned, because a later commit took `demo` below it, and `verctl publish --plan` does not list it
+- **AND** `verctl publish` at the release commit refuses only for 0.7.5 at `aaa1111`
 
 ### Requirement: The workflow passes the allow flags through env
 

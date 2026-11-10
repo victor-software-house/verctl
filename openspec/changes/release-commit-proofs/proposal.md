@@ -28,8 +28,9 @@ Queue row: VER-035.
 2. `--allow-off-default-branch` (`VERCTL_ALLOW_OFF_DEFAULT_BRANCH`) lets a
    release run from a commit the default branch does not contain. VER-036,
    which ships first, makes the ancestry check refuse when it cannot run.
-3. **BREAKING:** `verctl publish` refuses a package that has more than one
-   version commit on the first-parent line since its last release tag. No
+3. **BREAKING:** `verctl publish` refuses a package with a skipped version:
+   an earlier version set on the first-parent line since its last release
+   tag, with no tag, that no later commit abandoned by going below it. No
    flag allows it.
 4. A run that uses either flag reports which check it went past and why:
    an `allowed` row in the human view, and `allowed` in the JSON report.
