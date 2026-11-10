@@ -49,6 +49,37 @@ pub fn plan(root: &Path, pins: &[Pin], versions: &[(String, String)]) -> Result<
     apply(root, pins, versions, false)
 }
 
+/// A `pins` entry that does not hold the version its package is at.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Stale {
+    /// The pinned file, as the entry names it.
+    pub file: PathBuf,
+    /// What is wrong: a pattern that no longer matches at its declared count,
+    /// a file that cannot be rewritten, or one that names another version.
+    pub problem: String,
+}
+
+/// Every `pins` entry whose file would change, or could not be rewritten, at
+/// `versions`, so one run lists every file to fix. Nothing is written.
+#[must_use]
+pub fn stale(root: &Path, pins: &[Pin], versions: &[(String, String)]) -> Vec<Stale> {
+    pins.iter()
+        .filter_map(|pin| {
+            let (_, version) = versions.iter().find(|(name, _)| name == &pin.package)?;
+            let problem = match rewritten(root, pin, version) {
+                Ok((_, raw, body)) if raw == body => return None,
+                Ok(_) => format!("names a version other than {} {version}", pin.package),
+                Err(error) => format!("{error:#}"),
+            };
+            Some(Stale {
+                file: pin.file.clone(),
+                problem,
+            })
+        })
+        .collect()
+}
+
 fn apply(
     root: &Path,
     pins: &[Pin],
@@ -60,24 +91,29 @@ fn apply(
         let Some((_, version)) = versions.iter().find(|(name, _)| name == &pin.package) else {
             continue;
         };
-        ensure_inside(root, &pin.file)?;
-        let path = root.join(&pin.file);
-        let raw =
-            fs::read_to_string(&path).with_context(|| format!("read pin {}", path.display()))?;
-        let mut body = raw;
-        if let Some(tool) = &pin.tool {
-            body = rewrite_tool(&body, tool, version, &path)?;
-        }
-        for pattern in &pin.patterns {
-            body = rewrite_pattern(&body, pattern, version)
-                .with_context(|| format!("pin {}", path.display()))?;
-        }
+        let (path, _, body) = rewritten(root, pin, version)?;
         if persist {
             fs::write(&path, body).with_context(|| format!("write pin {}", path.display()))?;
         }
         written.push(path);
     }
     Ok(written)
+}
+
+/// The pin's path, its bytes now, and its bytes at `version`.
+fn rewritten(root: &Path, pin: &Pin, version: &str) -> Result<(PathBuf, String, String)> {
+    ensure_inside(root, &pin.file)?;
+    let path = root.join(&pin.file);
+    let raw = fs::read_to_string(&path).with_context(|| format!("read pin {}", path.display()))?;
+    let mut body = raw.clone();
+    if let Some(tool) = &pin.tool {
+        body = rewrite_tool(&body, tool, version, &path)?;
+    }
+    for pattern in &pin.patterns {
+        body = rewrite_pattern(&body, pattern, version)
+            .with_context(|| format!("pin {}", path.display()))?;
+    }
+    Ok((path, raw, body))
 }
 
 fn ensure_inside(root: &Path, file: &Path) -> Result<()> {
@@ -247,6 +283,34 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, body).unwrap();
         path
+    }
+
+    /// `check` lists each pin left behind: one that names another version,
+    /// and one whose pattern no longer matches at its declared count.
+    #[test]
+    fn stale_names_each_pin_left_behind() {
+        let root = TempDir::new().unwrap();
+        write_file(&root, DOC, BEFORE);
+        let current = [
+            pattern_pin(DOC, &[("verctl@{version} in CI", Occurrences::Once)]),
+            pattern_pin(DOC, &[("Floating: verctl@{version}.", Occurrences::Once)]),
+        ];
+        assert_eq!(
+            stale(root.path(), &current[..1], &versions("0.0.1")),
+            Vec::<Stale>::new()
+        );
+        let found = stale(root.path(), &current, &versions("0.0.2"));
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert!(
+            found.iter().all(|pin| pin.file == Path::new(DOC)),
+            "{found:?}"
+        );
+        assert!(
+            found[0].problem.contains("other than verctl 0.0.2"),
+            "{found:?}"
+        );
+        assert!(found[1].problem.contains("matches 0 times"), "{found:?}");
+        assert_eq!(fs::read_to_string(root.path().join(DOC)).unwrap(), BEFORE);
     }
 
     /// One before, many pattern sets and versions, each asserted whole.

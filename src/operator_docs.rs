@@ -76,7 +76,7 @@ fn every_served_template_renders() {
     let config = crate::config::Config::load(&root.join(".ctl/ver.yaml"))
         .unwrap_or_else(|error| panic!("load .ctl/ver.yaml: {error:#}"));
     let versions = crate::release::served_versions(root, &config, &[]);
-    let served = crate::templates::plan(root, &config.templates, &versions)
+    let served = crate::templates::plan(root, &config.templates, &config.pins, &versions)
         .unwrap_or_else(|error| panic!("{error:#}"));
     let skill = root.join(SKILL);
     assert!(

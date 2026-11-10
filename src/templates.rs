@@ -36,7 +36,7 @@ use minijinja::{Environment, State, UndefinedBehavior, context};
 use serde::Deserialize;
 
 use crate::cli::Cli;
-use crate::config::Templates;
+use crate::config::{Pin, Templates};
 use crate::git;
 
 /// What a template declares about the file it serves, in Jinja's own syntax:
@@ -76,9 +76,25 @@ struct Declared {
 pub fn write(
     root: &Path,
     config: &Templates,
+    pins: &[Pin],
     versions: &[(String, String)],
 ) -> Result<Vec<PathBuf>> {
-    render(root, config, versions, true)
+    let rendered = render(root, config, pins, versions)?;
+    for served in &rendered {
+        let path = root.join(&served.target);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+        }
+        fs::write(&path, &served.body)
+            .with_context(|| format!("write {}", served.target.display()))?;
+        let mode = if served.executable { 0o755 } else { 0o644 };
+        fs::set_permissions(&path, fs::Permissions::from_mode(mode))
+            .with_context(|| format!("chmod {}", served.target.display()))?;
+    }
+    Ok(rendered
+        .into_iter()
+        .map(|served| root.join(served.target))
+        .collect())
 }
 
 /// Whether this repo serves anything from a template at all.
@@ -104,17 +120,76 @@ pub fn any(root: &Path, config: &Templates) -> Result<bool> {
 pub fn plan(
     root: &Path,
     config: &Templates,
+    pins: &[Pin],
     versions: &[(String, String)],
 ) -> Result<Vec<PathBuf>> {
-    render(root, config, versions, false)
+    Ok(render(root, config, pins, versions)?
+        .into_iter()
+        .map(|served| root.join(served.target))
+        .collect())
 }
 
+/// A served file whose bytes differ from what its template renders.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Drift {
+    /// The served file, relative to the repository root.
+    pub target: PathBuf,
+    /// The template that renders it.
+    pub template: PathBuf,
+}
+
+/// Every served file that differs from its rendering at `versions`, missing
+/// files included, so one run lists every file to fix.
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`plan()`], or when a target
+/// exists and cannot be read.
+pub fn drift(
+    root: &Path,
+    config: &Templates,
+    pins: &[Pin],
+    versions: &[(String, String)],
+) -> Result<Vec<Drift>> {
+    let mut drifted = Vec::new();
+    for served in render(root, config, pins, versions)? {
+        let path = root.join(&served.target);
+        let matches = match fs::read(&path) {
+            Ok(bytes) => bytes == served.body.as_bytes(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => {
+                return Err(error).with_context(|| format!("read {}", served.target.display()));
+            }
+        };
+        if !matches {
+            drifted.push(Drift {
+                target: served.target,
+                template: served.template,
+            });
+        }
+    }
+    Ok(drifted)
+}
+
+/// One template's output, held in memory until every template has rendered
+/// and no target is claimed twice.
+struct Served {
+    template: PathBuf,
+    target: PathBuf,
+    body: String,
+    executable: bool,
+}
+
+/// Render every template in memory. Nothing is written here, so a template
+/// that fails, or a target a `pins` entry also rewrites, stops the run before
+/// any file changes.
 fn render(
     root: &Path,
     config: &Templates,
+    pins: &[Pin],
     versions: &[(String, String)],
-    persist: bool,
-) -> Result<Vec<PathBuf>> {
+) -> Result<Vec<Served>> {
     let verctl_surface = Surface::new::<Cli>("ver");
     let context = context! {
         versions => versions
@@ -139,24 +214,35 @@ fn render(
         let captured = compiled
             .render_captured(&context)
             .with_context(|| format!("render template {}", template.display()))?;
-        let body = captured.output();
+        let body = captured.output().to_owned();
         let declared = Declared::parse(&template, config, captured.state())?;
         let target = declared.target();
         ensure_inside(root, &target).with_context(|| format!("template {}", template.display()))?;
-        let path = root.join(&target);
-        if persist {
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent)
-                    .with_context(|| format!("create {}", parent.display()))?;
-            }
-            fs::write(&path, body).with_context(|| format!("write {}", target.display()))?;
-            let mode = if declared.executable { 0o755 } else { 0o644 };
-            fs::set_permissions(&path, fs::Permissions::from_mode(mode))
-                .with_context(|| format!("chmod {}", target.display()))?;
-        }
-        rendered.push(path);
+        refuse_pinned(&template, &target, pins)?;
+        rendered.push(Served {
+            template,
+            target,
+            body,
+            executable: declared.executable,
+        });
     }
     Ok(rendered)
+}
+
+/// A served file has one owner. `version` rewrites pins before it renders
+/// templates, so a template would overwrite a pin's edit without a word, and
+/// the target is known only once its template has rendered.
+fn refuse_pinned(template: &Path, target: &Path, pins: &[Pin]) -> Result<()> {
+    if let Some(pin) = pins.iter().find(|pin| pin.file == target) {
+        bail!(
+            "{target} has two owners: template {template} renders it, and the pins entry for {file} (package {package}) rewrites it; keep one",
+            target = target.display(),
+            template = template.display(),
+            file = pin.file.display(),
+            package = pin.package,
+        );
+    }
+    Ok(())
 }
 
 impl Declared {
@@ -395,7 +481,7 @@ mod tests {
         ];
         for (label, pairs, outcome) in cases {
             let root = repo(&[(TEMPLATE_PATH, TEMPLATE), (SERVED, BEFORE)]);
-            let result = write(root.path(), &Templates::default(), &versions(pairs));
+            let result = write(root.path(), &Templates::default(), &[], &versions(pairs));
             match outcome {
                 Outcome::Serves(after) => {
                     assert_eq!(result.unwrap(), [root.path().join(SERVED)], "{label}");
@@ -417,9 +503,9 @@ mod tests {
     fn rendering_twice_serves_the_same_bytes() {
         let root = repo(&[(TEMPLATE_PATH, TEMPLATE), (SERVED, BEFORE)]);
         let moved = versions(&[("verctl", "0.0.2"), ("ctl-core", "1.2.3")]);
-        write(root.path(), &Templates::default(), &moved).unwrap();
+        write(root.path(), &Templates::default(), &[], &moved).unwrap();
         let once = read(&root, SERVED);
-        write(root.path(), &Templates::default(), &moved).unwrap();
+        write(root.path(), &Templates::default(), &[], &moved).unwrap();
         assert_eq!(read(&root, SERVED), once);
     }
 
@@ -430,6 +516,7 @@ mod tests {
             plan(
                 root.path(),
                 &Templates::default(),
+                &[],
                 &versions(&[("verctl", "0.0.2"), ("ctl-core", "1.2.3")])
             )
             .unwrap(),
@@ -445,10 +532,66 @@ mod tests {
             write(
                 root.path(),
                 &Templates::default(),
+                &[],
                 &versions(&[("verctl", "0.0.2")])
             )
             .is_err()
         );
+        assert_eq!(read(&root, SERVED), BEFORE);
+    }
+
+    /// `check` compares each served file with its rendering and names every
+    /// one that differs, a missing file included.
+    #[test]
+    fn drift_names_each_served_file_that_differs() {
+        let current = versions(&[("verctl", "0.0.1"), ("ctl-core", "1.0.0")]);
+        let root = repo(&[(TEMPLATE_PATH, TEMPLATE), (SERVED, BEFORE)]);
+        assert_eq!(
+            drift(root.path(), &Templates::default(), &[], &current).unwrap(),
+            Vec::<Drift>::new()
+        );
+        fs::write(root.path().join(SERVED), BEFORE.replace("0.0.1", "0.0.9")).unwrap();
+        let expected = [Drift {
+            target: PathBuf::from(SERVED),
+            template: PathBuf::from(TEMPLATE_PATH),
+        }];
+        assert_eq!(
+            drift(root.path(), &Templates::default(), &[], &current).unwrap(),
+            expected
+        );
+        fs::remove_file(root.path().join(SERVED)).unwrap();
+        assert_eq!(
+            drift(root.path(), &Templates::default(), &[], &current).unwrap(),
+            expected
+        );
+    }
+
+    /// A template and a `pins` entry that claim one file stop the run before
+    /// anything is written.
+    #[test]
+    fn a_target_a_pin_also_rewrites_is_refused() {
+        let root = repo(&[(TEMPLATE_PATH, TEMPLATE), (SERVED, BEFORE)]);
+        let pin = Pin {
+            file: PathBuf::from(SERVED),
+            tool: None,
+            pattern_ids: Vec::new(),
+            patterns: Vec::new(),
+            package: "verctl".to_owned(),
+        };
+        let error = write(
+            root.path(),
+            &Templates::default(),
+            &[pin],
+            &versions(&[("verctl", "0.0.2"), ("ctl-core", "1.2.3")]),
+        )
+        .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("tasks/ver/ver has two owners"),
+            "{message}"
+        );
+        assert!(message.contains(TEMPLATE_PATH), "{message}");
+        assert!(message.contains("package verctl"), "{message}");
         assert_eq!(read(&root, SERVED), BEFORE);
     }
 
@@ -461,7 +604,7 @@ mod tests {
         let path = stray_template.path().join(TEMPLATE_PATH);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, TEMPLATE).unwrap();
-        let error = write(stray_template.path(), &Templates::default(), &moved).unwrap_err();
+        let error = write(stray_template.path(), &Templates::default(), &[], &moved).unwrap_err();
         let text = format!("{error:#}");
         assert!(text.contains(TEMPLATE_PATH), "{text}");
         assert!(text.contains("commit it or delete it"), "{text}");
@@ -473,7 +616,7 @@ mod tests {
 
         let outside = repo(&[("templates/changelog.jinja", "# {{ anything }}\n")]);
         assert_eq!(
-            write(outside.path(), &Templates::default(), &moved).unwrap(),
+            write(outside.path(), &Templates::default(), &[], &moved).unwrap(),
             Vec::<PathBuf>::new()
         );
         assert_eq!(
@@ -500,6 +643,7 @@ mod tests {
         let error = write(
             root.path(),
             &Templates::default(),
+            &[],
             &versions(&[("verctl", "0.0.2"), ("ctl-core", "1.2.3")]),
         )
         .unwrap_err();
@@ -584,6 +728,7 @@ mod tests {
             let result = write(
                 root.path(),
                 &Templates::default(),
+                &[],
                 &versions(&[("verctl", "0.0.2")]),
             );
             match expected {
@@ -615,6 +760,7 @@ mod tests {
         write(
             root.path(),
             &Templates::default(),
+            &[],
             &versions(&[("verctl", "0.0.2")]),
         )
         .unwrap();
@@ -640,6 +786,7 @@ mod tests {
         let mut rendered = write(
             root.path(),
             &Templates::default(),
+            &[],
             &versions(&[("verctl", "0.0.2"), ("ctl-core", "1.2.3")]),
         )
         .unwrap();
@@ -681,6 +828,7 @@ mod tests {
         write(
             root.path(),
             &Templates::default(),
+            &[],
             &versions(&[("verctl", "0.0.2")]),
         )
         .unwrap();
@@ -709,6 +857,7 @@ mod tests {
         write(
             root.path(),
             &Templates::default(),
+            &[],
             &versions(&[("verctl", "0.0.2"), ("ctl-core", "1.2.3")]),
         )
         .unwrap();
@@ -732,6 +881,7 @@ mod tests {
         let rendered = write(
             root.path(),
             &config,
+            &[],
             &versions(&[("verctl", "0.0.2"), ("ctl-core", "1.2.3")]),
         )
         .unwrap();
@@ -766,6 +916,7 @@ mod tests {
             write(
                 &project,
                 &Templates::default(),
+                &[],
                 &versions(&[("verctl", "0.0.2"), ("ctl-core", "0.1.0")])
             )
             .unwrap(),
@@ -802,6 +953,7 @@ mod tests {
             write(
                 root.path(),
                 &Templates::default(),
+                &[],
                 &versions(&[("verctl", "0.0.2"), ("ctl-core", "1.2.3")])
             )
             .unwrap(),
@@ -826,6 +978,7 @@ mod tests {
             write(
                 root.path(),
                 &Templates::default(),
+                &[],
                 &versions(&[("verctl", "0.0.2"), ("ctl-core", "1.2.3")])
             )
             .unwrap(),
@@ -846,6 +999,7 @@ mod tests {
             write(
                 root.path(),
                 &Templates::default(),
+                &[],
                 &versions(&[("verctl", "0.0.2")])
             )
             .unwrap(),

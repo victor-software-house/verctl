@@ -34,7 +34,7 @@ completion bootstrap.
 | `check` | — | Validate fragments, or `--versions` against the default branch |
 | `version` | — | Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews |
 | `publish` | — | Publish the versions on HEAD (cargo / bun + GitHub Release) |
-| `render` | — | Rewrite collocated tool pins to the versions on HEAD |
+| `render` | — | Rewrite pins and render served templates at the versions on HEAD |
 | `assets` | — | Plan or build native GitHub Release tarballs declared under `assets` |
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
 | `docs` | — | Wait for docs.rs to build each crates.io crate released at HEAD |
@@ -98,7 +98,11 @@ config, so it ignores the task's own `#MISE tools` pin, while mise already puts
 that pin first on PATH. Removing it is only safe together with rendering the
 pin, or the task freezes on whatever version the file happens to name.
 
-`render` rewrites those collocated pins onto HEAD.
+`render` rewrites those pins and renders every template at the versions on
+HEAD. `check` fails when a served file or a pin differs from that, with or
+without fragments, and `render` is the fix for both. A file that a template and
+a `pins` entry both claim fails `version`, `check`, and `render` before any
+write.
 
 Machines are `runners` entries with `labels`, declared once and named by
 the jobs that run on them: a `ci` job takes `runners`, one check each; an

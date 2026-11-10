@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use ctl_core::prelude::*;
 use verctl::cli::{CheckArgs, Cli, Command, PublishArgs, StatusArgs, VersionArgs};
 use verctl::config::{self, Config};
@@ -67,18 +67,57 @@ fn docs_report(args: &verctl::cli::DocsArgs) -> Result<DocsReport> {
 }
 
 /// Fragments that parse and that `version` would accept: every package they
-/// name is declared, and no bump they ask for is refused. With no fragments
-/// there is nothing to plan, so the declarations are not read.
+/// name is declared, and no bump they ask for is refused. Then the served
+/// files, whether or not a fragment is pending, since a hand edit fails
+/// here and not at the next release that overwrites it.
 fn check_report(args: &CheckArgs) -> Result<CheckReport> {
     let fragments = fragment::load_dir(&args.dir)?;
-    if fragments.is_empty() {
-        return Ok(CheckReport { ok: 0 });
-    }
     let config = Config::load(&args.config)?;
-    prepare::plan(&config, &fragments, &config::root_of(&args.config))?;
+    let root = &config::root_of(&args.config);
+    if !fragments.is_empty() {
+        prepare::plan(&config, &fragments, root)?;
+    }
+    check_served(root, &config)?;
     Ok(CheckReport {
         ok: fragments.len(),
     })
+}
+
+/// Every template target and `pins` file that differs from what verctl would
+/// write at the versions the manifests hold, listed in one error so one run
+/// names every file to fix.
+fn check_served(root: &Path, config: &Config) -> Result<()> {
+    let mut problems = Vec::new();
+    if !config.pins.is_empty() {
+        let versions = pins::current_versions(root, config)?;
+        problems.extend(
+            pins::stale(root, &config.pins, &versions)
+                .into_iter()
+                .map(|pin| format!("{}: {}", pin.file.display(), pin.problem)),
+        );
+    }
+    if templates::any(root, &config.templates)? {
+        let versions = release::served_versions(root, config, &[]);
+        problems.extend(
+            templates::drift(root, &config.templates, &config.pins, &versions)?
+                .into_iter()
+                .map(|drift| {
+                    format!(
+                        "{}: differs from what {} renders",
+                        drift.target.display(),
+                        drift.template.display()
+                    )
+                }),
+        );
+    }
+    if problems.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "{count} served file(s) differ from the versions on HEAD; run `verctl render` to write them:\n{list}",
+        count = problems.len(),
+        list = problems.join("\n"),
+    );
 }
 
 fn versions_report(args: &CheckArgs) -> Result<VersionCheckReport> {
@@ -160,7 +199,12 @@ fn version_report(args: &VersionArgs) -> Result<VersionReport> {
     // versions bumped with no changelog, no follow-up, and fragments
     // still on disk.
     let mut pinned = pins::plan(root, &config.pins, &planned)?;
-    pinned.extend(templates::plan(root, &config.templates, &served)?);
+    pinned.extend(templates::plan(
+        root,
+        &config.templates,
+        &config.pins,
+        &served,
+    )?);
     if dry_run {
         return preview_report(root, &plan, &fragments, bumps, pinned, args.open_pr());
     }
@@ -172,7 +216,12 @@ fn version_report(args: &VersionArgs) -> Result<VersionReport> {
     let mut pinned = pins::write(root, &config.pins, &planned)?;
     // Served files are rendered from the templates beside them, on the same
     // commit, and staged from here: a repo never lists them in stage.
-    pinned.extend(templates::write(root, &config.templates, &served)?);
+    pinned.extend(templates::write(
+        root,
+        &config.templates,
+        &config.pins,
+        &served,
+    )?);
     let consumed = release::contributing_fragments(&plan, &fragments);
     let origins = release::origins(root, token, &config.changelog, &fragments)?;
     let changelog = release::changelog_sections_with(&plan, &fragments, &origins)?;
@@ -341,15 +390,26 @@ fn publish_plan_report(
     })
 }
 
+/// Every `pins` entry, then every template, at the versions the manifests
+/// hold: the files `check` compares. Both are planned before either is
+/// written, so a pin that no longer matches, a template that fails, or a file
+/// both claim changes nothing.
 fn render_report(args: &PublishArgs) -> Result<RenderReport> {
     let config = Config::load(&args.config)?;
     let root = &config::root_of(&args.config);
     let versions = pins::current_versions(root, &config)?;
-    let files = if args.dry_run() {
-        pins::plan(root, &config.pins, &versions)?
-    } else {
-        pins::write(root, &config.pins, &versions)?
-    };
+    let served = versions_for_templates(root, &config, &[])?;
+    let mut files = pins::plan(root, &config.pins, &versions)?;
+    files.extend(templates::plan(
+        root,
+        &config.templates,
+        &config.pins,
+        &served,
+    )?);
+    if !args.dry_run() {
+        pins::write(root, &config.pins, &versions)?;
+        templates::write(root, &config.templates, &config.pins, &served)?;
+    }
     Ok(RenderReport {
         files: display_paths(files),
     })
