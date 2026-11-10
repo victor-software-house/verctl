@@ -450,6 +450,14 @@ Otherwise it ends at the root.
 A version is released when the registry lists it for every checked upload of the package.  
 A package with an unchecked upload, or with none, has it released once its tag exists.
 
+For a workspace, only these members count at an earlier version:
+
+- a member on the package's version;
+- a member that crates.io lists at or below that version.
+
+The other members joined later or move on their own.  
+With no member left, the tag decides.
+
 `status` lists each skipped version once, at its oldest commit in the range, oldest first.  
 So the workflow releases it before the newer one.
 

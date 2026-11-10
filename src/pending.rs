@@ -23,7 +23,7 @@ use crate::driver::Driver;
 use crate::git::{self, VersionCommit};
 use crate::github::{self, ReleaseState};
 use crate::publish::{self, PublishEntry};
-use crate::registry::RegistryCheck;
+use crate::registry::{self, RegistryCheck};
 use crate::registry_token::RegistryToken;
 use crate::{bump, publisher};
 
@@ -311,9 +311,9 @@ fn registry_lists(
 
 /// The registry checks that say whether `version` of a package is published.
 ///
-/// A workspace package keeps one check per member, each asked for its own
-/// crate. Any other package has its single check built for `version`, since a
-/// `query` carries the version it was built for.
+/// Any package but a workspace has its single check built for `version`,
+/// since a `query` carries the version it was built for.
+/// A workspace package checks the members [`members_at`] keeps.
 fn checks_at(
     config: &Config,
     root: &Path,
@@ -325,14 +325,47 @@ fn checks_at(
         return Ok(Vec::new());
     }
     if publisher::workspace_members(config, spec, root)?.is_some() {
-        return Ok(publisher::uploads(config, spec, root, entry)?
-            .into_iter()
-            .map(|upload| upload.check)
-            .collect());
+        let wanted =
+            semver::Version::parse(version).with_context(|| format!("semver {version:?}"))?;
+        let uploads = publisher::uploads(config, spec, root, entry)?;
+        return members_at(uploads, &entry.version, |name| {
+            Ok(registry::crates_io_baseline(registry::CRATES_IO_INDEX, name, &wanted)?.is_some())
+        });
     }
     Ok(vec![publisher::registry_check(
         config, spec, root, version,
     )?])
+}
+
+/// The checks of the workspace members that took part in an earlier
+/// release.
+///
+/// The members are read at HEAD, so two of them can say nothing about that
+/// release:
+///
+/// - a member whose version is not the package's moves on its own;
+/// - a crates.io member that `existed` says has no version at or below the
+///   earlier one was added since.
+///
+/// When no member is left, [`version_released`] falls back to the tag.
+fn members_at(
+    uploads: Vec<publisher::Upload>,
+    package_version: &str,
+    existed: impl Fn(&str) -> Result<bool>,
+) -> Result<Vec<RegistryCheck>> {
+    let mut checks = Vec::new();
+    for upload in uploads {
+        if upload.version != package_version {
+            continue;
+        }
+        if let RegistryCheck::CratesIo { name } = &upload.check
+            && !existed(name)?
+        {
+            continue;
+        }
+        checks.push(upload.check);
+    }
+    Ok(checks)
 }
 
 /// Whether an earlier `version` of a package counts as released.
@@ -476,8 +509,8 @@ mod tests {
     use indoc::indoc;
 
     use super::{
-        PackageState, Pending, PendingAsset, PendingPackage, group, newest_per_tag, state_of,
-        version_released, write_github_output,
+        PackageState, Pending, PendingAsset, PendingPackage, group, members_at, newest_per_tag,
+        state_of, version_released, write_github_output,
     };
     use crate::assets::MatrixTarget;
     use crate::git::VersionCommit;
@@ -722,5 +755,41 @@ mod tests {
             assert!(version_released(&checks, "1.0.0", &[], || Ok(true)).unwrap());
             assert!(!version_released(&checks, "1.0.0", &[], || Ok(false)).unwrap());
         }
+    }
+
+    fn member(name: &str, version: &str) -> crate::publisher::Upload {
+        crate::publisher::Upload {
+            name: name.to_owned(),
+            version: version.to_owned(),
+            manifest: std::path::PathBuf::from(format!("{name}/Cargo.toml")),
+            argv: vec!["cargo".to_owned(), "publish".to_owned()],
+            check: RegistryCheck::CratesIo {
+                name: name.to_owned(),
+            },
+        }
+    }
+
+    /// A member added since the earlier release, and one that moves on its
+    /// own, say nothing about that release, so only the others are asked.
+    #[test]
+    fn an_earlier_workspace_release_asks_only_the_members_it_had() {
+        let checks = members_at(
+            vec![
+                member("core", "0.7.0"),
+                member("added", "0.7.0"),
+                member("own", "1.4.0"),
+            ],
+            "0.7.0",
+            |name| Ok(name != "added"),
+        )
+        .unwrap();
+        assert_eq!(
+            checks,
+            vec![RegistryCheck::CratesIo {
+                name: "core".to_owned()
+            }]
+        );
+        let none = members_at(vec![member("added", "0.7.0")], "0.7.0", |_| Ok(false)).unwrap();
+        assert!(none.is_empty());
     }
 }

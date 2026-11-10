@@ -33,6 +33,14 @@ The range ends before a released version, `0.0.0`, a revision with no version, o
 A version is released when the registry lists it for every checked upload of the package.  
 A package with an unchecked upload, or with none, has it released once its tag exists, because `release` creates that tag after the upload.
 
+For a workspace, only these members count at an earlier version:
+
+- a member on the package's version;
+- a member that crates.io lists at or below that version.
+
+The other members joined later or move on their own.  
+With no member left, the tag decides.
+
 An abandoned version, one that a later downward change superseded, is not listed.  
 `verctl status --github-output` lists each skipped version once, at its oldest commit in the range, oldest first.  
 The workflow then releases it before the newer one.
