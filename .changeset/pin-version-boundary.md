@@ -19,3 +19,7 @@ For a line the pattern owns, set `whole_line: true`.
 A `tool` pin now fails, and writes nothing, on an include of its own repository whose ref starts with a version and goes on.  
 Before, `?ref=v1.2.3-rc1` became `?ref=v<new>-rc1`.  
 A ref that is not a version, such as a branch, stays put as before.
+
+A `tool` pin rewrites only the version of its `[tools]` entry.  
+An inline table such as `{ version = "1.2.3", os = ["linux"] }`, a `[tools.<name>]` table, and the comments and spacing around the value keep every other byte.  
+Before, the whole entry became a bare version string, which dropped its options and comments, so `check` then failed the file on every run.

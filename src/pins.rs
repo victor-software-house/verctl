@@ -5,7 +5,7 @@ use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use regex::{NoExpand, Regex, escape};
-use toml_edit::{DocumentMut, Item, value};
+use toml_edit::{DocumentMut, Item, Value};
 
 use crate::config::{Config, PLACEHOLDER, Pin, PinPattern};
 
@@ -143,6 +143,10 @@ fn ensure_inside(root: &Path, file: &Path) -> Result<()> {
 }
 
 /// A mise `[tools]` entry, plus every `?ref=v…` include naming its repo.
+///
+/// Only the version value changes. A bare string, the `version` of an inline
+/// table such as `{ version = "1.2.3", os = ["linux"] }`, and the `version` of
+/// a `[tools.<name>]` table all keep their comments, spacing, and options.
 fn rewrite_tool(body: &str, tool: &str, version: &str, path: &Path) -> Result<String> {
     let mut doc: DocumentMut = body
         .parse()
@@ -151,12 +155,40 @@ fn rewrite_tool(body: &str, tool: &str, version: &str, path: &Path) -> Result<St
         .get_mut("tools")
         .and_then(Item::as_table_like_mut)
         .with_context(|| format!("{} has no [tools]", path.display()))?;
-    if tools.get(tool).is_none() {
+    let Some(entry) = tools.get_mut(tool) else {
         bail!("{} has no tools.{tool}", path.display());
-    }
-    tools.insert(tool, value(version));
+    };
+    set_tool_version(entry, version).with_context(|| format!("{} tools.{tool}", path.display()))?;
     rewrite_own_refs(&doc.to_string(), tool, version)
         .with_context(|| format!("pin {}", path.display()))
+}
+
+/// Replace the version a `[tools]` entry holds, and nothing else of it.
+fn set_tool_version(entry: &mut Item, version: &str) -> Result<()> {
+    match entry {
+        Item::Value(Value::InlineTable(table)) => set_string(table.get_mut("version"), version),
+        Item::Table(table) => match table.get_mut("version") {
+            Some(Item::Value(held)) => set_string(Some(held), version),
+            _ => bail!("has no version string to rewrite"),
+        },
+        Item::Value(held) => set_string(Some(held), version),
+        Item::None | Item::ArrayOfTables(_) => bail!("is not a version or a table"),
+    }
+}
+
+/// Swap the string in `held` for `version`, keeping the whitespace and the
+/// comment around it.
+fn set_string(held: Option<&mut Value>, version: &str) -> Result<()> {
+    let Some(Value::String(old)) = held else {
+        bail!("has no version string to rewrite");
+    };
+    let mut new = Value::from(version);
+    *new.decor_mut() = old.decor().clone();
+    *old = match new {
+        Value::String(formatted) => formatted,
+        _ => bail!("a version is a string"),
+    };
+    Ok(())
 }
 
 /// The version in every occurrence of `pattern.match`, where `{version}`
@@ -702,6 +734,58 @@ mod tests {
                 [tools]
                 leftover = "1"
                 "github:victor-software-house/verctl" = "0.0.2"
+            "#}
+        );
+    }
+
+    /// A tool entry with options and comments keeps every byte but its
+    /// version.
+    #[test]
+    fn a_tool_entry_with_options_and_comments_keeps_them() {
+        let root = TempDir::new().unwrap();
+        let path = write_file(
+            &root,
+            "mise.release.toml",
+            indoc! {r#"
+                [tools]
+                # the release tool
+                "github:victor-software-house/verctl" = { version = "0.0.1", os = ["linux"] } # pinned
+                node = "22" # untouched
+            "#},
+        );
+        let pins = [tool_pin("mise.release.toml", "verctl")];
+        write(root.path(), &pins, &versions("0.0.2")).unwrap();
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            indoc! {r#"
+                [tools]
+                # the release tool
+                "github:victor-software-house/verctl" = { version = "0.0.2", os = ["linux"] } # pinned
+                node = "22" # untouched
+            "#}
+        );
+    }
+
+    #[test]
+    fn a_tool_table_keeps_its_options() {
+        let root = TempDir::new().unwrap();
+        let path = write_file(
+            &root,
+            "mise.release.toml",
+            indoc! {r#"
+                [tools."github:victor-software-house/verctl"]
+                version = "0.0.1" # pinned
+                os = ["linux"]
+            "#},
+        );
+        let pins = [tool_pin("mise.release.toml", "verctl")];
+        write(root.path(), &pins, &versions("0.0.2")).unwrap();
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            indoc! {r#"
+                [tools."github:victor-software-house/verctl"]
+                version = "0.0.2" # pinned
+                os = ["linux"]
             "#}
         );
     }
