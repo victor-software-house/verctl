@@ -44,7 +44,7 @@ fn version_pr_action_leaves_the_title_to_verctl() {
 #[test]
 fn actions_set_variables_and_run_the_bare_verb() {
     for (action, verb) in [
-        (VERSION_PR, "run: exec verctl prepare --pr\n"),
+        (VERSION_PR, "run: exec verctl version --pr\n"),
         (ACTION, "run: exec verctl publish\n"),
         (ASSET, "run: exec verctl assets --upload\n"),
     ] {

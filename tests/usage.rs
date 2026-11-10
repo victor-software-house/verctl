@@ -124,3 +124,18 @@ fn the_served_task_pipes_json_without_an_escape_byte() {
         "stdout must be exactly what the CLI printed"
     );
 }
+
+/// mise reads `hide` and leaves a hidden command out of help and completion.
+#[test]
+fn usage_spec_marks_the_removed_verbs_hidden() {
+    let output = verctl(&["--usage-spec=ver"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let spec = stdout(&output);
+    for removed in ["prepare", "pin"] {
+        let line = spec
+            .lines()
+            .find(|line| line.trim_start().starts_with(&format!("cmd {removed} ")))
+            .unwrap_or_else(|| panic!("no cmd {removed}:\n{spec}"));
+        assert!(line.contains("hide=#true"), "{line}");
+    }
+}

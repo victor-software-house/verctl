@@ -46,7 +46,7 @@ pub fn is_version_branch(branch: &str) -> bool {
 /// non-empty value.
 pub fn resolve_token() -> Result<String> {
     env_token().context(
-        "prepare --pr needs GITHUB_TOKEN (Actions sets it; locally export the same token — not `gh`)",
+        "version --pr needs GITHUB_TOKEN (Actions sets it; locally export the same token — not `gh`)",
     )
 }
 
@@ -482,7 +482,7 @@ pub fn prepend_changelog(path: &Path, section: &str) -> Result<()> {
 
 /// What the Version PR is called and which branch it targets.
 ///
-/// Resolved before `prepare` writes anything, so a run that cannot tell its
+/// Resolved before `version` writes anything, so a run that cannot tell its
 /// base fails with the tree untouched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VersionPr {

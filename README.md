@@ -13,8 +13,8 @@ It is not `@changesets/cli`, not Knope, and not a forkctl verb.
 ```sh
 mise run ver status
 mise run ver check
-mise run ver prepare
-mise run ver prepare --pr
+mise run ver version
+mise run ver version --pr
 mise run ver publish
 ```
 
@@ -76,7 +76,7 @@ flat list; once one does, the section gets `### Added`, `### Changed`, and
 
 A new package starts at `0.0.0`, and its first fragment is a `patch`, so its
 first release is `0.0.1`. Moving to `0.1.0` or `1.0.0` is a separate operator
-decision. `prepare` and `check` refuse a `minor` or `major` fragment on a
+decision. `version` and `check` refuse a `minor` or `major` fragment on a
 package at `0.0.0`, including its pre-releases and builds; to open at
 `0.1.0` on purpose, set `first_minor: true` on the package in `.ctl/ver.yaml`.
 `publish` and `publish --plan` leave a package at `0.0.0` out, so a repo can
@@ -115,15 +115,15 @@ fork.
 
 ## Version files
 
-`verctl prepare` applies fragment bumps through **drivers**.
-Local writes are the default. `prepare --pr` is the Version PR
+`verctl version` applies fragment bumps through **drivers**.
+Local writes are the default. `version --pr` is the Version PR
 (Action happy path; the token is `GITHUB_TOKEN`, not the `gh` account).
-`prepare --dry-run` / `--preview` prints the plan and writes nothing.
-`prepare --pr --preview` also shows consumed fragments and open vs update.
+`version --dry-run` / `--preview` prints the plan and writes nothing.
+`version --pr --preview` also shows consumed fragments and open vs update.
 Cargo, npm, `pyproject.toml`, `go.mod`, and `VERSION` are stock drivers,
 not a separate code path. A `go.mod` keeps its version as `// vX.Y.Z` on
 its `module` line. A `VERSION` file holds only the version, and a missing
-one reads as `0.0.0` until `prepare` writes it. `marker: true` versions any
+one reads as `0.0.0` until `version` writes it. `marker: true` versions any
 file on its one `# version: X.Y.Z` line. A `pyproject.toml` package
 names its `publisher`, or `none`: verctl has no stock Python publisher.
 
@@ -205,7 +205,7 @@ Two sections take runners and no others, because of what config is for here:
 
 A static YAML file cannot declare N jobs without knowing N, and only the repo
 knows N. That fan-out is what `ci` and `assets` buy; the machine rides along
-on it. Every other job verctl ships (`plan`, `crate`, `pin`, `prepare`) is
+on it. Every other job verctl ships (`plan`, `crate`, `render`, `version`) is
 always exactly one job, so nothing decides its count and nothing needs to
 configure it. Its `runs-on` is one literal in a workflow you own and already
 copied from `examples/`:

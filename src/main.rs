@@ -4,7 +4,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use ctl_core::prelude::*;
-use verctl::cli::{CheckArgs, Cli, Command, PrepareArgs, PublishArgs, StatusArgs};
+use verctl::cli::{CheckArgs, Cli, Command, PublishArgs, StatusArgs, VersionArgs};
 use verctl::config::{self, Config};
 use verctl::fragment::{self, Bump};
 use verctl::{
@@ -15,9 +15,9 @@ use verctl::{
 mod presentation;
 
 use presentation::{
-    AssetsReport, CheckReport, CiReport, DocsReport, InstructionsReport, PinReport, PrepareBump,
-    PrepareReport, PublishReport, ReleaseRow, Report, SemverReport, StatusFragment, StatusPackage,
-    StatusReport, VendoredReport, VersionCheckReport,
+    AssetsReport, CheckReport, CiReport, DocsReport, InstructionsReport, PublishReport, ReleaseRow,
+    RenderReport, Report, SemverReport, StatusFragment, StatusPackage, StatusReport,
+    VendoredReport, VersionBump, VersionCheckReport, VersionReport,
 };
 
 const INSTRUCTIONS: &str = include_str!("instructions.md");
@@ -35,9 +35,9 @@ fn execute(cli: Cli) -> Result<Report> {
         Command::Status(args) => status_report(&args).map(Report::Status),
         Command::Check(args) if args.versions => versions_report(&args).map(Report::VersionCheck),
         Command::Check(args) => check_report(&args).map(Report::Check),
-        Command::Prepare(args) => prepare_report(&args).map(Report::Prepare),
+        Command::Version(args) => version_report(&args).map(Report::Version),
         Command::Publish(args) => publish_report(&args).map(Report::Publish),
-        Command::Pin(args) => pin_report(&args).map(Report::Pin),
+        Command::Render(args) => render_report(&args).map(Report::Render),
         Command::Assets(args) => match &args.vendored {
             Some(name) => vendored_report(&args, name).map(Report::Vendored),
             None => assets_report(&args).map(Report::Assets),
@@ -45,6 +45,7 @@ fn execute(cli: Cli) -> Result<Report> {
         Command::Ci(args) => ci_report(&args).map(Report::Ci),
         Command::Docs(args) => docs_report(&args).map(Report::Docs),
         Command::Semver(args) => semver_report(&args).map(Report::Semver),
+        Command::Removed(removed) => match removed {},
     }
 }
 
@@ -65,7 +66,7 @@ fn docs_report(args: &verctl::cli::DocsArgs) -> Result<DocsReport> {
     })
 }
 
-/// Fragments that parse and that `prepare` would accept: every package they
+/// Fragments that parse and that `version` would accept: every package they
 /// name is declared, and no bump they ask for is refused. With no fragments
 /// there is nothing to plan, so the declarations are not read.
 fn check_report(args: &CheckArgs) -> Result<CheckReport> {
@@ -107,10 +108,10 @@ fn versions_for_templates(
     Ok(planned.to_vec())
 }
 
-/// The token and Version PR that `prepare --pr` writes with, settled before
+/// The token and Version PR that `version --pr` writes with, settled before
 /// anything is written; `None` when the run opens no pull request.
 fn version_pr_target(
-    args: &PrepareArgs,
+    args: &VersionArgs,
     config: &Config,
     root: &Path,
 ) -> Result<Option<(String, release::VersionPr)>> {
@@ -122,28 +123,28 @@ fn version_pr_target(
     Ok(Some((token, version_pr)))
 }
 
-fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
+fn version_report(args: &VersionArgs) -> Result<VersionReport> {
     let dry_run = args.dry_run();
     let config = Config::load(&args.config)?;
     let fragments = fragment::load_dir(&args.dir)?;
     let root = &config::root_of(&args.config);
     let plan = prepare::plan(&config, &fragments, root)?;
     if plan.is_empty() {
-        return Ok(PrepareReport {
+        return Ok(VersionReport {
             bumps: Vec::new(),
             changelog: String::new(),
             consume: Vec::new(),
             pins: Vec::new(),
             pr: args.open_pr().then(|| "no-op".to_owned()),
-            next: Vec::new(),
+            after: Vec::new(),
             dry_run,
         });
     }
     let target = version_pr_target(args, &config, root)?;
     let token = target.as_ref().map(|(token, _)| token.as_str());
-    let bumps: Vec<PrepareBump> = plan
+    let bumps: Vec<VersionBump> = plan
         .iter()
-        .map(|entry| PrepareBump {
+        .map(|entry| VersionBump {
             name: entry.name.clone(),
             from: entry.from.clone(),
             to: entry.to.clone(),
@@ -207,12 +208,12 @@ fn prepare_report(args: &PrepareArgs) -> Result<PrepareReport> {
         let opened = release::open_or_update_pr(root, token, version_pr, &paths, &changelog)?;
         pr = opened.map(|opened| opened.url);
     }
-    Ok(PrepareReport {
+    Ok(VersionReport {
         changelog,
         consume,
         pins: display_paths(pinned),
         pr,
-        next: follow_up,
+        after: follow_up,
         dry_run: false,
         bumps,
     })
@@ -229,10 +230,10 @@ fn preview_report(
     root: &Path,
     plan: &[prepare::PlanEntry],
     fragments: &[fragment::Fragment],
-    bumps: Vec<PrepareBump>,
+    bumps: Vec<VersionBump>,
     pinned: Vec<std::path::PathBuf>,
     open_pr: bool,
-) -> Result<PrepareReport> {
+) -> Result<VersionReport> {
     let origins = release::origins(root, None, &config::Changelog::default(), fragments)?;
     let changelog = release::changelog_sections_with(plan, fragments, &origins)?;
     let consume = if open_pr {
@@ -251,13 +252,13 @@ fn preview_report(
         Vec::new()
     };
     let pr = open_pr.then(|| preview_pr(root));
-    Ok(PrepareReport {
+    Ok(VersionReport {
         bumps,
         changelog,
         consume,
         pins: display_paths(pinned),
         pr,
-        next: plan
+        after: plan
             .iter()
             .filter_map(|entry| entry.driver.after().map(str::to_owned))
             .collect(),
@@ -265,7 +266,7 @@ fn preview_report(
     })
 }
 
-/// What `prepare --pr` would do to the Version PR, as far as a preview can
+/// What `version --pr` would do to the Version PR, as far as a preview can
 /// tell without writing: the branch needs the base, and the lookup needs a
 /// token.
 fn preview_pr(root: &Path) -> String {
@@ -340,7 +341,7 @@ fn publish_plan_report(
     })
 }
 
-fn pin_report(args: &PublishArgs) -> Result<PinReport> {
+fn render_report(args: &PublishArgs) -> Result<RenderReport> {
     let config = Config::load(&args.config)?;
     let root = &config::root_of(&args.config);
     let versions = pins::current_versions(root, &config)?;
@@ -349,7 +350,7 @@ fn pin_report(args: &PublishArgs) -> Result<PinReport> {
     } else {
         pins::write(root, &config.pins, &versions)?
     };
-    Ok(PinReport {
+    Ok(RenderReport {
         files: display_paths(files),
     })
 }

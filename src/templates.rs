@@ -201,7 +201,7 @@ impl Declared {
 /// Every tracked template in the source tree. Flat or nested, the layout says
 /// nothing: each template declares its own target.
 ///
-/// Only tracked, because `prepare` stages what it renders: a template git does
+/// Only tracked, because `version` stages what it renders: a template git does
 /// not carry would put a served file on the tag with no source beside it, and
 /// `check` would have nothing to compare against on a fresh clone. But one that
 /// is present and untracked stops the run rather than rendering nothing.
@@ -748,7 +748,7 @@ mod tests {
     }
 
     /// A tree with no repository cannot serve a file by tag, so it has no
-    /// templates. `prepare` still works there, as it did before templates
+    /// templates. `version` still works there, as it did before templates
     /// existed. A repository whose index cannot be read is a different case,
     /// and `git::tracked` reports that as an error.
     /// One repository may hold several projects. The index speaks in paths from

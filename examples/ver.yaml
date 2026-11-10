@@ -176,7 +176,7 @@ patterns:
     whole_line: true
     occurrences: once
 
-# Files that carry a version and cannot be generated: `prepare` rewrites them
+# Files that carry a version and cannot be generated: `version` rewrites them
 # onto the Version PR commit, which is the commit the tag names, so the released
 # tree carries them. A file that must name an already-published tarball — the
 # pin a repo's own release lane installs — cannot be listed here either, because

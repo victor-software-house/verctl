@@ -1,4 +1,4 @@
-//! Version bumps and `prepare`: bump rules, per-driver edits, and lockfile
+//! Version bumps and `version`: bump rules, per-driver edits, and lockfile
 //! follow-ups.
 
 mod common;
@@ -730,7 +730,7 @@ fn a_go_module_with_no_comment_starts_at_0_0_0() {
     );
 }
 
-/// The plan refuses before anything is written, so `prepare --dry-run`
+/// The plan refuses before anything is written, so `version --dry-run`
 /// refuses too.
 #[test]
 fn a_go_major_needs_the_module_path() {
@@ -811,7 +811,7 @@ fn a_version_file_with_more_than_a_version_fails() {
 }
 
 /// A `VERSION` path whose directory is missing is a wrong path, not a new
-/// package: the plan fails before `prepare` writes anything.
+/// package: the plan fails before `version` writes anything.
 #[test]
 fn a_version_file_in_a_missing_directory_fails() {
     let root = TempDir::new().expect("tmp");
