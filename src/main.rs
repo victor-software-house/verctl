@@ -473,6 +473,12 @@ fn ci_report(args: &verctl::cli::CiArgs) -> Result<CiReport> {
 /// outputs (`has_assets`, `tag`, `matrix`) and the release outputs
 /// (`commits`, `pending`, `assets`).
 ///
+/// Under `--vendored`, `status` plans the set and nothing else: it writes only
+/// the asset outputs, and fetches no history, reads no token, and looks up no
+/// release.
+///
+/// A config with no packages has no package assets to plan.
+///
 /// Without it, `status` changes nothing in the clone and reads the history
 /// already there. With no token, or when a lookup cannot run
 /// ([`lookup::Unavailable`]), it lists the version commits as not checked,
@@ -491,6 +497,8 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
             assets::write_vendored_github_output(&planned, path)?;
         }
         Some(StatusAssets::Vendored(planned))
+    } else if config.packages.is_empty() {
+        None
     } else {
         let planned = assets::plan(&config, root)?;
         if let Some(path) = &args.github_output {
@@ -500,27 +508,10 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
             .has_assets
             .then_some(StatusAssets::Packages(planned))
     };
-    let token = match &args.github_output {
-        Some(_) => {
-            publish::full_history(root)?;
-            Some(release::resolve_token()?)
-        }
-        None => release::env_token(),
-    };
-    let (unreleased, unreleased_unchecked) = match token {
-        Some(token) => match pending::pending(&config, root, &token, args.skip_assets) {
-            Ok(planned) => {
-                if let Some(path) = &args.github_output {
-                    pending::write_github_output(&planned, path)?;
-                }
-                (Some(unreleased_rows(&planned)), None)
-            }
-            Err(error) if args.github_output.is_none() && lookup::is_unavailable(&error) => {
-                (None, Some(Unchecked::failed(&error)))
-            }
-            Err(error) => return Err(error),
-        },
-        None => (None, Some(Unchecked::missing_token())),
+    let (unreleased, unreleased_unchecked) = if args.vendored.is_some() {
+        (None, Some(Unchecked::vendored()))
+    } else {
+        unreleased_state(args, &config, root)?
     };
     let overall = fragments
         .iter()
@@ -553,6 +544,36 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
         assets,
         unreleased,
         unreleased_unchecked,
+    })
+}
+
+/// The incomplete version commits, or why they were not checked.
+fn unreleased_state(
+    args: &StatusArgs,
+    config: &Config,
+    root: &Path,
+) -> Result<(Option<Vec<ReleaseRow>>, Option<Unchecked>)> {
+    let token = match &args.github_output {
+        Some(_) => {
+            publish::full_history(root)?;
+            Some(release::resolve_token()?)
+        }
+        None => release::env_token(),
+    };
+    Ok(match token {
+        Some(token) => match pending::pending(config, root, &token, args.skip_assets, None) {
+            Ok(planned) => {
+                if let Some(path) = &args.github_output {
+                    pending::write_github_output(&planned, path)?;
+                }
+                (Some(unreleased_rows(&planned)), None)
+            }
+            Err(error) if args.github_output.is_none() && lookup::is_unavailable(&error) => {
+                (None, Some(Unchecked::failed(&error)))
+            }
+            Err(error) => return Err(error),
+        },
+        None => (None, Some(Unchecked::missing_token())),
     })
 }
 

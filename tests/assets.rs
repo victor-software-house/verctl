@@ -390,9 +390,10 @@ fn a_vendored_file_missing_after_the_build_is_named() {
     );
 }
 
-/// `status --vendored` writes the set's asset outputs in the packages' shape,
-/// then the release outputs, which list nothing for a config with no
-/// packages. The GitHub API address is closed, so a lookup would fail.
+/// `status --vendored` writes the set's asset outputs in the packages' shape
+/// and nothing else. It needs no token, fetches no history, and looks up no
+/// release. No token is set and the GitHub API address is closed, so any of
+/// those would fail the run.
 #[test]
 fn a_vendored_set_writes_the_same_step_outputs() {
     let root = vendored_root();
@@ -401,7 +402,6 @@ fn a_vendored_set_writes_the_same_step_outputs() {
     let out = root.path().join("github-output");
     let output = common::verctl()
         .current_dir(root.path())
-        .env("GITHUB_TOKEN", "test")
         .env("GITHUB_REPOSITORY", "acme/demo")
         .env("GITHUB_API_URL", "http://127.0.0.1:9")
         .args([
@@ -420,9 +420,6 @@ fn a_vendored_set_writes_the_same_step_outputs() {
             has_assets=true
             tag=libexample-1.4.0
             matrix={"include":[{"id":"linux-x64","labels":["ubuntu-24.04"]},{"id":"macos-arm64","labels":["macos-15"]}]}
-            commits=[]
-            pending=false
-            assets={"include":[]}
         "#}
     );
 }

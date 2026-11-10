@@ -24,7 +24,11 @@ Any other error, such as a release tag on the wrong commit or a 401 from a bad t
 
 `status --github-output <file>` fetches the history the plan needs.  
 It writes `has_assets`, `tag`, `matrix`, `commits`, `pending`, and `assets`, the outputs `assets --github-output` and `publish --plan` wrote.  
-`status --vendored <name>` plans a vendored set.  
+
+`status --vendored <name>` plans a vendored set and nothing else.  
+With `--github-output` it writes only `has_assets`, `tag`, and `matrix`, and it fetches no history, reads no token, and looks up no release.  
+A config with no packages, such as one that only vendors, has no package assets to plan, so `status` works there.
+
 `verctl release --plan`, or `VERCTL_PLAN` set for it, exits 2 and names `verctl status --github-output`.  
 Without `--github-output`, `status` never fetches.
 

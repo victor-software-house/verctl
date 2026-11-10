@@ -239,6 +239,16 @@ impl Unchecked {
         }
     }
 
+    /// `--vendored` plans a set, which reads no package, so no release lookup
+    /// ran.
+    pub(super) fn vendored() -> Self {
+        let reason = "a vendored plan reads no packages".to_owned();
+        Self {
+            summary: reason.clone(),
+            chain: reason,
+        }
+    }
+
     /// The check ran and failed with `error`.
     pub(super) fn failed(error: &anyhow::Error) -> Self {
         Self {
