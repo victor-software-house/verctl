@@ -73,9 +73,9 @@ carries the new version's section above the merge-base text.
 
 ### Requirement: A Version PR changes a manifest only where the version step does
 
-A manifest on a Version PR SHALL equal its merge-base text with the planned
-version written by its driver.
-Its pins SHALL be applied at the planned versions in that text.
+A manifest on a Version PR SHALL equal its merge-base text after two edits.
+Its driver writes the planned version, and its pins move to the planned
+versions.
 A difference SHALL fail and name the manifest and the key that differs.
 
 #### Scenario: A Version PR that adds a dependency

@@ -2,14 +2,14 @@
 
 ### Requirement: A virtual workspace publishes member by member
 
-A package on the stock cargo publisher SHALL be published when both of
-these hold:
+A package on the stock cargo publisher SHALL be published member by member
+when both of these hold:
 
 - neither it nor `publishers.cargo` has a `publish` or `query` override;
 - its `path` is a manifest with a `[workspace]` table and no `[package]`
   table.
 
-The upload SHALL run
+Its upload SHALL run
 `cargo publish --locked --manifest-path <path> --package <member>` once for
 each workspace member whose `publish` is not `false`, each under its own
 timeout. A member with `publish = false` SHALL never be published.
