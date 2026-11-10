@@ -216,7 +216,42 @@ pub(super) struct StatusReport {
     /// why.
     pub(super) unreleased: Option<Vec<ReleaseRow>>,
     /// Why `unreleased` was not checked, or `null` when it was.
-    pub(super) unreleased_unchecked: Option<String>,
+    pub(super) unreleased_unchecked: Option<Unchecked>,
+}
+
+/// Why `status` did not check for unreleased version commits. The human view
+/// shows the top-level message, which fits on one line; JSON holds the whole
+/// error chain, so automation keeps the cause.
+#[derive(Clone, Serialize)]
+#[serde(into = "String")]
+pub(super) struct Unchecked {
+    summary: String,
+    chain: String,
+}
+
+impl Unchecked {
+    /// No token was set, so nothing asked GitHub.
+    pub(super) fn missing_token() -> Self {
+        let reason = "no GITHUB_TOKEN or GH_TOKEN".to_owned();
+        Self {
+            summary: reason.clone(),
+            chain: reason,
+        }
+    }
+
+    /// The check ran and failed with `error`.
+    pub(super) fn failed(error: &anyhow::Error) -> Self {
+        Self {
+            summary: error.to_string(),
+            chain: format!("{error:#}"),
+        }
+    }
+}
+
+impl From<Unchecked> for String {
+    fn from(unchecked: Unchecked) -> Self {
+        unchecked.chain
+    }
 }
 
 /// The asset plan `status` shows.
@@ -315,7 +350,12 @@ impl Present for StatusReport {
             (Some(rows), _) => fields.row("unreleased", rows.len().to_string()),
             (None, reason) => fields.row(
                 "unreleased",
-                format!("not checked ({})", reason.as_deref().unwrap_or("unknown")),
+                format!(
+                    "not checked ({})",
+                    reason
+                        .as_ref()
+                        .map_or("unknown", |reason| reason.summary.as_str())
+                ),
             ),
         };
         document.fields(fields)
@@ -612,7 +652,7 @@ mod tests {
 
     use super::{
         CheckReport, ReleaseReport, ReleaseRow, Report, StatusFragment, StatusPackage,
-        StatusReport, VersionReport,
+        StatusReport, Unchecked, VersionReport,
     };
 
     fn release_report(outcome: publish::Outcome) -> Report {
@@ -853,7 +893,7 @@ mod tests {
             fragments: Vec::new(),
             assets: None,
             unreleased: None,
-            unreleased_unchecked: Some("no GITHUB_TOKEN or GH_TOKEN".into()),
+            unreleased_unchecked: Some(Unchecked::missing_token()),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
             .width(80)
@@ -873,5 +913,41 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(json.text()).expect("JSON");
         assert!(value["unreleased"].is_null());
         assert_eq!(value["unreleased_unchecked"], "no GITHUB_TOKEN or GH_TOKEN");
+    }
+
+    /// A failed check shows its top-level message to a person and keeps the
+    /// whole chain in JSON.
+    #[test]
+    fn a_failed_check_shows_its_message_and_keeps_its_chain() {
+        let error =
+            anyhow::anyhow!("the clone is shallow").context("cannot find the version commit");
+        let report = Report::Status(StatusReport {
+            pending: 0,
+            max: "none".into(),
+            fragments: Vec::new(),
+            assets: None,
+            unreleased: None,
+            unreleased_unchecked: Some(Unchecked::failed(&error)),
+        });
+        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+            .width(80)
+            .capture(&report)
+            .expect("pretty");
+        assert_eq!(
+            pretty.text(),
+            formatdoc! {"
+                   pending  0
+                    assets  none
+                unreleased  not checked (cannot find the version commit)
+            "},
+        );
+        let json = View::new(OutputFormat::Json, ColorMode::Never)
+            .capture(&report)
+            .expect("json");
+        let value: serde_json::Value = serde_json::from_str(json.text()).expect("JSON");
+        assert_eq!(
+            value["unreleased_unchecked"],
+            "cannot find the version commit: the clone is shallow"
+        );
     }
 }

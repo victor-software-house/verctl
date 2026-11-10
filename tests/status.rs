@@ -118,6 +118,78 @@ fn a_check_that_fails_leaves_unreleased_unchecked() {
     assert!(!planned.status.success(), "{planned:?}");
 }
 
+/// The case `actions/checkout` produces: a depth-1 clone whose version
+/// commit lies past the shallow boundary, with a token set. `status` reports
+/// the walk's failure as the reason and exits zero; the plan for
+/// `--github-output` fails on it.
+#[test]
+fn a_depth_1_clone_leaves_unreleased_unchecked() {
+    let work = TempDir::new().expect("tempdir");
+    let source = work.path().join("source");
+    fs::create_dir_all(&source).expect("dir");
+    common::write_demo_package(&source);
+    common::init(&source);
+    common::commit_all(&source, "demo 1.0.0");
+    fs::write(source.join("README.md"), "Demo.\n").expect("readme");
+    common::commit_all(&source, "docs: add a readme");
+    let url = format!("file://{}", source.display());
+    common::git(
+        work.path(),
+        &["clone", "-q", "--depth", "1", url.as_str(), "clone"],
+    );
+    let clone = work.path().join("clone");
+    common::git(
+        &clone,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://github.com/acme/demo.git",
+        ],
+    );
+    let status = |extra: &[&str]| {
+        common::verctl()
+            .current_dir(&clone)
+            .env("GITHUB_TOKEN", "test")
+            .env("GITHUB_API_URL", "http://127.0.0.1:9")
+            .arg("status")
+            .args(extra)
+            .output()
+            .expect("spawn")
+    };
+    let output = status(&["--format", "json"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("JSON");
+    assert!(value["unreleased"].is_null(), "{value}");
+    assert!(
+        value["unreleased_unchecked"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("the clone is shallow")),
+        "{value}"
+    );
+    let pretty = status(&["--color", "never"]);
+    assert!(pretty.status.success(), "{pretty:?}");
+    let stdout = String::from_utf8_lossy(&pretty.stdout);
+    assert!(stdout.contains("not checked ("), "{stdout}");
+    assert!(stdout.contains("the clone is shallow"), "{stdout}");
+    let out = work.path().join("out");
+    let planned = status(&[
+        "--format",
+        "json",
+        "--github-output",
+        out.to_str().expect("utf-8"),
+    ]);
+    assert!(!planned.status.success(), "{planned:?}");
+    assert!(
+        String::from_utf8_lossy(&planned.stdout).contains("the clone is shallow"),
+        "{planned:?}"
+    );
+}
+
 #[test]
 fn quiet_suppresses_only_successful_pretty_status() {
     let root = TempDir::new().expect("tempdir");
