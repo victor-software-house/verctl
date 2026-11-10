@@ -169,7 +169,7 @@ packages.
 version. `status` lists every one whose release is incomplete (registry,
 tag, Release, assets unless `--skip-assets`), oldest first, under
 `unreleased`; it needs `GITHUB_TOKEN` or `GH_TOKEN`, and without one, or
-when the check fails, it reports `unreleased` as not checked. `status --github-output <file>` fetches
+when a lookup cannot run, it reports `unreleased` as not checked. `status --github-output <file>` fetches
 the history and writes the `commits`, `pending`, `assets`, `has_assets`,
 `tag`, and `matrix` outputs. `release --plan` fails and names it. `release`
 releases only the packages whose version commit is HEAD, and reports

@@ -267,14 +267,7 @@ pub fn pull_request_is_version_pr() -> Result<bool> {
     let slug = env::var("GITHUB_REPOSITORY").unwrap_or_default();
     let repo = parse_slug(&slug)?;
     block(async move {
-        let mut builder = Octocrab::builder().personal_token(token);
-        // Actions names its API; a test points it at a mock server.
-        if let Ok(base) = env::var("GITHUB_API_URL")
-            && !base.is_empty()
-        {
-            builder = builder.base_uri(base).context("GITHUB_API_URL")?;
-        }
-        let crab = builder.build().context("GitHub client")?;
+        let crab = client(&token)?;
         let pr = crab
             .pulls(&repo.owner, &repo.name)
             .get(number)
@@ -878,11 +871,17 @@ async fn pull_author_with(crab: &Octocrab, repo: &Repo, number: u64) -> Result<P
     })
 }
 
+/// A GitHub client for `token`, on the API GitHub Actions names in
+/// `GITHUB_API_URL` when it is set (a GitHub Enterprise Server, or a test's
+/// mock server), and on api.github.com otherwise.
 fn client(token: &str) -> Result<Octocrab> {
-    Octocrab::builder()
-        .personal_token(token.to_owned())
-        .build()
-        .context("GitHub client")
+    let mut builder = Octocrab::builder().personal_token(token.to_owned());
+    if let Ok(base) = env::var("GITHUB_API_URL")
+        && !base.is_empty()
+    {
+        builder = builder.base_uri(base).context("GITHUB_API_URL")?;
+    }
+    builder.build().context("GitHub client")
 }
 
 /// Run one future to completion on a fresh current-thread runtime, so the

@@ -8,6 +8,8 @@ use std::fs;
 use common::demo_root;
 use indoc::indoc;
 use tempfile::TempDir;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[test]
 fn status_lists_mixed_packages() {
@@ -92,6 +94,7 @@ fn a_check_that_fails_leaves_unreleased_unchecked() {
     let status = |extra: &[&str]| {
         common::verctl()
             .current_dir(root.path())
+            .env_remove("GITHUB_REPOSITORY")
             .env("GITHUB_TOKEN", "test")
             .env("GITHUB_API_URL", "http://127.0.0.1:9")
             .args(["status", "--format", "json"])
@@ -188,6 +191,70 @@ fn a_depth_1_clone_leaves_unreleased_unchecked() {
         String::from_utf8_lossy(&planned.stdout).contains("the clone is shallow"),
         "{planned:?}"
     );
+}
+
+/// A release tag GitHub reports on a commit HEAD does not hold at that
+/// version is a wrong answer, not a lookup that could not run, so `status`
+/// fails on it even without `--github-output`.
+#[tokio::test]
+async fn a_misplaced_release_tag_fails_status() {
+    let root = TempDir::new().expect("tempdir");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publisher: none
+        "},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.0.0"
+        "#},
+    )
+    .expect("cargo");
+    common::init(root.path());
+    common::commit_all(root.path(), "demo 1.0.0");
+    common::git(
+        root.path(),
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/acme/demo.git",
+        ],
+    );
+    let elsewhere = "1111111111111111111111111111111111111111";
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/git/ref/tags/v1.0.0"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ref": "refs/tags/v1.0.0",
+            "node_id": "R",
+            "url": "https://api.github.com/repos/acme/demo/git/refs/tags/v1.0.0",
+            "object": {
+                "type": "commit",
+                "sha": elsewhere,
+                "url": format!("https://api.github.com/repos/acme/demo/git/commits/{elsewhere}")
+            }
+        })))
+        .mount(&server)
+        .await;
+    let output = common::verctl()
+        .current_dir(root.path())
+        .env("GITHUB_REPOSITORY", "acme/demo")
+        .env("GITHUB_TOKEN", "test")
+        .env("GITHUB_API_URL", server.uri())
+        .args(["status", "--format", "json"])
+        .output()
+        .expect("spawn");
+    assert!(!output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("tag v1.0.0 names"), "{stdout}");
 }
 
 #[test]
