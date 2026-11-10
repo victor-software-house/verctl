@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::error::ErrorKind;
 use clap::{Arg, ArgMatches, Args, FromArgMatches, Parser, Subcommand};
@@ -240,7 +240,8 @@ fn variable_name(value: &str) -> Result<String, String> {
 #[derive(Debug, Subcommand)]
 pub enum ReleaseStep {
     /// Build one native tarball that `assets` declares for the GitHub Release,
-    /// and upload it. `--dry-run` builds and uploads nothing.
+    /// and upload it. `--dry-run` builds the tarball and uploads nothing, as
+    /// `release --dry-run asset` does too.
     Asset(AssetArgs),
 }
 
@@ -297,6 +298,23 @@ impl AssetArgs {
     #[must_use]
     pub fn dry_run(&self) -> bool {
         self.dry.dry_run
+    }
+
+    /// Whether `--dry-run` was given before or after `asset`, so a flag written
+    /// at the `release` level can never turn a dry run into an upload.
+    #[must_use]
+    pub fn dry_run_under(&self, release: &ReleaseArgs) -> bool {
+        self.dry_run() || release.dry_run()
+    }
+
+    /// The config named after `asset`, or else the one named before it.
+    #[must_use]
+    pub fn config_under<'a>(&'a self, release: &'a ReleaseArgs) -> &'a Path {
+        if self.config.as_os_str() == crate::config::FILE {
+            &release.config
+        } else {
+            &self.config
+        }
     }
 }
 

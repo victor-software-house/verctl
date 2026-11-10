@@ -224,6 +224,19 @@ fn a_package_target_packs_the_listed_files() {
     );
 }
 
+/// A `--dry-run` written before `asset` takes effect for the step. The root is
+/// no repository and holds no token, so an upload would fail the run.
+#[test]
+fn a_dry_run_before_asset_uploads_nothing() {
+    let root = files_root();
+    let report = json(&run(
+        root.path(),
+        &["release", "-n", "asset", "linux-x64", "--format", "json"],
+    ));
+    assert_eq!(report["tarball"], "./demo_1.2.3_linux_x64.tar.gz");
+    assert!(report["uploaded"].is_null(), "{report}");
+}
+
 #[test]
 fn a_package_file_missing_after_the_build_is_named() {
     let root = files_root();

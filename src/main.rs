@@ -42,8 +42,8 @@ fn execute(cli: Cli) -> Result<Report> {
         Command::Version(args) => version_report(&args).map(Report::Version),
         Command::Release(args) => match &args.step {
             Some(ReleaseStep::Asset(asset)) => match &asset.vendored {
-                Some(name) => vendored_report(asset, name).map(Report::Vendored),
-                None => asset_report(asset).map(Report::Assets),
+                Some(name) => vendored_report(asset, &args, name).map(Report::Vendored),
+                None => asset_report(asset, &args).map(Report::Assets),
             },
             None => release_report(&args).map(Report::Release),
         },
@@ -419,13 +419,14 @@ fn render_report(args: &RenderArgs) -> Result<RenderReport> {
 
 /// `release asset <target>`: build the target's tarball, then upload it to
 /// `--tag`, or the first package's tag, unless `--dry-run` asks for the build
-/// alone.
-fn asset_report(args: &AssetArgs) -> Result<AssetsReport> {
-    let config = Config::load(&args.config)?;
-    let root = &config::root_of(&args.config);
+/// alone. `--dry-run` and `--config` count before or after `asset`.
+fn asset_report(args: &AssetArgs, release: &ReleaseArgs) -> Result<AssetsReport> {
+    let path = args.config_under(release);
+    let config = Config::load(path)?;
+    let root = &config::root_of(path);
     let planned = assets::plan(&config, root)?;
     let tarball = assets::build(&planned, &args.target, root)?;
-    let uploaded = if args.dry_run() {
+    let uploaded = if args.dry_run_under(release) {
         None
     } else {
         let tag = args.tag.as_deref().unwrap_or(planned.tag.as_str());
@@ -440,12 +441,13 @@ fn asset_report(args: &AssetArgs) -> Result<AssetsReport> {
 
 /// `release asset <target> --vendored <name>`: build the set's archive for
 /// the target, then upload it with its checksum unless `--dry-run`.
-fn vendored_report(args: &AssetArgs, name: &str) -> Result<VendoredReport> {
-    let config = Config::load(&args.config)?;
-    let root = &config::root_of(&args.config);
+fn vendored_report(args: &AssetArgs, release: &ReleaseArgs, name: &str) -> Result<VendoredReport> {
+    let path = args.config_under(release);
+    let config = Config::load(path)?;
+    let root = &config::root_of(path);
     let planned = assets::plan_vendored(&config, name)?;
     let archive = assets::build_vendored(&planned, &args.target, root)?;
-    let uploaded = if args.dry_run() {
+    let uploaded = if args.dry_run_under(release) {
         None
     } else {
         Some(assets::upload_vendored(&planned, root, &archive)?)
