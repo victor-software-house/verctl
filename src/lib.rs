@@ -37,8 +37,9 @@
 //!    turns them into one [`prepare::PlanEntry`] per package, with the next
 //!    version from [`bump::apply`].
 //! 3. [`prepare::apply_plan`] writes each version through its [`driver`],
-//!    [`release::write_changelogs`] renders the changelog sections, and
-//!    [`release::open_or_update_pr`] opens or updates the Version PR.
+//!    [`release::write_changelogs`] renders the changelog sections,
+//!    [`prepare::run_steps`] runs each lockfile's owner and `prepare.after`,
+//!    and [`release::open_or_update_pr`] opens or updates the Version PR.
 //! 4. After the merge, [`publish`] runs each package's [`publisher`], tags the
 //!    commit, and opens a GitHub Release, and [`assets`] builds the declared
 //!    release tarballs.

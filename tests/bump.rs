@@ -197,8 +197,9 @@ fn prepare_applies_max_bump_across_fragments() {
     assert_eq!(plan.len(), 1);
     assert_eq!(plan[0].from, "1.2.3");
     assert_eq!(plan[0].to, "1.3.0");
-    let follow = prepare::apply_plan(&plan).expect("apply");
-    assert!(follow.is_empty(), "{follow:?}");
+    prepare::apply_plan(&plan).expect("apply");
+    let steps = prepare::steps(&plan, None, root.path());
+    assert!(steps.is_empty(), "{steps:?}");
     let after = fs::read_to_string(root.path().join("Cargo.toml")).expect("read");
     assert!(after.contains("version = \"1.3.0\""));
 }
@@ -244,8 +245,10 @@ fn declared_toml_keys_are_the_same_as_cargo() {
     .expect("frag");
     let plan = prepare::plan(&config, &[fragment], root.path()).expect("plan");
     assert_eq!(plan[0].to, "1.0.1");
-    let follow = prepare::apply_plan(&plan).expect("apply");
-    assert_eq!(follow, ["echo locked"]);
+    prepare::apply_plan(&plan).expect("apply");
+    let steps = prepare::steps(&plan, None, root.path());
+    let commands: Vec<String> = steps.iter().map(prepare::Step::command).collect();
+    assert_eq!(commands, ["echo locked"]);
 }
 
 #[test]

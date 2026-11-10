@@ -52,10 +52,24 @@ const STDERR_TAIL: usize = 64 * 1024;
 /// or it exits unsuccessfully. A non-zero exit carries the joined argv and
 /// the stderr tail.
 pub fn run_inherit(argv: &[String], timeout: Duration) -> Result<()> {
+    run_inherit_in(argv, None, timeout)
+}
+
+/// [`run_inherit`] in `dir`, or in this process's working directory when
+/// `dir` is `None`.
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`run_inherit`].
+pub fn run_inherit_in(argv: &[String], dir: Option<&Path>, timeout: Duration) -> Result<()> {
     ensure!(!argv.is_empty(), "driver argv is empty");
     let (stderr_r, stderr_w) = os_pipe::pipe().context("command stderr pipe")?;
+    let mut expression = duct::cmd(&argv[0], &argv[1..]);
+    if let Some(dir) = dir {
+        expression = expression.dir(dir);
+    }
     // duct applies the outer redirect first, so stdout joins the pipe.
-    let handle = duct::cmd(&argv[0], &argv[1..])
+    let handle = expression
         .stdout_to_stderr()
         .stderr_file(stderr_w)
         .unchecked()

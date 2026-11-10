@@ -255,15 +255,19 @@ as `# version: 1.2.0`, `// version: 1.2.0`, or `<!-- version: 1.2.0 -->`,
 and no such line, or two, fails. It takes no driver, and with no publisher
 it releases on GitHub only.
 A lockfile
-beside the manifest or above it in the repository adds its refresh to the
-report's `after` commands: `cargo update --workspace` for `Cargo.lock`, the package
-manager's install for a JavaScript lockfile, and `uv lock` for `uv.lock`.
+beside the manifest or above it in the repository is refreshed by its owner
+once the versions are written, in the lockfile's directory:
+`cargo update --workspace` for `Cargo.lock`, the package manager's install for
+a JavaScript lockfile, and `uv lock` for `uv.lock`. `version` commits that
+lockfile with no `prepare.stage` entry.
 
 `version` writes versions, per-package CHANGELOG.md (next to each
-manifest), and consumes fragments (same as `changeset version`).
-`prepare.after` is one argv run after bumps; `prepare.stage`
-lists extra globs that command may write. Any other dirty path
-fails. `--pr` also opens or force-updates `verctl/release/<base>` (body is
+manifest), and consumes fragments (same as `changeset version`), a fragment
+that bumps nothing included. Then it runs each lockfile owner, a package's own
+`after`, and `prepare.after`, one argv, each command once: a `prepare.after`
+that repeats an owner's command in the same directory runs once. The report's
+`after` lists each command it ran. `prepare.stage` lists extra globs those
+commands may write. Any other dirty path fails. `--pr` also opens or force-updates `verctl/release/<base>` (body is
 the changelog), where `<base>` is the branch the PR targets. The PR targets `GITHUB_REF_NAME`, else `VERCTL_DEFAULT_BRANCH`,
 else the branch `origin/HEAD` names; with none of them, `--pr` fails
 rather than guess `main`. `proposal.title` and

@@ -74,11 +74,28 @@ queue:
       release changes.
     blocked_by: []
     acceptance:
-      - '`verctl version` writes every manifest, dependent requirement, lockfile, CHANGELOG section, and served file a release changes, removes the consumed fragments, and reports the commands and steps it ran under `after`.'
       - '`check` requires a Version PR diff to equal the version step applied to its base.'
+      - '`verctl version` writes every manifest, lockfile, CHANGELOG section, and served file a release changes, removes the consumed fragments, and reports the commands and steps it ran under `after`.'
+      - '`check` fails a pull request that is not a Version PR when it adds a CHANGELOG section, and any pull request that changes whether a package publishes unless it adds a fragment for that package.'
     plan: openspec/changes/version-pr-content/proposal.md
     notes:
       - 2026-11-10, split from release-state-machine (VER-011) along the boundaries of its work, because each change stays within the templates specs:budget word budgets.
+      - 2026-11-10, dependent requirement rewrites moved to VER-105. The two non-Version-PR rules of version-pr-identity task 3.2 ship here, since a stricter check shipped after 0.8.0 would force 0.9.0.
+
+  - id: VER-105
+    title: Rewrite a dependent requirement the version step no longer admits
+    scope: verctl version, check
+    outcome: >-
+      A workspace dependent whose requirement no longer admits a bumped version gets
+      the new requirement, a patch bump, and a CHANGELOG line, and check accepts that
+      rewrite on a Version PR.
+    blocked_by: []
+    acceptance:
+      - '`verctl version` rewrites each workspace dependent whose requirement no longer admits the new version, bumps that dependent by `patch`, and names the dependency update in its CHANGELOG section.'
+      - When `app` depends on workspace crate `core` with `version = "0.3"` and `core` gets a `minor` fragment at `0.3.2`, `verctl version` sets `core` to `0.4.0`, rewrites the requirement in `app` to `0.4`, bumps `app` by `patch`, and the `app` CHANGELOG section names the dependency update.
+      - The version-content check accepts a dependent requirement the version step rewrites; until then it refuses a requirement change no pin explains.
+    notes:
+      - '2026-11-10, moved out of version-pr-content (VER-095): it widens what the version step writes, so it can ship after 0.8.0 without a break, and pins cover the exact internal requirements in the repositories that use them today.'
 
   - id: VER-094
     title: Identify the Version PR by facts that cannot change

@@ -5,24 +5,65 @@ use std::path::{Path, PathBuf};
 
 use crate::git;
 
+/// The command that owns a manifest's lockfile: what to run, where, and the
+/// lockfile it rewrites.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Owner {
+    /// The command, such as `cargo update --workspace`.
+    pub argv: Vec<String>,
+    /// Where it runs: the directory holding the lockfile, or the manifest's
+    /// when no lockfile exists yet.
+    pub dir: PathBuf,
+    /// The lockfile the command rewrites, when the tree has one.
+    pub lockfile: Option<PathBuf>,
+}
+
+impl Owner {
+    /// The argv joined by spaces, as a report and a driver's `after` show it.
+    #[must_use]
+    pub fn command(&self) -> String {
+        self.argv.join(" ")
+    }
+
+    fn new(command: &str, dir: &Path, lockfile: Option<PathBuf>) -> Self {
+        let dir = lockfile
+            .as_deref()
+            .and_then(Path::parent)
+            .map_or_else(|| dir.to_path_buf(), Path::to_path_buf);
+        Self {
+            argv: command.split_whitespace().map(str::to_owned).collect(),
+            dir,
+            lockfile,
+        }
+    }
+}
+
 /// The command that refreshes the lockfile after `manifest`'s version moves,
 /// when the tree has one.
 #[must_use]
 pub fn follow_up(manifest: &Path) -> Option<String> {
+    owner(manifest).map(|owner| owner.command())
+}
+
+/// The command that owns `manifest`'s lockfile, found by the signals of
+/// [`follow_up`].
+#[must_use]
+pub fn owner(manifest: &Path) -> Option<Owner> {
     let dir = manifest.parent().unwrap_or(manifest);
     let file_name = manifest.file_name()?.to_str()?;
     match file_name {
-        "Cargo.toml" => cargo_follow_up(dir),
-        "package.json" => javascript_follow_up(dir),
-        "pyproject.toml" => python_follow_up(dir),
+        "Cargo.toml" => cargo_owner(dir),
+        "package.json" => javascript_owner(dir),
+        "pyproject.toml" => python_owner(dir),
         _ => None,
     }
 }
 
-fn cargo_follow_up(dir: &Path) -> Option<String> {
+fn cargo_owner(dir: &Path) -> Option<Owner> {
     // Not `generate-lockfile`: that re-resolves every dependency, so a bump
     // would carry unrelated moves. Only this package's version went stale.
-    holds(dir, "Cargo.lock").then(|| "cargo update --workspace".into())
+    let lockfile = find(dir, "Cargo.lock")?;
+    Some(Owner::new("cargo update --workspace", dir, Some(lockfile)))
 }
 
 /// `uv.lock` records the project's own version, so a bump leaves it stale.
@@ -30,28 +71,36 @@ fn cargo_follow_up(dir: &Path) -> Option<String> {
 /// package versions]), so only that version moves.
 ///
 /// [uv: upgrading locked package versions]: https://docs.astral.sh/uv/concepts/projects/sync/#upgrading-locked-package-versions
-fn python_follow_up(dir: &Path) -> Option<String> {
-    holds(dir, "uv.lock").then(|| "uv lock".into())
+fn python_owner(dir: &Path) -> Option<Owner> {
+    let lockfile = find(dir, "uv.lock")?;
+    Some(Owner::new("uv lock", dir, Some(lockfile)))
 }
 
-fn javascript_follow_up(dir: &Path) -> Option<String> {
+/// The lockfiles each JavaScript package manager writes, in the order the
+/// tree is searched.
+const JAVASCRIPT_LOCKFILES: [(&str, &str); 6] = [
+    ("bun", "bun.lock"),
+    ("bun", "bun.lockb"),
+    ("pnpm", "pnpm-lock.yaml"),
+    ("yarn", "yarn.lock"),
+    ("npm", "package-lock.json"),
+    ("npm", "npm-shrinkwrap.json"),
+];
+
+fn javascript_owner(dir: &Path) -> Option<Owner> {
     if let Some(name) = package_manager_field(&dir.join("package.json")) {
-        return Some(install_command(&name));
+        let lockfile = JAVASCRIPT_LOCKFILES
+            .iter()
+            .filter(|(manager, _)| *manager == name)
+            .find_map(|(_, file_name)| find(dir, file_name));
+        return Some(Owner::new(&install_command(&name), dir, lockfile));
     }
     for ancestor in scope(dir) {
-        if ancestor.join("bun.lock").is_file() || ancestor.join("bun.lockb").is_file() {
-            return Some(install_command("bun"));
-        }
-        if ancestor.join("pnpm-lock.yaml").is_file() {
-            return Some(install_command("pnpm"));
-        }
-        if ancestor.join("yarn.lock").is_file() {
-            return Some(install_command("yarn"));
-        }
-        if ancestor.join("package-lock.json").is_file()
-            || ancestor.join("npm-shrinkwrap.json").is_file()
-        {
-            return Some(install_command("npm"));
+        for (manager, file_name) in JAVASCRIPT_LOCKFILES {
+            let lockfile = ancestor.join(file_name);
+            if lockfile.is_file() {
+                return Some(Owner::new(&install_command(manager), dir, Some(lockfile)));
+            }
         }
     }
     None
@@ -76,10 +125,12 @@ fn scope(dir: &Path) -> Vec<PathBuf> {
     dirs
 }
 
-fn holds(dir: &Path, file_name: &str) -> bool {
+/// The nearest `file_name` in [`scope`].
+fn find(dir: &Path, file_name: &str) -> Option<PathBuf> {
     scope(dir)
-        .iter()
-        .any(|ancestor| ancestor.join(file_name).is_file())
+        .into_iter()
+        .map(|ancestor| ancestor.join(file_name))
+        .find(|path| path.is_file())
 }
 
 fn package_manager_field(package_json: &Path) -> Option<String> {
@@ -141,6 +192,16 @@ mod tests {
             follow_up(&root.path().join("crates/member/Cargo.toml")),
             Some("cargo update --workspace".into())
         );
+    }
+
+    #[test]
+    fn a_workspace_member_runs_its_owner_beside_the_lock() {
+        let root = tree(&["Cargo.lock", "crates/member/Cargo.toml"]);
+        repo_at(root.path());
+        let owner = super::owner(&root.path().join("crates/member/Cargo.toml")).unwrap();
+        let top = root.path().canonicalize().unwrap();
+        assert_eq!(owner.dir, top);
+        assert_eq!(owner.lockfile, Some(top.join("Cargo.lock")));
     }
 
     #[test]
