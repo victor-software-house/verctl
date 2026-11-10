@@ -10,13 +10,13 @@ passes no input SHALL get verctl's defaults.
 #### Scenario: The declared interface
 
 - **WHEN** a caller reads the workflow's `workflow_call` block
-- **THEN** it declares the inputs `version-pr`, `publish`, `assets`, `docs`, `config`, `runner`, `mise-version`, `mise-env`, `mise-ignored-config-paths`, `title`, `commit-message`, `registry-token-env` and `crates-io-trusted-publishing`
+- **THEN** it declares the inputs `version-pr`, `publish`, `assets`, `docs`, `config`, `runner`, `mise-version`, `mise-env`, `mise-ignored-config-paths`, `registry-token-env` and `crates-io-trusted-publishing`
 - **AND** the optional secrets `app-client-id`, `app-private-key` and `registry-token`
 
 #### Scenario: A caller with no inputs
 
 - **WHEN** a repository's `release.yml` calls `victor-software-house/verctl/.github/workflows/release.yml@<sha>` with only the App and registry secrets
-- **THEN** the run plans, publishes, builds assets, and proposes, with config `.ctl/ver.yaml`, runner `ubuntu-latest`, `MISE_ENV=ci`, and title `chore(release): version packages`
+- **THEN** the run plans, publishes, builds assets, and proposes, with config `.ctl/ver.yaml`, runner `ubuntu-latest`, `MISE_ENV=ci`, and the Version PR titled `chore(release): version packages`
 
 #### Scenario: Renamed secrets
 

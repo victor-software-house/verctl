@@ -170,14 +170,14 @@ with `"private": true` SHALL never be published.
 - **WHEN** `bun --version` prints `1.4.0`
 - **THEN** `verctl version` exits non-zero before writing any file and names `1.4.1`
 
-### Requirement: A repository's own tool pin moves after its release exists
+### Requirement: A repository's own locked tool version moves after its release exists
 
-The built-in `mise-pin` step SHALL run only after `finalize`, SHALL move the pin
+The built-in `mise-pin` step SHALL run only after `finalize`, SHALL move the locked version
 with `mise lock <tool>@<version>` under `MISE_LOCKFILE_MODE=generate`, and
 SHALL then read `mise.lock` and fail unless every platform the lock lists has a
 URL and a checksum for the new version.
 
-#### Scenario: The pin moves after finalize
+#### Scenario: The locked version moves after finalize
 
 - **WHEN** `at.released` lists `mise-pin` for tool `github:victor-software-house/verctl` and `v0.4.1` has just been finalized
 - **THEN** `verctl release` runs `mise lock github:victor-software-house/verctl@0.4.1` with `MISE_LOCKFILE_MODE=generate` after the Release is published

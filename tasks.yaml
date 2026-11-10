@@ -110,6 +110,7 @@ queue:
       - The failure names the file and which two declarations claim it.
     notes:
       - '2026-08-18: docs/served-files.md §6 describes check as designed, not implemented — only prepare and its dry run validate today, so drift introduced by hand survives until a release. The double-owner gap is real and silent: prepare_report rewrites pins first and renders templates second, so a template would clobber the rewrite without saying so.'
+    plan: openspec/changes/served-file-check/proposal.md
 
   - id: VER-021
     title: Every config file we own has a JSON Schema, at a URL an IDE can fetch
@@ -216,9 +217,11 @@ queue:
       - The release SHA is an ancestor of the default branch.
       - Workflow files at the release SHA do not differ from the default branch.
       - The first-parent branch carries exactly one version commit; two always refuse.
-      - Each check has a named waiver, and a waived run prints which one was waived.
+      - Workflow drift and ancestry each have a flag named for what it allows, and a run that uses one prints which check it skipped; the one-version-commit check has none.
     notes:
       - 'docs/adoption-report.md §4. `prove_version_commit` (src/publish.rs:136) is `require_changelog_versions` plus `require_on_default_history` — they keep both and want three more. The workflow-drift one is the non-obvious one and it cost them a release: retrying an old release SHA runs the workflow *at that SHA*, so if permissions changed since, the run can publish to the registry and then fail to tag — the registry is not revertible and the tags are the audit trail. Their waivers are workflow_dispatch booleans and the run prints `waived: …`. Their warning about building it: bind a dispatch input to a step-level `env:` and quote it, never interpolate `${{ inputs.x }}` into a `run:` string — inputs arrive as strings over REST and are not coerced to booleans, in a job holding contents/packages/id-token write.'
+      - 2026-11-09, flags are named for what they allow (`--allow-workflow-change`, `--allow-off-default-branch`), per the naming rule; a skipped version has no flag because publishing the next version cannot fix it.
+    plan: openspec/changes/release-commit-proofs/proposal.md
 
   - id: VER-036
     title: A check that cannot run says so instead of passing
@@ -399,6 +402,37 @@ queue:
       - '2026-11-09, duct and shared_child 1.1.2 use windows-sys 0.61, which drops windows-sys 0.60, windows-targets 0.53, and its eight per-target crates: CI went from 18 duplicate warnings to 9.'
       - '2026-11-09, the 9 left are forced upstream: base64 (octocrab and gix-transport 0.22, reqwest 0.23), getrandom (octocrab and ring 0.2, gix and tempfile 0.4), hashbrown (dashmap, clru, indexmap), itertools, nom, unicode-width, and winnow (usage-lib under ctl-core, and toml_edit itself), syn (2 and 3 across proc macros), windows-sys (ring 0.17 holds 0.52). Cargo.lock also lists bitflags, cpufeatures, and defmt twice, but cargo tree --target all finds no path to defmt, bitflags 1, or cpufeatures 0.3: they sit behind features no build enables (defmt 0.3 is a shim over defmt 1, which holds bitflags 1), so cargo-deny reports none of them and the skip list needs none.'
       - 2026-11-09, usage-lib 7.3.0 is out while ctl-core pins 6.1.1; moving ctl-core may clear itertools, nom, unicode-width, or winnow, and is the ctl-core owner's call.
+
+  - id: VER-090
+    title: The config file names the Version PR, and the label is gone
+    scope: verctl
+    outcome: >-
+      A repository sets its Version PR title and commit message in .ctl/ver.yaml, and
+      no unused label is applied.
+    blocked_by: []
+    acceptance:
+      - '`proposal.title` and `proposal.commit_message` in `.ctl/ver.yaml` set the Version PR title and commit message, with the defaults verctl writes today.'
+      - verctl reads neither `VERCTL_PR_TITLE` nor `VERCTL_COMMIT_MESSAGE`, and `release.yml` and `actions/version-pr` declare no `title` or `commit-message` input.
+      - The Version PR gets no label, and a config that sets `prepare.version_label` fails to load with a message that says to delete it.
+      - Each `release.yml` job that runs verctl fails first when the installed verctl is older than the minimum the workflow names.
+    plan: openspec/changes/version-pr-proposal/proposal.md
+    notes:
+      - 2026-11-09, the operator placed this in the 0.8.0 minor.
+
+  - id: VER-091
+    title: prepare becomes version and pin becomes render
+    scope: verctl
+    outcome: >-
+      Callers name the version step and the pin rewrite by the names the release plan
+      uses.
+    blocked_by: []
+    acceptance:
+      - '`verctl version` and `verctl render` do what `prepare` and `pin` did, and the report field `next` is `after`.'
+      - '`verctl prepare` and `verctl pin` exit 2 and name the new verb, each proved by a test.'
+      - No file outside `CHANGELOG.md` and archived changes calls `ver prepare`, `verctl prepare`, `ver pin`, or `verctl pin`.
+    plan: openspec/changes/command-renames/proposal.md
+    notes:
+      - 2026-11-09, the operator placed this in the 0.8.0 minor; the pin rename changes only the name.
 
 horizon:
   - id: VER-038

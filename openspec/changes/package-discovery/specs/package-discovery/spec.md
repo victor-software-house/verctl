@@ -78,7 +78,7 @@ A member marked `"private": true` or `publish = false` SHALL still be versioned 
 #### Scenario: A private package
 
 - **WHEN** inferred package `internal` holds `"private": true` and `.changeset/fix.md` holds `internal: patch`
-- **THEN** `verctl prepare` bumps `internal`
+- **THEN** `verctl version` bumps `internal`
 
 ### Requirement: A package owns the files under its version source
 

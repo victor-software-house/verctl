@@ -9,7 +9,7 @@ A package in no group SHALL move on its own.
 #### Scenario: One member's fragment moves the group
 
 - **WHEN** group `cli` holds `verctl` and `verctl-core`, both at `1.2.0`, and `.changeset/feat.md` holds `verctl-core: minor`
-- **THEN** `verctl prepare` moves both to `1.3.0`
+- **THEN** `verctl version` moves both to `1.3.0`
 
 ### Requirement: Changesets groups are read when none are declared
 
@@ -66,7 +66,7 @@ A group SHALL get one tag and one Release, whose body holds each member's CHANGE
 No Release SHALL name a floating tag.
 A floating tag is not a release tag: the annotated-only rule and the release-tag ruleset do not cover it, so `publish` can move it while `tags.immutable` is `true`.
 
-#### Scenario: A reusable workflow consumers pin by major
+#### Scenario: A reusable workflow consumers reference by major
 
 - **WHEN** `tags.floating: [major]` is set and package `ci` releases `1.2.1` after `1.2.0`
 - **THEN** `verctl publish` moves `ci/v1` to the `1.2.1` commit and creates no Release for it

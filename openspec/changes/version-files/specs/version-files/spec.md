@@ -21,7 +21,7 @@ A `driver` key or inline driver fields SHALL still override the stock driver.
 The stock `pyproject.toml` driver SHALL read and write `project.version`, and SHALL keep every other byte of the file.
 When `project.dynamic` lists `version`, every command that reads the version SHALL fail, name the package, and say that the version comes from a build backend and that a `VERSION` file or a driver fixes it.
 
-#### Scenario: prepare bumps a Python package
+#### Scenario: A Python package bumps
 
 - **WHEN** `pyproject.toml` holds `version = "0.3.1"` under `[project]` and `.changeset/fix.md` holds `demo: patch`
 - **THEN** `verctl prepare` writes `version = "0.3.2"` and leaves the rest of `pyproject.toml` byte for byte
@@ -31,7 +31,7 @@ When `project.dynamic` lists `version`, every command that reads the version SHA
 - **WHEN** `pyproject.toml` holds `dynamic = ["version"]` under `[project]`, and `.changeset/fix.md` holds `demo: patch`
 - **THEN** `verctl check` exits non-zero and its error names `demo`, `project.dynamic`, and `VERSION`
 
-### Requirement: prepare names the uv.lock refresh
+### Requirement: The bump names the uv.lock refresh
 
 When a `uv.lock` sits beside a `pyproject.toml` package or above it in the repository, `prepare` SHALL name `uv lock` as the bump's follow-up, as it names `cargo update --workspace` for `Cargo.lock`, because the lockfile records the project's own version.
 
@@ -46,7 +46,7 @@ The stock `go.mod` driver SHALL read and write the version as a `// vX.Y.Z` comm
 A `module` line with no such comment SHALL read as `0.0.0`.
 verctl SHALL refuse to write that comment when the comment block directly above the `module` line ends with its first paragraph that starts with `Deprecated:`, because Go then reads both as one deprecation notice.
 
-#### Scenario: prepare bumps a Go module
+#### Scenario: A Go module bumps
 
 - **WHEN** `go.mod` holds `module example.com/demo // v0.4.0` and `.changeset/fix.md` holds `demo: patch`
 - **THEN** `verctl prepare` writes `module example.com/demo // v0.4.1`
@@ -82,7 +82,7 @@ The stock `VERSION` driver SHALL read a file that holds one version and an optio
 A `VERSION` file holding anything else SHALL fail the load with the file's path.
 A missing `VERSION` file SHALL read as `0.0.0`, `check` SHALL not create it, and `prepare` SHALL create it with the new version.
 
-#### Scenario: prepare bumps a VERSION file
+#### Scenario: A VERSION file bumps
 
 - **WHEN** `VERSION` holds `0.0.75` and a newline, and `.changeset/fix.md` holds `templates: patch`
 - **THEN** `verctl prepare` writes `0.0.76` and a newline to `VERSION`
@@ -103,7 +103,7 @@ A missing `VERSION` file SHALL read as `0.0.0`, `check` SHALL not create it, and
 A package that declares `marker: true` SHALL keep its version on one line of its file: a comment opener (`#`, `//`, or `<!--`), then `version:`, a space, and the version, with an optional `-->` after it.
 verctl SHALL rewrite only the version on that line, and SHALL fail the load when the file holds no such line or more than one.
 
-#### Scenario: prepare bumps a reusable workflow
+#### Scenario: A reusable workflow bumps
 
 - **WHEN** package `ci` has `path: .github/workflows/ci.yml` and `marker: true`, the file holds the line `# version: 1.2.0`, and `.changeset/fix.md` holds `ci: patch`
 - **THEN** `verctl prepare` rewrites that line to `# version: 1.2.1` and changes no other line

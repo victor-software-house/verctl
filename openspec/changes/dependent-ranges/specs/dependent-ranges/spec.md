@@ -2,27 +2,27 @@
 
 ### Requirement: Workspace and catalog specs stay as written
 
-`prepare` SHALL leave `workspace:*`, `workspace:^`, `workspace:~`, and `catalog:` dependency specs unchanged, because the package manager rewrites them when it packs.
+`version` SHALL leave `workspace:*`, `workspace:^`, `workspace:~`, and `catalog:` dependency specs unchanged, because the package manager rewrites them when it packs.
 
 #### Scenario: A workspace star
 
 - **WHEN** `app` depends on `"core": "workspace:*"` and `core` moves to `2.0.0`
-- **THEN** `verctl prepare` leaves `"core": "workspace:*"` in `app/package.json`
+- **THEN** `verctl version` leaves `"core": "workspace:*"` in `app/package.json`
 
 ### Requirement: An explicit range follows the new version
 
-`prepare` SHALL rewrite an explicit internal range that no longer admits the new version, keeping its prefix and operator, and SHALL bump that dependent by a patch.
+`version` SHALL rewrite an explicit internal range that no longer admits the new version, keeping its prefix and operator, and SHALL bump that dependent by a patch.
 A range the new version still satisfies SHALL stay as written.
 
 #### Scenario: A caret range left behind
 
 - **WHEN** `app` depends on `"core": "workspace:^1.2.0"` and `core` moves to `2.0.0`
-- **THEN** `verctl prepare` writes `"core": "workspace:^2.0.0"` and bumps `app` by a patch
+- **THEN** `verctl version` writes `"core": "workspace:^2.0.0"` and bumps `app` by a patch
 
 #### Scenario: A range that still admits the version
 
 - **WHEN** `app` depends on `"core": "^1.2.0"` and `core` moves to `1.3.0`
-- **THEN** `verctl prepare` leaves the range and does not bump `app`
+- **THEN** `verctl version` leaves the range and does not bump `app`
 
 ### Requirement: check asks for the workspace protocol
 
@@ -50,4 +50,4 @@ verctl SHALL never edit a lockfile; the bump's follow-up names the package manag
 #### Scenario: A pnpm workspace
 
 - **WHEN** a dependent's range moves in a pnpm workspace
-- **THEN** `pnpm-lock.yaml` is unchanged by `verctl prepare` and the next steps name `pnpm install`
+- **THEN** `pnpm-lock.yaml` is unchanged by `verctl version` and the report lists `pnpm install` under `after`
