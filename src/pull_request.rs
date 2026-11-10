@@ -139,7 +139,7 @@ fn publish_changes(
     for spec in &config.packages {
         let (Some(was), Some(now)) = (
             before.publishes(&spec.name)?,
-            publishes(config, spec, &root)?,
+            publishes(config, spec, &root, base.workdir())?,
         ) else {
             continue;
         };
@@ -171,7 +171,7 @@ fn publish_changes(
 /// The config at a merge-base, read from a scratch copy of its tree.
 struct Snapshot {
     /// Holds the copy until the snapshot drops.
-    _scratch: Scratch,
+    scratch: Scratch,
     config: Config,
     root: PathBuf,
 }
@@ -188,7 +188,7 @@ impl Snapshot {
         let config = Config::load(&path).context("the config at a merge-base")?;
         let root = config::root_of(&path);
         Ok(Some(Self {
-            _scratch: scratch,
+            scratch,
             config,
             root,
         }))
@@ -200,7 +200,7 @@ impl Snapshot {
         let Ok(spec) = self.config.find(name) else {
             return Ok(None);
         };
-        publishes(&self.config, spec, &self.root)
+        publishes(&self.config, spec, &self.root, self.scratch.path())
     }
 }
 
@@ -257,9 +257,15 @@ impl fmt::Display for Publishes {
     }
 }
 
-/// What a package publishes under `config` in the tree at `root`, or `None`
-/// when its manifest is missing there.
-fn publishes(config: &Config, spec: &PackageSpec, root: &Path) -> Result<Option<Publishes>> {
+/// What a package publishes under `config` with its config root at `root`,
+/// or `None` when its manifest is missing there. `tree` is the root of the
+/// tree it reads, which no manifest lookup leaves.
+fn publishes(
+    config: &Config,
+    spec: &PackageSpec,
+    root: &Path,
+    tree: &Path,
+) -> Result<Option<Publishes>> {
     if publisher::publisher_name(config, spec) == publisher::RELEASE_ONLY {
         return Ok(Some(Publishes::No));
     }
@@ -274,9 +280,8 @@ fn publishes(config: &Config, spec: &PackageSpec, root: &Path) -> Result<Option<
     }
     let text = String::from_utf8(bytes).with_context(|| manifest.display().to_string())?;
     let opts_out = match manifest.file_name().and_then(|name| name.to_str()) {
-        Some("Cargo.toml") => {
-            cargo_opts_out(&manifest, &text).with_context(|| manifest.display().to_string())?
-        }
+        Some("Cargo.toml") => cargo_opts_out(&manifest, &text, tree)
+            .with_context(|| manifest.display().to_string())?,
         Some("package.json") => {
             let json: serde_json::Value =
                 serde_json::from_str(&text).with_context(|| manifest.display().to_string())?;
@@ -296,8 +301,10 @@ fn publishes(config: &Config, spec: &PackageSpec, root: &Path) -> Result<Option<
 /// value is `workspace.package.publish` of its workspace root: the file
 /// `package.workspace` names, else the same file when it holds a
 /// `[workspace]`, else the nearest ancestor manifest that does, as Cargo
-/// finds it.
-fn cargo_opts_out(manifest: &Path, text: &str) -> Result<bool> {
+/// finds it. The search stays inside `tree`, so the merge-base copy and the
+/// working tree resolve the same root, and no manifest outside the
+/// repository is read.
+fn cargo_opts_out(manifest: &Path, text: &str, tree: &Path) -> Result<bool> {
     let document = text.parse::<DocumentMut>()?;
     let Some(package) = document.get("package") else {
         return Ok(false);
@@ -308,7 +315,7 @@ fn cargo_opts_out(manifest: &Path, text: &str) -> Result<bool> {
     if publish.get("workspace").and_then(Item::as_bool) != Some(true) {
         return Ok(denies(publish));
     }
-    let Some(workspace) = workspace_root(manifest, &document)? else {
+    let Some(workspace) = workspace_root(manifest, &document, tree)? else {
         return Ok(false);
     };
     Ok(workspace
@@ -323,24 +330,35 @@ fn denies(publish: &Item) -> bool {
     publish.as_bool() == Some(false) || publish.as_array().is_some_and(toml_edit::Array::is_empty)
 }
 
-/// The workspace root manifest of the package at `manifest`, parsed.
-fn workspace_root(manifest: &Path, document: &DocumentMut) -> Result<Option<DocumentMut>> {
+/// The workspace root manifest of the package at `manifest`, parsed, when
+/// one exists inside `tree`.
+fn workspace_root(
+    manifest: &Path,
+    document: &DocumentMut,
+    tree: &Path,
+) -> Result<Option<DocumentMut>> {
     if document.contains_key("workspace") {
         return Ok(Some(document.clone()));
     }
-    let dir = manifest.parent().unwrap_or_else(|| Path::new("."));
+    let parent = manifest.parent().unwrap_or_else(|| Path::new("."));
+    let dir = parent
+        .canonicalize()
+        .with_context(|| parent.display().to_string())?;
+    let tree = tree
+        .canonicalize()
+        .with_context(|| tree.display().to_string())?;
     let named = document
         .get("package")
         .and_then(|package| package.get("workspace"))
         .and_then(Item::as_str);
-    let candidates: Vec<PathBuf> = match named {
-        Some(path) => vec![dir.join(path).join("Cargo.toml")],
-        None => dir
-            .ancestors()
-            .skip(1)
-            .map(|ancestor| ancestor.join("Cargo.toml"))
-            .collect(),
+    let dirs: Vec<PathBuf> = match named {
+        Some(path) => dir.join(path).canonicalize().ok().into_iter().collect(),
+        None => dir.ancestors().skip(1).map(Path::to_path_buf).collect(),
     };
+    let candidates = dirs
+        .into_iter()
+        .filter(|dir| dir.starts_with(&tree))
+        .map(|dir| dir.join("Cargo.toml"));
     for candidate in candidates {
         let Some(bytes) = git::read_optional(&candidate)? else {
             continue;
@@ -383,7 +401,9 @@ mod tests {
 
     #[test]
     fn publish_false_and_an_empty_list_opt_out() {
-        let opts_out = |text: &str| cargo_opts_out(Path::new("Cargo.toml"), text).expect("toml");
+        let opts_out = |text: &str| {
+            cargo_opts_out(Path::new("Cargo.toml"), text, Path::new(".")).expect("toml")
+        };
         assert!(opts_out(indoc! {r#"
             [package]
             name = "a"
@@ -435,8 +455,37 @@ mod tests {
             publish.workspace = true
         "#};
         root("publish = false");
-        assert!(cargo_opts_out(&member, text).expect("toml"));
+        assert!(cargo_opts_out(&member, text, dir.path()).expect("toml"));
         root(r#"edition = "2024""#);
-        assert!(!cargo_opts_out(&member, text).expect("toml"));
+        assert!(!cargo_opts_out(&member, text, dir.path()).expect("toml"));
+    }
+
+    /// A manifest above the tree is never read: a workspace there does not
+    /// count, and a malformed one does not fail the check.
+    #[test]
+    fn the_workspace_search_stops_at_the_tree() {
+        let dir = TempDir::new().expect("tempdir");
+        let tree = dir.path().join("repo");
+        let member = tree.join("crates/a/Cargo.toml");
+        fs::create_dir_all(member.parent().expect("parent")).expect("dir");
+        let text = indoc! {r#"
+            [package]
+            name = "a"
+            publish.workspace = true
+        "#};
+        let above = dir.path().join("Cargo.toml");
+        fs::write(
+            &above,
+            indoc! {"
+                [workspace]
+
+                [workspace.package]
+                publish = false
+            "},
+        )
+        .expect("write");
+        assert!(!cargo_opts_out(&member, text, &tree).expect("toml"));
+        fs::write(&above, "[workspace").expect("write");
+        assert!(!cargo_opts_out(&member, text, &tree).expect("toml"));
     }
 }
