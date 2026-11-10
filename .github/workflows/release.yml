@@ -143,6 +143,9 @@ jobs:
     # verctl/release/<feature>.
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ${{ fromJson(inputs.runner) }}
+    # Recent runs, across the repositories that call this workflow, take under 2
+    # minutes.
+    timeout-minutes: 10
     permissions:
       contents: read # reads history; tags and Releases are read through the API
     outputs:
@@ -217,6 +220,9 @@ jobs:
     # An empty name runs the job in no environment and records no deployment.
     environment: ${{ inputs.environment }}
     runs-on: ${{ fromJson(inputs.runner) }}
+    # Recent runs take under 3 minutes; each upload may take up to 10, and a
+    # workspace uploads several crates.
+    timeout-minutes: 30
     permissions:
       contents: write # creates the release tag and the GitHub Release
       id-token: write # crates.io trusted publishing
@@ -342,6 +348,9 @@ jobs:
       inputs.assets && fromJson(needs.plan.outputs.assets).include[0] != null &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ${{ matrix.labels }}
+    # Recent runs take under 8 minutes; prepare and build may each take up to
+    # 15, after a cold tool install.
+    timeout-minutes: 45
     permissions:
       contents: write # uploads the tarball to the GitHub Release
     # One tool at a time, in every mise command of the job: on macOS runners
@@ -424,6 +433,9 @@ jobs:
       github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
       inputs.docs && needs.plan.outputs.pending == 'true'
     runs-on: ${{ fromJson(inputs.runner) }}
+    # `ver docs` waits up to 60 minutes for docs.rs by default; recent runs take
+    # under 10.
+    timeout-minutes: 75
     permissions:
       contents: read # reads the release tag through the API
     strategy:
@@ -499,6 +511,8 @@ jobs:
       needs.plan.result == 'success' &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ${{ fromJson(inputs.runner) }}
+    # Recent runs take under a minute.
+    timeout-minutes: 10
     permissions:
       contents: write # pushes verctl/release/<base> when no App token is minted
       pull-requests: write # opens the Version PR when no App token is minted
