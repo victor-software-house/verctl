@@ -1,6 +1,6 @@
 # Derive the Version PR branch from the base branch
 
-## Why
+## Motivation
 
 The Version PR branch is the constant `version-packages`, the name
 Changesets uses, though verctl serves one Version PR per base branch.
@@ -16,7 +16,7 @@ This change was split from [reusable-release-workflow][rrw] at its capability
 boundaries.
 It ships as a patch.
 
-## What Changes
+## Changes
 
 1. The Version PR branch becomes `verctl/release/<base>`, and every reader of
    the branch follows it.

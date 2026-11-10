@@ -1,6 +1,6 @@
 # Publish a cargo workspace one member at a time
 
-## Why
+## Motivation
 
 A repository whose crates share one version declares one package at its
 virtual workspace manifest and overrides the upload with
@@ -39,7 +39,7 @@ The orchestrator decided this approach on 2026-10-18. Two alternatives lost:
 - a per-repository publish task, which would duplicate verctl's logic;
 - a crates.io limit exception, which would leave the false success.
 
-## What changes
+## Changes
 
 1. A package on the stock cargo publisher whose `path` is a virtual workspace
    manifest publishes each publishable workspace member with

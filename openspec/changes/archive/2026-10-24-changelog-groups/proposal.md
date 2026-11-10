@@ -1,6 +1,6 @@
 # Group changelog entries under headings
 
-## Why
+## Motivation
 
 A release with many entries reads as one flat list, so a reader cannot
 pick out what was added from what was fixed.
@@ -13,7 +13,7 @@ Lands on `next` for 0.4.0.
 `cargo semver-checks` 0.51.0 reports `constructible_struct_adds_field`
 against the 0.3.16 release, which needs a breaking bump.
 
-## What changes
+## Changes
 
 1. A fragment may set `verctl:group` to `added`, `changed`, or `fixed`.
    The colon cannot appear in a Cargo or npm package name, so the key

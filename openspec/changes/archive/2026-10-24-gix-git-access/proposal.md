@@ -1,6 +1,6 @@
 # Read and write git through gix
 
-## Why
+## Motivation
 
 verctl reached git through `git2`, which builds libgit2 with a vendored OpenSSL.
 That build needs Perl on every machine that compiles verctl, and it kept the
@@ -10,7 +10,7 @@ edit.
 Queue row: [VER-050][ver-050].
 A patch: no public type changes, and every command keeps its output.
 
-## What changes
+## Changes
 
 1. Every read moves to `gix` over rustls: HEAD, the merge-base blobs, the
    `added_by` history walk, the index, ignore rules, status, and the one-branch

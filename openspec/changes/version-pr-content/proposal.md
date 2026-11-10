@@ -1,6 +1,6 @@
 # Require a Version PR to be the version step and nothing else
 
-## Why
+## Motivation
 
 Identity alone trusts whoever pushes to the proposal branch, and a label or a
 branch name shows nothing about what a Version PR changes. A hand edit can ride
@@ -12,7 +12,7 @@ Queue row [VER-095][ver-095]. This change is one part of
 held on `feat/011-refresh-lockfile`: the version step refreshes lockfiles
 itself.
 
-## What Changes
+## Changes
 
 1. The version step writes every file a release changes:
    - manifests;

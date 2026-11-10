@@ -1,6 +1,6 @@
 # Name the Version PR in the config file
 
-## Why
+## Motivation
 
 The Version PR's title and commit message come from two environment variables,
 `VERCTL_PR_TITLE` and `VERCTL_COMMIT_MESSAGE`. The reusable `release.yml` and
@@ -23,7 +23,7 @@ and 3.2 of [`version-pr-identity`](../version-pr-identity/tasks.md).
 
 Queue row: [VER-090][ver-090].
 
-## What changes
+## Changes
 
 1. **BREAKING:** a top-level `proposal` block in `.ctl/ver.yaml` holds
    `title` and `commit_message`. `title` defaults to

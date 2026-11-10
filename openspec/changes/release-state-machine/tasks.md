@@ -20,7 +20,7 @@ State notes are from the code on `main` at [cb1be28][main], read on 2026-11-09 (
 ## 0. Decide
 
 - [x] 0.1 The operator answers the open decisions in proposal.md.
-  Proof: each answer is recorded on queue row [VER-011][queue] with `mise run q edit VER-011 -n …`.
+  Proof: each answer is recorded on queue row [VER-011][queue] with `mise run q edit <row> -n …`.
   This change is updated where an answer differs from the recommendation.
   - 2026-10-12 (UTC), all eight approved as recommended, recorded in a note on [VER-011][queue]. Decision 8 (0.4.0 from `next`) is contradicted by what shipped, and the operator confirms the 0.8.0 scope after the audit.
 - [x] 0.2 The held branch `feat/011-refresh-lockfile` is deleted unpushed once 0.1 is recorded; proof: `git branch --list feat/011-refresh-lockfile` prints nothing

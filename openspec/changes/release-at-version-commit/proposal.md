@@ -1,6 +1,6 @@
 # Publish at the commit that set each version
 
-## Why
+## Motivation
 
 `verctl publish` decides a release from the commit it runs on and creates the
 tag and the Release at HEAD. A rerun after later commits land can tag a commit
@@ -15,7 +15,7 @@ This change was split from [reusable-release-workflow][rrw] at its capability
 boundaries.
 It ships as a patch.
 
-## What Changes
+## Changes
 
 1. `verctl publish` acts on the commit that set each version, found on the
    default branch's first-parent history, never on a later HEAD.

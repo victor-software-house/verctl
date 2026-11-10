@@ -1,6 +1,6 @@
 # Identify the Version PR by facts that cannot change
 
-## Why
+## Motivation
 
 The Version PR's own CI failed the hand-edit guard on the v0.1.1 release.
 The cause is that the guard reads a label from an event snapshot taken before
@@ -11,7 +11,7 @@ Queue row [VER-011][ver-011]. This change is one part of
 [release-state-machine][rsm]; what a Version PR may contain is
 [version-pr-content][vpc].
 
-## What Changes
+## Changes
 
 1. A Version PR is identified by its head repository and its head branch
    `verctl/release/<base>`, which a pull request cannot change. Its base, read

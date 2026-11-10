@@ -1,6 +1,6 @@
 # Build a release from blocks, with steps as the extension unit
 
-## Why
+## Motivation
 
 Six of six repositories restate the same lockfile refresh by hand, because
 verctl works it out and only prints it. The only extension point is
@@ -10,7 +10,7 @@ Queue row: [VER-011][ver-011]. This change is one part of
 [release-state-machine][rsm]; the cargo and bun providers of its blocks are
 [built-in-ecosystems][bie].
 
-## What Changes
+## Changes
 
 1. A release is built from blocks (Manifest, Lockfile, Artifact, Registry,
    Forge, Served files, Binary asset, Step). Any package can replace a block

@@ -48,12 +48,12 @@ The publish step of the reusable `release.yml` SHALL set these three variables i
 - **WHEN** `verctl release --registry-token-env 1TOKEN` runs, or `VERCTL_REGISTRY_TOKEN_ENV=CARGO-TOKEN verctl release`
 - **THEN** it exits 2 and says the value is not a variable name
 
-### Requirement: Only the publisher and its query run with the registry token
+### Requirement: Only the publisher and the registry query run with the registry token
 
 `verctl release` SHALL run each publisher, and the registry `query` that checks it, with the token under the variable `--registry-token-env` names.
 It SHALL start no other command with the token, and SHALL start no command with either source variable.
 
-#### Scenario: The publisher reads its own variable
+#### Scenario: The publisher reads the named variable
 
 - **WHEN** `VERCTL_REGISTRY_TOKEN` is set and `--registry-token-env CARGO_REGISTRIES_DEMO_TOKEN` is given
 - **THEN** the publisher and its `query` run with `CARGO_REGISTRIES_DEMO_TOKEN` set to the token

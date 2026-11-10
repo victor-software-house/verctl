@@ -1,6 +1,6 @@
 # Proposal
 
-## Why
+## Motivation
 
 A consumer of the actions repository pins a commit SHA, because GitHub names a full SHA the only immutable reference to a reusable workflow.
 A release tag is worth pinning against only when it cannot move.
@@ -13,7 +13,7 @@ The pin shows no release for the commit, and nothing moves it when a release lan
 
 Queue row: [VER-083][ver-083].
 
-## What Changes
+## Changes
 
 1. `publish` creates annotated tags only, and every release gets a GitHub Release, including `publisher: none` packages, so immutable Releases can cover every tag.
 2. A Release with declared assets stays a draft until they are uploaded, as queue row [VER-011][ver-011] plans.

@@ -1,6 +1,6 @@
 # Proposal
 
-## Why
+## Motivation
 
 A repository with no manifest cannot release through verctl at all.
 The templates repository has been tagged by hand 75 times, `v0.0.1` to `v0.0.75`, two of the tags lightweight, with no Release.
@@ -12,7 +12,7 @@ Queue row: [VER-083][ver-083]. This change was split from `version-files` at one
 That change reads and writes each version source.
 This one resolves which package uses which file.
 
-## What Changes
+## Changes
 
 1. A `path` that names a directory resolves to the one manifest it holds, and to `<dir>/VERSION` when it holds none.
    So `packages: [{name: templates, path: .}]` versions a repository with no manifest. A directory with two manifests fails the load and asks for a file path.

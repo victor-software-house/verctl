@@ -16,13 +16,17 @@
 4. **The refusal of a token beside trusted publishing stays.**
    It no longer needs the guard that skipped the computed read under trusted publishing, because nothing is read unless the caller maps it.
 5. **verctl hands the token to the publisher.**
-   The publish step sets the token in `VERCTL_REGISTRY_TOKEN` or `VERCTL_TRUSTED_PUBLISHING_TOKEN`, and the variable name in `VERCTL_REGISTRY_TOKEN_ENV`, then runs the bare verb.
-   `verctl release` fails before any other work when both tokens are set.
-   `--registry-token-env` must be a POSIX variable name ([POSIX Name][posix]), checked as a usage error.
-   Every command verctl starts runs without either token variable, and only the publisher and its registry `query` get the token, under the named variable.
-   No flag takes the token, so it never reaches an argv.
-   Keeping the shell step that exported the token was considered and lost: it repeated logic the CLI can own and test, and the export reached every process the job started.
-   The `query` gets the token because a query against a private registry needs the same credential, as it had when the step exported the token to the whole job.
+   - The publish step sets the token in `VERCTL_REGISTRY_TOKEN` or `VERCTL_TRUSTED_PUBLISHING_TOKEN`.
+     It sets the variable name in `VERCTL_REGISTRY_TOKEN_ENV`, then runs the bare verb.
+   - `verctl release` fails before any other work when both tokens are set.
+   - `--registry-token-env` must be a POSIX variable name ([POSIX Name][posix]), checked as a usage error.
+   - Every command verctl starts runs without either token variable.
+     Only the publisher and its registry `query` get the token, under the named variable.
+   - No flag takes the token, so it never reaches an argv.
+   - Keeping the shell step that exported the token was considered and lost.
+     It repeated logic the CLI can own and test, and the export reached every process the job started.
+   - The `query` gets the token because a query against a private registry needs the same credential.
+     The query had it when the step exported the token to the whole job.
 
 Override and disable path: leave `environment` empty to run publish in no environment.
 Map no `registry-token` to publish with trusted publishing or with the credential the publisher's own config finds.

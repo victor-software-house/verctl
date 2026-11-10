@@ -1,6 +1,6 @@
 # Make the release an explicit state machine
 
-## Why
+## Motivation
 
 verctl has no model of a release. Each command rebuilds the state it needs
 from indirect signals, and each gap has grown a workaround. An inventory of
@@ -15,7 +15,7 @@ Queue row: [VER-011][ver-011]. This change replaces the plan held on
 `feat/011-refresh-lockfile` and folds in its two approved intents. The version
 step refreshes lockfiles itself, and the report field `next` becomes `after`.
 
-## What Changes
+## Changes
 
 This change holds what every part shares: the goals, `.ctl/ver.yaml`, the
 decisions, the workaround inventory, and the migration. Each part is its own

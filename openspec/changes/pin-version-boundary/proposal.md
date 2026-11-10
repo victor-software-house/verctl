@@ -1,6 +1,6 @@
 # Refuse a pattern that cannot bound the version
 
-## Why
+## Motivation
 
 A pattern's `{version}` matches dotted numerics.
 When nothing marks where the version ends, a longer version matches by its numeric head.
@@ -25,7 +25,7 @@ Queue row: [VER-031][ledger].
 
 [ledger]: ../../../tasks.yaml
 
-## What changes
+## Changes
 
 1. **BREAKING:** loading `.ctl/ver.yaml` fails on a pattern with an open side of `{version}`.
    A side's literal is the text between `{version}` and the pattern's edge, on that side.

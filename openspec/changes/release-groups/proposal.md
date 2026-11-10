@@ -1,6 +1,6 @@
 # Proposal
 
-## Why
+## Motivation
 
 verctl names release tags with one template, `tags.template`, default `v{version}`.
 With `{name}` in it, each package gets its own tag and Release; without it, packages whose versions differ are refused.
@@ -12,7 +12,7 @@ A module in a subdirectory is released by the tag `<dir>/v<version>`, and the Go
 
 Queue row: [VER-083][ver-083].
 
-## What Changes
+## Changes
 
 1. `groups` names sets of packages that share one version: `groups: {cli: {packages: [verctl, verctl-core]}}`.
    A fragment that bumps one member bumps the group to the highest bump in it, as Changesets `fixed` does.

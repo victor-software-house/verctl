@@ -1,6 +1,6 @@
 # Adopt the ctl-core 0.6 presentation defaults
 
-## Why
+## Motivation
 
 verctl pins ctl-core 0.5.0.
 Version 0.6.3 of ctl-core ships the look chosen in its `choose-visual-identity`
@@ -17,7 +17,7 @@ Piped output has no width limit at all.
 
 Queue row [VER-040][ver-040].
 
-## What changes
+## Changes
 
 1. Pin ctl-core `=0.6.3`.
 2. Package names render through the identifier role (`Table::id_column`).

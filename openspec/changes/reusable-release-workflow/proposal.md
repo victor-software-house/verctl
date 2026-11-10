@@ -1,6 +1,6 @@
 # Ship one reusable release workflow
 
-## Why
+## Motivation
 
 Every repository that releases with verctl carries two workflows of its own,
 `version-pr.yml` and `publish.yml`, copied from [`examples/workflows/`][examples]
@@ -31,7 +31,7 @@ proposal. They are [registry-publish-check][rpc],
 [derived-version-pr-branch][dvpb]. None renames a command or changes
 `.ctl/ver.yaml`.
 
-## What Changes
+## Changes
 
 1. verctl ships `.github/workflows/release.yml` with `on: workflow_call`. Its
    inputs turn each part off or redirect it, and every default comes from

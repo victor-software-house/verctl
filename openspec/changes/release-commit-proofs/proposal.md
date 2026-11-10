@@ -1,6 +1,6 @@
 # Prove the commit a release publishes from
 
-## Why
+## Motivation
 
 `verctl publish` proves two things about the release commit. Each package's
 CHANGELOG has a heading for its version, and HEAD is an ancestor of the
@@ -21,7 +21,7 @@ reason is that they refuse releases that run today (operator, 2026-11-09).
 
 Queue row [VER-035][ver-035].
 
-## What changes
+## Changes
 
 1. **BREAKING:** `verctl publish` refuses a release commit whose
    `.github/workflows/` tree differs from the default branch's.

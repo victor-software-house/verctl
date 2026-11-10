@@ -1,6 +1,6 @@
 # Proposal
 
-## Why
+## Motivation
 
 A package whose files changed with no fragment naming it is released without the change, and nothing reports it.
 [`package-discovery`](../package-discovery/proposal.md) finds the packages.
@@ -10,7 +10,7 @@ Queue row: [VER-083][ver-083].
 This change was split from `package-discovery` at one boundary of its work.
 That change finds and names the packages, and this one maps files to them.
 
-## What Changes
+## Changes
 
 1. Each package owns files.
    By default these are the directory of its version source and everything below it that no deeper package owns.

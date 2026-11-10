@@ -1,6 +1,6 @@
 # Ask the registry whether a version is published
 
-## Why
+## Motivation
 
 `verctl publish` runs the publisher every time and decides "already
 published" from six substrings of its stderr. A rerun after a partial
@@ -13,7 +13,7 @@ Queue row: [VER-066][ver-066].
 This change was split from [reusable-release-workflow][rrw] at its capability
 boundaries; it ships as a patch.
 
-## What Changes
+## Changes
 
 1. A publisher recipe gains `query`, and the stock `cargo` and `bun`
    publishers get one: a read of the crates.io sparse index, and

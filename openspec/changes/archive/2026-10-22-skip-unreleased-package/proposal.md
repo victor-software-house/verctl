@@ -1,6 +1,6 @@
 # Leave a package at 0.0.0 out of the release plan
 
-## Why
+## Motivation
 
 A new package starts at `0.0.0` and releases `0.0.1` first.
 `publish --plan` plans every package whose registry does not list its version, and no registry lists `0.0.0`.
@@ -15,7 +15,7 @@ Had that commit carried the `ver` task, `publish` would have tried to release `0
 
 Queue row: [VER-077][ver-077].
 
-## What changes
+## Changes
 
 1. `pending` leaves out a package whose version is `0.0.0`, with or without a pre-release or build suffix.
    This is the same test `bump::apply` uses for a new package.
