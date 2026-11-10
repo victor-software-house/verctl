@@ -3,7 +3,9 @@ verctl: minor
 verctl:group: changed
 ---
 
-`verctl check --versions` on a Version PR replays the version step on the merge-base and fails each change the replay does not make. The error lists every difference:
+`verctl check --versions` on a Version PR replays the version step on the merge-base and fails each change the replay does not make.
+
+The error lists every difference. Each one is of these kinds:
 
 - a path the version step does not write, such as a source file;
 - a manifest key that differs from the planned version and its pins, such as an added dependency;
