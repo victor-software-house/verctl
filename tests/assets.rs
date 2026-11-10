@@ -237,6 +237,39 @@ fn a_dry_run_before_asset_uploads_nothing() {
     assert!(report["uploaded"].is_null(), "{report}");
 }
 
+/// The build runs as a child of a job that holds a `GITHUB_TOKEN` able to
+/// write contents, and sees neither GitHub credential.
+#[test]
+fn an_asset_build_sees_no_github_credential() {
+    let root = files_root();
+    common::write_config(
+        root.path(),
+        indoc! {r#"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publisher: none
+            assets:
+              build: ["sh", "-c", 'printf "[%s][%s]" "$GITHUB_TOKEN" "$GH_TOKEN" > seen']
+              dir: out/{triple}
+              files: [demo, demod, "demod@.service", LICENSE]
+              linux-x64: {}
+        "#},
+    );
+    let output = common::verctl()
+        .current_dir(root.path())
+        .env("GITHUB_TOKEN", "github")
+        .env("GH_TOKEN", "gh")
+        .args(["release", "asset", "linux-x64", "--dry-run"])
+        .output()
+        .expect("spawn");
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        fs::read_to_string(root.path().join("seen")).expect("seen"),
+        "[][]"
+    );
+}
+
 #[test]
 fn a_package_file_missing_after_the_build_is_named() {
     let root = files_root();

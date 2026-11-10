@@ -36,7 +36,8 @@ use crate::prepare::{self, PlanEntry};
 use crate::{detect, fragment, members, pins, release, templates};
 
 /// The marker of an error that came from loading the config at the
-/// merge-base, which a caller may skip a rule over instead of failing.
+/// merge-base.
+/// A caller may skip a rule over it instead of failing.
 #[derive(Debug)]
 pub struct BaseConfigFailed;
 
@@ -77,9 +78,10 @@ impl Inputs {
 /// change. Nothing is checked when there is no repository, or no `origin` and
 /// none of `candidates`.
 ///
-/// When the config at the merge-base does not load, as when this pull request
-/// removes a key the running verctl refuses, the replay has no plan to run.
-/// The check is then skipped, and the notice names it and the load error.
+/// The config at the merge-base may not load, as when this pull request
+/// removes a key the running verctl refuses.
+/// The replay then has no plan to run, so the check is skipped.
+/// The notice names the check and the load error.
 ///
 /// # Errors
 ///

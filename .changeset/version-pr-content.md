@@ -27,7 +27,9 @@ For a Cargo workspace it reads members with `cargo metadata --no-deps --offline`
 
 When the config at the merge-base does not load, `check --versions` skips the rules that need it and does not fail.  
 That happens in the pull request that removes a key this verctl refuses, such as `prepare.version_label`.  
-The report then carries one notice per skipped rule, naming the rule and the load error, and JSON holds them under `notices`.  
+The report then carries one notice per skipped rule, naming the rule and the load error.  
+JSON holds the notices under `notices`.
+
 The config on HEAD must still load.
 
 Earlier releases exempted the Version PR branch whatever it changed.

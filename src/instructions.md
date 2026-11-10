@@ -461,6 +461,8 @@ It runs each publisher, and the registry `query` that checks it, with the token 
 That option (`VERCTL_REGISTRY_TOKEN_ENV`) defaults to `CARGO_REGISTRY_TOKEN`, and a value that is not a variable name is a usage error.
 
 No other command it starts sees either token variable.  
+No command it starts sees `GITHUB_TOKEN` or `GH_TOKEN`, so a publisher, a build script, and `assets.prepare` and `assets.build` run without the job's contents token.  
+A publisher that reads `GITHUB_TOKEN` gets the registry token there when `--registry-token-env` is `GITHUB_TOKEN`.  
 The publish step of `release.yml` sets the three from the `registry-token` secret, `crates-io-trusted-publishing`, and `registry-token-env`.
 
 ### Default branch and git auth

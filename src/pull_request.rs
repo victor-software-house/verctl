@@ -32,10 +32,10 @@ use crate::publisher;
 /// setting that HEAD's merge-base with the release branch already holds came
 /// with a merge of that branch. It does not count.
 ///
-/// The publish-setting rule needs the config at the merge-base. When that
-/// config does not load, as when this pull request removes a key the running
-/// verctl refuses, the rule is skipped and a notice names it and the load
-/// error.
+/// The publish-setting rule needs the config at the merge-base.
+/// That config may not load, as when this pull request removes a key the
+/// running verctl refuses.
+/// The rule is then skipped, and a notice names it and the load error.
 ///
 /// # Errors
 ///

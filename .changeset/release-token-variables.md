@@ -8,6 +8,13 @@ It gives the token to each publisher and its registry `query` under `--registry-
 The queries that decide whether a release is complete or a version was skipped get it too.  
 No other command it starts gets either variable, and no flag takes the token.
 
+No command verctl starts inherits `GITHUB_TOKEN` or `GH_TOKEN` either: not a publisher, not a build script it runs, not `assets.prepare` or `assets.build`, and not `prepare.after`.  
+Before, each ran with the job's token, which can write contents.  
+verctl keeps the token for its own GitHub calls, and its own `git push` takes it through a private variable.  
+
+A publisher that reads `GITHUB_TOKEN` gets the registry token there when `registry-token-env` is `GITHUB_TOKEN`.  
+A bunfig for GitHub Packages with `token = "$GITHUB_TOKEN"` is one.
+
 The reusable `release.yml` sets these in its publish step and runs `mise run ver release`.  
 Its registry-token inputs and secrets keep their names.  
 Only its `plan` job checks that the pinned verctl is 0.8.0 or later.
