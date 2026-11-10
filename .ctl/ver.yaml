@@ -17,18 +17,31 @@ packages:
   - name: verctl
     path: Cargo.toml
 
+# GitHub's hosted arm64 Linux runner, free for a public repo. It builds the
+# linux-arm64 tarball natively: the TLS stack (aws-lc-sys, ring) compiles C,
+# and cross-building it from x64 would need a cross C toolchain.
+runners:
+  arm64:
+    labels: [ubuntu-24.04-arm]
+
 # One key per host binary; the name is the job, the tarball, and the platform.
-# Omit for a library. Both are built-in records, so `runner`, `os`, `arch`, and
-# `triple` come from verctl and this repo stays on free hosted minutes without
-# saying so.
+# Omit for a library. darwin-arm64 and linux-x64 are built-in records, so
+# `runner`, `os`, `arch`, and `triple` come from verctl and those two stay on
+# free hosted minutes without saying so. linux-arm64 is not built in, so it
+# names its machine and target. Its triple is the glibc one, like linux-x64's,
+# because the runner's system compiler is the GNU toolchain; a musl triple
+# would need a musl C compiler the runner does not have.
 #
-# `runners` and `ci` are deliberately absent. This repo is public, so the
-# defaults — one `verify` job on ubuntu-latest, built-in machines for the two
-# targets above — are exactly what it wants; declaring them would only restate
-# them. A private repo adds a `runners` entry and points jobs at it.
+# `ci` is deliberately absent. This repo is public, so the default, one
+# `verify` job on ubuntu-latest, is exactly what it wants.
 assets:
   darwin-arm64: {}
   linux-x64: {}
+  linux-arm64:
+    runner: arm64
+    os: linux
+    arch: arm64
+    triple: aarch64-unknown-linux-gnu
 
 # Maintainers and Apps a changelog never credits (verctl 0.4.0).
 changelog:
