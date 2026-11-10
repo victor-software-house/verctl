@@ -5,6 +5,7 @@
 
 use std::path::Path;
 
+use indoc::{formatdoc, indoc};
 use verctl::lockfile::{Change, Format, Kind, Lockfile, kind};
 
 fn read(name: &str) -> String {
@@ -84,8 +85,12 @@ fn ctl_core_moves_four_members_and_nothing_else() {
 fn a_registry_package_that_moves_is_a_change() {
     let before = read("ctl-core.before.Cargo.lock");
     let after = read("ctl-core.after.Cargo.lock").replace(
-        "name = \"anstyle\"\nversion = \"1.0.14\"",
-        "name = \"anstyle\"\nversion = \"1.0.15\"",
+        indoc! {r#"
+            name = "anstyle"
+            version = "1.0.14""#},
+        indoc! {r#"
+            name = "anstyle"
+            version = "1.0.15""#},
     );
     let changes = parse(Format::Cargo, &before).compare(&parse(Format::Cargo, &after));
     assert!(
@@ -106,8 +111,12 @@ fn a_registry_package_that_moves_is_a_change() {
 fn a_member_reference_with_a_version_follows_the_member() {
     let pin = |text: String, version: &str| {
         text.replace(
-            " \"ctl-text\",\n \"insta\",",
-            &format!(" \"ctl-text {version}\",\n \"insta\","),
+            indoc! {r#"
+                "ctl-text",
+                 "insta","#},
+            &formatdoc! {r#"
+                "ctl-text {version}",
+                 "insta","#},
         )
     };
     let before = pin(read("ctl-core.before.Cargo.lock"), "0.6.28");
@@ -119,10 +128,15 @@ fn a_member_reference_with_a_version_follows_the_member() {
 #[test]
 fn an_added_package_and_a_changed_header_are_changes() {
     let before = read("ctl-core.before.Cargo.lock");
-    let after = format!(
-        "{}\n[[package]]\nname = \"serde\"\nversion = \"1.0.228\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n",
-        before.replace("version = 4", "version = 3")
-    );
+    let after = formatdoc! {r#"
+            {header}
+            [[package]]
+            name = "serde"
+            version = "1.0.228"
+            source = "registry+https://github.com/rust-lang/crates.io-index"
+        "#,
+        header = before.replace("version = 4", "version = 3"),
+    };
     let changes = parse(Format::Cargo, &before).compare(&parse(Format::Cargo, &after));
     assert_eq!(changes, [Change::Header, Change::Added("serde".to_owned())]);
 }
@@ -163,8 +177,12 @@ fn npm_records_a_member_by_its_folder() {
 fn an_npm_package_that_moves_is_a_change() {
     let before = read("workspace.before.package-lock.json");
     let after = before.replace(
-        "\"version\": \"7.0.0\",\n      \"resolved\"",
-        "\"version\": \"7.0.1\",\n      \"resolved\"",
+        indoc! {r#"
+            "version": "7.0.0",
+                  "resolved""#},
+        indoc! {r#"
+            "version": "7.0.1",
+                  "resolved""#},
     );
     assert_ne!(before, after);
     let changes = parse(Format::Npm, &before).compare(&parse(Format::Npm, &after));
@@ -187,8 +205,12 @@ fn uv_members_are_the_editable_and_virtual_packages() {
 fn a_uv_package_that_moves_is_a_change() {
     let before = read("workspace.before.uv.lock");
     let after = before.replace(
-        "name = \"six\"\nversion = \"1.16.0\"",
-        "name = \"six\"\nversion = \"1.17.0\"",
+        indoc! {r#"
+            name = "six"
+            version = "1.16.0""#},
+        indoc! {r#"
+            name = "six"
+            version = "1.17.0""#},
     );
     let changes = parse(Format::Uv, &before).compare(&parse(Format::Uv, &after));
     assert_eq!(changes, [Change::Changed("six".to_owned())]);
@@ -196,7 +218,7 @@ fn a_uv_package_that_moves_is_a_change() {
 
 #[test]
 fn a_lockfile_that_does_not_parse_is_an_error() {
-    assert!(Lockfile::parse(Format::Cargo, "[[package]\n").is_err());
+    assert!(Lockfile::parse(Format::Cargo, "[[package]").is_err());
     assert!(Lockfile::parse(Format::Bun, "").is_err());
     assert!(Lockfile::parse(Format::Npm, "{").is_err());
 }

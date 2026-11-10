@@ -185,6 +185,22 @@ when the checkout lacks them or is shallow, so the depth-1 pull request checkout
 `actions/checkout` needs no `fetch-depth`. A full clone that has them
 fetches nothing.
 
+On a Version PR the check also replays the version step on the merge-base
+and fails each change the replay does not make. The replay writes each
+planned manifest through its driver, applies each pin, prepends each
+CHANGELOG section, and removes each consumed fragment. It runs no lockfile
+owner and no `prepare.after` command, and makes no network call, so it
+gives the same answer with or without a registry. A lockfile may change
+only in the versions of workspace members the plan moves, directly or
+through `workspace.package.version`, and it must record each at its new
+version. A changed `yarn.lock` or `bun.lockb` fails, since verctl does not
+read them. So does a changed `pnpm-lock.yaml`, `poetry.lock`, or
+`pdm.lock`, which records no workspace version. A served file must equal
+its template's render. A path that `prepare.stage` names at the
+merge-base may change, and its content is left to the Version PR's
+review. The error lists every difference; `verctl version --pr` rewrites
+the Version PR.
+
 verctl never merges the Version PR and never enables auto-merge on it. A
 release starts only when a person merges the Version PR. Open it with a
 GitHub App token: a pull request opened with the job's `GITHUB_TOKEN` starts

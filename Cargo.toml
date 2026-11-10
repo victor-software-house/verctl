@@ -168,6 +168,10 @@ name = "changelog"
 path = "tests/changelog.rs"
 
 [[test]]
+name = "content"
+path = "tests/content.rs"
+
+[[test]]
 name = "examples"
 path = "tests/examples.rs"
 
