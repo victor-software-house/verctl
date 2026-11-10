@@ -142,8 +142,11 @@ The plan job checks the paths once.
 `crates-io-trusted-publishing: true` publishes to crates.io with a
 trusted-publishing token in place of the `registry-token` secret; each
 crate lists the caller's repository and workflow file as its trusted
-publisher. The publish job requests `id-token: write`, so every caller
-grants it. `environment` names a GitHub environment for the publish job,
+publisher. Every job requests `id-token: write`, so every caller grants
+it: the publish job for trusted publishing, and every job for
+`victor-software-house/actions/mise`, which downloads tools through the
+organization's release mirror. A job without the grant downloads from
+GitHub and logs a notice. `environment` names a GitHub environment for the publish job,
 the only job that reads a registry token, so the token can live only in
 an environment that admits the default branch. The caller maps the
 token's stored name, such as `CARGO_REGISTRY_TOKEN`, to the

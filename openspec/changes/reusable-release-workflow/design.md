@@ -211,9 +211,8 @@ release never starts.
 
 `mise-ignored-config-paths` names those files.
 The `plan` job checks each entry once and exposes the list as an output.
-In `plan`, `publish`, `assets`, and `docs`, a one-line step before
-`jdx/mise-action` writes the list to `MISE_IGNORED_CONFIG_PATHS` in
-`GITHUB_ENV`.
+In `plan`, `publish`, `assets`, and `docs`, a one-line step before the mise
+action writes the list to `MISE_IGNORED_CONFIG_PATHS` in `GITHUB_ENV`.
 So the action and every later step skip them.
 The entries stay relative.
 mise resolves a relative entry against the directory it runs in since 2026.8.9

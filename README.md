@@ -340,6 +340,11 @@ Every input is optional and defaults to verctl's, so a caller passes only what d
 Steps set `env:` and run `mise run ver <verb>`, so the caller serves the `ver` task and pins verctl in its mise config.  
 `plan` alone checks that the pinned verctl is 0.8.0 or later, and checks each `mise-ignored-config-paths` entry.
 
+Every job requests `id-token: write`, so the caller grants it.  
+The publish job uses it for crates.io trusted publishing.  
+Every job uses it to download tools through the release mirror of `victor-software-house/actions/mise`.  
+A job without the grant downloads from GitHub and logs a notice.
+
 A registry token stored in a GitHub environment that admits only the default branch is out of reach of every other branch.  
 Pass `environment: <name>`, and map the token by its stored name: `registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}`.  
 Only the `publish` job runs in the environment, and it receives the environment's value.

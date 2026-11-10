@@ -17,8 +17,10 @@ name: Release
 #         app-private-key: ${{ secrets.CHANGESET_VERSION_APP_PRIVATE_KEY }}
 #
 # GitHub checks each called job's permissions when the run starts, so every
-# caller grants id-token: write, which the publish job requests, whether or
-# not it publishes to crates.io.
+# caller grants id-token: write, which every job requests: publish for
+# crates.io trusted publishing, and each job for the organization's mise
+# action, which downloads tools through the release mirror. A job without
+# the grant downloads from GitHub and logs a notice.
 #
 # One flow: plan every incomplete version commit, publish each in history
 # order, build the assets its Release lacks, check docs.rs, then open or
@@ -169,6 +171,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read # reads history; tags and Releases are read through the API
+      id-token: write # downloads tools through the release mirror
     outputs:
       commits: ${{ steps.plan.outputs.commits }}
       pending: ${{ steps.plan.outputs.pending }}
@@ -205,7 +208,7 @@ jobs:
           echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
           echo "paths=${IGNORED}" >> "${GITHUB_OUTPUT}"
       - name: Set up mise
-        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
         with:
           version: ${{ inputs.mise-version }}
           cache: true
@@ -263,7 +266,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write # creates the release tag and the GitHub Release
-      id-token: write # crates.io trusted publishing
+      id-token: write # crates.io trusted publishing, and the release mirror
     # One run releases every pending version commit, oldest first, and stops
     # at the first that fails. A running leg is never cancelled half way.
     # GitHub keeps one pending job per group, so a leg still waiting when a
@@ -294,7 +297,7 @@ jobs:
           IGNORED: ${{ needs.plan.outputs.mise-ignored-config-paths }}
         run: echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
       - name: Set up mise
-        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
         with:
           version: ${{ inputs.mise-version }}
           cache: true
@@ -358,6 +361,7 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: write # uploads the tarball to the GitHub Release
+      id-token: write # downloads tools through the release mirror
     # One tool at a time, in every mise command of the job: on macOS runners
     # rustup fails to rename a component download ("could not rename
     # 'downloaded' file") when mise installs two Rust toolchains at once,
@@ -382,7 +386,7 @@ jobs:
           IGNORED: ${{ needs.plan.outputs.mise-ignored-config-paths }}
         run: echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
       - name: Set up mise
-        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
         with:
           version: ${{ inputs.mise-version }}
           cache: true
@@ -426,6 +430,7 @@ jobs:
     timeout-minutes: 75
     permissions:
       contents: read # reads the release tag through the API
+      id-token: write # downloads tools through the release mirror
     strategy:
       fail-fast: false
       matrix:
@@ -445,7 +450,7 @@ jobs:
           IGNORED: ${{ needs.plan.outputs.mise-ignored-config-paths }}
         run: echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
       - name: Set up mise
-        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
         with:
           version: ${{ inputs.mise-version }}
           cache: true
@@ -488,6 +493,7 @@ jobs:
     permissions:
       contents: write # pushes verctl/release/<base> when no App token is minted
       pull-requests: write # opens the Version PR when no App token is minted
+      id-token: write # downloads tools through the release mirror
     concurrency:
       group: verctl-propose-${{ github.repository }}
       cancel-in-progress: true
@@ -501,7 +507,7 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
       - name: Set up mise
-        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
         with:
           version: ${{ inputs.mise-version }}
           cache: true
