@@ -2,15 +2,19 @@
 
 ## Why
 
-The three actions rebuilt verctl's argv in bash: each turned `VERCTL_CONFIG`
-back into `-c` and `VERCTL_DRY_RUN` back into `--dry-run` through an array,
-and the `config` input restated verctl's default, `.ctl/ver.yaml`, because
-`-c ""` would fail. The operator ruled on 2026-10-15 that every ctl flag has
-an environment variable, with precedence flag, then variable, then config
-file, then default, and that a caller sets `env:` and runs the bare verb.
+The three actions rebuilt verctl's argv in bash.
+Each turned `VERCTL_CONFIG` back into `-c` and `VERCTL_DRY_RUN` back into
+`--dry-run` through an array.
+The `config` input restated verctl's default, `.ctl/ver.yaml`,
+because `-c ""` would fail.
+
+The operator ruled on 2026-10-15 that every ctl flag has an environment
+variable.
+Precedence is flag, then variable, then config file, then default.
+A caller sets `env:` and runs the bare verb.
 ctl-core 0.6.21 ships the binding (`EnvPrefix`, `env_under_flags`).
 
-Queue row: VER-067.
+Queue row: [VER-067][ver-067].
 
 ## What Changes
 
@@ -42,3 +46,5 @@ None.
    its `target` input as `VERCTL_BUILD` instead of `VERCTL_TARGET`, an
    internal name.
 3. Tests: `tests/common::verctl()` replaces 30 direct spawns.
+
+[ver-067]: ../../../../tasks.yaml

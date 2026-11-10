@@ -9,16 +9,17 @@ accessible by integration". The Releases API needs `workflows: write` for a
 commit whose workflows differ from the default branch, and `GITHUB_TOKEN`
 cannot hold it.
 
-A consumer hit it on its first release. The crates.io rate limit for new
-crates stopped two runs, two workflow pull requests merged before the
-retry, and the third run uploaded every crate and then failed to create the
-Release (run 39198937088). The operator finished it by hand with a token
-that holds the permission.
+A consumer hit it on its first release.
+The crates.io rate limit for new crates stopped two runs.
+Two workflow pull requests merged before the retry.
+The third run uploaded every crate and then failed to create the Release
+(run 39198937088).
+The operator finished it by hand with a token that holds the permission.
 
 The operator decided on 2026-10-19 against granting `workflows: write` to
 any App, and for tagging at merge instead.
 
-Queue row: VER-073.
+Queue row: [VER-073][ver-073].
 A patch: it changes when `publish` creates a tag, and adds no configuration
 key.
 
@@ -35,18 +36,21 @@ key.
    tag no longer says that a crates.io upload happened.
 4. The operator instructions and README describe the order.
 
-This reverses "Publish precedes the tag" of release-state-machine (VER-011)
+This reverses "Publish precedes the tag" of release-state-machine ([VER-011][ver-011])
 for registry-checked packages. That change's proposal, design, and spec are
 updated to say so.
 
 ## Limit
 
 A package with an unchecked upload that does real work still meets the 403
-when a workflow change merges while its release is pending. No org package
-has one today: every package is checked against crates.io, uses
-`publisher: none`, or runs a no-op upload that moves to `publisher: none`.
-When such a package appears, it needs a guard: a pull request check that
-fails a change to `.github/workflows` while its release is pending.
+when a workflow change merges while its release is pending.
+No org package has one today.
+Every package is checked against crates.io, uses `publisher: none`,
+or runs a no-op upload that moves to `publisher: none`.
+
+When such a package appears, it needs a guard:
+a pull request check that fails a change to `.github/workflows` while its
+release is pending.
 
 ## Impact
 
@@ -56,3 +60,6 @@ fails a change to `.github/workflows` while its release is pending.
    `README.md`.
 3. `.github/workflows/release.yml` is unchanged: the publish job already runs
    in the merge run at the version commit.
+
+[ver-073]: ../../../../tasks.yaml
+[ver-011]: ../../../../tasks.yaml

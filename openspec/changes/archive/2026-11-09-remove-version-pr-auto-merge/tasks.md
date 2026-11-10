@@ -21,7 +21,8 @@
 
 ## 3. Docs
 
-- [x] 3.1 Update the instructions, the operator skill and their templates, `README.md`, `AGENTS.md`, and the `reusable-release-workflow` change; proof: `operator_docs` passes in CI, and `rg -i 'auto.?merge'` finds the feature only in the changelog, the archive, this change, and finished queue rows
+- [x] 3.1 Update the instructions, the operator skill and their templates, `README.md`, `AGENTS.md`, and the `reusable-release-workflow` change; proof: `operator_docs` passes in CI.
+  Also `rg -i 'auto.?merge'` finds the feature only in the changelog, the archive, this change, and finished queue rows
 
   2026-11-09 UTC: [PR 230][verctl#230] changed each of those files, and `operator_docs` ran in its passing [verify run][run-41494127104].
 

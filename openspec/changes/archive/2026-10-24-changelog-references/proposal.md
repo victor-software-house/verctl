@@ -10,11 +10,12 @@ pull request that shipped it.
 configuration key reads `internalAuthors`, so the author policy the operator
 instructions document does nothing (verctl 0.3.14).
 
-A consumer adopting verctl asked for a short `(#N)` on each entry and no
-author credit. The house rule for release notes is the same: credit no
-maintainer, and credit outside contributors only.
+One consumer, on adopting verctl, requested a short `(#N)` on each entry and
+no author credit.
+The house rule for release notes is the same: credit no maintainer, and credit
+outside contributors only.
 
-Queue row: VER-051.
+Queue row: [VER-051][ver-051].
 
 ## What changes
 
@@ -25,7 +26,7 @@ Queue row: VER-051.
    field is a breaking library change for cargo-semver-checks, and this
    ships as a patch. `changelog.internal_authors`, which names the
    maintainers, waits for 0.4.0, when `Config` becomes `#[non_exhaustive]`
-   (VER-054).
+   ([VER-054][ver-054]).
 
 ## Impact
 
@@ -35,3 +36,6 @@ Queue row: VER-051.
    `internalAuthors` key, which never existed.
 3. CHANGELOG.md and Release bodies of every consumer gain references on
    their next release.
+
+[ver-051]: ../../../../tasks.yaml
+[ver-054]: ../../../../tasks.yaml

@@ -2,11 +2,16 @@
 
 ### Requirement: Release state is derived from facts on every run
 
-verctl SHALL store no release state. On every run it SHALL derive each
-package's stages from the fragments, the manifests, the default branch's
-first-parent history, the lockfiles, the registry, the remote tags, the GitHub
-Release, and its assets. It SHALL NOT read a label, a branch name, or an event
-payload to decide a stage.
+verctl SHALL store no release state.
+On every run it SHALL derive each package's stages from these facts:
+
+- the fragments and the manifests
+- the default branch's first-parent history and the lockfiles
+- the registry and the remote tags
+- the GitHub Release and its assets
+
+It SHALL NOT read a label, a branch name, or an event payload to decide a
+stage.
 
 #### Scenario: A rerun on a later commit
 
@@ -22,10 +27,12 @@ payload to decide a stage.
 ### Requirement: The release commit comes from first-parent history
 
 verctl SHALL take the release commit of `p@v` to be the newest commit on the
-first-parent history of the branch named by `branch` where package `p`'s
-resolved version became `v`. It SHALL resolve it at each commit from `p`'s
-manifest and, when the version is inherited, the workspace root manifest. It
-SHALL NOT take HEAD as the release commit.
+first-parent history of the branch named by `branch`.
+That commit is the one where package `p`'s resolved version became `v`.
+
+It SHALL resolve it at each commit from `p`'s manifest and, when the version is
+inherited, the workspace root manifest.
+It SHALL NOT take HEAD as the release commit.
 
 #### Scenario: HEAD has moved past the release
 
@@ -40,9 +47,10 @@ SHALL NOT take HEAD as the release commit.
 
 ### Requirement: Each transition is guarded and repeatable
 
-verctl SHALL run a transition only when its guard holds, SHALL report `already`
-and do nothing when its postcondition already holds, and SHALL stop the run at
-the first failed transition without attempting anything that depends on it.
+verctl SHALL run a transition only when its guard holds.
+It SHALL report `already` and do nothing when its postcondition already holds.
+It SHALL stop the run at the first failed transition without attempting
+anything that depends on it.
 
 #### Scenario: The registry already lists the version
 
@@ -60,7 +68,9 @@ the first failed transition without attempting anything that depends on it.
 verctl SHALL create a tag that names a package with an unchecked upload only
 after every publishing package the tag names is published. It SHALL create a
 tag whose packages all have a registry check before their uploads, as the
-tag-at-merge change specifies. It SHALL create each tag at the release commit
+tag-at-merge change specifies.
+
+It SHALL create each tag at the release commit
 and SHALL push all ready tags of a run in one atomic push. It SHALL treat an
 existing tag that peels to another commit as a conflict that stops every
 transition for that package.

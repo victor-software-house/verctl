@@ -2,10 +2,10 @@
 
 ### Requirement: Each changelog entry links its pull request or commit
 
-verctl SHALL link each
-changelog entry to the pull request named by a trailing `(#N)` in the
-subject of the first-parent commit that added its fragment, and SHALL link
-that commit when the subject names no pull request.
+verctl SHALL link each changelog entry to a pull request.
+That pull request is the one named by a trailing `(#N)` in the subject of the
+first-parent commit that added its fragment.
+verctl SHALL link that commit when the subject names no pull request.
 
 #### Scenario: Squash-merged fragment
 
@@ -24,5 +24,7 @@ maintainer is credited.
 
 #### Scenario: Maintainer pull request read as a contributor
 
-- **WHEN** pull request #12 was opened from a branch in `acme/demo` by a member the App token reads as `CONTRIBUTOR`, and `verctl prepare --pr` runs
+- **WHEN** [pull request 12][verctl#12] was opened from a branch in `acme/demo` by a member the App token reads as `CONTRIBUTOR`, and `verctl prepare --pr` runs
 - **THEN** the entry reads `([#12](https://github.com/acme/demo/pull/12))` with no byline
+
+[verctl#12]: https://github.com/victor-software-house/verctl/pull/12

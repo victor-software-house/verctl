@@ -7,7 +7,7 @@ That build needs Perl on every machine that compiles verctl, and it kept the
 shared template's `openssl` and `native-tls` bans out of `deny.toml` as a local
 edit.
 
-Queue row: VER-050.
+Queue row: [VER-050][ver-050].
 A patch: no public type changes, and every command keeps its output.
 
 ## What changes
@@ -29,3 +29,5 @@ A patch: no public type changes, and every command keeps its output.
 1. `src/git.rs`, `Cargo.toml`, `deny.toml`, test fixtures (now the `git`
    binary), the instructions, README, and AGENTS.md.
 2. `verctl prepare --pr` needs `git` on PATH. GitHub-hosted runners have it.
+
+[ver-050]: ../../../../tasks.yaml

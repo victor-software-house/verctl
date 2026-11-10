@@ -3,7 +3,10 @@
 ## Context
 
 `assets` builds one binary per target from the first package, at that package's version, and uploads it to the Release `publish` made.
-A vendored library has none of those: its version is upstream's, its archive holds a library, headers, and a license, and nothing else creates its Release.
+A vendored library has none of those.
+Its version is upstream's.
+Its archive holds a library, headers, and a license.
+Nothing else creates its Release.
 
 ## Goals and non-goals
 
@@ -20,12 +23,17 @@ Non-goals:
 
 ## Decisions
 
-### 1. A separate `vendored` section, not more keys on `assets`
+### 1. A separate `vendored` section holds the sets
 
 Each set is a named entry under `vendored`, with its own version and tag.
 
 Alternative: optional `version`, `tag`, and `files` keys on `assets`.
-It lost because `assets` is one set tied to the first package, its target keys share a mapping with its recipe keys, and a repository may need both its own binary and a vendored library.
+It lost for three reasons:
+
+- `assets` is one set tied to the first package
+- its target keys share a mapping with its recipe keys
+- a repository may need both its own binary and a vendored library
+
 A separate section also keeps the existing path untouched, which is what makes it byte-identical.
 
 ### 2. Templates with named placeholders and defaults that fit the common case
@@ -50,15 +58,22 @@ The disable path for the build is to omit `build`, and an earlier workflow step 
 After the archive upload, verctl reads the asset's `digest` (`sha256:<hex>`) from the Release and uploads `<archive>.sha256` holding `<hex>  <archive>`, the `sha256sum` format.
 
 Alternative: hash the local archive.
-It lost on reruns: two builds of one source tree are not byte-identical, so a rerun whose archive upload reports `already` would publish a checksum of a file GitHub does not hold.
+It lost on reruns.
+Two builds of one source tree are not byte-identical.
+So a rerun whose archive upload reports `already` would publish a checksum of a file GitHub does not hold.
+
 Deriving it from GitHub's digest makes the checksum agree with the stored archive whichever run uploaded it, and it needs no new dependency.
+
 GitHub reports `digest` on every release asset ([REST API][assets-api]).
 
-### 5. The upload creates the Release when it is missing
+### 5. The upload creates a missing Release
 
 `--upload` reads the Release for the tag, and creates it at `HEAD` when none exists, named after the tag, with the `notes` file as its body and `make_latest: false`.
+
 A creation refused because another matrix job created it first reads the Release again.
-An existing Release is used as it is, wherever its tag points: the tag records which repository commit built the first asset, not a version commit.
+
+An existing Release is used as it is, wherever its tag points.
+The tag records which repository commit built the first asset and does not mark a version commit.
 
 `make_latest: false` keeps a vendored Release from becoming the repository's latest, which GitHub otherwise does for every new published release ([REST API][releases-api]).
 
@@ -77,7 +92,7 @@ It lost because a placeholder package would pull the repository into the release
 
 ## Risks
 
-1. A hand-deleted archive with its checksum left behind leaves a stale checksum, reported as `already`. The instructions say to delete both.
+1. A hand-deleted archive with its checksum left behind leaves a stale checksum, reported as `already`. The instructions require deleting both.
 2. The build runs under the same 15-minute limit as `assets.build`.
 
 [assets-api]: https://docs.github.com/en/rest/releases/assets

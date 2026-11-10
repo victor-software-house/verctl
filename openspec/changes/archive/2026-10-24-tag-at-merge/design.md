@@ -15,9 +15,10 @@ no registry check, the tag stands in for the registry.
 ## 1. Which tags come first
 
 A tag is created before the uploads when no package under it has an
-unchecked upload: every upload has a crates.io index check or a `query`, or
-the package has no upload (`publisher: none`). `tags_before_upload` decides
-it from the same `publisher::uploads` the run executes, so the order and the
+unchecked upload.
+That is, every upload has a crates.io index check or a `query`, or the package
+has no upload (`publisher: none`).
+`tags_before_upload` decides it from the same `publisher::uploads` the run executes, so the order and the
 uploads cannot conflict.
 
 For those tags the registry decides completeness, so a tag created first
@@ -26,14 +27,17 @@ and uploads it. The existing tag is checked to name HEAD, which `pending`
 already guarantees for the commit it hands to the run.
 
 When GitHub refuses an early Release with 403 for a missing permission, the
-uploads still run, and the run fails at the end naming the refusal, beside
-any later failure. A rerun with a token that holds the permission then has
-only the Release left to do. Any other early failure, such as an existing
-tag that names another commit, stops the run before any upload.
+uploads still run.
+The run fails at the end, naming the refusal beside any later failure.
+A rerun with a token that holds the permission then has only the Release left
+to do.
+
+Any other early failure, such as an existing tag that names another commit,
+stops the run before any upload.
 
 A shared `v{version}` tag over a checked and an unchecked package follows
-the unchecked one, because creating it early would mark that package
-complete before it ran.
+the unchecked one.
+Creating it early would mark that package complete before it ran.
 
 Alternative considered: a separate App with `contents` and `workflows`,
 whose key only the publish job reads. It lost on the operator's decision:

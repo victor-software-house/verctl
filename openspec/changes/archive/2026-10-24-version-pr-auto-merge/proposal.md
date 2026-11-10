@@ -3,13 +3,15 @@
 ## Why
 
 In the seven days to 2026-10-12, 13 Version PRs were merged by hand across
-the six ctl repositories: ctl-core 6, forkctl 4, verctl, qctl, and
-yamled 1 each, and unixd 0.
+the six ctl repositories.
+The counts were ctl-core 6, forkctl 4, verctl, qctl, and yamled 1 each, and
+unixd 0.
+
 Each had one commit and green checks, so the merge added a wait and a click
 and no review.
 All six repositories already allow auto-merge.
 
-Queue row: VER-047.
+Queue row: [VER-047][ver-047].
 
 ## What Changes
 
@@ -18,8 +20,8 @@ Queue row: VER-047.
    action enables GitHub auto-merge on it as a squash. The subject is the PR
    title and number, and the body is the PR description.
 3. The action refuses to enable auto-merge when the base branch has no
-   required status check, because GitHub would then merge at once with no
-   gate.
+   required status check.
+   Without one, GitHub would merge at once with no gate.
 4. This repository's Version PR workflow does the same.
 
 ## Capabilities
@@ -37,3 +39,5 @@ Queue row: VER-047.
    change.
 2. Consumers opt in per repository with one input, after requiring their CI
    checks on the default branch.
+
+[ver-047]: ../../../../tasks.yaml

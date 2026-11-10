@@ -2,13 +2,20 @@
 
 ## Why
 
-verctl pins ctl-core 0.5.0. Version 0.6.3 of ctl-core ships the look chosen in its
-`choose-visual-identity` change: borderless records, an identifier role, pretty
-JSON, a two-column automatic-width buffer, and an 80-column fallback when no
-width is detected. On 0.5.0 a two-line `publish --dry-run` summary prints a
-four-line box, and piped output has no width limit at all.
+verctl pins ctl-core 0.5.0.
+Version 0.6.3 of ctl-core ships the look chosen in its `choose-visual-identity`
+change:
 
-Queue row: VER-040.
+- borderless records
+- an identifier role
+- pretty JSON
+- a two-column automatic-width buffer
+- an 80-column fallback when no width is detected
+
+On 0.5.0 a two-line `publish --dry-run` summary prints a four-line box.
+Piped output has no width limit at all.
+
+Queue row [VER-040][ver-040].
 
 ## What changes
 
@@ -22,3 +29,5 @@ Queue row: VER-040.
 
 Pretty output changes shape: records lose their box and JSON is indented.
 The JSON data itself does not change.
+
+[ver-040]: ../../../../tasks.yaml

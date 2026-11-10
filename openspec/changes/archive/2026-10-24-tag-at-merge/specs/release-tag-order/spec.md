@@ -2,10 +2,13 @@
 
 ### Requirement: A registry-checked package is tagged before its uploads
 
-`verctl publish` SHALL create the tag and GitHub Release of a tag whose
-packages all have a registry check, or no upload, before running any upload
-of the run. A run that finds that tag and Release SHALL create neither and
-SHALL fail before any upload when the tag names a commit other than HEAD.
+`verctl publish` SHALL create the tag and GitHub Release of a tag before
+running any upload of the run.
+This applies when all packages under the tag have a registry check, or no
+upload.
+
+A run that finds that tag and Release SHALL create neither.
+It SHALL fail before any upload when the tag names a commit other than HEAD.
 When GitHub refuses that Release with 403, the run SHALL still run its
 uploads and SHALL then fail, naming the refusal.
 
@@ -28,8 +31,8 @@ uploads and SHALL then fail, naming the refusal.
 ### Requirement: An unchecked upload keeps its tag after the upload
 
 `verctl publish` SHALL create a tag that names a package with an unchecked
-upload only after that upload succeeds, since the tag is the record that the
-upload ran.
+upload only after that upload succeeds.
+The tag is the record that the upload ran.
 
 #### Scenario: A shared tag over a checked and an unchecked package
 

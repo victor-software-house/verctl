@@ -19,11 +19,12 @@ Compile, format, lint, and test tasks run on the build host with `mise run verif
   - 2026-10-01 15:40 UTC: `src/instructions.md` and `skills/verctl/SKILL.md` regenerated with `UPDATE_OPERATOR_DOCS=1 cargo test operator_docs`; `operator_docs` passed inside `mise run verify` at [ca6de8f].
 - [x] 2.2 A `patch` changeset ships it; proof: `verctl status` lists it
   - 2026-10-01 15:40 UTC: `.changeset/first-release-check.md` declares `verctl: patch`; the `fragments` task counted it.
-- [x] 2.3 Close VER-042 when the pull request merges; proof: `mise run q check` passes
-  - 2026-10-01 15:40 UTC: VER-042 archived with `mise run q archive` on [PR 101][verctl#101], which closes it on merge; `mise run q check` passed.
+- [x] 2.3 Close [VER-042][ver-042] when the pull request merges; proof: `mise run q check` passes
+  - 2026-10-01 15:40 UTC: [VER-042][ver-042] archived with `mise run q archive` on [PR 101][verctl#101], which closes it on merge; `mise run q check` passed.
 
 Not verified: a real Version PR refusing a `minor` fragment on a `0.0.0` package in CI. The refusal is proven by the tests above, not by a live `prepare --pr` run.
 
 [ca6de8f]: https://github.com/victor-software-house/verctl/pull/101/commits/ca6de8f
 [verctl#101]: https://github.com/victor-software-house/verctl/pull/101
 [run 36884790598]: https://github.com/victor-software-house/verctl/actions/runs/36884790598
+[ver-042]: ../../../../tasks.yaml

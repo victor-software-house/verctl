@@ -7,8 +7,9 @@ pick out what was added from what was fixed.
 The operator chose an optional fragment key over a new config file:
 old fragments stay valid and old changelogs render the same.
 
-Queue row: VER-052.
-Lands on `next` for 0.4.0: `Fragment` gains a public field, and
+Queue row: [VER-052][ver-052].
+Lands on `next` for 0.4.0.
+`Fragment` gains a public field.
 `cargo semver-checks` 0.51.0 reports `constructible_struct_adds_field`
 against the 0.3.16 release, which needs a breaking bump.
 
@@ -27,3 +28,5 @@ against the 0.3.16 release, which needs a breaking bump.
 
 1. `src/fragment.rs`, `src/release.rs`, tests, operator docs, README.
 2. `Fragment` has a new public field, `group`.
+
+[ver-052]: ../../../../tasks.yaml
