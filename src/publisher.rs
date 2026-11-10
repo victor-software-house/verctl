@@ -303,7 +303,7 @@ pub fn resolve(
 /// The publisher a package names; else the stock one its manifest file
 /// implies; else a `publishers` entry or `publish` command under the
 /// package's own name; else `none` for a version source no registry reads,
-/// such as `go.mod`, whose release is its tag.
+/// such as `go.mod` or `VERSION`, whose release is its tag.
 pub(crate) fn publisher_name<'a>(
     config: &crate::config::Config,
     spec: &'a crate::config::PackageSpec,
@@ -322,10 +322,11 @@ pub(crate) fn publisher_name<'a>(
     spec.name.as_str()
 }
 
-/// Version sources whose release is a tag and a Release: a Go module is
-/// fetched from its tag, so no upload exists to run.
+/// Version sources whose release is a tag and a Release. A Go module is
+/// fetched from its tag, and a `VERSION` file names no registry at all, so
+/// no upload exists to run.
 fn releases_on_github_only(file_name: &str) -> bool {
-    file_name == "go.mod"
+    matches!(file_name, "go.mod" | "VERSION")
 }
 
 /// How `publish` decides whether `version` of a package is already on its
@@ -655,7 +656,7 @@ mod tests {
     /// A Go module is fetched from its tag, so with nothing said it releases
     /// on GitHub only; a publisher it names still wins.
     #[test]
-    fn a_go_module_releases_on_github_only() {
+    fn go_modules_and_version_files_release_on_github_only() {
         let config = crate::config::Config::parse(indoc! {"
             packages:
               - name: lib
@@ -663,9 +664,13 @@ mod tests {
               - name: tool
                 path: tools/go.mod
                 publish: [goreleaser, release]
+              - name: templates
+                path: VERSION
         "})
         .unwrap();
         let (label, _, argv) = resolve(&config, &config.packages[0], Path::new("go.mod")).unwrap();
+        assert_eq!((label.as_str(), argv.len()), ("release only", 0));
+        let (label, _, argv) = resolve(&config, &config.packages[2], Path::new("VERSION")).unwrap();
         assert_eq!((label.as_str(), argv.len()), ("release only", 0));
         let (_, _, argv) =
             resolve(&config, &config.packages[1], Path::new("tools/go.mod")).unwrap();

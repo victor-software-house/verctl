@@ -225,7 +225,10 @@ line, and reads as `0.0.0` without one. A `Deprecated:` notice that ends the
 comments directly above that line fails the bump, because Go reads it together with the
 version comment. A bump to v2 or later fails until
 the module path ends in `/v<major>`, and a Go module with no publisher
-releases on GitHub only. A lockfile
+releases on GitHub only. A `VERSION` file holds one version and a newline.
+A missing one reads as `0.0.0`: `check` leaves it missing and `prepare`
+writes it. With no publisher, a `VERSION` package releases on GitHub only.
+A lockfile
 beside the manifest or above it in the repository adds its refresh to the
 next steps: `cargo update --workspace` for `Cargo.lock`, the package
 manager's install for a JavaScript lockfile, and `uv lock` for `uv.lock`.

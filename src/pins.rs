@@ -23,7 +23,7 @@ pub fn current_versions(root: &Path, config: &Config) -> Result<Vec<(String, Str
     for spec in &config.packages {
         let path = root.join(&spec.path);
         let driver = spec.resolve(config, root)?;
-        let raw = fs::read_to_string(&path).with_context(|| path.display().to_string())?;
+        let raw = driver.source(&path)?;
         versions.push((spec.name.clone(), driver.read(&raw)?.trim().to_owned()));
     }
     Ok(versions)

@@ -120,10 +120,11 @@ Local writes are the default. `prepare --pr` is the Version PR
 (Action happy path; the token is `GITHUB_TOKEN`, not the `gh` account).
 `prepare --dry-run` / `--preview` prints the plan and writes nothing.
 `prepare --pr --preview` also shows consumed fragments and open vs update.
-Cargo, npm, `pyproject.toml`, and `go.mod` are stock drivers, not a
-separate code path. A `go.mod` keeps its version as `// vX.Y.Z` on its
-`module` line. A `pyproject.toml` package names its `publisher`, or `none`: verctl
-has no stock Python publisher.
+Cargo, npm, `pyproject.toml`, `go.mod`, and `VERSION` are stock drivers,
+not a separate code path. A `go.mod` keeps its version as `// vX.Y.Z` on
+its `module` line. A `VERSION` file holds only the version, and a missing
+one reads as `0.0.0` until `prepare` writes it. A `pyproject.toml` package
+names its `publisher`, or `none`: verctl has no stock Python publisher.
 
 A repo's declarations live in one file, `.ctl/ver.yaml`. `.ctl/` is the
 directory every ctl CLI shares, so a repo root gains one entry however many of
@@ -147,8 +148,12 @@ packages:
     path: Cargo.toml
     # driver: cargo   # inferred from the file name
 
-  - name: other
+  - name: templates
     path: VERSION
+    # driver: version  # inferred; releases on GitHub only
+
+  - name: other
+    path: release.txt
     read: ver-read-version              # mise run ver-read-version
     write: [printenv, VERCTL_VERSION]
 ```

@@ -1,6 +1,5 @@
 //! Compare declared manifest versions to the default branch.
 
-use std::fs;
 use std::path::Path;
 
 use anyhow::{Result, ensure};
@@ -214,10 +213,10 @@ pub fn report_with(
     let mut rows = Vec::new();
     for ((spec, remote_raw), released_raw) in config.packages.iter().zip(remotes).zip(released) {
         let path = root.join(&spec.path);
-        let Ok(local_raw) = fs::read_to_string(&path) else {
+        let driver = spec.resolve(config, root)?;
+        let Ok(local_raw) = driver.source(&path) else {
             continue;
         };
-        let driver = spec.resolve(config, root)?;
         let local = driver.read(&local_raw)?;
         let remote = remote_raw
             .as_deref()

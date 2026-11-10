@@ -45,8 +45,9 @@ impl CommandField {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[non_exhaustive]
 pub struct DriverSpec {
-    /// `toml` or `json`, edited at `keys`; or `gomod`, the `// vX.Y.Z`
-    /// comment on a `go.mod` module line, which takes no keys.
+    /// `toml` or `json`, edited at `keys`. `gomod` (the `// vX.Y.Z` comment on
+    /// a `go.mod` module line) and `version` (a file holding only the
+    /// version) take no keys.
     pub format: Option<String>,
     /// Key paths holding the version, tried in order.
     pub keys: Option<Vec<String>>,
@@ -67,8 +68,9 @@ impl DriverSpec {
     ///
     /// Returns an error when a `read` and `write` pair has an empty mise task
     /// name or an empty argv. Without that pair, it returns an error when
-    /// `format` is missing or not `toml`, `json`, or `gomod`, when `keys` is
-    /// missing or empty for `toml` or `json`, or when `gomod` has `keys`.
+    /// `format` is missing or not `toml`, `json`, `gomod`, or `version`, when
+    /// `keys` is missing or empty for `toml` or `json`, or when `gomod` or
+    /// `version` has `keys`.
     pub fn into_driver(self, name: &str) -> Result<Driver> {
         if let (Some(read), Some(write)) = (self.read, self.write) {
             return Ok(Driver::Command {
@@ -80,13 +82,18 @@ impl DriverSpec {
         let format = match self.format.as_deref() {
             Some("toml") => Format::Toml,
             Some("json") => Format::Json,
-            Some("gomod") => {
+            Some(text @ ("gomod" | "version")) => {
                 ensure!(
                     self.keys.is_none(),
-                    "driver {name:?} has format gomod, which reads the module line and takes no keys"
+                    "driver {name:?} has format {text}, which reads the whole file and takes no keys"
                 );
+                let text = if text == "gomod" {
+                    Text::GoMod
+                } else {
+                    Text::Version
+                };
                 return Ok(Driver::Text {
-                    text: Text::GoMod,
+                    text,
                     after: self.after,
                 });
             }
@@ -126,6 +133,10 @@ impl DriverSpec {
             }),
             "go" => Some(Self {
                 format: Some("gomod".into()),
+                ..Self::default()
+            }),
+            "version" => Some(Self {
+                format: Some("version".into()),
                 ..Self::default()
             }),
             _ => None,
@@ -203,8 +214,8 @@ impl PackageSpec {
     ///
     /// Returns an error when the merged driver is incomplete or invalid, as
     /// described for [`DriverSpec::into_driver`]. A package whose file is
-    /// not `Cargo.toml`, `package.json`, `pyproject.toml`, or `go.mod` needs a
-    /// driver of its own.
+    /// not `Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, or
+    /// `VERSION` needs a driver of its own.
     pub fn resolve(&self, config: &Config, root: &Path) -> Result<Driver> {
         let inferred = self
             .path
@@ -533,7 +544,7 @@ fn something_to_release(packages: &[PackageSpec], config: &Config) -> garde::Res
 #[non_exhaustive]
 pub struct Config {
     /// Custom drivers by name. A stock name (`cargo`, `npm`, `pyproject`,
-    /// `go`) is overridden field by field.
+    /// `go`, `version`) is overridden field by field.
     #[serde(default)]
     pub drivers: BTreeMap<String, DriverSpec>,
     /// What this repo releases. Omit only when the repo declares `vendored`;
@@ -677,9 +688,9 @@ fn none_is_not_a_publisher(
     Ok(())
 }
 
-/// `publisher: none`, said or inferred from a `go.mod`, uploads nothing, so a
-/// registry or an upload command on the same package would be a setting
-/// nothing reads.
+/// `publisher: none`, said or inferred from a `go.mod` or `VERSION`, uploads
+/// nothing, so a registry or an upload command on the same package would be
+/// a setting nothing reads.
 fn release_only_names_no_registry(packages: &[PackageSpec], config: &Config) -> garde::Result {
     for package in packages {
         if crate::publisher::publisher_name(config, package) == crate::publisher::RELEASE_ONLY
@@ -1187,6 +1198,7 @@ fn stock_name_for_file(file_name: &str) -> Option<&'static str> {
         "package.json" => Some("npm"),
         "pyproject.toml" => Some("pyproject"),
         "go.mod" => Some("go"),
+        "VERSION" => Some("version"),
         _ => None,
     }
 }

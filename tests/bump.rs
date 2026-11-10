@@ -737,3 +737,64 @@ fn a_go_major_needs_the_module_path() {
         bump_go_module("module example.com/demo/v2 // v2.1.0\n", "patch").expect("plan");
     assert_eq!(plan[0].to, "2.1.1");
 }
+
+/// Plan and apply one `patch` fragment for `templates`, whose version lives
+/// in `VERSION`; `None` leaves the file missing. Returns the plan and the
+/// file afterwards.
+fn bump_version_file(raw: Option<&str>) -> anyhow::Result<(Vec<prepare::PlanEntry>, String)> {
+    let root = TempDir::new().expect("tmp");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: templates
+                path: VERSION
+        "},
+    );
+    if let Some(raw) = raw {
+        fs::write(root.path().join("VERSION"), raw).expect("VERSION");
+    }
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let fragment = parse_str(
+        indoc! {"
+            ---
+            templates: patch
+            ---
+
+            Patch.
+        "},
+        "a.md",
+    )
+    .expect("frag");
+    let plan = prepare::plan(&config, &[fragment], root.path())?;
+    prepare::apply_plan(&plan)?;
+    let after = fs::read_to_string(root.path().join("VERSION")).expect("read");
+    Ok((plan, after))
+}
+
+#[test]
+fn a_version_file_holds_only_the_version() {
+    let (plan, after) = bump_version_file(Some("0.0.75\n")).expect("plan");
+    assert_eq!(
+        (plan[0].from.as_str(), plan[0].to.as_str()),
+        ("0.0.75", "0.0.76")
+    );
+    assert_eq!(after, "0.0.76\n");
+    let (_, after) = bump_version_file(Some("1.2.3")).expect("no newline");
+    assert_eq!(after, "1.2.4\n");
+}
+
+#[test]
+fn a_missing_version_file_starts_at_0_0_0() {
+    let (plan, after) = bump_version_file(None).expect("plan");
+    assert_eq!(plan[0].from, "0.0.0");
+    assert_eq!(after, "0.0.1\n");
+}
+
+#[test]
+fn a_version_file_with_more_than_a_version_fails() {
+    for raw in ["version 1.2.3\n", "1.2.3\nnotes\n"] {
+        let error = bump_version_file(Some(raw)).expect_err(raw);
+        assert!(format!("{error:#}").contains("VERSION"), "{raw}: {error:#}");
+    }
+}
