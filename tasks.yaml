@@ -608,6 +608,19 @@ queue:
       - 2026-11-10, the operator placed this break in the 0.8.0 minor (operator, 2026-11-10).
       - 2026-11-10, registry-token-env stays as the variable the publisher reads, because that name differs by registry.
 
+  - id: VER-106
+    title: verctl places a fragment's PR link after a trailing colon
+    scope: src/changelog.rs, templates/changelog.jinja
+    outcome: >-
+      A changelog entry whose first paragraph ends in a colon reads as a full
+      sentence with its link.
+    blocked_by: []
+    acceptance:
+      - An entry whose first paragraph ends in a colon renders its pull request or commit link before the colon, or at the end of the first sentence, never after the colon.
+      - A test renders such a fragment and asserts where the link lands.
+    notes:
+      - 2026-11-10, three 0.8.0 fragments were reworded to end their first paragraph in a full stop, as a stopgap until this ships as a patch.
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all

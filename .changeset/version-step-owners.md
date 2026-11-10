@@ -3,7 +3,9 @@ verctl: minor
 verctl:group: changed
 ---
 
-`verctl version` runs the command that owns each bumped manifest's lockfile and commits that lockfile without a `prepare.stage` entry:
+`verctl version` runs the command that owns each bumped manifest's lockfile and commits that lockfile without a `prepare.stage` entry.
+
+These commands own the lockfiles:
 
 - `cargo update --workspace` beside `Cargo.lock`;
 - `uv lock` beside `uv.lock`;

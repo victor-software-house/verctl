@@ -3,7 +3,9 @@ verctl: minor
 verctl:group: changed
 ---
 
-`verctl check --versions` fails a pull request that is not the Version PR in two more cases:
+`verctl check --versions` fails a pull request that is not the Version PR in two more cases.
+
+Each case is a change the pull request makes:
 
 - It adds a CHANGELOG section for a version. A heading names its version last, as in `## demo 1.2.0` or `## 1.2.0`. A version the CHANGELOG held at the merge-base, or on the release branch at its merge-base with HEAD, is not added. Fixing the name in a heading therefore passes, and so does merging the release branch.
 - It changes whether a package publishes and adds no fragment that bumps that package above `none`. Whether a package publishes comes from its `publisher`, the members a workspace package uploads, a Cargo `publish` key (inherited from the workspace root with `publish.workspace`), and `private` in `package.json`. A setting the release branch already holds at its merge-base with HEAD passes, as a released version does.
