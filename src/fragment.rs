@@ -203,7 +203,7 @@ pub fn load_dir(dir: &Path) -> Result<Vec<Fragment>> {
     Ok(fragments)
 }
 
-fn is_fragment_path(path: &Path) -> bool {
+pub(crate) fn is_fragment_path(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
         return false;
     };

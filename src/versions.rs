@@ -6,7 +6,7 @@ use anyhow::{Context, Result, ensure};
 use serde::Serialize;
 
 use crate::config::Config;
-use crate::{git, release};
+use crate::{content, git, release};
 
 /// Whether, and why, the version comparison is skipped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,7 +16,8 @@ pub enum Skip {
     None,
     /// Skip the comparison, reported as `ci`.
     Ci,
-    /// Skip on the Version PR, where versions are meant to differ.
+    /// Skip the comparison on the Version PR, where versions are meant to
+    /// differ. [`report`] checks the Version PR's content instead.
     VersionBranch,
     /// Skip in a merge queue run. Each entry's pull request already compared
     /// its own versions, and a queue run combines entries, so a Version PR
@@ -145,37 +146,47 @@ fn on_version_branch(root: &Path) -> bool {
     git::current_branch(root).is_some_and(|branch| release::is_version_branch(&branch))
 }
 
-/// Compare versions on HEAD to the merge-base, skipping per [`Skip::from_env`]
-/// when a version drifted. A local Version PR branch skips before reading
-/// anything. A pull request that changes no version never asks whether it is
-/// a Version PR, so it needs no token and no API. On Actions, the base and
-/// default branches are fetched first when the checkout lacks them or is
-/// shallow, as the depth-1 pull request checkout is.
+/// Compare versions on HEAD to the merge-base. On the Version PR, check its
+/// content instead with [`content::check`]: the versions are meant to differ
+/// there, and every change must be one the version step makes.
+///
+/// A pull request that changes no version and consumes no fragment never asks
+/// whether it is the Version PR, so it needs no token and no API. One that
+/// does asks through [`Skip::from_env`]; a merge queue run skips. On Actions,
+/// the base and default branches are fetched first when the checkout lacks
+/// them or is shallow, as the depth-1 pull request checkout is.
 ///
 /// # Errors
 ///
 /// Returns an error when that fetch fails, under the conditions of
-/// [`report_with`], or when a version drifted and [`Skip::from_env`] cannot
-/// read the pull request.
-pub fn report(root: &Path, config: &Config) -> Result<VersionReport> {
-    if on_version_branch(root) {
-        return report_with(root, config, Skip::VersionBranch, &[], &[]);
-    }
+/// [`report_with`] and [`content::removes_fragment`], when [`Skip::from_env`]
+/// cannot read the pull request, or when the Version PR fails
+/// [`content::check`].
+pub fn report(root: &Path, config: &Config, inputs: &content::Inputs) -> Result<VersionReport> {
     let fetch = git::FetchDefault::from_env();
     for branch in git::comparison_branches() {
         git::ensure_comparable(root, &branch, &fetch)?;
+    }
+    let candidates = git::default_branch_candidates();
+    if on_version_branch(root) {
+        content::check(root, config, inputs, &candidates)?;
+        return report_with(root, config, Skip::VersionBranch, &[], &[]);
     }
     let report = report_with(
         root,
         config,
         Skip::None,
-        &git::default_branch_candidates(),
+        &candidates,
         &git::release_branch_candidates(),
     )?;
-    if report.drifted().is_empty() {
+    if report.drifted().is_empty() && !content::removes_fragment(root, inputs, &candidates)? {
         return Ok(report);
     }
-    Ok(match Skip::from_env(root)?.label() {
+    let skip = Skip::from_env(root)?;
+    if skip == Skip::VersionBranch {
+        content::check(root, config, inputs, &candidates)?;
+    }
+    Ok(match skip.label() {
         Some(label) => VersionReport {
             skip: Some(label.into()),
             rows: Vec::new(),
@@ -251,8 +262,8 @@ pub fn report_with(
 ///
 /// Returns an error under the conditions of [`report`], or when any version
 /// drifted, as described for [`VersionReport::require_clean`].
-pub fn require(root: &Path, config: &Config) -> Result<VersionReport> {
-    let report = report(root, config)?;
+pub fn require(root: &Path, config: &Config, inputs: &content::Inputs) -> Result<VersionReport> {
+    let report = report(root, config, inputs)?;
     report.require_clean()?;
     Ok(report)
 }

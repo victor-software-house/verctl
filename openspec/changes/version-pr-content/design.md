@@ -20,7 +20,7 @@ be the version step applied to its base, and nothing else. It is one part of
 2. **Content.** A Version PR's diff must be the version step applied to its
    base and nothing else. It changes no path outside what the version step
    writes (manifests, lockfiles, CHANGELOGs, pinned and served files, consumed
-   fragments, and the declared `writes` of `version` steps, read from the
+   fragments, and the paths `prepare.stage` names, read from the
    configuration at the merge-base). A manifest equals its merge-base text
    with the planned version written by its driver and its pins applied. Every
    changed version equals the plan of the fragments present at the merge-base
@@ -33,10 +33,13 @@ be the version step applied to its base, and nothing else. It is one part of
    source: no `source` in `Cargo.lock`, a workspace key in `bun.lock`, a
    member path in `package-lock.json`, and an `editable` or `virtual` source
    in `uv.lock`. If an owner command
-   re-resolves more than the bump, `propose` fails its own postcondition, and
-   the release branch needs a lockfile refresh first. The content of a
-   `version` step's declared `writes` is trusted to that step and reviewed on
-   the Version PR; `check` constrains only which paths it may change.
+   re-resolves more than the bump, `version` fails its own postcondition, and
+   the release branch needs a lockfile refresh first. The content of a path
+   `prepare.stage` names is trusted to `prepare.after` and reviewed on the
+   Version PR; `check` constrains only which paths may change. A `version`
+   step that declares its own `writes` belongs to
+   [building-blocks][blocks]; when it ships, those declarations join the
+   write set beside `prepare.stage`.
 
 Two rules for pull requests that are not Version PRs ship in this change:
 a CHANGELOG section, and a change to whether a package publishes.
@@ -70,7 +73,20 @@ identity and whether verctl should.
 4. **Unreadable lockfiles fail.** A changed `yarn.lock` or `bun.lockb` fails
    and names the file. Passing them unread would let a dependency move ride
    the Version PR. No repository using verctl has either today.
-5. **Dependent requirements later.** Rewriting a requirement the new version
+5. **No commands in the replay.** The replay runs no lockfile owner and no
+   `prepare.after` command, and makes no network call, so `check` stays fast
+   and gives the same answer with or without a registry. Lockfiles are read
+   through the parsers instead. Workspace inheritance is read with
+   `cargo metadata --no-deps --offline`, before and after the planned
+   versions are written, and only for a planned `Cargo.toml` whose lockfile
+   is a `Cargo.lock`. Running the owners in a scratch copy lost: it needs the
+   registry and every tool, and a slow or offline registry would turn a
+   correct Version PR red.
+6. **Served files at HEAD.** A template is found through the git index, so
+   the scratch copy of the merge-base cannot render it. A served file is
+   checked in the working tree against its render at the versions on HEAD.
+   Once the manifests match the replay, those are the replay's versions.
+7. **Dependent requirements later.** Rewriting a requirement the new version
    no longer admits is VER-105. Until it ships, a requirement change that no
    pin explains fails, which VER-105 then loosens without a break.
 
@@ -84,5 +100,6 @@ without the check means skipping `check --versions` on that pull request.
    Intended: fragments land with the change that needs them, and the Version
    PR applies what is on the release branch.
 
+[blocks]: ../building-blocks/design.md
 [rsm]: ../release-state-machine/design.md
 [vpi]: ../version-pr-identity/design.md

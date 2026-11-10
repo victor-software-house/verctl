@@ -44,7 +44,9 @@
 //!    commit, and opens a GitHub Release, and [`assets`] builds the declared
 //!    release tarballs.
 //! 5. [`versions`] guards the other way: a manifest version that differs from
-//!    the default branch without a fragment fails the check.
+//!    the default branch without a fragment fails the check. On the Version PR,
+//!    [`content::check`] replays the version step on the merge-base and fails
+//!    any change the replay does not make.
 //!
 //! ## Cargo features
 //!
@@ -60,6 +62,7 @@ pub mod ci;
 pub mod cli;
 /// The `.ctl/ver.yaml` schema.
 pub mod config;
+pub mod content;
 pub mod detect;
 pub mod docsrs;
 /// Reading and writing a version in a manifest.

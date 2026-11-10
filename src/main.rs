@@ -128,7 +128,8 @@ fn check_served(root: &Path, config: &Config) -> Result<()> {
 fn versions_report(args: &CheckArgs) -> Result<VersionCheckReport> {
     let root = &config::root_of(&args.config);
     let config = Config::load(&args.config)?;
-    let report = versions::report(root, &config)?;
+    let inputs = verctl::content::Inputs::new(&args.config, &args.dir);
+    let report = versions::report(root, &config, &inputs)?;
     Ok(VersionCheckReport {
         skip: report.skip,
         rows: report.rows,

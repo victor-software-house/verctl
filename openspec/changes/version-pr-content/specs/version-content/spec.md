@@ -3,8 +3,8 @@
 ### Requirement: The version step writes every file a release changes
 
 `verctl version` SHALL apply the plan of the pending fragments to the working
-tree: each manifest, each lockfile through its owner, and each `version` step,
-each command once. It SHALL apply each package CHANGELOG, each pinned and
+tree: each manifest, each lockfile through its owner, and each `prepare.after`
+command, each command once. It SHALL apply each package CHANGELOG, each pinned and
 served file, and the removal of every consumed fragment, one that bumps
 nothing included. It SHALL report the commands and steps it ran under
 `after`.
@@ -25,10 +25,10 @@ nothing included. It SHALL report the commands and steps it ran under
 
 A Version PR SHALL fail when it changes any path outside what the version step
 writes. That write set holds manifests, lockfiles, CHANGELOGs, pinned and served
-files, consumed fragments, and the declared `writes` of `version` steps, read
-from the configuration at the merge-base. `check` SHALL constrain only which paths a
-`version` step's declared `writes` change, not their content, which the Version
-PR's review covers.
+files, consumed fragments, and the paths `prepare.stage` names, read from the
+configuration at the merge-base. `check` SHALL constrain only which paths that
+`prepare.stage` names change, not their content, which the Version PR's review
+covers.
 
 #### Scenario: A Version PR that carries a source change
 
@@ -37,8 +37,26 @@ PR's review covers.
 
 #### Scenario: A Version PR that widens its own write set
 
-- **WHEN** the Version PR adds `src/lib.rs` to a `version` step's `writes` in `.ctl/ver.yaml` and changes `src/lib.rs`
+- **WHEN** the Version PR adds `src/lib.rs` to `prepare.stage` in `.ctl/ver.yaml` and changes `src/lib.rs`
 - **THEN** `verctl check` exits non-zero and names `src/lib.rs`, because the write set comes from the merge-base
+
+#### Scenario: A path prepare.stage names at the merge-base
+
+- **WHEN** `prepare.stage` at the merge-base names `docs/version.txt`, and the Version PR changes it
+- **THEN** `verctl check` exits zero
+
+### Requirement: The content check runs no command
+
+`check` SHALL replay the version step without running a lockfile owner or a
+`prepare.after` command, and without a network call. It SHALL give the same
+answer with or without a registry. It MAY read the members of a Cargo
+workspace with `cargo metadata --no-deps --offline`, and only for a planned
+`Cargo.toml` whose lockfile is a `Cargo.lock`.
+
+#### Scenario: Members read offline
+
+- **WHEN** the Version PR moves `ctl-core`'s four `Cargo.lock` members and no registry is reachable
+- **THEN** `verctl check` exits zero
 
 ### Requirement: A Version PR applies the plan
 
@@ -99,8 +117,8 @@ removed.
 
 #### Scenario: A Version PR that moves a third-party dependency
 
-- **WHEN** the Version PR bumps `demo` and also changes the resolved version of `serde` in `Cargo.lock`
-- **THEN** `verctl check` exits non-zero and names `Cargo.lock` and `serde`
+- **WHEN** the Version PR bumps `ctl-core` and also changes the resolved version of `anstyle` in `Cargo.lock`
+- **THEN** `verctl check` exits non-zero and names `Cargo.lock` and `anstyle`
 
 ### Requirement: A lockfile that records no workspace version stays unchanged
 

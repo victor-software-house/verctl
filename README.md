@@ -407,6 +407,9 @@ For a hand-written workflow, use these actions; most repositories call the
 reusable workflow instead.
 
 The Version PR comes from `verctl/release/<base>`, one per base branch.
+`check --versions` fails it when it changes anything the version step does
+not write from the merge-base: a source file, a manifest key no pin names,
+or a lockfile entry other than a workspace version the plan moves.
 verctl never merges it or enables auto-merge on it: a release starts only
 when a person merges the Version PR.
 

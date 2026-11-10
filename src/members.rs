@@ -82,6 +82,39 @@ pub fn members(manifest: &Path) -> Result<Vec<Member>> {
     in_publish_order(&metadata)
 }
 
+/// The version of every member of the workspace that holds `manifest`, by
+/// crate name, published or not.
+///
+/// Cargo resolves member globs and `version.workspace = true`, so the Version
+/// PR check reads each member's version here. `--offline` with `--no-deps`
+/// reads only manifests, so the check never reaches a registry.
+///
+/// # Errors
+///
+/// Returns an error when `cargo metadata` fails or prints something other than
+/// its JSON.
+pub fn versions(manifest: &Path) -> Result<BTreeMap<String, String>> {
+    let path = manifest.display().to_string();
+    let argv = process::argv(&[
+        "cargo",
+        "metadata",
+        "--format-version",
+        "1",
+        "--no-deps",
+        "--offline",
+        "--manifest-path",
+        &path,
+    ]);
+    let raw = process::run_limited(&argv, &[], METADATA_TIMEOUT)?;
+    let metadata: Metadata = serde_json::from_str(&raw).context("cargo metadata output")?;
+    Ok(metadata
+        .packages
+        .into_iter()
+        .filter(|package| metadata.workspace_members.contains(&package.id))
+        .map(|package| (package.name, package.version))
+        .collect())
+}
+
 /// The parts of `cargo metadata --format-version 1` this module reads.
 #[derive(Deserialize)]
 struct Metadata {

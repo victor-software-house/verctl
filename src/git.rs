@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -106,6 +106,180 @@ fn git_path(root: &Path, rel: &Path, workdir: Option<&Path>) -> Option<PathBuf> 
     };
     let workdir = workdir?.canonicalize().ok()?;
     abs.strip_prefix(workdir).ok().map(Path::to_path_buf)
+}
+
+/// The tree at the merge-base of HEAD and the pull request's base, and the
+/// paths the working tree changes against it. The Version PR content check
+/// replays the version step on this tree.
+#[derive(Debug)]
+pub struct MergeBase {
+    repo: gix::Repository,
+    workdir: PathBuf,
+    files: BTreeMap<String, (gix::ObjectId, EntryKind)>,
+    changed: BTreeSet<String>,
+}
+
+impl MergeBase {
+    /// Read the merge-base tree and list each tracked path whose bytes in the
+    /// working tree differ from it: committed on the branch, modified, or
+    /// deleted. Untracked files are left out.
+    ///
+    /// `None` when there is no repository, or no `origin` and none of the
+    /// candidate refs, as for [`files_on_merge_base`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error under the conditions of [`files_on_merge_base`], or
+    /// when a tree, a blob, a working tree file, or `git status` cannot be
+    /// read.
+    pub fn read(root: &Path, candidates: &[String]) -> Result<Option<Self>> {
+        let Some(repo) = repo_covering(root) else {
+            return Ok(None);
+        };
+        let Some(upstream) = default_upstream_commit(&repo, candidates)? else {
+            return Ok(None);
+        };
+        let (files, head_files) = {
+            let head = repo
+                .head_commit()
+                .context("cannot compare the Version PR (need HEAD)")?;
+            let base = repo
+                .merge_base(head.id(), upstream)
+                .context(NEED_FULL_FETCH)?
+                .context(NEED_FULL_FETCH)?;
+            (
+                files_of(&repo.find_commit(base)?.tree()?)?,
+                files_of(&head.tree()?)?,
+            )
+        };
+        let workdir = repo
+            .workdir()
+            .context("the Version PR check needs a working tree")?
+            .canonicalize()
+            .context("the working tree")?;
+        let mut candidates: BTreeSet<String> = files
+            .keys()
+            .chain(head_files.keys())
+            .filter(|path| files.get(*path) != head_files.get(*path))
+            .cloned()
+            .collect();
+        candidates.extend(
+            status_paths(&repo, Vec::new(), false)
+                .context("git status")?
+                .into_iter()
+                .filter(|path| files.contains_key(path) || head_files.contains_key(path)),
+        );
+        let mut merge_base = Self {
+            repo,
+            workdir,
+            files,
+            changed: BTreeSet::new(),
+        };
+        for path in candidates {
+            if merge_base.base_bytes(&path)? != merge_base.worktree_bytes(&path)? {
+                merge_base.changed.insert(path);
+            }
+        }
+        Ok(Some(merge_base))
+    }
+
+    /// The working tree's root, canonical.
+    #[must_use]
+    pub fn workdir(&self) -> &Path {
+        &self.workdir
+    }
+
+    /// Each path, relative to the working tree's root, whose bytes differ
+    /// from the merge-base.
+    #[must_use]
+    pub fn changed(&self) -> &BTreeSet<String> {
+        &self.changed
+    }
+
+    /// A file's bytes at the merge-base, or `None` when it has no file there.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the blob cannot be read.
+    pub fn base_bytes(&self, rel: &str) -> Result<Option<Vec<u8>>> {
+        let Some((oid, _)) = self.files.get(rel) else {
+            return Ok(None);
+        };
+        let blob = self
+            .repo
+            .find_blob(*oid)
+            .with_context(|| format!("{rel} at the merge-base"))?;
+        Ok(Some(blob.data.clone()))
+    }
+
+    /// A file's bytes in the working tree, or `None` when it is missing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the file exists but cannot be read.
+    pub fn worktree_bytes(&self, rel: &str) -> Result<Option<Vec<u8>>> {
+        read_optional(&self.workdir.join(rel))
+    }
+
+    /// Write every regular file of the merge-base tree under `dir`, with its
+    /// executable bit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a blob cannot be read or a file cannot be
+    /// written.
+    pub fn write_to(&self, dir: &Path) -> Result<()> {
+        use std::os::unix::fs::PermissionsExt as _;
+        for (rel, (_, kind)) in &self.files {
+            let mode = match kind {
+                EntryKind::Blob => 0o644,
+                EntryKind::BlobExecutable => 0o755,
+                EntryKind::Link | EntryKind::Tree | EntryKind::Commit => continue,
+            };
+            let path = dir.join(rel);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("create {}", parent.display()))?;
+            }
+            let bytes = self.base_bytes(rel)?.unwrap_or_default();
+            std::fs::write(&path, bytes).with_context(|| format!("write {}", path.display()))?;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode))
+                .with_context(|| format!("chmod {}", path.display()))?;
+        }
+        Ok(())
+    }
+}
+
+/// A file's bytes, or `None` when it does not exist.
+///
+/// # Errors
+///
+/// Returns an error when the file exists but cannot be read.
+pub fn read_optional(path: &Path) -> Result<Option<Vec<u8>>> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).with_context(|| path.display().to_string()),
+    }
+}
+
+/// Every regular file in `tree`, by path, with its blob and kind. A symlink
+/// or a submodule holds no bytes the version step writes, so the content check
+/// neither compares nor replays one.
+fn files_of(tree: &gix::Tree<'_>) -> Result<BTreeMap<String, (gix::ObjectId, EntryKind)>> {
+    Ok(tree
+        .traverse()
+        .breadthfirst
+        .files()?
+        .into_iter()
+        .filter(|entry| entry.mode.is_blob())
+        .map(|entry| {
+            (
+                entry.filepath.to_str_lossy().into_owned(),
+                (entry.oid, entry.mode.kind()),
+            )
+        })
+        .collect())
 }
 
 fn blob_at(tree: &gix::Tree<'_>, rel: &Path) -> Option<String> {
@@ -1198,7 +1372,7 @@ fn default_upstream_commit(
     Ok(None)
 }
 
-fn matches_stage(pattern: &str, rel: &str) -> bool {
+pub(crate) fn matches_stage(pattern: &str, rel: &str) -> bool {
     glob::Pattern::new(pattern)
         .is_ok_and(|compiled| compiled.matches(rel) || compiled.matches(&format!("./{rel}")))
 }

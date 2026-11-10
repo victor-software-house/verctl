@@ -51,9 +51,11 @@ writing anything when none is set; it never guesses `main`. `proposal.title` and
 message; unset or empty, the title is `chore(release): version packages` and
 the message is the title. The Version PR gets no label.
 The PR comes from `verctl/release/<base>`, derived and never configured;
-`check --versions` exempts that branch locally. verctl never merges the
-Version PR or enables auto-merge on it: a release starts only when a person
-merges it.
+`check --versions` exempts that branch locally. On it, the check replays the
+version step on the merge-base and fails any change the replay does not make,
+running no lockfile owner and no `prepare.after` command. verctl never merges
+the Version PR or enables auto-merge on it: a release starts only when a
+person merges it.
 
 A new package starts at `0.0.0`. Its first fragment is a `patch`, so its
 first release is `0.0.1`. Moving to `0.1.0` or `1.0.0` is a separate operator

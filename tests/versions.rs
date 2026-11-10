@@ -56,6 +56,44 @@ fn repo_with_origin_main(version: &str) -> TempDir {
     dir
 }
 
+/// A Version PR's changes left in the working tree: the merge-base on
+/// `origin/main` holds demo 1.0.0 and one patch fragment, and the tree holds
+/// 1.0.1, its CHANGELOG section, and no fragment.
+fn version_pr() -> TempDir {
+    let dir = TempDir::new().unwrap();
+    common::init(dir.path());
+    write_crate(dir.path(), "1.0.0");
+    let fragment = dir.path().join(".changeset/fix.md");
+    fs::create_dir_all(fragment.parent().unwrap()).unwrap();
+    fs::write(
+        &fragment,
+        indoc! {"
+            ---
+            demo: patch
+            ---
+
+            Fix.
+        "},
+    )
+    .unwrap();
+    let sha = common::commit_all(dir.path(), "init");
+    track_origin_main(dir.path(), &sha);
+    write_crate(dir.path(), "1.0.1");
+    fs::write(
+        dir.path().join("CHANGELOG.md"),
+        indoc! {"
+            # Changelog
+
+            ## 1.0.1
+
+            - Fix.
+        "},
+    )
+    .unwrap();
+    fs::remove_file(fragment).unwrap();
+    dir
+}
+
 fn load(root: &Path) -> Config {
     Config::load(&root.join(verctl::config::FILE)).unwrap()
 }
@@ -456,10 +494,9 @@ fn pull_request_cmd(root: &Path, server: &MockServer) -> std::process::Command {
 }
 
 /// Whether `check --versions` passes for pull request 7 as `server` describes
-/// it, with a hand-edited version.
+/// it, with the changes of a Version PR.
 fn pull_request_passes(server: &MockServer) -> bool {
-    let dir = repo_with_origin_main("1.0.0");
-    write_crate(dir.path(), "1.0.1");
+    let dir = version_pr();
     let output = pull_request_cmd(dir.path(), server).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -670,13 +707,27 @@ fn a_pull_request_into_trunk_resolves_both_merge_bases() {
 
 #[test]
 fn version_branch_cli_is_exempt() {
+    let dir = version_pr();
+    common::git(dir.path(), &["checkout", "-q", "-b", "verctl/release/main"]);
+    let output = check_cmd(dir.path()).output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stdout}{stderr}");
+    assert!(stdout.contains("version-pr"), "{stdout}");
+}
+
+/// The version branch exempts the version step's changes and nothing else: a
+/// version no fragment plans fails the content check there.
+#[test]
+fn a_hand_edit_on_the_version_branch_fails() {
     let dir = repo_with_origin_main("1.0.0");
     write_crate(dir.path(), "1.0.1");
     common::git(dir.path(), &["checkout", "-q", "-b", "verctl/release/main"]);
     let output = check_cmd(dir.path()).output().unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success(), "{stdout}");
-    assert!(stdout.contains("version-pr"), "{stdout}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("Cargo.toml"), "{stderr}");
+    assert!(stderr.contains("does not write"), "{stderr}");
 }
 
 /// The Changesets branch name is no longer a Version PR: a hand edit there
