@@ -34,11 +34,11 @@ pub fn is_version_branch(branch: &str) -> bool {
         .is_some_and(|base| !base.is_empty())
 }
 
-/// Auth for `--pr`.
+/// Auth for the commands that call the GitHub API.
 ///
 /// The token is the one the environment already has (`GITHUB_TOKEN` in
 /// Actions). We do not call `gh` and we do not use the logged-in
-/// account. Local `--pr` is recovery when that same token is in the env.
+/// account. A local run needs that same token in the env.
 ///
 /// # Errors
 ///
@@ -46,7 +46,7 @@ pub fn is_version_branch(branch: &str) -> bool {
 /// non-empty value.
 pub fn resolve_token() -> Result<String> {
     env_token().context(
-        "version --pr needs GITHUB_TOKEN (Actions sets it; locally export the same token — not `gh`)",
+        "this command needs GITHUB_TOKEN or GH_TOKEN (Actions sets GITHUB_TOKEN; locally export the same token, since verctl does not read `gh` logins)",
     )
 }
 
@@ -459,7 +459,7 @@ pub fn require_changelog_versions<'a>(
     }
     ensure!(
         missing.is_empty(),
-        "publish needs a changelog section for each version (the Version PR writes these): {}",
+        "release needs a changelog section for each version (the Version PR writes these): {}",
         missing.join(", ")
     );
     Ok(())

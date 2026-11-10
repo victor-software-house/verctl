@@ -420,9 +420,12 @@ Its JSON report's `outcome` is `nothing-to-release` or `released`.
 
 - each package version has a matching CHANGELOG heading, which the Version PR writes;
 - HEAD is an ancestor of the default branch (`origin/HEAD`, then `GITHUB_BASE_REF`, then `main`/`master`);
-- `.github/workflows/` at HEAD is the same tree as at the default branch's tip.
+- `.github/workflows/` at the commit the run executes is the same tree as at the default branch's tip.
 
-A retry of an old version commit runs its workflows as they were at that commit.  
+Actions runs the workflows of `GITHUB_SHA`, so `release` compares that commit's tree when the variable names a commit in the repository, and HEAD's otherwise.  
+In the reusable workflow HEAD is the version commit, so a workflow change merged after a Version PR does not block its release.
+
+A run whose `GITHUB_SHA` is an old commit executes the workflows as they were then.  
 Changed steps or permissions can then publish to the registry and fail to tag.
 
 `--allow-off-default-branch` (`VERCTL_ALLOW_OFF_DEFAULT_BRANCH`) and `--allow-workflow-change` (`VERCTL_ALLOW_WORKFLOW_CHANGE`) let a run go past either of the last two.  
@@ -443,6 +446,10 @@ A version v is skipped when all three hold:
 
 The range ends before a released version, `0.0.0`, a revision with no version, or a version that is not semver.  
 Otherwise it ends at the root.  
+
+A version is released when the registry lists it for every checked upload of the package.  
+A package with an unchecked upload, or with none, has it released once its tag exists.
+
 `status` lists each skipped version once, at its oldest commit in the range, oldest first.  
 So the workflow releases it before the newer one.
 
@@ -558,7 +565,8 @@ Declare it as `vendored.<name>` with these keys:
 Fragments never bump its version and `release` never reads it.  
 A config that vendors may declare no packages.  
 `verctl status --vendored <name>` (`VERCTL_VENDORED`) plans the set.  
-With `--github-output` it writes the same `has_assets`, `tag`, and `matrix` outputs.
+With `--github-output` it writes the same `has_assets`, `tag`, and `matrix` outputs, and no others.  
+It needs no token and looks up no release.
 
 ### Building a vendored set
 

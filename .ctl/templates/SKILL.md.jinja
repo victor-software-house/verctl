@@ -116,7 +116,8 @@ A release tag on a commit HEAD holds only through a merge passes when the versio
 ### Proofs and refusals
 
 Before any upload, tag, or Release, `release` proves the release commit.  
-The default branch contains it, and its `.github/workflows/` is the same tree as at the default branch's tip.
+The default branch contains it.  
+The `.github/workflows/` tree at `GITHUB_SHA`, else HEAD, equals the one at the default branch's tip.
 
 `--allow-off-default-branch` and `--allow-workflow-change` go past one, and the report lists it under `allowed`.  
 Their variables are `VERCTL_ALLOW_OFF_DEFAULT_BRANCH` and `VERCTL_ALLOW_WORKFLOW_CHANGE`, and the `release.yml` inputs are `allow-off-default-branch` and `allow-workflow-change`.  

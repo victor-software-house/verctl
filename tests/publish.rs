@@ -6,6 +6,8 @@ use std::fs;
 
 use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn publish_stdout(root: &std::path::Path) -> String {
     let output = common::verctl()
@@ -405,7 +407,10 @@ fn publish_without_changelog_section_fails() {
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "{stderr}");
-    assert!(stderr.contains("changelog section"), "{stderr}");
+    assert!(
+        stderr.contains("release needs a changelog section"),
+        "{stderr}"
+    );
     assert!(stderr.contains("demo@0.0.1"), "{stderr}");
 }
 
@@ -450,7 +455,8 @@ fn publish_with_matching_changelog_asks_for_token() {
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "{stderr}");
-    assert!(stderr.contains("GITHUB_TOKEN"), "{stderr}");
+    assert!(stderr.contains("GITHUB_TOKEN or GH_TOKEN"), "{stderr}");
+    assert!(!stderr.contains("version --pr"), "{stderr}");
     assert!(!stderr.contains("changelog section"), "{stderr}");
 }
 
@@ -684,9 +690,92 @@ fn a_commit_off_the_default_branch_refuses_before_any_publish() {
 
     let stderr = publish_without_token(root.path(), &[]);
     assert!(stderr.contains("not an ancestor"), "{stderr}");
+    assert!(stderr.contains("release refuses this commit"), "{stderr}");
+    assert!(stderr.contains("to release anyway"), "{stderr}");
     assert!(stderr.contains("--allow-off-default-branch"), "{stderr}");
     assert!(!stderr.contains("GITHUB_TOKEN"), "{stderr}");
 
     let stderr = publish_without_token(root.path(), &[("VERCTL_ALLOW_OFF_DEFAULT_BRANCH", "true")]);
     assert!(stderr.contains("GITHUB_TOKEN"), "{stderr}");
+}
+
+/// The completeness lookup inside `release` asks the registry with the token
+/// `release` holds, under the variable `--registry-token-env` names.
+/// The declared `query` lists the version only for that token, and GitHub holds
+/// the tag and the Release.
+/// A lookup that went without the token would find the release incomplete and
+/// go on to publish.
+#[tokio::test]
+async fn the_completeness_lookup_asks_the_registry_with_the_token() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {r#"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                query: ["sh", "-c", 'test "$REGISTRY_TOKEN" = t0ken && echo 0.0.1']
+        "#},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "0.0.1"
+        "#},
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("CHANGELOG.md"),
+        indoc! {"
+            # Changelog
+
+            ## demo 0.0.1
+
+            - First.
+        "},
+    )
+    .unwrap();
+    common::on_default_branch(root.path());
+    let head = common::git(root.path(), &["rev-parse", "HEAD"]);
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/git/ref/tags/v0.0.1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ref": "refs/tags/v0.0.1",
+            "node_id": "R",
+            "url": "https://api.github.com/repos/acme/demo/git/refs/tags/v0.0.1",
+            "object": {
+                "type": "commit",
+                "sha": head,
+                "url": format!("https://api.github.com/repos/acme/demo/git/commits/{head}")
+            }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/releases/tags/v0.0.1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"assets": []})))
+        .mount(&server)
+        .await;
+    let output = common::verctl()
+        .current_dir(root.path())
+        .env("GITHUB_REPOSITORY", "acme/demo")
+        .env("GITHUB_TOKEN", "test")
+        .env("GITHUB_API_URL", server.uri())
+        .env("VERCTL_REGISTRY_TOKEN", "t0ken")
+        .args([
+            "release",
+            "--registry-token-env",
+            "REGISTRY_TOKEN",
+            "--color",
+            "never",
+        ])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("nothing to release"), "{stdout}");
 }

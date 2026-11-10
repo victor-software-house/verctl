@@ -160,10 +160,11 @@ pub struct Allowed {
 
 /// A proof the operator can allow.
 ///
-/// Not `#[non_exhaustive]`: the binary prints each one, and an exhaustive
-/// match makes a new variant fail the build until it is printed.
+/// The binary prints each one through [`Check::name`] and matches none, so a
+/// new variant adds no arm there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum Check {
     /// `.github/workflows/` differs from the default branch's tip.
     WorkflowChange,
@@ -281,7 +282,7 @@ pub fn run_pending(
     full_history(root)?;
     let allowed = prove_version_commit(config, root, &planned, allow)?;
     let token = release::resolve_token()?;
-    let pending = pending::pending(config, root, &token, skip_assets)?;
+    let pending = pending::pending(config, root, &token, skip_assets, registry_token)?;
     if pending.is_empty() {
         return Ok(PublishRun {
             outcome: Outcome::NothingToRelease,
@@ -686,7 +687,7 @@ fn prove_version_commit(
         let Some(reason) = found else { continue };
         ensure!(
             allows,
-            "publish refuses this commit: {reason}; pass {flag} to publish anyway",
+            "release refuses this commit: {reason}; pass {flag} to release anyway",
             flag = check.flag(),
         );
         allowed.push(Allowed { check, reason });

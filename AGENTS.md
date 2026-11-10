@@ -203,7 +203,7 @@ Actions run `verctl` from `PATH`.
 Before any upload, `release` proves three facts about the commit:
 
 - the default branch contains it;
-- its `.github/workflows/` tree equals the one at the default tip;
+- its `.github/workflows/` tree, taken at `GITHUB_SHA` when that names a commit and at HEAD otherwise, equals the one at the default tip;
 - no package has a skipped version since its last tag.
 
 Only the first two have an `--allow-…` flag, and a run that uses one lists it under `allowed`.  

@@ -24,6 +24,7 @@ use crate::git::{self, VersionCommit};
 use crate::github::{self, ReleaseState};
 use crate::publish::{self, PublishEntry};
 use crate::registry::RegistryCheck;
+use crate::registry_token::RegistryToken;
 use crate::{bump, publisher};
 
 /// Every version commit with an incomplete release, and the assets missing at
@@ -116,6 +117,10 @@ struct PackageState {
 /// A config with no packages, such as one that only vendors, has nothing to
 /// release, so `status` works there without a lookup.
 ///
+/// A registry `query` runs with `registry_token` when one is given, as in
+/// `release`, because a private registry needs the same credential to answer.
+/// `status` holds none.
+///
 /// # Errors
 ///
 /// Returns an error when:
@@ -133,7 +138,13 @@ struct PackageState {
 /// right commit is its version commit, or another commit HEAD contains at the
 /// same version (see [`git::tagged_commit`]). Counting a release tagged in the
 /// wrong place as complete would hide it.
-pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> Result<Pending> {
+pub fn pending(
+    config: &Config,
+    root: &Path,
+    token: &str,
+    skip_assets: bool,
+    registry_token: Option<&RegistryToken>,
+) -> Result<Pending> {
     if config.packages.is_empty() {
         return Ok(Pending::default());
     }
@@ -162,6 +173,8 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
         ));
     }
     let release_commits = newest_per_tag(&found);
+    let env = registry_token.map(RegistryToken::env);
+    let env = env.as_slice();
     let mut states = Vec::new();
     let mut releases: BTreeMap<String, ReleaseState> = BTreeMap::new();
     for ((index, spec, driver), entry, tag, _) in &found {
@@ -188,7 +201,7 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
             }
             Some(_) | None => commit,
         };
-        let listed = registry_lists(config, root, spec, entry, release)?;
+        let listed = registry_lists(config, root, spec, entry, release, env)?;
         let declared: &[MatrixTarget] = if *index == 0 { &targets } else { &[] };
         let state = state_of(entry, commit, listed, release, declared, &assets_tag);
         let incomplete = !state.complete;
@@ -197,8 +210,11 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
             let name = config.tags.uses_name().then_some(entry.name.as_str());
             let earlier =
                 git::unreleased_below(root, &root.join(&spec.path), &read, &mut |version| {
-                    let tag = config.tags.render(version, name)?;
-                    Ok(github::release_state(token, &repo, &tag)?.tag.is_some())
+                    let checks = checks_at(config, root, spec, entry, version)?;
+                    version_released(&checks, version, env, || {
+                        let tag = config.tags.render(version, name)?;
+                        Ok(github::release_state(token, &repo, &tag)?.tag.is_some())
+                    })
                 })?;
             for skipped in earlier {
                 states.push(PackageState {
@@ -266,12 +282,15 @@ fn tag_of(planned: &publish::PublishPlan, entry: &PublishEntry) -> Result<String
 /// once its tag exists. `release` creates the tag of a package with an
 /// unchecked upload only after the upload, so the tag is the record. A tag
 /// with only checked uploads is created first and records nothing.
+///
+/// A `query` runs with `env`, as [`RegistryCheck::lists`] describes.
 fn registry_lists(
     config: &Config,
     root: &Path,
     spec: &crate::config::PackageSpec,
     entry: &PublishEntry,
     release: &ReleaseState,
+    env: &[(&str, &str)],
 ) -> Result<bool> {
     if entry.argv.is_empty() {
         return Ok(true);
@@ -280,10 +299,65 @@ fn registry_lists(
         let listed = match &upload.check {
             RegistryCheck::Unchecked => release.tag.is_some(),
             check @ (RegistryCheck::CratesIo { .. } | RegistryCheck::Query { .. }) => {
-                check.lists(&upload.version, &[])?
+                check.lists(&upload.version, env)?
             }
         };
         if !listed {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// The registry checks that say whether `version` of a package is published.
+///
+/// A workspace package keeps one check per member, each asked for its own
+/// crate. Any other package has its single check built for `version`, since a
+/// `query` carries the version it was built for.
+fn checks_at(
+    config: &Config,
+    root: &Path,
+    spec: &crate::config::PackageSpec,
+    entry: &PublishEntry,
+    version: &str,
+) -> Result<Vec<RegistryCheck>> {
+    if entry.argv.is_empty() {
+        return Ok(Vec::new());
+    }
+    if publisher::workspace_members(config, spec, root)?.is_some() {
+        return Ok(publisher::uploads(config, spec, root, entry)?
+            .into_iter()
+            .map(|upload| upload.check)
+            .collect());
+    }
+    Ok(vec![publisher::registry_check(
+        config, spec, root, version,
+    )?])
+}
+
+/// Whether an earlier `version` of a package counts as released.
+///
+/// When every upload has a registry check, the registry decides.
+/// `release` creates that package's tag before the upload, so a failed upload
+/// leaves a tag for a version nobody published.
+/// A package with an unchecked upload, or with none, is released once its tag
+/// exists, because `release` creates that tag after the upload.
+/// `tag_exists` runs only then.
+fn version_released(
+    checks: &[RegistryCheck],
+    version: &str,
+    env: &[(&str, &str)],
+    tag_exists: impl FnOnce() -> Result<bool>,
+) -> Result<bool> {
+    if checks.is_empty()
+        || checks
+            .iter()
+            .any(|check| matches!(check, RegistryCheck::Unchecked))
+    {
+        return tag_exists();
+    }
+    for check in checks {
+        if !check.lists(version, env)? {
             return Ok(false);
         }
     }
@@ -403,12 +477,13 @@ mod tests {
 
     use super::{
         PackageState, Pending, PendingAsset, PendingPackage, group, newest_per_tag, state_of,
-        write_github_output,
+        version_released, write_github_output,
     };
     use crate::assets::MatrixTarget;
     use crate::git::VersionCommit;
     use crate::github::ReleaseState;
     use crate::publish::PublishEntry;
+    use crate::registry::RegistryCheck;
 
     fn entry(name: &str, version: &str) -> PublishEntry {
         PublishEntry {
@@ -607,5 +682,45 @@ mod tests {
                 assets={"include":[]}
             "#}
         );
+    }
+
+    fn query(argv: &[&str]) -> RegistryCheck {
+        RegistryCheck::Query {
+            argv: argv.iter().map(|word| (*word).to_owned()).collect(),
+            dir: std::env::temp_dir(),
+        }
+    }
+
+    /// A tag that exists says nothing about a package whose tag `release`
+    /// creates before the upload: a failed `cargo publish` leaves it behind.
+    #[test]
+    fn an_earlier_version_with_checked_uploads_is_released_when_the_registry_lists_it() {
+        let listed = version_released(&[query(&["echo", "1.0.0"])], "1.0.0", &[], || {
+            panic!("the registry decides, so the tag is not read")
+        })
+        .unwrap();
+        assert!(listed);
+        let unlisted = version_released(&[query(&["false"])], "1.0.0", &[], || Ok(true)).unwrap();
+        assert!(!unlisted);
+        let one_of_two = version_released(
+            &[query(&["echo", "1.0.0"]), query(&["false"])],
+            "1.0.0",
+            &[],
+            || Ok(true),
+        )
+        .unwrap();
+        assert!(!one_of_two);
+    }
+
+    #[test]
+    fn an_earlier_version_with_an_unchecked_upload_or_none_is_released_with_its_tag() {
+        for checks in [
+            vec![],
+            vec![RegistryCheck::Unchecked],
+            vec![query(&["echo", "1.0.0"]), RegistryCheck::Unchecked],
+        ] {
+            assert!(version_released(&checks, "1.0.0", &[], || Ok(true)).unwrap());
+            assert!(!version_released(&checks, "1.0.0", &[], || Ok(false)).unwrap());
+        }
     }
 }

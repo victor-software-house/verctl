@@ -73,6 +73,9 @@ const REMOVED: [(&str, &str); 4] = [
 ///
 /// The enum has no variants. No parse ever produces one, so a handler has
 /// nothing to run.
+///
+/// Not `#[non_exhaustive]`: the binary matches it with no arm, which that
+/// attribute would refuse from another crate.
 #[derive(Debug)]
 pub enum Removed {}
 
@@ -230,6 +233,10 @@ fn variable_name(value: &str) -> Result<String, String> {
 }
 
 /// The steps under `release`.
+///
+/// Not `#[non_exhaustive]`: the binary is its own crate and matches the steps
+/// exhaustively, as it does the command list.
+/// A new step then fails its build until it is run.
 #[derive(Debug, Subcommand)]
 pub enum ReleaseStep {
     /// Build one native tarball that `assets` declares for the GitHub Release,
@@ -332,7 +339,8 @@ pub struct StatusArgs {
     pub skip_assets: bool,
     /// Fetch the full history and write the release workflow's plan to this
     /// file: `has_assets`, `tag`, `matrix`, `commits`, `pending`, and
-    /// `assets`. Needs `GITHUB_TOKEN` or `GH_TOKEN`.
+    /// `assets`. Needs `GITHUB_TOKEN` or `GH_TOKEN`. With `--vendored` it
+    /// writes only `has_assets`, `tag`, and `matrix`, and needs no token.
     #[arg(long, value_hint = clap::ValueHint::FilePath)]
     pub github_output: Option<PathBuf>,
 }
