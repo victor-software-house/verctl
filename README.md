@@ -123,7 +123,8 @@ Local writes are the default. `prepare --pr` is the Version PR
 Cargo, npm, `pyproject.toml`, `go.mod`, and `VERSION` are stock drivers,
 not a separate code path. A `go.mod` keeps its version as `// vX.Y.Z` on
 its `module` line. A `VERSION` file holds only the version, and a missing
-one reads as `0.0.0` until `prepare` writes it. A `pyproject.toml` package
+one reads as `0.0.0` until `prepare` writes it. `marker: true` versions any
+file on its one `# version: X.Y.Z` line. A `pyproject.toml` package
 names its `publisher`, or `none`: verctl has no stock Python publisher.
 
 A repo's declarations live in one file, `.ctl/ver.yaml`. `.ctl/` is the

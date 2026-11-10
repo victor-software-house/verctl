@@ -189,6 +189,14 @@ pub struct PackageSpec {
     /// first releases `0.0.1`. Inert once the package has released.
     #[serde(default)]
     pub first_minor: bool,
+    /// The version is on one marker line of the file, such as
+    /// `# version: 1.2.0`, `// version: 1.2.0`, or `<!-- version: 1.2.0 -->`,
+    /// so a file of any type can be a package: one reusable workflow, one
+    /// script. Unsaid, a file is read by its stock or named driver; a stray
+    /// marker line in it means nothing. It takes no `driver` or driver fields,
+    /// and with no publisher the package releases on GitHub only.
+    #[serde(default)]
+    pub marker: bool,
     /// Inline driver fields. They override the named driver's.
     #[serde(flatten)]
     pub spec: DriverSpec,
@@ -217,6 +225,12 @@ impl PackageSpec {
     /// not `Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, or
     /// `VERSION` needs a driver of its own.
     pub fn resolve(&self, config: &Config, root: &Path) -> Result<Driver> {
+        if self.marker {
+            return Ok(Driver::Text {
+                text: Text::Marker,
+                after: self.spec.after.clone(),
+            });
+        }
         let inferred = self
             .path
             .file_name()
@@ -553,7 +567,8 @@ pub struct Config {
     #[garde(
         custom(something_to_release),
         custom(release_only_names_no_registry),
-        custom(python_names_its_publisher)
+        custom(python_names_its_publisher),
+        custom(a_marker_names_no_driver)
     )]
     pub packages: Vec<PackageSpec>,
     /// Publish recipes by name, for a package's `publisher` to select.
@@ -688,7 +703,7 @@ fn none_is_not_a_publisher(
     Ok(())
 }
 
-/// `publisher: none`, said or inferred from a `go.mod` or `VERSION`, uploads
+/// `publisher: none`, said or inferred from its version source, uploads
 /// nothing, so a registry or an upload command on the same package would be
 /// a setting nothing reads.
 fn release_only_names_no_registry(packages: &[PackageSpec], config: &Config) -> garde::Result {
@@ -709,6 +724,28 @@ fn release_only_names_no_registry(packages: &[PackageSpec], config: &Config) -> 
 /// names none would release a tag while nothing reached PyPI. It names one,
 /// through `publisher`, `publish`, or a `publishers` entry under its own
 /// name, or says `publisher: none` to release on GitHub only.
+/// `marker: true` says where the version is, so a `driver` or driver fields
+/// beside it would be a second answer nothing reads. `after` is the
+/// exception: it is what runs after the bump, not where the version is.
+fn a_marker_names_no_driver(packages: &[PackageSpec], _: &Config) -> garde::Result {
+    for package in packages {
+        let spec = &package.spec;
+        if package.marker
+            && (package.driver.is_some()
+                || spec.format.is_some()
+                || spec.keys.is_some()
+                || spec.read.is_some()
+                || spec.write.is_some())
+        {
+            return Err(garde::Error::new(format!(
+                "package {:?} has marker: true, which reads the version from its marker line; remove its driver, format, keys, read, and write",
+                package.name
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn python_names_its_publisher(packages: &[PackageSpec], config: &Config) -> garde::Result {
     for package in packages {
         if package.path.file_name() == Some(OsStr::new("pyproject.toml"))
@@ -1264,6 +1301,34 @@ mod tests {
                 "{extra}: {error:#}"
             );
         }
+    }
+
+    /// `marker: true` already says where the version is, so a driver beside
+    /// it fails the load rather than being ignored; `after` still applies.
+    #[test]
+    fn a_marker_names_no_driver() {
+        for extra in ["driver: cargo", "format: toml", "read: [cat]"] {
+            let error = load(&formatdoc! {"
+                packages:
+                  - name: ci
+                    path: ci.yml
+                    marker: true
+                    {extra}
+            "})
+            .expect_err(extra);
+            assert!(
+                format!("{error:#}").contains("has marker: true"),
+                "{extra}: {error:#}"
+            );
+        }
+        load(indoc! {"
+            packages:
+              - name: ci
+                path: ci.yml
+                marker: true
+                after: mise run render
+        "})
+        .expect("after runs beside a marker");
     }
 
     /// No stock recipe uploads to PyPI, so a Python package names its

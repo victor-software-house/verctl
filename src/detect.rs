@@ -14,6 +14,7 @@ pub fn follow_up(manifest: &Path) -> Option<String> {
     match file_name {
         "Cargo.toml" => cargo_follow_up(dir),
         "package.json" => javascript_follow_up(dir),
+        "pyproject.toml" => python_follow_up(dir),
         _ => None,
     }
 }
