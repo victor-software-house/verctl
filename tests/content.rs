@@ -792,6 +792,50 @@ fn a_stale_bun_lock_fails() {
     repo.fails_naming(&["bun.lock", "packages/a", "1.1.0"]);
 }
 
+/// `prepare.stage` names the lockfile the version step's own command
+/// rewrites, such as `yarn.lock`, which verctl cannot read. A path the
+/// merge-base stages may change before lockfiles are classified.
+#[test]
+fn a_staged_lockfile_verctl_cannot_read_may_change() {
+    let repo = Repo::new(indoc! {"
+        prepare:
+          stage: [yarn.lock]
+        packages:
+          - name: a
+            path: packages/a/package.json
+    "});
+    repo.write(
+        "packages/a/package.json",
+        indoc! {r#"
+            {
+              "name": "a",
+              "version": "1.0.0"
+            }
+        "#},
+    );
+    repo.write(
+        "yarn.lock",
+        indoc! {"
+            # yarn lockfile v1
+
+        "},
+    );
+    repo.write(".changeset/feat.md", &fragment("a: minor"));
+    repo.branch();
+    repo.version_step();
+    repo.write(
+        "yarn.lock",
+        indoc! {r#"
+            # yarn lockfile v1
+
+            "a@workspace:packages/a":
+              version "1.1.0"
+        "#},
+    );
+    repo.commit();
+    repo.passes();
+}
+
 #[test]
 fn a_changed_yarn_lock_fails() {
     let repo = js_repo(

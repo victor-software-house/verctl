@@ -127,14 +127,15 @@ fn problems(root: &Path, head: &Config, inputs: &Inputs, base: &MergeBase) -> Re
             if expected != actual {
                 problems.push(describe(path, expected.as_deref(), actual.as_deref()));
             }
-        } else if !served.contains(path) {
-            if let Some(kind) = lockfile::kind(Path::new(path)) {
-                locks.push((path.as_str(), kind));
-            } else if !replay
+        } else if !served.contains(path)
+            && !replay
                 .stage
                 .iter()
                 .any(|pattern| git::matches_stage(pattern, path))
-            {
+        {
+            if let Some(kind) = lockfile::kind(Path::new(path)) {
+                locks.push((path.as_str(), kind));
+            } else {
                 problems.push(format!("{path}: the version step does not write this file"));
             }
         }
