@@ -790,6 +790,6 @@ mod tests {
             }]
         );
         let none = members_at(vec![member("added", "0.7.0")], "0.7.0", |_| Ok(false)).unwrap();
-        assert!(none.is_empty());
+        assert_eq!(none, Vec::<RegistryCheck>::new());
     }
 }
