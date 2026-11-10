@@ -30,10 +30,12 @@ pre-push:
   commands:
     # Fails when a mise lockfile no longer matches its config
     # (mise-tasks/hooks/lockfile.sh). The task checks each committed
-    # mise.<profile>.toml's lock in turn, except the hooks profile's; the
+    # mise.<profile>.toml's lock in turn, except the hooks profile's, in a
+    # worktree of each pushed commit, from git's pre-push lines on stdin; the
     # env here only sets the profiles mise runs the task itself in.
     lockfile:
       env: { MISE_ENV: "dev" }
+      use_stdin: true
       run: mise run hooks:lockfile
     # Lints each pushed commit the remote does not have yet. It also scans
     # those commits for credentials, instead of the whole history. The task,
