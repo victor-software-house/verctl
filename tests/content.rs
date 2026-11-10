@@ -945,6 +945,7 @@ fn a_uv_lock_entry_is_matched_by_its_normalized_name() {
         packages:
           - name: My_Tool
             path: pyproject.toml
+            publisher: none
     "});
     repo.write(
         "pyproject.toml",
