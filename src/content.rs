@@ -14,7 +14,9 @@
 //!
 //! Each served file must equal its template's render at the versions on HEAD.
 //! Any path that `prepare.stage` names at the merge-base may change, since
-//! `prepare.after` writes it. The Version PR's review covers its content.
+//! `prepare.after` writes it, except a lockfile verctl parses: only a
+//! workspace version the plan moves may change in that. The Version PR's
+//! review covers the rest of the content.
 
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
@@ -127,16 +129,16 @@ fn problems(root: &Path, head: &Config, inputs: &Inputs, base: &MergeBase) -> Re
             if expected != actual {
                 problems.push(describe(path, expected.as_deref(), actual.as_deref()));
             }
-        } else if !served.contains(path)
-            && !replay
+        } else if !served.contains(path) {
+            let staged = replay
                 .stage
                 .iter()
-                .any(|pattern| git::matches_stage(pattern, path))
-        {
-            if let Some(kind) = lockfile::kind(Path::new(path)) {
-                locks.push((path.as_str(), kind));
-            } else {
-                problems.push(format!("{path}: the version step does not write this file"));
+                .any(|pattern| git::matches_stage(pattern, path));
+            match lockfile::kind(Path::new(path)) {
+                Some(kind @ Kind::Parsed(_)) => locks.push((path.as_str(), kind)),
+                _ if staged => {}
+                Some(kind) => locks.push((path.as_str(), kind)),
+                None => problems.push(format!("{path}: the version step does not write this file")),
             }
         }
     }

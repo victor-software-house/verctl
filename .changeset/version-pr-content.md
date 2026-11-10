@@ -17,7 +17,8 @@ Each one is of these kinds:
 - a lockfile entry other than a workspace version the plan moves, and a lockfile that does not record each moved version.
 
 A changed `yarn.lock` or `bun.lockb` fails, since verctl does not read them, and so does a changed `pnpm-lock.yaml`, `poetry.lock`, or `pdm.lock`.  
-A path that `prepare.stage` names at the merge-base may change.  
+A path that `prepare.stage` names at the merge-base may change, so a staged `yarn.lock` or `bun.lockb` passes.  
+A lockfile verctl parses, such as `Cargo.lock`, stays checked even when staged.  
 The plan, the pins, and `prepare.stage` come from `.ctl/ver.yaml` at the merge-base, so a Version PR cannot widen what it may change.
 
 The replay runs no lockfile owner and no `prepare.after` command, and makes no network call.  
