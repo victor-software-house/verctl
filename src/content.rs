@@ -14,9 +14,10 @@
 //!
 //! Each served file must equal its template's render at the versions on HEAD.
 //! Any path that `prepare.stage` names at the merge-base may change, since
-//! `prepare.after` writes it, except a lockfile verctl parses: only a
-//! workspace version the plan moves may change in that. The Version PR's
-//! review covers the rest of the content.
+//! `prepare.after` writes it.
+//! A lockfile verctl parses is the exception: only a workspace version the
+//! plan moves may change in it.
+//! The Version PR's review covers the rest of the content.
 
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
