@@ -207,6 +207,10 @@ pub struct PackageSpec {
     /// flattens another cannot deny unknown fields, so this map collects them
     /// and `no_unknown_package_keys` refuses the load when it holds one.
     #[serde(flatten)]
+    #[expect(
+        clippy::zero_sized_map_values,
+        reason = "the keys are all that is read, and serde has no set to flatten into"
+    )]
     unknown: BTreeMap<String, serde::de::IgnoredAny>,
 }
 

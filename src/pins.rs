@@ -5,7 +5,7 @@ use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use regex::{NoExpand, Regex, escape};
-use toml_edit::{DocumentMut, Item, Value};
+use toml_edit::{DocumentMut, Formatted, Item, Value};
 
 use crate::config::{Config, PLACEHOLDER, Pin, PinPattern};
 
@@ -166,28 +166,32 @@ fn rewrite_tool(body: &str, tool: &str, version: &str, path: &Path) -> Result<St
 /// Replace the version a `[tools]` entry holds, and nothing else of it.
 fn set_tool_version(entry: &mut Item, version: &str) -> Result<()> {
     match entry {
-        Item::Value(Value::InlineTable(table)) => set_string(table.get_mut("version"), version),
-        Item::Table(table) => match table.get_mut("version") {
-            Some(Item::Value(held)) => set_string(Some(held), version),
-            _ => bail!("has no version string to rewrite"),
-        },
-        Item::Value(held) => set_string(Some(held), version),
+        Item::Value(Value::InlineTable(table)) => {
+            set_string(table.get_mut("version").context(NO_VERSION)?, version)
+        }
+        Item::Table(table) => {
+            let Some(Item::Value(held)) = table.get_mut("version") else {
+                bail!(NO_VERSION);
+            };
+            set_string(held, version)
+        }
+        Item::Value(held) => set_string(held, version),
         Item::None | Item::ArrayOfTables(_) => bail!("is not a version or a table"),
     }
 }
 
+/// What an entry that holds no version string reports.
+const NO_VERSION: &str = "has no version string to rewrite";
+
 /// Swap the string in `held` for `version`, keeping the whitespace and the
 /// comment around it.
-fn set_string(held: Option<&mut Value>, version: &str) -> Result<()> {
-    let Some(Value::String(old)) = held else {
-        bail!("has no version string to rewrite");
+fn set_string(held: &mut Value, version: &str) -> Result<()> {
+    let Value::String(old) = held else {
+        bail!(NO_VERSION);
     };
-    let mut new = Value::from(version);
+    let mut new = Formatted::new(version.to_owned());
     *new.decor_mut() = old.decor().clone();
-    *old = match new {
-        Value::String(formatted) => formatted,
-        _ => bail!("a version is a string"),
-    };
+    *old = new;
     Ok(())
 }
 
