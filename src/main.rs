@@ -10,6 +10,7 @@ use verctl::cli::{
 };
 use verctl::config::{self, Config};
 use verctl::fragment::{self, Bump};
+use verctl::registry_token::RegistryToken;
 use verctl::{
     assets, ci, docsrs, git, github, lookup, pending, pins, prepare, publish, release,
     semver_check, templates, versions,
@@ -366,13 +367,21 @@ fn preview_pr(root: &Path) -> String {
 }
 
 fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
+    let registry_token = RegistryToken::from_env(&args.registry_token_env)?;
     let config = Config::load(&args.config)?;
     let root = &config::root_of(&args.config);
     let allow = publish::Allow {
         workflow_change: args.allow.allow_workflow_change,
         off_default_branch: args.allow.allow_off_default_branch,
     };
-    let run = publish::run_pending(&config, root, args.dry_run(), args.skip_assets, allow)?;
+    let run = publish::run_pending(
+        &config,
+        root,
+        args.dry_run(),
+        args.skip_assets,
+        allow,
+        registry_token.as_ref(),
+    )?;
     Ok(ReleaseReport {
         outcome: run.outcome,
         packages: run.published.packages,

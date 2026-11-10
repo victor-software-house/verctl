@@ -454,6 +454,62 @@ fn publish_with_matching_changelog_asks_for_token() {
     assert!(!stderr.contains("changelog section"), "{stderr}");
 }
 
+/// Both token variables set fail the run before it reads any file, and the
+/// error shows neither token. The directory holds no `.ctl/ver.yaml`, so a
+/// run that got as far as the config would fail on that instead.
+#[test]
+fn both_registry_tokens_fail_before_any_work() {
+    let root = TempDir::new().unwrap();
+    let output = common::verctl()
+        .current_dir(root.path())
+        .env("VERCTL_REGISTRY_TOKEN", "from-secret")
+        .env("VERCTL_TRUSTED_PUBLISHING_TOKEN", "from-trusted")
+        .args(["release", "--color", "never"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("VERCTL_REGISTRY_TOKEN and VERCTL_TRUSTED_PUBLISHING_TOKEN are both set"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("from-"), "{stderr}");
+}
+
+/// A token variable name a shell could not export is a usage error, from the
+/// flag or from its variable.
+#[test]
+fn a_registry_token_variable_that_is_no_name_is_a_usage_error() {
+    let root = TempDir::new().unwrap();
+    for (args, env) in [
+        (
+            ["release", "--registry-token-env", "1TOKEN"].as_slice(),
+            None,
+        ),
+        (
+            ["release"].as_slice(),
+            Some(("VERCTL_REGISTRY_TOKEN_ENV", "CARGO-TOKEN")),
+        ),
+    ] {
+        let mut command = common::verctl();
+        command
+            .current_dir(root.path())
+            .env("VERCTL_REGISTRY_TOKEN", "t0ken")
+            .args(args);
+        if let Some((key, value)) = env {
+            command.env(key, value);
+        }
+        let output = command.output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(2), "{args:?}: {stderr}");
+        assert!(
+            stderr.contains("is not a variable name"),
+            "{args:?}: {stderr}"
+        );
+        assert!(!stderr.contains("t0ken"), "{args:?}: {stderr}");
+    }
+}
+
 /// A crate that adopts the release workflow at `0.0.0` has nothing to
 /// release. The GitHub API address is closed, so any lookup for the package
 /// would fail the plan.

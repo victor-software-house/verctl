@@ -7,6 +7,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail, ensure};
 
+use crate::registry_token;
+
 /// How long a driver command may run.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_mins(1);
 /// How many bytes a driver command may print before it is killed.
@@ -68,9 +70,43 @@ pub fn run_inherit(argv: &[String], timeout: Duration) -> Result<()> {
 ///
 /// Returns an error under the conditions of [`run_inherit`].
 pub fn run_inherit_in(argv: &[String], dir: Option<&Path>, timeout: Duration) -> Result<()> {
+    inherit(argv, dir, &[], timeout)
+}
+
+/// [`run_inherit`] with `env` set on the command, for the one command that
+/// gets a secret, such as a publisher and its registry token.
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`run_inherit`].
+pub fn run_inherit_env(argv: &[String], env: &[(&str, &str)], timeout: Duration) -> Result<()> {
+    inherit(argv, None, env, timeout)
+}
+
+/// `argv[0]` with its arguments, without the variables a registry token
+/// arrives in ([`registry_token::SOURCES`]), so no command verctl starts
+/// inherits one. A command that needs the token gets it back through `env`
+/// under the variable it reads.
+fn command(argv: &[String]) -> duct::Expression {
+    registry_token::SOURCES
+        .iter()
+        .fold(duct::cmd(&argv[0], &argv[1..]), |expression, variable| {
+            expression.env_remove(variable)
+        })
+}
+
+fn inherit(
+    argv: &[String],
+    dir: Option<&Path>,
+    env: &[(&str, &str)],
+    timeout: Duration,
+) -> Result<()> {
     ensure!(!argv.is_empty(), "driver argv is empty");
     let (stderr_r, stderr_w) = os_pipe::pipe().context("command stderr pipe")?;
-    let mut expression = duct::cmd(&argv[0], &argv[1..]);
+    let mut expression = command(argv);
+    for (key, value) in env {
+        expression = expression.env(key, value);
+    }
     if let Some(dir) = dir {
         expression = expression.dir(dir);
     }
@@ -171,7 +207,7 @@ pub fn filter_limited(
     capture(argv, stdin, env, None, timeout, output_limit)
 }
 
-/// Run an argv in `dir` with no stdin and stdout captured.
+/// Run an argv in `dir` with `env` set, no stdin, and stdout captured.
 /// A registry `query` runs this way in the package directory, where the
 /// registry config of the publisher is in effect.
 ///
@@ -188,8 +224,13 @@ pub fn filter_limited(
 ///
 /// A caller can downcast an [`ExitFailure`] to tell an answer apart from a
 /// failure to run.
-pub fn run_in(argv: &[String], dir: &Path, timeout: Duration) -> Result<String> {
-    capture(argv, "", &[], Some(dir), timeout, DEFAULT_OUTPUT_LIMIT)
+pub fn run_in(
+    argv: &[String],
+    dir: &Path,
+    env: &[(&str, &str)],
+    timeout: Duration,
+) -> Result<String> {
+    capture(argv, "", env, Some(dir), timeout, DEFAULT_OUTPUT_LIMIT)
 }
 
 /// A command that ran to completion and exited unsuccessfully.
@@ -244,7 +285,7 @@ fn capture(
     output_limit: usize,
 ) -> Result<String> {
     ensure!(!argv.is_empty(), "driver argv is empty");
-    let mut expr = duct::cmd(&argv[0], &argv[1..]);
+    let mut expr = command(argv);
     for (key, value) in env {
         expr = expr.env(key, value);
     }

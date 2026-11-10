@@ -178,7 +178,7 @@ fn released_crates(config: &Config, root: &Path, token: &str) -> Result<Vec<Want
         }
         // Only a release at HEAD queries the index, one request per library.
         for (check, library) in libraries {
-            if check.lists(&library.version)? {
+            if check.lists(&library.version, &[])? {
                 wanted.push(library);
             }
         }

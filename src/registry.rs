@@ -93,10 +93,15 @@ impl RegistryCheck {
     /// covers an index request that could not connect or timed out, an index
     /// 5xx, and a `query` that timed out. A line that does not parse and a
     /// `query` that cannot be started stay errors.
-    pub fn lists(&self, version: &str) -> Result<bool> {
+    ///
+    /// A `query` runs with `env` set. `release` passes the registry token
+    /// under the variable its publisher reads, because a query against a
+    /// private registry needs the same credential. A check that publishes
+    /// nothing passes none.
+    pub fn lists(&self, version: &str, env: &[(&str, &str)]) -> Result<bool> {
         match self {
             Self::CratesIo { name } => crates_io_lists(CRATES_IO_INDEX, name, version),
-            Self::Query { argv, dir } => query_lists(argv, dir, version),
+            Self::Query { argv, dir } => query_lists(argv, dir, version, env),
             Self::Unchecked => Ok(false),
         }
     }
@@ -458,8 +463,8 @@ fn user_agent() -> String {
 
 /// Run a `query` in `dir`: listed when it exits zero and one of its stdout
 /// lines, trimmed of whitespace and quotes, is `version`.
-fn query_lists(argv: &[String], dir: &Path, version: &str) -> Result<bool> {
-    match process::run_in(argv, dir, QUERY_TIMEOUT) {
+fn query_lists(argv: &[String], dir: &Path, version: &str, env: &[(&str, &str)]) -> Result<bool> {
+    match process::run_in(argv, dir, env, QUERY_TIMEOUT) {
         Ok(stdout) => Ok(stdout
             .lines()
             .any(|line| line.trim().trim_matches(['"', '\'']) == version)),
@@ -478,6 +483,7 @@ fn is_exit_failure(error: &anyhow::Error) -> bool {
 
 /// Ask `check` until it lists `version`. Pause between asks, using each entry
 /// of `delays` in turn.
+/// A `query` runs with `env` set, as [`RegistryCheck::lists`] describes.
 ///
 /// The publish already happened. A failed check (an index timeout, a 5xx)
 /// therefore counts as "not listed yet" for that round and does not fail the
@@ -491,12 +497,13 @@ pub fn wait_listed(
     check: &RegistryCheck,
     coord: &str,
     version: &str,
+    env: &[(&str, &str)],
     delays: &[Duration],
 ) -> Result<()> {
     let mut last_error = None;
     for delay in delays {
         std::thread::sleep(*delay);
-        match check.lists(version) {
+        match check.lists(version, env) {
             Ok(true) => return Ok(()),
             Ok(false) => last_error = None,
             Err(error) => last_error = Some(error),
@@ -821,8 +828,14 @@ mod tests {
             argv: vec!["verctl-test-no-such-query".to_owned()],
             dir: dir.path().to_path_buf(),
         };
-        let error =
-            wait_listed(&check, "demo", "1.0.0", &[Duration::ZERO, Duration::ZERO]).unwrap_err();
+        let error = wait_listed(
+            &check,
+            "demo",
+            "1.0.0",
+            &[],
+            &[Duration::ZERO, Duration::ZERO],
+        )
+        .unwrap_err();
         assert!(
             format!("{error:#}").starts_with("demo: the registry check failed after the publish"),
             "{error:#}"
@@ -836,7 +849,7 @@ mod tests {
             argv: vec!["false".to_owned()],
             dir: dir.path().to_path_buf(),
         };
-        let error = wait_listed(&check, "demo", "1.0.0", &[Duration::ZERO]).unwrap_err();
+        let error = wait_listed(&check, "demo", "1.0.0", &[], &[Duration::ZERO]).unwrap_err();
         assert_eq!(
             error.to_string(),
             "demo: the publisher exited zero, but the registry does not list 1.0.0"

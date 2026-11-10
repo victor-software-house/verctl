@@ -15,6 +15,7 @@ use serde::Serialize;
 use crate::config::{Config, NAME_PLACEHOLDER};
 use crate::publisher::Upload;
 use crate::registry::{self, RegistryCheck};
+use crate::registry_token::RegistryToken;
 use crate::{bump, git, github, pending, process, publisher, release};
 
 /// How long one package upload may run.
@@ -123,13 +124,14 @@ pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
 
 /// Publish each package, then open a Release per tag. A dry run only plans.
 ///
-/// This is [`run_pending`] with assets counted toward completeness.
+/// This is [`run_pending`] with assets counted toward completeness and no
+/// registry token, so each publisher finds its own credential.
 ///
 /// # Errors
 ///
 /// Returns an error when [`run_pending`] fails.
 pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome> {
-    Ok(run_pending(config, root, dry_run, false, Allow::default())?.published)
+    Ok(run_pending(config, root, dry_run, false, Allow::default(), None)?.published)
 }
 
 /// The proofs a run may go past, each refused unless the operator allows it.
@@ -270,6 +272,7 @@ pub fn run_pending(
     dry_run: bool,
     skip_assets: bool,
     allow: Allow,
+    registry_token: Option<&RegistryToken>,
 ) -> Result<PublishRun> {
     let planned = plan(config, root)?;
     if dry_run {
@@ -328,7 +331,7 @@ pub fn run_pending(
         .partition(|tag| tags_before_upload(tag, &uploads));
     let repo = github::repo(root)?;
     let (mut releases, refused) = open_early(config, root, &token, &repo, &before, &head)?;
-    let rest = run_uploads(uploads).and_then(|(packages, shipped_packages)| {
+    let rest = run_uploads(uploads, registry_token).and_then(|(packages, shipped_packages)| {
         for tag in after {
             let shipped = tag
                 .packages
@@ -398,6 +401,7 @@ fn after_refusal(error: anyhow::Error, refused: Option<anyhow::Error>) -> anyhow
 /// packages that shipped in this run.
 fn run_uploads(
     uploads: Vec<(&PublishEntry, Vec<Upload>)>,
+    registry_token: Option<&RegistryToken>,
 ) -> Result<(Vec<PublishLine>, Vec<String>)> {
     let mut packages = Vec::new();
     let mut shipped = Vec::new();
@@ -407,7 +411,7 @@ fn run_uploads(
             continue;
         }
         for upload in uploads {
-            let note = publish_checked(&upload, &registry::LISTING_DELAYS)?;
+            let note = publish_checked(&upload, registry_token, &registry::LISTING_DELAYS)?;
             if note.is_none() {
                 shipped.push(entry.name.clone());
             }
@@ -538,6 +542,10 @@ fn at_head<'a>(
 /// Run one upload under its registry check, and return `already` when the
 /// registry had the version.
 ///
+/// The publisher and its registry `query` run with `registry_token`, under
+/// the variable it names.
+/// No other command gets it.
+///
 /// With a check, the registry decides.
 /// A listed version skips the publisher, and after the publisher runs the
 /// version must appear within `delays`.
@@ -548,27 +556,33 @@ fn at_head<'a>(
 /// Without a check, a zero exit or that stderr is enough.
 /// A publisher stopped by a registry rate limit fails with the time the
 /// registry gives for the next attempt (see [`rate_limited`]).
-fn publish_checked(upload: &Upload, delays: &[Duration]) -> Result<Option<String>> {
+fn publish_checked(
+    upload: &Upload,
+    registry_token: Option<&RegistryToken>,
+    delays: &[Duration],
+) -> Result<Option<String>> {
     let already = || Some("already".to_owned());
     let check = &upload.check;
     let coord = format!("{}@{}", upload.name, upload.version);
+    let env = registry_token.map(RegistryToken::env);
+    let env = env.as_slice();
     if !matches!(check, RegistryCheck::Unchecked)
         && check
-            .lists(&upload.version)
+            .lists(&upload.version, env)
             .with_context(|| coord.clone())?
     {
         return Ok(already());
     }
-    let Err(error) = process::run_inherit(&upload.argv, PUBLISH_TIMEOUT) else {
+    let Err(error) = process::run_inherit_env(&upload.argv, env, PUBLISH_TIMEOUT) else {
         if !matches!(check, RegistryCheck::Unchecked) {
-            registry::wait_listed(check, &coord, &upload.version, delays)?;
+            registry::wait_listed(check, &coord, &upload.version, env, delays)?;
         }
         return Ok(None);
     };
     let message = format!("{error:#}");
     if already_published(&message) {
         if !matches!(check, RegistryCheck::Unchecked) {
-            registry::wait_listed(check, &coord, &upload.version, delays)
+            registry::wait_listed(check, &coord, &upload.version, env, delays)
                 .with_context(|| message.clone())?;
         }
         return Ok(already());
@@ -965,6 +979,7 @@ mod tests {
         use super::super::{publish_checked, rate_limited};
         use crate::publisher::Upload;
         use crate::registry::RegistryCheck;
+        use crate::registry_token::RegistryToken;
 
         const NO_WAIT: [Duration; 2] = [Duration::ZERO, Duration::ZERO];
 
@@ -1045,7 +1060,7 @@ mod tests {
         fn a_listed_version_skips_the_publisher() {
             let dir = TempDir::new().unwrap();
             let check = query(dir.path(), 1);
-            let note = publish_checked(&upload(dir.path(), 0, "", check), &NO_WAIT).unwrap();
+            let note = publish_checked(&upload(dir.path(), 0, "", check), None, &NO_WAIT).unwrap();
             assert_eq!(note.as_deref(), Some("already"));
             assert!(!ran(dir.path()));
         }
@@ -1054,7 +1069,8 @@ mod tests {
         fn a_publisher_that_exits_zero_without_publishing_fails() {
             let dir = TempDir::new().unwrap();
             let check = query(dir.path(), 99);
-            let error = publish_checked(&upload(dir.path(), 0, "", check), &NO_WAIT).unwrap_err();
+            let error =
+                publish_checked(&upload(dir.path(), 0, "", check), None, &NO_WAIT).unwrap_err();
             assert!(ran(dir.path()));
             assert!(format!("{error:#}").contains("demo@0.4.6"), "{error:#}");
         }
@@ -1063,7 +1079,7 @@ mod tests {
         fn registry_metadata_that_lags_the_publish_passes() {
             let dir = TempDir::new().unwrap();
             let check = query(dir.path(), 3);
-            let note = publish_checked(&upload(dir.path(), 0, "", check), &NO_WAIT).unwrap();
+            let note = publish_checked(&upload(dir.path(), 0, "", check), None, &NO_WAIT).unwrap();
             assert_eq!(note, None);
             assert!(ran(dir.path()));
         }
@@ -1072,7 +1088,8 @@ mod tests {
         fn a_failed_publisher_fails_without_waiting() {
             let dir = TempDir::new().unwrap();
             let check = query(dir.path(), 2);
-            let error = publish_checked(&upload(dir.path(), 1, "", check), &NO_WAIT).unwrap_err();
+            let error =
+                publish_checked(&upload(dir.path(), 1, "", check), None, &NO_WAIT).unwrap_err();
             assert!(format!("{error:#}").contains("demo@0.4.6"), "{error:#}");
         }
 
@@ -1080,9 +1097,53 @@ mod tests {
         fn without_a_check_a_zero_exit_publishes() {
             let dir = TempDir::new().unwrap();
             let upload = upload(dir.path(), 0, "", RegistryCheck::Unchecked);
-            let note = publish_checked(&upload, &NO_WAIT).unwrap();
+            let note = publish_checked(&upload, None, &NO_WAIT).unwrap();
             assert_eq!(note, None);
             assert!(ran(dir.path()));
+        }
+
+        /// The publisher and its registry query read the token from the
+        /// variable the operator named.
+        #[test]
+        fn the_publisher_and_its_query_run_with_the_registry_token() {
+            let dir = TempDir::new().unwrap();
+            let seen = dir.path().join("seen");
+            let queried = dir.path().join("queried");
+            let argv = script(
+                dir.path(),
+                "publisher",
+                &formatdoc! {r#"
+                    #!/bin/sh
+                    printf '%s' "$CARGO_REGISTRIES_DEMO_TOKEN" > "{seen}"
+                "#, seen = seen.display()},
+            );
+            let check = RegistryCheck::Query {
+                argv: script(
+                    dir.path(),
+                    "query",
+                    &formatdoc! {r#"
+                        #!/bin/sh
+                        printf '%s' "$CARGO_REGISTRIES_DEMO_TOKEN" >> "{queried}"
+                        if [ -f "{seen}" ]; then echo 0.4.6; exit 0; fi
+                        exit 1
+                    "#, queried = queried.display(), seen = seen.display()},
+                ),
+                dir: dir.path().to_path_buf(),
+            };
+            let upload = Upload {
+                name: "demo".into(),
+                version: "0.4.6".into(),
+                manifest: dir.path().join("Cargo.toml"),
+                argv,
+                check,
+            };
+            let token =
+                RegistryToken::resolve(Some("t0ken".into()), None, "CARGO_REGISTRIES_DEMO_TOKEN")
+                    .unwrap();
+            let note = publish_checked(&upload, token.as_ref(), &NO_WAIT).unwrap();
+            assert_eq!(note, None);
+            assert_eq!(fs::read_to_string(&seen).unwrap(), "t0ken");
+            assert_eq!(fs::read_to_string(&queried).unwrap(), "t0ken".repeat(2));
         }
 
         #[test]
@@ -1090,7 +1151,7 @@ mod tests {
             let dir = TempDir::new().unwrap();
             let check = query(dir.path(), 99);
             let upload = upload(dir.path(), 101, RATE_LIMITED, check);
-            let error = publish_checked(&upload, &NO_WAIT).unwrap_err();
+            let error = publish_checked(&upload, None, &NO_WAIT).unwrap_err();
             let message = format!("{error:#}");
             assert!(message.contains("demo@0.4.6"), "{message}");
             assert!(
