@@ -46,7 +46,9 @@
 //! 5. [`versions`] guards the other way: a manifest version that differs from
 //!    the default branch without a fragment fails the check. On the Version PR,
 //!    [`content::check`] replays the version step on the merge-base and fails
-//!    any change the replay does not make.
+//!    any change the replay does not make. On any other pull request,
+//!    [`pull_request::problems`] lists each change only the Version PR may
+//!    make.
 //!
 //! ## Cargo features
 //!
@@ -87,6 +89,7 @@ pub mod prepare;
 pub mod process;
 pub mod publish;
 pub mod publisher;
+pub mod pull_request;
 pub mod registry;
 /// The token for `--pr` and the versions a release will carry.
 pub mod release;

@@ -410,6 +410,8 @@ The Version PR comes from `verctl/release/<base>`, one per base branch.
 `check --versions` fails it when it changes anything the version step does
 not write from the merge-base: a source file, a manifest key no pin names,
 or a lockfile entry other than a workspace version the plan moves.
+Any other pull request fails when it adds a CHANGELOG section for a version,
+or changes whether a package publishes without a fragment that bumps it.
 verctl never merges it or enables auto-merge on it: a release starts only
 when a person merges the Version PR.
 

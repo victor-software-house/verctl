@@ -18,9 +18,14 @@ State notes are from the code on `main` at [cb1be28][main], read on 2026-11-09 (
 
 - [ ] 2.1 `version` runs each bumped manifest's lockfile owner and `prepare.after`, each command once, and commits the owner's lockfile. It reports the commands under `after` and consumes a fragment that bumps nothing. Proof: the version-step scenarios pass in `tests/prepare_stage.rs`
 - [ ] 2.2 Parsers for `Cargo.lock`, `bun.lock`, `package-lock.json`, and `uv.lock` read each entry's name, version, and whether it is a workspace member. Proof: unit tests on real lock excerpts in `tests/testdata/` pass
-- [ ] 2.3 `check --versions` on a Version PR compares HEAD with the merge-base: the write set, the plan, each manifest by replay, each lockfile, each CHANGELOG, and each pinned and served file. Proof: the version-content Version PR scenarios pass. Their fixtures are shaped like the `ctl-core` four-member, `shrub` ten-entry, and `qctl` pinned Version PRs.
-- [ ] 2.4 `check` fails a pull request that is not a Version PR when it adds a CHANGELOG section. It fails any pull request that changes whether a package publishes without a fragment for it. Proof: the version-proposal `check` scenarios for both pass
+- [x] 2.3 `check --versions` on a Version PR compares HEAD with the merge-base: the write set, the plan, each manifest by replay, each lockfile, each CHANGELOG, and each pinned and served file. Proof: the version-content Version PR scenarios pass. Their fixtures are shaped like the `ctl-core` four-member, `shrub` ten-entry, and `qctl` pinned Version PRs.
+  - 2026-11-10 (UTC), shipped in [#286][pr286] at [3802041][c3802041]: the 22 tests in `tests/content.rs` pass in its [CI verify run][run286]. A review there found that a changed symlink or submodule escaped the check; the fix and its two tests are in the pull request that carries 2.4.
+- [ ] 2.4 `check` fails a pull request that is not a Version PR when it adds a CHANGELOG section. It fails such a pull request when it changes whether a package publishes without a fragment that bumps it above `none`. Proof: the version-proposal `check` scenarios for both pass
+  - 2026-11-10 (UTC), written: `src/pull_request.rs` and nine tests in `tests/versions.rs`, one per scenario plus the release-branch merge, the merge queue, and a workspace member. A version heading counts by its version, so fixing a name in one passes. Not yet verified in CI.
 - [ ] 2.5 The instructions, the operator skill, `README.md`, and the rustdoc describe the version step and the content check; proof: `cargo test operator_docs` passes
 
+[c3802041]: https://github.com/victor-software-house/verctl/commit/3802041
 [head]: https://github.com/victor-software-house/verctl/commit/98efe62
 [main]: https://github.com/victor-software-house/verctl/commit/cb1be28
+[pr286]: https://github.com/victor-software-house/verctl/pull/286
+[run286]: https://github.com/victor-software-house/verctl/actions/runs/42816191124/job/129830412432

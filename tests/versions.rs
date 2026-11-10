@@ -743,3 +743,268 @@ fn old_version_packages_branch_is_not_exempt() {
     assert!(stderr.contains("demo"), "{stderr}");
     assert!(stderr.contains("1.0.1"), "{stderr}");
 }
+
+/// Run `check --versions` and return whether it passed, with its output.
+fn run(mut cmd: std::process::Command) -> (bool, String) {
+    let output = cmd.output().unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    (output.status.success(), text)
+}
+
+fn write_changelog(root: &Path, body: &str) {
+    fs::write(root.join("CHANGELOG.md"), body).unwrap();
+}
+
+fn write_fragment(root: &Path, name: &str, packages: &str) {
+    let path = root.join(".changeset").join(name);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        path,
+        formatdoc! {"
+            ---
+            {packages}
+            ---
+
+            Change.
+        "},
+    )
+    .unwrap();
+}
+
+/// Only the Version PR writes a CHANGELOG section for a version.
+#[test]
+fn a_pull_request_that_adds_a_changelog_section_fails() {
+    let dir = repo_with_origin_main("1.0.0");
+    write_changelog(
+        dir.path(),
+        indoc! {"
+            # Changelog
+
+            ## 1.0.1
+
+            - Fix.
+        "},
+    );
+    let (passed, text) = run(check_cmd(dir.path()));
+    assert!(!passed, "{text}");
+    assert!(text.contains("CHANGELOG.md"), "{text}");
+    assert!(text.contains("adds the section for 1.0.1"), "{text}");
+}
+
+/// A heading whose name is corrected still names the version it named, so
+/// the pull request adds no section.
+#[test]
+fn fixing_a_changelog_heading_typo_passes() {
+    let dir = TempDir::new().unwrap();
+    common::init(dir.path());
+    write_crate(dir.path(), "1.0.0");
+    write_changelog(
+        dir.path(),
+        indoc! {"
+            # Changelog
+
+            ## dmeo 1.0.0
+        "},
+    );
+    let sha = common::commit_all(dir.path(), "init");
+    track_origin_main(dir.path(), &sha);
+    write_changelog(
+        dir.path(),
+        indoc! {"
+            # Changelog
+
+            ## demo 1.0.0
+        "},
+    );
+    let (passed, text) = run(check_cmd(dir.path()));
+    assert!(passed, "{text}");
+}
+
+/// Merging `main` into `next` brings the section `main` released.
+#[test]
+fn merging_a_released_changelog_section_into_next_passes() {
+    let dir = repo_with_next();
+    common::git(dir.path(), &["checkout", "-q", "main"]);
+    write_changelog(
+        dir.path(),
+        indoc! {"
+            # Changelog
+
+            ## 1.0.1
+
+            - Fix.
+        "},
+    );
+    let main = common::commit_all(dir.path(), "changelog 1.0.1");
+    common::git(
+        dir.path(),
+        &["update-ref", "refs/remotes/origin/main", &main],
+    );
+    common::git(dir.path(), &["checkout", "-q", "next"]);
+    common::git(dir.path(), &["merge", "-q", "--no-edit", "main"]);
+    let mut cmd = check_cmd(dir.path());
+    cmd.env("GITHUB_ACTIONS", "true")
+        .env("GITHUB_BASE_REF", "next");
+    let (passed, text) = run(cmd);
+    assert!(passed, "{text}");
+}
+
+/// A merge queue run skips the pull request rules, as it skips versions.
+#[test]
+fn a_merge_queue_run_skips_an_added_changelog_section() {
+    let dir = repo_with_origin_main("1.0.0");
+    write_changelog(
+        dir.path(),
+        indoc! {"
+            # Changelog
+
+            ## 1.0.1
+        "},
+    );
+    let event = dir.path().join("event.json");
+    fs::write(
+        &event,
+        r#"{"action":"checks_requested","merge_group":{"head_ref":"refs/heads/gh-readonly-queue/main/pr-7-0000000000000000000000000000000000000001","base_ref":"refs/heads/main"}}"#,
+    )
+    .unwrap();
+    let mut cmd = check_cmd(dir.path());
+    cmd.env("GITHUB_ACTIONS", "true")
+        .env("GITHUB_EVENT_PATH", &event)
+        .env("GITHUB_REPOSITORY", "owner/demo")
+        .env("GITHUB_API_URL", "http://127.0.0.1:9");
+    let (passed, text) = run(cmd);
+    assert!(passed, "{text}");
+    assert!(text.contains("merge-queue"), "{text}");
+}
+
+/// A crate at 1.0.0 that opts out of publishing on `origin/main`.
+fn unpublished_crate() -> TempDir {
+    let dir = TempDir::new().unwrap();
+    common::init(dir.path());
+    write_crate(dir.path(), "1.0.0");
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.0.0"
+            publish = false
+        "#},
+    )
+    .unwrap();
+    let sha = common::commit_all(dir.path(), "init");
+    track_origin_main(dir.path(), &sha);
+    write_crate(dir.path(), "1.0.0");
+    dir
+}
+
+/// Publishing a package for the first time needs a release of it.
+#[test]
+fn starting_to_publish_without_a_fragment_fails() {
+    let dir = unpublished_crate();
+    let (passed, text) = run(check_cmd(dir.path()));
+    assert!(!passed, "{text}");
+    assert!(
+        text.contains("demo: publishes nothing at the merge-base and publishes now"),
+        "{text}"
+    );
+    assert!(text.contains("add a fragment that bumps demo"), "{text}");
+}
+
+#[test]
+fn starting_to_publish_with_a_patch_fragment_passes() {
+    let dir = unpublished_crate();
+    write_fragment(dir.path(), "publish.md", "demo: patch");
+    let (passed, text) = run(check_cmd(dir.path()));
+    assert!(passed, "{text}");
+}
+
+/// A `none` fragment moves no version, so no release follows it.
+#[test]
+fn starting_to_publish_with_a_none_fragment_fails() {
+    let dir = unpublished_crate();
+    write_fragment(dir.path(), "publish.md", "demo: none");
+    let (passed, text) = run(check_cmd(dir.path()));
+    assert!(!passed, "{text}");
+    assert!(text.contains("add a fragment that bumps demo"), "{text}");
+}
+
+#[test]
+fn declaring_publisher_none_without_a_fragment_fails() {
+    let dir = repo_with_origin_main("1.0.0");
+    common::write_config(
+        dir.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publisher: none
+        "},
+    );
+    let (passed, text) = run(check_cmd(dir.path()));
+    assert!(!passed, "{text}");
+    assert!(
+        text.contains("demo: publishes at the merge-base and publishes nothing now"),
+        "{text}"
+    );
+}
+
+/// A workspace package publishes its members, so a member that starts to
+/// publish changes what the package releases.
+#[test]
+fn a_workspace_member_that_starts_to_publish_needs_a_fragment() {
+    let dir = TempDir::new().unwrap();
+    common::init(dir.path());
+    common::write_config(
+        dir.path(),
+        indoc! {"
+            packages:
+              - name: tools
+                path: Cargo.toml
+        "},
+    );
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        indoc! {r#"
+            [workspace]
+            members = ["a", "b"]
+            resolver = "3"
+
+            [workspace.package]
+            version = "1.0.0"
+            edition = "2024"
+        "#},
+    )
+    .unwrap();
+    let member = |name: &str, extra: &str| {
+        let dir = dir.path().join(name);
+        fs::create_dir_all(dir.join("src")).unwrap();
+        fs::write(dir.join("src/lib.rs"), "").unwrap();
+        fs::write(
+            dir.join("Cargo.toml"),
+            formatdoc! {r#"
+                [package]
+                name = "{name}"
+                version.workspace = true
+                edition.workspace = true
+                {extra}
+            "#},
+        )
+        .unwrap();
+    };
+    member("a", "");
+    member("b", "publish = false");
+    let sha = common::commit_all(dir.path(), "init");
+    track_origin_main(dir.path(), &sha);
+    member("b", "");
+    let (passed, text) = run(check_cmd(dir.path()));
+    assert!(!passed, "{text}");
+    assert!(
+        text.contains("tools: publishes a at the merge-base and publishes a, b now"),
+        "{text}"
+    );
+}

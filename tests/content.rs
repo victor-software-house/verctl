@@ -191,6 +191,54 @@ fn a_version_pr_that_carries_a_source_change_fails() {
     repo.fails_naming(&["src/main.rs", "does not write"]);
 }
 
+/// A symlink holds no bytes the version step writes, so retargeting one is a
+/// change the version step does not make.
+#[test]
+fn a_version_pr_that_retargets_a_symlink_fails() {
+    let repo = crate_repo(Some("demo: patch"));
+    std::os::unix::fs::symlink("Cargo.toml", repo.root().join("link")).expect("symlink");
+    common::commit_all(repo.root(), "link");
+    common::git(
+        repo.root(),
+        &["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
+    repo.version_step();
+    fs::remove_file(repo.root().join("link")).expect("remove");
+    std::os::unix::fs::symlink("CHANGELOG.md", repo.root().join("link")).expect("symlink");
+    repo.commit();
+    repo.fails_naming(&["link", "does not write"]);
+}
+
+/// A submodule moved to another commit is a change the version step does not
+/// make.
+#[test]
+fn a_version_pr_that_moves_a_submodule_fails() {
+    let repo = crate_repo(Some("demo: patch"));
+    let head = common::git(repo.root(), &["rev-parse", "HEAD"]);
+    fs::create_dir_all(repo.root().join("vendor/sub")).expect("unpopulated submodule");
+    let gitlink = |sha: &str| {
+        common::git(
+            repo.root(),
+            &[
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                &format!("160000,{sha},vendor/sub"),
+            ],
+        );
+    };
+    gitlink(&head);
+    common::git(repo.root(), &["commit", "-q", "-m", "submodule"]);
+    common::git(
+        repo.root(),
+        &["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
+    repo.version_step();
+    gitlink(&"1".repeat(40));
+    repo.commit();
+    repo.fails_naming(&["vendor/sub", "does not write"]);
+}
+
 /// The write set comes from the merge-base, so adding a path to
 /// `prepare.stage` on the Version PR does not let it change that path.
 #[test]

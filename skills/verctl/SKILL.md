@@ -74,6 +74,10 @@ running no lockfile owner and no `prepare.after` command. verctl never merges
 the Version PR or enables auto-merge on it: a release starts only when a
 person merges it.
 
+Any other pull request fails when it adds a CHANGELOG section for a version.
+It also fails when it changes whether a package publishes without a fragment
+that bumps it above `none`.
+
 A new package starts at `0.0.0`. Its first fragment is a `patch`, so its
 first release is `0.0.1`. Moving to `0.1.0` or `1.0.0` is a separate operator
 decision, never the first fragment's bump. `version` and `check` refuse a

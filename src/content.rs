@@ -37,8 +37,8 @@ const KEYS_NAMED: usize = 8;
 /// The files `check --versions` reads, as its command line names them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Inputs {
-    config: PathBuf,
-    dir: PathBuf,
+    pub(crate) config: PathBuf,
+    pub(crate) dir: PathBuf,
 }
 
 impl Inputs {
@@ -577,7 +577,7 @@ fn flatten_json(prefix: &str, value: &Value, out: &mut BTreeMap<String, String>)
 }
 
 /// `path` relative to `base`, with `/` separators and no `.` components.
-fn relative(path: &Path, base: &Path) -> Result<String> {
+pub(crate) fn relative(path: &Path, base: &Path) -> Result<String> {
     let rel = path
         .strip_prefix(base)
         .with_context(|| format!("{} is outside {}", path.display(), base.display()))?;
@@ -592,7 +592,7 @@ fn relative(path: &Path, base: &Path) -> Result<String> {
 /// A command-line path inside the working tree, relative to it. A path that
 /// does not exist yet, such as an empty fragment directory, is placed through
 /// its parent.
-fn inside(workdir: &Path, path: &Path) -> Result<PathBuf> {
+pub(crate) fn inside(workdir: &Path, path: &Path) -> Result<PathBuf> {
     let absolute = if let Ok(absolute) = path.canonicalize() {
         absolute
     } else {
@@ -610,10 +610,10 @@ fn inside(workdir: &Path, path: &Path) -> Result<PathBuf> {
 }
 
 /// A directory under the system temporary directory, removed on drop.
-struct Scratch(PathBuf);
+pub(crate) struct Scratch(PathBuf);
 
 impl Scratch {
-    fn new() -> Result<Self> {
+    pub(crate) fn new() -> Result<Self> {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|elapsed| elapsed.as_nanos())
@@ -630,7 +630,7 @@ impl Scratch {
         }
     }
 
-    fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.0
     }
 }

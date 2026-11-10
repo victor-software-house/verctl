@@ -59,12 +59,10 @@ new version to resolve.
 
 `verctl check` SHALL compare HEAD with its merge-base on `branch`. A pull
 request that is not a Version PR SHALL fail when it changes a manifest version
-or adds a CHANGELOG section; it may add or remove fragments. Any pull request
-that changes whether a package publishes SHALL fail unless it adds a fragment
-for that package.
-A manifest version equal to that package's version at the merge-base of HEAD
-and the release branch SHALL NOT count as changed, whatever the pull request's
-base.
+or adds a CHANGELOG heading for a version; it may add or remove fragments.
+A manifest version or a CHANGELOG version present at the merge-base of HEAD
+and the release branch SHALL NOT count as changed or added, whatever the pull
+request's base.
 
 #### Scenario: A hand-edited version on a feature branch
 
@@ -81,7 +79,28 @@ base.
 - **WHEN** a pull request into `next` changes `Cargo.toml` from `0.3.0` to `0.3.1` without merging `main`
 - **THEN** `verctl check` exits non-zero and its error names `demo 0.3.0 -> 0.3.1`
 
+#### Scenario: A CHANGELOG section added by hand
+
+- **WHEN** a pull request from branch `fix/typo` adds `## 0.3.1` to `CHANGELOG.md`
+- **THEN** `verctl check` exits non-zero and names `CHANGELOG.md` and `0.3.1`
+
+#### Scenario: A typo fixed in a CHANGELOG heading
+
+- **WHEN** a pull request changes the heading `## dmeo 0.3.0` to `## demo 0.3.0`
+- **THEN** `verctl check` exits zero, because the pull request adds no version
+
+### Requirement: check requires a release for a publish change
+
+A pull request that is not a Version PR SHALL fail when it changes whether a
+package publishes, unless it adds a fragment that bumps that package above
+`none`.
+
 #### Scenario: Publishing turned on without a fragment
 
 - **WHEN** a pull request removes `publish = false` from crate `xtask` and adds no fragment for `xtask`
+- **THEN** `verctl check` exits non-zero and names `xtask` and the missing fragment
+
+#### Scenario: Publishing turned on with a none fragment
+
+- **WHEN** a pull request removes `publish = false` from crate `xtask` and adds a fragment `xtask: none`
 - **THEN** `verctl check` exits non-zero and names `xtask` and the missing fragment
