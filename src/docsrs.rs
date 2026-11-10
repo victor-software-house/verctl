@@ -36,11 +36,12 @@ pub enum DocsStatus {
     /// docs.rs built the documentation.
     Built,
     /// docs.rs still listed the version without documentation when the wait
-    /// ran out: its build failed, and that version stays without
+    /// ran out.
+    /// Either the build failed, which leaves that version without
     /// documentation, or it was still running after the whole wait.
     Failed,
-    /// docs.rs had not started a build of the version when the wait ran
-    /// out, or could not be asked.
+    /// When the wait ran out, docs.rs had not started a build of the version,
+    /// or the request to docs.rs failed.
     Unbuilt,
 }
 
@@ -49,9 +50,10 @@ enum Pending {
     /// docs.rs answered 404: it has not started a build.
     Unlisted,
     /// docs.rs listed the version without documentation: a build that is
-    /// running or that failed. A later failed request keeps this state and
-    /// carries its error, so a request that fails after docs.rs listed the
-    /// version does not turn a failed build into an unbuilt one.
+    /// running or that failed.
+    /// A later failed request keeps this state and carries its error.
+    /// A request that fails after docs.rs listed the version therefore does
+    /// not turn a failed build into an unbuilt one.
     Undocumented(Option<String>),
     /// The request failed, with this error.
     Unreachable(String),
@@ -61,16 +63,19 @@ enum Pending {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub struct DocsLine {
-    /// The crate name crates.io knows.
+    /// The crate name on crates.io.
     pub name: String,
     /// The released version.
     pub version: String,
     /// What docs.rs reported.
     pub status: DocsStatus,
     /// For a crate not built at the deadline, the error the last poll hit,
-    /// if it hit one. Such an error means docs.rs was unreachable or answered
-    /// with a server error, so "unbuilt" may mean "could not ask", and "failed"
-    /// may mean docs.rs could not be asked again after it listed the version.
+    /// if it hit one.
+    /// Such an error means docs.rs was unreachable or answered with a server
+    /// error.
+    /// "Unbuilt" may then mean the request failed.
+    /// "Failed" may mean a later request failed after docs.rs listed the
+    /// version.
     pub last_error: Option<String>,
 }
 
@@ -81,23 +86,30 @@ struct Wanted {
     version: String,
 }
 
-/// Wait for docs.rs to build each crates.io library crate released at HEAD,
-/// for at most `timeout`.
+/// Wait up to `timeout` until docs.rs has built each crates.io library crate
+/// released at HEAD.
 ///
-/// A crate is checked only when its publish target is crates.io, it has a
-/// library target, the tag `tags.template` names for its version names HEAD
-/// on GitHub, and the crates.io index lists the version. `release` creates a
-/// crates.io package's tag before the upload, so the tag says which commit
-/// released the version and the index says the upload happened. The tag
-/// lookup goes to GitHub, never to local refs, because a CI checkout fetches
-/// no tags.
+/// A crate is checked only when all of these hold:
+///
+/// - Its publish target is crates.io.
+/// - It has a library target.
+/// - The tag that `tags.template` gives for its version points at HEAD. The
+///   check reads GitHub for this.
+/// - The crates.io index lists the version.
+///
+/// `release` creates the tag of a crates.io package before the upload.
+/// The tag therefore marks which commit released the version, and the index
+/// shows that the upload happened.
+/// The tag lookup goes to GitHub and never to local refs, because a CI
+/// checkout fetches no tags.
 ///
 /// # Errors
 ///
 /// Returns an error when no token is set, or when the plan, a manifest, a tag,
-/// or the crates.io index cannot be read. It also returns one when any crate's
-/// build failed or was still missing when `timeout` ran out, with the last
-/// docs.rs error when polling hit one.
+/// or the crates.io index cannot be read.
+/// It also returns one when any crate's build failed or was still missing when
+/// `timeout` ran out.
+/// The error includes the last docs.rs error when polling hit one.
 pub fn run(config: &Config, root: &Path, timeout: Duration) -> Result<Vec<DocsLine>> {
     let token = release::resolve_token()?;
     let wanted = released_crates(config, root, &token)?;
@@ -123,8 +135,9 @@ pub fn run(config: &Config, root: &Path, timeout: Duration) -> Result<Vec<DocsLi
     Ok(lines)
 }
 
-/// The crates.io library crates whose release tag names HEAD, each library
-/// member of a workspace package included.
+/// The crates.io library crates released at HEAD.
+/// A crate counts when its release tag points at HEAD.
+/// Each library member of a workspace package is included.
 fn released_crates(config: &Config, root: &Path, token: &str) -> Result<Vec<Wanted>> {
     let head = git::head_sha(root)?;
     let planned = publish::plan(config, root)?;
@@ -163,7 +176,7 @@ fn released_crates(config: &Config, root: &Path, token: &str) -> Result<Vec<Want
         if !state.tag.is_some_and(|sha| sha.eq_ignore_ascii_case(&head)) {
             continue;
         }
-        // Only a release at HEAD asks the index, one request per library.
+        // Only a release at HEAD queries the index, one request per library.
         for (check, library) in libraries {
             if check.lists(&library.version)? {
                 wanted.push(library);
@@ -203,15 +216,19 @@ pub fn has_library(manifest: &Path) -> Result<bool> {
 /// Poll docs.rs under `base` for each crate until every one has a status or
 /// `timeout` runs out, pausing `poll` between rounds.
 ///
-/// Only `doc_status: true` ends the wait for a crate. docs.rs answers
-/// `doc_status: false` both while a build runs and after it failed, so a
-/// crate that still answers it at the deadline is `failed`, and one docs.rs
+/// Only `doc_status: true` ends the wait for a crate.
+/// docs.rs answers `doc_status: false` both while a build runs and after it
+/// failed.
+/// A crate that still answers it at the deadline is `failed`, and one docs.rs
 /// never listed is `unbuilt`.
 ///
-/// A failed request counts as "not built yet" for that round: over a wait of
-/// up to an hour, one 502 or one slow answer from docs.rs must not fail a
-/// build docs.rs later finishes. The last error stays on the line, so a crate
-/// still unbuilt at the deadline says whether docs.rs could be asked at all.
+/// A failed request counts as "not built yet" for that round.
+/// A wait lasts up to an hour, so a single 502 must not fail a build that
+/// docs.rs later finishes.
+/// The same holds for one slow answer.
+/// The last error stays on the line.
+/// A crate still unbuilt at the deadline thus shows whether the requests
+/// failed.
 fn wait_built(base: &str, wanted: &[Wanted], timeout: Duration, poll: Duration) -> Vec<DocsLine> {
     let deadline = Instant::now() + timeout;
     let mut remaining: Vec<(&Wanted, Pending)> = wanted
@@ -267,10 +284,11 @@ fn wait_built(base: &str, wanted: &[Wanted], timeout: Duration, poll: Duration) 
 /// docs.rs's `doc_status` for one crate version, or `None` while docs.rs
 /// answers 404.
 ///
-/// docs.rs adds a release when its build starts, and reports `doc_status`
-/// false until the build stores documentation, so `Some(false)` is a running
-/// build or a failed one; the endpoint says nothing else. The sources are the
-/// docs.rs [builder] and its [release matching].
+/// docs.rs adds a release when its build starts.
+/// It reports `doc_status` false until the build stores documentation.
+/// `Some(false)` is therefore a running build or a failed one, and the
+/// endpoint gives no other detail.
+/// The sources are the docs.rs [builder] and its [release matching].
 ///
 /// [builder]: https://github.com/rust-lang/docs.rs/blob/4259a798bb58835b634f4d75c4481f2f17bdb1d5/crates/bin/docs_rs_builder/src/docbuilder/rustwide_builder.rs#L220
 /// [release matching]: https://github.com/rust-lang/docs.rs/blob/4259a798bb58835b634f4d75c4481f2f17bdb1d5/crates/bin/docs_rs_web/src/match_release.rs#L107-L109

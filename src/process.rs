@@ -20,7 +20,7 @@ pub const DEFAULT_OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
 ///
 /// # Errors
 ///
-/// Returns an error under the conditions of [`filter_limited`] with the
+/// Returns an error in the same cases as [`filter_limited`], called with the
 /// default timeout and output limit.
 pub fn filter(argv: &[String], stdin: &str, env: &[(&str, &str)]) -> Result<String> {
     filter_limited(argv, stdin, env, DEFAULT_TIMEOUT, DEFAULT_OUTPUT_LIMIT)
@@ -30,8 +30,8 @@ pub fn filter(argv: &[String], stdin: &str, env: &[(&str, &str)]) -> Result<Stri
 ///
 /// # Errors
 ///
-/// Returns an error under the conditions of [`filter_limited`] with the given
-/// `timeout` and the default output limit.
+/// Returns an error in the same cases as [`filter_limited`], called with the
+/// given `timeout` and the default output limit.
 pub fn run_limited(argv: &[String], env: &[(&str, &str)], timeout: Duration) -> Result<String> {
     filter_limited(argv, "", env, timeout, DEFAULT_OUTPUT_LIMIT)
 }
@@ -39,18 +39,24 @@ pub fn run_limited(argv: &[String], env: &[(&str, &str)], timeout: Duration) -> 
 /// The most stderr [`run_inherit`] keeps for its error message.
 const STDERR_TAIL: usize = 64 * 1024;
 
-/// Stream the command's stdout and stderr to this process's stderr, so
-/// Actions show cargo/bun as they run while stdout holds only verctl's own
-/// report, which `--format json` keeps parseable. The last 64 KiB of that
-/// output also go into the error, so a caller such as `release` can tell an
-/// already-published version apart.
+/// Stream the command's stdout and stderr to this process's stderr.
+/// Actions then show cargo/bun as they run, and stdout holds only verctl's
+/// own report, so `--format json` stays parseable.
+/// The error keeps the last 64 KiB of the streamed output.
+/// A caller such as `release` reads it to recognise an already-published
+/// version.
 ///
 /// # Errors
 ///
-/// Returns an error when `argv` is empty, the stderr pipe cannot be created,
-/// the command cannot be spawned or waited on, it runs longer than `timeout`,
-/// or it exits unsuccessfully. A non-zero exit carries the joined argv and
-/// the stderr tail.
+/// Returns an error when:
+///
+/// - `argv` is empty.
+/// - The stderr pipe cannot be created.
+/// - The command cannot be spawned or waited on.
+/// - The command runs longer than `timeout`.
+/// - The command exits unsuccessfully.
+///
+/// A non-zero exit puts the joined argv and the stderr tail in the error.
 pub fn run_inherit(argv: &[String], timeout: Duration) -> Result<()> {
     run_inherit_in(argv, None, timeout)
 }
@@ -143,11 +149,18 @@ pub fn argv(parts: &[&str]) -> Vec<String> {
 ///
 /// # Errors
 ///
-/// Returns an error when `argv` is empty, the pipes cannot be created, or the
-/// command cannot be spawned or waited on. It also returns one when the command
-/// runs longer than `timeout`, prints more than `output_limit` bytes on either
-/// stream, exits unsuccessfully (the error carries the argv, status, and
-/// trimmed stderr), or its stdout is not UTF-8.
+/// Returns an error when:
+///
+/// - `argv` is empty.
+/// - The pipes cannot be created.
+/// - The command cannot be spawned or waited on.
+/// - The command runs longer than `timeout`.
+/// - The command prints more than `output_limit` bytes on either stream.
+/// - The command exits unsuccessfully.
+/// - Its stdout is not UTF-8.
+///
+/// An unsuccessful exit puts the argv, status, and trimmed stderr in the
+/// error.
 pub fn filter_limited(
     argv: &[String],
     stdin: &str,
@@ -158,17 +171,23 @@ pub fn filter_limited(
     capture(argv, stdin, env, None, timeout, output_limit)
 }
 
-/// Run an argv in `dir` with no stdin and stdout captured, as a registry
-/// `query` runs in the package directory where the publisher's registry config
-/// is in effect.
+/// Run an argv in `dir` with no stdin and stdout captured.
+/// A registry `query` runs this way in the package directory, where the
+/// registry config of the publisher is in effect.
 ///
 /// # Errors
 ///
-/// Returns an error when `argv` is empty, the command cannot be spawned, it
-/// runs longer than `timeout`, its output passes [`DEFAULT_OUTPUT_LIMIT`], or
-/// its stdout is not UTF-8. A command that exits unsuccessfully returns an
-/// [`ExitFailure`], which a caller can downcast to tell an answer apart from a
-/// failure to run, and one that runs too long returns a [`TimedOut`].
+/// Returns an error when:
+///
+/// - `argv` is empty.
+/// - The command cannot be spawned.
+/// - The command runs longer than `timeout`, which returns a [`TimedOut`].
+/// - Its output passes [`DEFAULT_OUTPUT_LIMIT`].
+/// - Its stdout is not UTF-8.
+/// - The command exits unsuccessfully, which returns an [`ExitFailure`].
+///
+/// A caller can downcast an [`ExitFailure`] to tell an answer apart from a
+/// failure to run.
 pub fn run_in(argv: &[String], dir: &Path, timeout: Duration) -> Result<String> {
     capture(argv, "", &[], Some(dir), timeout, DEFAULT_OUTPUT_LIMIT)
 }

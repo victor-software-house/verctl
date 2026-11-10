@@ -14,7 +14,7 @@ use crate::prepare::PlanEntry;
 use crate::{git, github};
 
 /// What every Version PR branch starts with. The rest is the base branch, so
-/// each base gets its own Version PR and the name says which one it is.
+/// each base gets its own Version PR and the name shows which one it is.
 pub const VERSION_BRANCH_PREFIX: &str = "verctl/release/";
 
 /// The branch the Version PR into `base` is pushed to:
@@ -63,18 +63,22 @@ pub fn env_token() -> Option<String> {
     None
 }
 
-/// Every package's version as the released tree will say it: what the manifests
-/// say now, with this release's bumps applied over them.
+/// Every package's version in the released tree.
+/// Each version is the one in the manifests now, with this release's bumps
+/// applied over it.
 ///
 /// A pin moves only what the release names, because everything else in that
-/// file is already right. A template renders a whole file, so it needs every
-/// version the file mentions. A served file that names a package no fragment
-/// bumped would otherwise have nothing to render.
+/// file is already right.
+/// Yet a template renders a whole file, so it needs every version the file
+/// mentions.
+/// Without this map, a served file that mentions a package no fragment bumped
+/// would have nothing to render.
 ///
-/// A manifest that cannot be read or resolved is left out rather than failing
-/// the release. It is not this release's business unless something serves it,
-/// and a template that names a missing version fails at render time, where the
-/// complaint says which template and which name.
+/// The map leaves out a manifest that cannot be read or resolved, instead of
+/// failing the release.
+/// That manifest matters to the release only when something serves it.
+/// A template that mentions a missing version fails at render time, and the
+/// error names the template and the package.
 #[must_use]
 pub fn served_versions(
     root: &Path,
@@ -99,9 +103,10 @@ pub fn served_versions(
     versions
 }
 
-/// Fragments the version step consumes: each that names a package in
-/// `plan`, and each that bumps nothing, such as one holding only
-/// `demo: none`, which no later Version PR would consume either.
+/// Fragments the version step consumes.
+/// Those are each fragment that names a package in `plan`, and each fragment
+/// that bumps nothing, such as one holding only `demo: none`.
+/// No later Version PR would consume that second kind either.
 #[must_use]
 pub fn contributing_fragments<'a>(
     plan: &[PlanEntry],
@@ -140,9 +145,10 @@ where
 }
 
 /// Where each fragment came from: the pull request that merged it, or the
-/// commit that added it. Empty unless `origin` is a GitHub remote: the links
-/// name the repository the fragments were committed to, and a checkout
-/// without that remote renders the same bare entries everywhere.
+/// commit that added it.
+/// Empty unless `origin` is a GitHub remote.
+/// The links point to the repository the fragments were committed to, and a
+/// checkout without that remote renders the same bare entries everywhere.
 #[derive(Debug, Clone, Default)]
 pub struct Origins {
     by_path: BTreeMap<PathBuf, Origin>,
@@ -156,9 +162,11 @@ enum Origin {
 
 /// Resolve each committed fragment to the commit that added it, and that
 /// commit to the pull request its subject names (`… (#12)`, GitHub's squash
-/// subject). With a token, the pull request author is credited when
-/// [`credits`] says so; a failed lookup credits no one, so a maintainer is
-/// never named by accident.
+/// subject).
+/// With a token, the pull request author is credited when [`credits`] allows
+/// it.
+/// A failed lookup credits no one, so a maintainer is never named by
+/// accident.
 ///
 /// # Errors
 ///
@@ -230,20 +238,22 @@ pub fn changelog_sections(plan: &[PlanEntry], fragments: &[Fragment]) -> Result<
 }
 
 /// One `## name version` section per plan entry, each fragment a bullet that
-/// links where it came from when `origins` knows.
+/// links where it came from when `origins` holds the origin.
 ///
 /// A fragment's first paragraph is the bullet, so the link and the period
-/// follow its last line. Every later line is indented under the bullet, so a
-/// second paragraph, a nested list, or a code fence stays inside the entry
-/// ([CommonMark list items]). The GitHub Release body is the
-/// same section.
+/// follow its last line.
+/// Every later line is indented under the bullet.
+/// A second paragraph, a nested list, or a code fence therefore stays inside
+/// the entry ([CommonMark list items]).
+/// The GitHub Release body is the same section.
 ///
 /// [CommonMark list items]: https://spec.commonmark.org/0.31.2/#list-items
 ///
 /// # Errors
 ///
-/// Returns an error when a fragment's entry cannot be rendered, or when no
-/// fragment names a plan entry's package, leaving that section without a body.
+/// Returns an error when a fragment's entry cannot be rendered.
+/// It also returns one when no fragment names the package of a plan entry,
+/// which leaves that section without a body.
 pub fn changelog_sections_with(
     plan: &[PlanEntry],
     fragments: &[Fragment],
@@ -347,10 +357,13 @@ pub fn write_changelogs(
 ///
 /// # Errors
 ///
-/// Returns an error when a plan entry names a package missing from the
-/// config, when its section cannot be built (see
-/// [`changelog_sections_with`]), or when its changelog cannot be read or
-/// written. Changelogs before the failing one are already written.
+/// Returns an error when:
+///
+/// - A plan entry names a package missing from the config.
+/// - Its section cannot be built (see [`changelog_sections_with`]).
+/// - Its changelog cannot be read or written.
+///
+/// Changelogs before the failing one are already written.
 pub fn write_changelogs_with(
     config: &crate::config::Config,
     root: &Path,
@@ -425,9 +438,10 @@ pub fn notes_for<'a>(
 ///
 /// # Errors
 ///
-/// Returns an error when a package is missing from the config, or when any
-/// package's changelog is unreadable or has no `## name version` or
-/// `## version` heading for it. The latter error lists every such package.
+/// Returns an error when a package is missing from the config.
+/// It also returns one when a package's changelog is unreadable or has no
+/// `## name version` or `## version` heading for it.
+/// The latter error lists every such package.
 pub fn require_changelog_versions<'a>(
     config: &crate::config::Config,
     root: &Path,
@@ -489,8 +503,8 @@ pub fn prepend_changelog(path: &Path, section: &str) -> Result<()> {
 
 /// What the Version PR is called and which branch it targets.
 ///
-/// Resolved before `version` writes anything, so a run that cannot tell its
-/// base fails with the tree untouched.
+/// Resolved before `version` writes anything, so a run that cannot resolve its
+/// base fails and leaves the tree as it was.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VersionPr {
     /// `proposal.title`; unset or empty means
@@ -498,7 +512,7 @@ pub struct VersionPr {
     pub title: String,
     /// `proposal.commit_message`; unset or empty means the title.
     pub message: String,
-    /// The branch [`github::base_branch`] names.
+    /// The branch resolved by [`github::base_branch`].
     pub base: String,
 }
 
@@ -533,10 +547,14 @@ pub struct OpenedPr {
 ///
 /// # Errors
 ///
-/// Returns an error when the GitHub repository cannot be resolved, when the
-/// branch cannot be committed or pushed (see [`git::commit_branch_and_push`]),
-/// or when looking up, updating, or creating the pull request fails. A failure
-/// after the push leaves the branch pushed.
+/// Returns an error when:
+///
+/// - The GitHub repository cannot be resolved.
+/// - The branch cannot be committed or pushed (see
+///   [`git::commit_branch_and_push`]).
+/// - Looking up, updating, or creating the pull request fails.
+///
+/// A failure after the push leaves the branch pushed.
 pub fn open_or_update_pr(
     root: &Path,
     token: &str,
@@ -640,8 +658,9 @@ mod tests {
     }
 
     /// A release that bumps one of two packages still has to render a served
-    /// file that mentions both, so the version map covers every package:
-    /// the release's version for what it bumps, the manifest's for the rest.
+    /// file that mentions both.
+    /// The version map therefore covers every package, with the release's
+    /// version for what it bumps and the manifest's version for the rest.
     #[test]
     fn a_partial_release_still_knows_every_version() {
         let root = tempfile::TempDir::new().unwrap();

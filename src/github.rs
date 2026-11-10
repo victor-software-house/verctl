@@ -96,8 +96,9 @@ pub fn parse_slug(slug: &str) -> Result<Repo> {
 ///
 /// # Errors
 ///
-/// Returns an error when the URL is not an ssh or http(s) URL with a path,
-/// when its host is not GitHub, or when the path is not `owner/name`.
+/// Returns an error when the URL is not an ssh or http(s) URL with a path.
+/// It also returns one when its host is not GitHub or the path is not
+/// `owner/name`.
 pub fn parse_remote(url: &str) -> Result<Repo> {
     let url = url.trim();
     if let Some(rest) = url.strip_prefix("git@") {
@@ -126,9 +127,9 @@ pub fn parse_remote(url: &str) -> Result<Repo> {
 /// The branch a Version PR targets: `GITHUB_REF_NAME`, else
 /// `VERCTL_DEFAULT_BRANCH`, else the branch `origin/HEAD` names.
 ///
-/// None of them set is an error, not a guess: a repository whose default is
-/// not `main` would get a Version PR against a branch it does not release
-/// from.
+/// If none of them is set, the call fails instead of guessing.
+/// A repository whose default is not `main` would otherwise get a Version PR
+/// against a branch it does not release from.
 ///
 /// # Errors
 ///
@@ -159,8 +160,8 @@ pub struct ExistingPr {
 ///
 /// # Errors
 ///
-/// Returns an error when the GitHub client cannot be built or the pull
-/// request listing request fails.
+/// Returns an error when the GitHub client cannot be built or the call that
+/// lists pull requests fails.
 pub fn existing_pr(token: &str, repo: &Repo, head: &str) -> Result<Option<ExistingPr>> {
     block(async {
         let crab = client(token)?;
@@ -210,9 +211,9 @@ pub fn update_pr(token: &str, repo: &Repo, number: u64, title: &str, body: &str)
 ///
 /// # Errors
 ///
-/// Returns an error when the GitHub client cannot be built, the create
-/// request fails (for example when `head` does not exist), or the response
-/// carries no URL.
+/// Returns an error when the GitHub client cannot be built or the create
+/// request fails, for example when `head` does not exist.
+/// It also returns one when the response carries no URL.
 pub fn create_pr(
     token: &str,
     repo: &Repo,
@@ -242,20 +243,25 @@ pub fn create_pr(
 }
 
 /// Whether the pull request of this `pull_request` event is a Version PR by
-/// the identity of the `version-pr-identity` design §1: its head repository
-/// is this repository, and its head branch is `verctl/release/<base>` for the
-/// base it targets now. All three are read through the API when the check
-/// runs, never from the event payload, because a base can change after the
+/// the identity of the `version-pr-identity` design §1.
+/// Its head repository is this repository, and its head branch is
+/// `verctl/release/<base>` for the base it targets now.
+///
+/// The check reads all three through the API when it runs.
+/// It never reads the event payload, because a base can change after the
 /// event and a label applied after opening is missing from the `opened`
-/// payload. Title, body, and labels are never read. Not `GITHUB_HEAD_REF`.
+/// payload.
+/// It never reads the title, body, or labels, and it ignores
+/// `GITHUB_HEAD_REF`.
+///
 /// Without an event, or for an event that is not a pull request's, it is
 /// `false`.
 ///
 /// # Errors
 ///
-/// Returns an error when the event names a pull request but no token is set,
-/// `GITHUB_REPOSITORY` is not `owner/name`, or GitHub cannot read the pull
-/// request.
+/// Returns an error when the event names a pull request but no token is set.
+/// It also returns one when `GITHUB_REPOSITORY` is not `owner/name` or GitHub
+/// cannot read the pull request.
 pub fn pull_request_is_version_pr() -> Result<bool> {
     let Ok(path) = env::var("GITHUB_EVENT_PATH") else {
         return Ok(false);
@@ -347,10 +353,15 @@ pub fn default_branch_of(raw: &str) -> Option<String> {
 ///
 /// # Errors
 ///
-/// Returns an error when the GitHub client cannot be built, a release or tag
-/// lookup fails, the release cannot be created, or the tag does not name
-/// `sha`. The tag is checked against an existing release only when `shipped`
-/// is true.
+/// Returns an error when:
+///
+/// - The GitHub client cannot be built.
+/// - A release or tag lookup fails.
+/// - The release cannot be created.
+/// - The tag does not point at `sha`.
+///
+/// The tag is checked against an existing release only when `shipped` is
+/// true.
 pub fn ensure_release(
     token: &str,
     repo: &Repo,
@@ -405,18 +416,21 @@ async fn ensure_release_with(
 /// The Release for a vendored set's `tag`, created at `sha` when the tag has
 /// none. Returns its HTML URL.
 ///
-/// An existing Release is used as it is: its tag records which commit built
-/// the first asset, not a version commit, so where it points is not checked.
-/// A new one is created with `make_latest: false`, because GitHub otherwise
-/// makes every new published Release the repository's latest
-/// ([create a release]), and a vendored library must not displace the
-/// repository's own.
+/// An existing Release is used as it is.
+/// Its tag records which commit built the first asset, and that commit is
+/// not a version commit, so the tag target is not checked.
+///
+/// A new Release is created with `make_latest: false`.
+/// GitHub otherwise makes every new published Release the latest of the
+/// repository ([create a release]).
+/// A vendored library must not displace the Release of the repository itself.
 ///
 /// # Errors
 ///
-/// Returns an error when the GitHub client cannot be built, when reading the
-/// Release fails with anything but 404, or when creating it fails for any
-/// reason other than another job having created it first.
+/// Returns an error when the GitHub client cannot be built or when reading the
+/// Release fails with anything but 404.
+/// It also returns one when creating the Release fails for any reason other
+/// than another job having created it first.
 ///
 /// [create a release]: https://docs.github.com/en/rest/releases/releases#create-a-release
 pub fn ensure_vendored_release(
@@ -432,9 +446,9 @@ pub fn ensure_vendored_release(
     })
 }
 
-/// Every target's job runs this, so two can find the Release missing at once;
-/// the one GitHub refuses with `already_exists` reads the Release the other
-/// created.
+/// Every target's job runs this, so two can find the Release missing at once.
+/// GitHub refuses one of them with `already_exists`, and that job reads the
+/// Release the other created.
 async fn ensure_vendored_release_with(
     crab: &Octocrab,
     repo: &Repo,
@@ -470,16 +484,19 @@ async fn ensure_vendored_release_with(
     }
 }
 
-/// The hex SHA-256 GitHub holds for asset `name` of the Release for `tag`,
-/// from the asset's `digest` (`sha256:<hex>`, see [release assets]). Reading
-/// GitHub's digest rather than hashing a local file keeps a checksum true to
-/// the stored asset when a rerun's build is not byte-identical to the one
-/// GitHub kept.
+/// The hex SHA-256 that GitHub holds for asset `name` in the `tag` Release.
+/// It comes from the `digest` of the asset (`sha256:<hex>`, see
+/// [release assets]).
+/// Reading the digest from GitHub, instead of hashing a local file, keeps the
+/// checksum matching the stored asset.
+/// A rerun's build can differ in bytes from the one GitHub kept.
 ///
 /// # Errors
 ///
-/// Returns an error when the GitHub client cannot be built, the Release cannot
-/// be read, it does not list `name`, or the asset has no SHA-256 digest.
+/// Returns an error when the GitHub client cannot be built or the Release
+/// cannot be read.
+/// It also returns one when the Release does not list `name` or the asset has
+/// no SHA-256 digest.
 ///
 /// [release assets]: https://docs.github.com/en/rest/releases/assets
 pub fn asset_sha256(token: &str, repo: &Repo, tag: &str, name: &str) -> Result<String> {
@@ -504,12 +521,14 @@ async fn asset_sha256_with(crab: &Octocrab, repo: &Repo, tag: &str, name: &str) 
         .with_context(|| format!("GitHub reports no SHA-256 digest for asset {name} of {tag}"))
 }
 
-/// Names the cause of GitHub's 403 for a new Release. Creating a Release
-/// takes `contents: write`, plus `workflows: write` when the commit the tag
-/// would name has a `.github/workflows` tree that differs from the default
-/// branch; the refusal's `X-Accepted-GitHub-Permissions` header lists both
-/// sets. An Actions `GITHUB_TOKEN` can never hold `workflows`, so releasing
-/// an older version commit fails once a later commit changes a workflow.
+/// Names the cause of GitHub's 403 for a new Release.
+/// Creating a Release takes `contents: write`, plus `workflows: write` when
+/// the commit the tag would point at has a `.github/workflows` tree that
+/// differs from the default branch.
+/// The `X-Accepted-GitHub-Permissions` header of the refusal lists both sets.
+///
+/// An Actions `GITHUB_TOKEN` can never hold `workflows`, so releasing an
+/// older version commit fails once a later commit changes a workflow.
 fn release_error(error: octocrab::Error, tag: &str, sha: &str) -> anyhow::Error {
     let forbidden = matches!(
         &error,
@@ -526,8 +545,9 @@ fn release_error(error: octocrab::Error, tag: &str, sha: &str) -> anyhow::Error 
     }
 }
 
-/// GitHub's 403 on creating a Release: the token lacks a permission the
-/// commit needs, so a rerun with a token that has it can still create it.
+/// GitHub's 403 on creating a Release.
+/// The token lacks a permission the commit needs.
+/// A rerun with a token that has the permission can still create the Release.
 #[derive(Debug)]
 struct ReleaseRefused {
     tag: String,
@@ -623,11 +643,14 @@ pub struct ReleaseState {
 ///
 /// # Errors
 ///
-/// Returns an error when the GitHub client cannot be built, when GitHub
-/// answers a tag or Release lookup with an error other than 404, or when the
-/// tag names a tree or a blob. Only a lookup GitHub gave no answer to, a
-/// transport failure or a 5xx, is a [`lookup::Unavailable`]. A 401 from a bad
-/// token, a tag on a tree, and a malformed `GITHUB_API_URL` stay unmarked.
+/// Returns an error when the GitHub client cannot be built or when GitHub
+/// answers a tag or Release lookup with an error other than 404.
+/// It also returns one when the tag points at a tree or a blob.
+///
+/// Only a lookup that GitHub gave no answer to, meaning a transport failure
+/// or a 5xx, is a [`lookup::Unavailable`].
+/// A 401 from a bad token, a tag on a tree, and a malformed `GITHUB_API_URL`
+/// stay unmarked.
 pub fn release_state(token: &str, repo: &Repo, tag: &str) -> Result<ReleaseState> {
     block(async {
         let crab = client(token)?;
@@ -671,19 +694,27 @@ async fn release_state_with(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<R
 }
 
 /// `error` under `context`, marked as a [`lookup::Unavailable`] when GitHub
-/// gave no answer. Either the request failed in transport (DNS, connect, a
-/// timeout, a connection dropped while the body was read), or GitHub answered
-/// with a 5xx or a rate limit after octocrab's retries. [`lookup::no_answer`]
-/// tells those statuses apart. Any other answer, such as a 401 or a plain 403,
-/// stays an error.
+/// gave no answer.
+/// That covers two cases.
+/// The request failed in transport (DNS, connect, a timeout, a connection
+/// dropped while the body was read).
+/// Or GitHub answered with a 5xx or a rate limit after the retries of
+/// octocrab.
+/// [`lookup::no_answer`] separates those statuses from the rest.
+///
+/// Any other answer, such as a 401 or a plain 403, stays an error.
 ///
 /// octocrab 0.54.5 turns every non-2xx answer into `GitHub` with its status
-/// and headers, whatever the body holds. Its `map_github_error` falls back to
-/// the body text when the body is not GitHub's JSON, so an HTML 502 from a
-/// proxy keeps its status. A transport failure reaches octocrab as `Service`
-/// from the HTTP client, or as `Hyper` while it reads a body, alone or inside
-/// `Service`. `Service` also carries a request the client refuses to send, so
-/// it counts only when an I/O or body error caused it.
+/// and headers, whatever the body holds.
+/// Its `map_github_error` falls back to the body text when the body is not
+/// GitHub JSON.
+/// An HTML 502 from a proxy therefore keeps its status.
+///
+/// A transport failure reaches octocrab as `Service` from the HTTP client.
+/// It also arrives as `Hyper` while octocrab reads a body, alone or inside
+/// `Service`.
+/// `Service` also carries a request that the client blocks before sending.
+/// It counts only when an I/O or body error caused it.
 fn lookup_failed(error: octocrab::Error, context: String) -> anyhow::Error {
     let refused = matches!(&error, octocrab::Error::GitHub { source, .. }
         if lookup::no_answer(source.status_code, source.headers.as_ref()));
@@ -724,16 +755,20 @@ struct AssetName {
 /// Attach `tarball` to the release for `tag`.
 ///
 /// Returns the download URL, or `already <name>` when GitHub refuses the
-/// upload because the release already has a complete asset of that name: the
-/// run that got there first, or an earlier attempt of this one, uploaded it.
+/// upload because the release already has a complete asset of that name.
+/// The run that got there first, or an earlier attempt of this one, uploaded
+/// it.
 ///
 /// # Errors
 ///
-/// Returns an error when `tarball` has no UTF-8 file name or cannot be read,
-/// the GitHub client cannot be built, or the release for `tag` does not exist.
-/// It also returns one when the asset of that name exists but its upload does
-/// not complete within a minute, or the upload fails for a reason other than a
-/// duplicate asset.
+/// Returns an error when:
+///
+/// - `tarball` has no UTF-8 file name or cannot be read.
+/// - The GitHub client cannot be built.
+/// - The release for `tag` does not exist.
+/// - The asset of that name exists but its upload does not complete within a
+///   minute.
+/// - The upload fails for a reason other than a duplicate asset.
 pub fn upload_release_asset(token: &str, repo: &Repo, tag: &str, tarball: &Path) -> Result<String> {
     let name = tarball
         .file_name()
@@ -804,8 +839,8 @@ async fn upload_release_asset_with(
     match uploaded {
         Ok(asset) => Ok(asset.browser_download_url.to_string()),
         // Two runs can release the same commit, and both build every asset.
-        // The tarballs are not byte-identical (tar records file times), so a
-        // digest cannot tell a duplicate from a mismatch. The name carries the
+        // The tarballs differ in bytes (tar records file times), so a digest
+        // cannot separate a duplicate from a mismatch. The name carries the
         // version and the target, and the tag fixes the commit, so a complete
         // asset of that name is this asset.
         Err(error) if is_already_exists(&error) => {
@@ -858,8 +893,8 @@ pub struct PullAuthor {
     pub login: String,
     /// GitHub's user `type`: `User` for a person, `Bot` for an app.
     pub kind: String,
-    /// The head branch lives outside the repository: a fork, or one GitHub no
-    /// longer has. Maintainers push branches to the repository itself.
+    /// The head branch lives outside the repository: a fork, or a branch that
+    /// GitHub has dropped. Maintainers push branches to the repository itself.
     pub from_fork: bool,
 }
 
@@ -915,9 +950,10 @@ async fn pull_author_with(crab: &Octocrab, repo: &Repo, number: u64) -> Result<P
     })
 }
 
-/// A GitHub client for `token`, on the API GitHub Actions names in
-/// `GITHUB_API_URL` when it is set (a GitHub Enterprise Server, or a test's
-/// mock server), and on api.github.com otherwise.
+/// A GitHub client for `token`.
+/// It uses the API from `GITHUB_API_URL` when that is set, as on a GitHub
+/// Enterprise Server or a test's mock server.
+/// Otherwise it uses api.github.com.
 fn client(token: &str) -> Result<Octocrab> {
     let mut builder = Octocrab::builder().personal_token(token.to_owned());
     if let Ok(base) = env::var("GITHUB_API_URL")

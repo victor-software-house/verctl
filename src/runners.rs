@@ -1,9 +1,11 @@
 //! Machines: declared once under `runners`, named by every job.
 //!
-//! A runner is one machine and `labels` is how GitHub finds it: every label
-//! at once, so `["self-hosted", "linux", "x64"]` is a single machine carrying
-//! three labels. Nothing here resolves a *label*: verctl cannot know which
-//! machines carry which, so labels pass through untouched.
+//! A runner is one machine, and `labels` is how GitHub finds it.
+//! GitHub matches every label at once, so `["self-hosted", "linux", "x64"]`
+//! is a single machine carrying three labels.
+//! Nothing here resolves a *label*.
+//! Verctl has no way to learn which machines carry which, so labels pass
+//! through as written.
 //!
 //! A runner *name*, by contrast, resolves here or fails here. It never reaches
 //! GitHub. Only its labels do.
@@ -62,9 +64,9 @@ fn validate(name: &str, runner: &Runner) -> Result<()> {
 ///
 /// # Errors
 ///
-/// Returns an error when `named` is present but empty, names a machine twice,
-/// or names a machine that is not declared or fails the label checks of
-/// [`declared`].
+/// Returns an error when `named` is present but empty or names a machine
+/// twice. It also fails for a machine that is not declared or that fails the
+/// label checks of [`declared`].
 pub fn of(
     config: &Config,
     kind: &str,
