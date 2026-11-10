@@ -80,6 +80,44 @@ fn status_json_uses_the_same_report_without_ansi() {
     assert_eq!(value["unreleased_unchecked"], "no GITHUB_TOKEN or GH_TOKEN");
 }
 
+/// A token is set but the check cannot run, here because the clone has no
+/// GitHub `origin`. `status` still reports, with the failure as the reason;
+/// only the plan for `--github-output` fails on it.
+#[test]
+fn a_check_that_fails_leaves_unreleased_unchecked() {
+    let root = TempDir::new().expect("tempdir");
+    common::write_demo_package(root.path());
+    common::init(root.path());
+    common::commit_all(root.path(), "demo 1.0.0");
+    let status = |extra: &[&str]| {
+        common::verctl()
+            .current_dir(root.path())
+            .env("GITHUB_TOKEN", "test")
+            .env("GITHUB_API_URL", "http://127.0.0.1:9")
+            .args(["status", "--format", "json"])
+            .args(extra)
+            .output()
+            .expect("spawn")
+    };
+    let output = status(&[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("JSON");
+    assert!(value["unreleased"].is_null(), "{value}");
+    assert!(
+        value["unreleased_unchecked"]
+            .as_str()
+            .is_some_and(|reason| !reason.is_empty()),
+        "{value}"
+    );
+    let out = root.path().join("out");
+    let planned = status(&["--github-output", out.to_str().expect("utf-8")]);
+    assert!(!planned.status.success(), "{planned:?}");
+}
+
 #[test]
 fn quiet_suppresses_only_successful_pretty_status() {
     let root = TempDir::new().expect("tempdir");
