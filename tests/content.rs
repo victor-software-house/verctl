@@ -19,7 +19,7 @@ use std::path::Path;
 use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
 use verctl::config::{self, Config};
-use verctl::{content, fragment, pins, prepare, release, templates, versions};
+use verctl::{content, fragment, git, pins, prepare, pull_request, release, templates, versions};
 
 const ORIGIN: &str = "https://github.com/victor-software-house/demo.git";
 
@@ -97,7 +97,7 @@ impl Repo {
         Config::load(&self.root().join(config::FILE)).expect("config")
     }
 
-    fn check(&self) -> anyhow::Result<()> {
+    fn check(&self) -> anyhow::Result<Vec<String>> {
         let inputs = content::Inputs::new(
             self.root().join(config::FILE),
             self.root().join(".changeset"),
@@ -277,6 +277,66 @@ fn a_version_pr_that_widens_its_own_write_set_fails() {
     repo.write("src/lib.rs", "pub fn added() {}");
     repo.commit();
     repo.fails_naming(&["src/lib.rs", ".ctl/ver.yaml"]);
+}
+
+/// The pull request that removes `prepare.version_label` has a merge-base
+/// config the running verctl refuses. The check is skipped with a notice that
+/// names it and the load error, and the config on HEAD still loads.
+#[test]
+fn a_merge_base_config_that_does_not_load_skips_the_check_with_a_notice() {
+    let repo = Repo::new(indoc! {"
+        prepare:
+          version_label: true
+        packages:
+          - name: demo
+            path: Cargo.toml
+    "});
+    repo.write(
+        "Cargo.toml",
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.0.0"
+        "#},
+    );
+    repo.write(".changeset/fix.md", &fragment("demo: patch"));
+    repo.branch();
+    common::write_config(
+        repo.root(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    repo.commit();
+    let notices = repo.check().expect("the check is skipped");
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert!(
+        notices[0].contains("content check is skipped"),
+        "{notices:?}"
+    );
+    assert!(
+        notices[0].contains("prepare.version_label is removed"),
+        "{notices:?}"
+    );
+
+    let inputs = content::Inputs::new(
+        repo.root().join(config::FILE),
+        repo.root().join(".changeset"),
+    );
+    let candidates = versions::stock_candidates();
+    let base = git::MergeBase::read(repo.root(), &candidates)
+        .expect("merge-base")
+        .expect("a merge-base");
+    let found = pull_request::problems(repo.root(), &repo.config(), &inputs, &base, &candidates)
+        .expect("the rule is skipped");
+    assert!(found.problems.is_empty(), "{found:?}");
+    assert_eq!(found.notices.len(), 1, "{found:?}");
+    assert!(
+        found.notices[0].contains("publish-setting rule is skipped"),
+        "{found:?}"
+    );
 }
 
 #[test]
@@ -784,12 +844,146 @@ fn a_refreshed_bun_lock_passes() {
     repo.passes();
 }
 
+/// bun records no version for the root workspace, so a versioned root
+/// `package.json` that the plan bumps leaves `bun.lock` as it was.
+#[test]
+fn a_bun_lock_needs_no_version_for_the_root_workspace() {
+    let repo = Repo::new(indoc! {"
+        packages:
+          - name: demo-root
+            path: package.json
+    "});
+    repo.write(
+        "package.json",
+        indoc! {r#"
+            {
+              "name": "demo-root",
+              "version": "1.0.0",
+              "private": true
+            }
+        "#},
+    );
+    repo.write(
+        "bun.lock",
+        indoc! {r#"
+            {
+              "lockfileVersion": 1,
+              "workspaces": {
+                "": {
+                  "name": "demo-root",
+                },
+              },
+              "packages": {
+              }
+            }
+        "#},
+    );
+    repo.write(".changeset/feat.md", &fragment("demo-root: minor"));
+    repo.branch();
+    repo.version_step();
+    repo.commit();
+    repo.passes();
+}
+
 #[test]
 fn a_stale_bun_lock_fails() {
     let repo = js_repo("bun.lock", &testdata("workspace.before.bun.lock"));
     repo.version_step();
     repo.commit();
     repo.fails_naming(&["bun.lock", "packages/a", "1.1.0"]);
+}
+
+/// `prepare.stage` names the lockfile the version step's own command
+/// rewrites, such as `yarn.lock`, which verctl cannot read. A path the
+/// merge-base stages may change before lockfiles are classified.
+#[test]
+fn a_staged_lockfile_verctl_cannot_read_may_change() {
+    let repo = Repo::new(indoc! {"
+        prepare:
+          stage: [yarn.lock]
+        packages:
+          - name: a
+            path: packages/a/package.json
+    "});
+    repo.write(
+        "packages/a/package.json",
+        indoc! {r#"
+            {
+              "name": "a",
+              "version": "1.0.0"
+            }
+        "#},
+    );
+    repo.write(
+        "yarn.lock",
+        indoc! {"
+            # yarn lockfile v1
+
+        "},
+    );
+    repo.write(".changeset/feat.md", &fragment("a: minor"));
+    repo.branch();
+    repo.version_step();
+    repo.write(
+        "yarn.lock",
+        indoc! {r#"
+            # yarn lockfile v1
+
+            "a@workspace:packages/a":
+              version "1.1.0"
+        "#},
+    );
+    repo.commit();
+    repo.passes();
+}
+
+/// uv writes the normalized project name, so `My_Tool` is `my-tool` in
+/// `uv.lock`, and the bump of its own entry is still the version step's.
+#[test]
+fn a_uv_lock_entry_is_matched_by_its_normalized_name() {
+    let repo = Repo::new(indoc! {"
+        packages:
+          - name: My_Tool
+            path: pyproject.toml
+            publisher: none
+    "});
+    repo.write(
+        "pyproject.toml",
+        indoc! {r#"
+            [project]
+            name = "My_Tool"
+            version = "1.0.0"
+        "#},
+    );
+    repo.write(
+        "uv.lock",
+        indoc! {r#"
+            version = 1
+            revision = 5
+
+            [[package]]
+            name = "my-tool"
+            version = "1.0.0"
+            source = { virtual = "." }
+        "#},
+    );
+    repo.write(".changeset/feat.md", &fragment("My_Tool: minor"));
+    repo.branch();
+    repo.version_step();
+    repo.write(
+        "uv.lock",
+        indoc! {r#"
+            version = 1
+            revision = 5
+
+            [[package]]
+            name = "my-tool"
+            version = "1.1.0"
+            source = { virtual = "." }
+        "#},
+    );
+    repo.commit();
+    repo.passes();
 }
 
 #[test]

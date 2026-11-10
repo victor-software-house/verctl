@@ -203,6 +203,15 @@ pub struct PackageSpec {
     /// Inline driver fields. They override the named driver's.
     #[serde(flatten)]
     pub spec: DriverSpec,
+    /// Every key under the package that no field above reads. A struct that
+    /// flattens another cannot deny unknown fields, so this map collects them
+    /// and `no_unknown_package_keys` refuses the load when it holds one.
+    #[serde(flatten)]
+    #[expect(
+        clippy::zero_sized_map_values,
+        reason = "the keys are all that is read, and serde has no set to flatten into"
+    )]
+    unknown: BTreeMap<String, serde::de::IgnoredAny>,
 }
 
 impl PackageSpec {
@@ -655,6 +664,7 @@ pub struct Config {
     #[serde(default)]
     #[garde(
         custom(something_to_release),
+        custom(no_unknown_package_keys),
         custom(release_only_names_no_registry),
         custom(python_names_its_publisher),
         custom(a_marker_names_no_driver)
@@ -832,6 +842,7 @@ fn every_pattern_is_listed(
 
 /// A file that serves a package version and must track it.
 #[derive(Debug, Clone, Deserialize, Validate)]
+#[serde(deny_unknown_fields)]
 #[garde(context(Config as config))]
 #[garde(allow_unvalidated)]
 #[non_exhaustive]
@@ -870,6 +881,24 @@ fn none_is_not_a_publisher(
         return Err(garde::Error::new(
             "publishers.none is reserved for release-only packages; rename that publisher",
         ));
+    }
+    Ok(())
+}
+
+/// A key under a package that nothing reads. Ignoring `publsher: none` would
+/// publish a package to its registry that the file meant to release on GitHub
+/// only.
+fn no_unknown_package_keys(packages: &[PackageSpec], _: &Config) -> garde::Result {
+    for package in packages {
+        if !package.unknown.is_empty() {
+            let keys: Vec<&str> = package.unknown.keys().map(String::as_str).collect();
+            return Err(garde::Error::new(format!(
+                "package {:?} has {} verctl does not read: {}; check the spelling",
+                package.name,
+                if keys.len() == 1 { "a key" } else { "keys" },
+                keys.join(", ")
+            )));
+        }
     }
     Ok(())
 }
@@ -1150,6 +1179,7 @@ impl Default for Templates {
 
 /// One version spelling in a file, and how often the file may say it.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct PinPattern {
     /// The text around a version, `{version}` where the version is. Literal
@@ -2500,6 +2530,66 @@ mod tests {
             assert!(error.contains("no longer labeled"), "{value:?}: {error}");
             assert!(error.contains("delete this key"), "{value:?}: {error}");
         }
+    }
+
+    /// A misspelled key under a package, whether its own or a flattened
+    /// driver field, fails the load and names the key and the package.
+    #[test]
+    fn an_unknown_key_under_a_package_fails() {
+        for (line, key) in [
+            ("publsher: none", "publsher"),
+            ("foramt: toml", "foramt"),
+            ("keys: [package.version]\n    kes: [x]", "kes"),
+        ] {
+            let error = load(&formatdoc! {"
+                packages:
+                  - name: demo
+                    path: Cargo.toml
+                    {line}
+            "})
+            .unwrap_err();
+            let error = format!("{error:#}");
+            assert!(error.contains(key), "{line}: {error}");
+            assert!(error.contains("\"demo\""), "{line}: {error}");
+        }
+        load(indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                format: toml
+                keys: [package.version]
+                publisher: none
+        "})
+        .unwrap();
+    }
+
+    #[test]
+    fn an_unknown_key_under_a_pin_fails() {
+        let error = load(&formatdoc! {"
+            {ONE_PACKAGE}pins:
+              - file: README.md
+                package: demo
+                tool: github:acme/demo
+                pattern: [readme]
+        "})
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("pattern"), "{error:#}");
+    }
+
+    #[test]
+    fn an_unknown_key_under_a_pattern_fails() {
+        let error = load(&formatdoc! {"
+            {ONE_PACKAGE}patterns:
+              readme:
+                match: 'demo@{{version}} in CI'
+                ocurrences: many
+            pins:
+              - file: README.md
+                package: demo
+                patterns: [readme]
+        "})
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("ocurrences"), "{error:#}");
     }
 
     #[test]

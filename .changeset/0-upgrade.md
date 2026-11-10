@@ -13,3 +13,4 @@ Upgrading from 0.7 takes these steps, each described in its own entry below:
 6. Close each `patterns.match` with an open side of `{version}`.
 7. Read `after` where the `version` report held `next`.
 8. Name a publisher for each `pyproject.toml` package.
+9. Fix any misspelled key under `packages`, `pins`, or `patterns`, which now fails the load.

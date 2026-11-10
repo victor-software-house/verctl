@@ -16,3 +16,5 @@ So it writes exactly what `check` compares, and it is the fix for a failed check
 
 A file that a template renders and a `pins` entry also names has two owners.  
 `verctl version`, `check`, and `render` refuse it before writing anything, naming the file, the template, and the `pins` entry.
+
+In the library, `templates::plan` and `templates::write` take the `pins` as an argument, so they can name that conflict.

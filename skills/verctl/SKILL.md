@@ -133,7 +133,8 @@ A release tag on a commit HEAD holds only through a merge passes when the versio
 ### Proofs and refusals
 
 Before any upload, tag, or Release, `release` proves the release commit.  
-The default branch contains it, and its `.github/workflows/` is the same tree as at the default branch's tip.
+The default branch contains it.  
+The `.github/workflows/` tree at `GITHUB_SHA`, else HEAD, equals the one at the default branch's tip.
 
 `--allow-off-default-branch` and `--allow-workflow-change` go past one, and the report lists it under `allowed`.  
 Their variables are `VERCTL_ALLOW_OFF_DEFAULT_BRANCH` and `VERCTL_ALLOW_WORKFLOW_CHANGE`, and the `release.yml` inputs are `allow-off-default-branch` and `allow-workflow-change`.  
@@ -151,6 +152,7 @@ GitHub git HTTPS uses `x-access-token`, never Bearer, and never puts the token i
 `release` reads the registry token from `VERCTL_REGISTRY_TOKEN` or `VERCTL_TRUSTED_PUBLISHING_TOKEN`, never from a flag.  
 It fails when both are set.  
 Only the publisher and its registry `query` get the token, under `--registry-token-env` (`VERCTL_REGISTRY_TOKEN_ENV`, default `CARGO_REGISTRY_TOKEN`).  
+No command verctl starts sees `GITHUB_TOKEN` or `GH_TOKEN`.  
 `release.yml` sets all three in its publish step.
 
 `release` checks the registry before and after each publisher.  

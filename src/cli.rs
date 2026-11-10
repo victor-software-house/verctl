@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::error::ErrorKind;
 use clap::{Arg, ArgMatches, Args, FromArgMatches, Parser, Subcommand};
@@ -73,6 +73,9 @@ const REMOVED: [(&str, &str); 4] = [
 ///
 /// The enum has no variants. No parse ever produces one, so a handler has
 /// nothing to run.
+///
+/// Not `#[non_exhaustive]`: the binary matches it with no arm, which that
+/// attribute would refuse from another crate.
 #[derive(Debug)]
 pub enum Removed {}
 
@@ -230,10 +233,15 @@ fn variable_name(value: &str) -> Result<String, String> {
 }
 
 /// The steps under `release`.
+///
+/// Not `#[non_exhaustive]`: the binary is its own crate and matches the steps
+/// exhaustively, as it does the command list.
+/// A new step then fails its build until it is run.
 #[derive(Debug, Subcommand)]
 pub enum ReleaseStep {
     /// Build one native tarball that `assets` declares for the GitHub Release,
-    /// and upload it. `--dry-run` builds and uploads nothing.
+    /// and upload it. `--dry-run` builds the tarball and uploads nothing, as
+    /// `release --dry-run asset` does too.
     Asset(AssetArgs),
 }
 
@@ -260,9 +268,10 @@ pub struct AssetArgs {
     /// `VERCTL_TARGET` and runs the bare verb.
     #[arg(env = "VERCTL_TARGET")]
     pub target: String,
-    /// Package map. Defaults to .ctl/ver.yaml in the current directory.
-    #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
-    pub config: PathBuf,
+    /// Package map. Defaults to the one named before `asset`, which defaults
+    /// to .ctl/ver.yaml in the current directory.
+    #[arg(short = 'c', long, value_hint = clap::ValueHint::FilePath)]
+    pub config: Option<PathBuf>,
     /// The shared `--dry-run` flag: build the tarball and upload nothing.
     #[command(flatten)]
     pub dry: DryRunArgs,
@@ -290,6 +299,19 @@ impl AssetArgs {
     #[must_use]
     pub fn dry_run(&self) -> bool {
         self.dry.dry_run
+    }
+
+    /// Whether `--dry-run` was given before or after `asset`, so a flag written
+    /// at the `release` level can never turn a dry run into an upload.
+    #[must_use]
+    pub fn dry_run_under(&self, release: &ReleaseArgs) -> bool {
+        self.dry_run() || release.dry_run()
+    }
+
+    /// The config named after `asset`, or else the one named before it.
+    #[must_use]
+    pub fn config_under<'a>(&'a self, release: &'a ReleaseArgs) -> &'a Path {
+        self.config.as_deref().unwrap_or(&release.config)
     }
 }
 
@@ -332,7 +354,8 @@ pub struct StatusArgs {
     pub skip_assets: bool,
     /// Fetch the full history and write the release workflow's plan to this
     /// file: `has_assets`, `tag`, `matrix`, `commits`, `pending`, and
-    /// `assets`. Needs `GITHUB_TOKEN` or `GH_TOKEN`.
+    /// `assets`. Needs `GITHUB_TOKEN` or `GH_TOKEN`. With `--vendored` it
+    /// writes only `has_assets`, `tag`, and `matrix`, and needs no token.
     #[arg(long, value_hint = clap::ValueHint::FilePath)]
     pub github_output: Option<PathBuf>,
 }

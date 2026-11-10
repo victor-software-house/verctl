@@ -42,8 +42,8 @@ fn execute(cli: Cli) -> Result<Report> {
         Command::Version(args) => version_report(&args).map(Report::Version),
         Command::Release(args) => match &args.step {
             Some(ReleaseStep::Asset(asset)) => match &asset.vendored {
-                Some(name) => vendored_report(asset, name).map(Report::Vendored),
-                None => asset_report(asset).map(Report::Assets),
+                Some(name) => vendored_report(asset, &args, name).map(Report::Vendored),
+                None => asset_report(asset, &args).map(Report::Assets),
             },
             None => release_report(&args).map(Report::Release),
         },
@@ -134,6 +134,7 @@ fn versions_report(args: &CheckArgs) -> Result<VersionCheckReport> {
     Ok(VersionCheckReport {
         skip: report.skip,
         rows: report.rows,
+        notices: report.notices,
     })
 }
 
@@ -419,13 +420,14 @@ fn render_report(args: &RenderArgs) -> Result<RenderReport> {
 
 /// `release asset <target>`: build the target's tarball, then upload it to
 /// `--tag`, or the first package's tag, unless `--dry-run` asks for the build
-/// alone.
-fn asset_report(args: &AssetArgs) -> Result<AssetsReport> {
-    let config = Config::load(&args.config)?;
-    let root = &config::root_of(&args.config);
+/// alone. `--dry-run` and `--config` count before or after `asset`.
+fn asset_report(args: &AssetArgs, release: &ReleaseArgs) -> Result<AssetsReport> {
+    let path = args.config_under(release);
+    let config = Config::load(path)?;
+    let root = &config::root_of(path);
     let planned = assets::plan(&config, root)?;
     let tarball = assets::build(&planned, &args.target, root)?;
-    let uploaded = if args.dry_run() {
+    let uploaded = if args.dry_run_under(release) {
         None
     } else {
         let tag = args.tag.as_deref().unwrap_or(planned.tag.as_str());
@@ -440,12 +442,13 @@ fn asset_report(args: &AssetArgs) -> Result<AssetsReport> {
 
 /// `release asset <target> --vendored <name>`: build the set's archive for
 /// the target, then upload it with its checksum unless `--dry-run`.
-fn vendored_report(args: &AssetArgs, name: &str) -> Result<VendoredReport> {
-    let config = Config::load(&args.config)?;
-    let root = &config::root_of(&args.config);
+fn vendored_report(args: &AssetArgs, release: &ReleaseArgs, name: &str) -> Result<VendoredReport> {
+    let path = args.config_under(release);
+    let config = Config::load(path)?;
+    let root = &config::root_of(path);
     let planned = assets::plan_vendored(&config, name)?;
     let archive = assets::build_vendored(&planned, &args.target, root)?;
-    let uploaded = if args.dry_run() {
+    let uploaded = if args.dry_run_under(release) {
         None
     } else {
         Some(assets::upload_vendored(&planned, root, &archive)?)
@@ -473,6 +476,12 @@ fn ci_report(args: &verctl::cli::CiArgs) -> Result<CiReport> {
 /// outputs (`has_assets`, `tag`, `matrix`) and the release outputs
 /// (`commits`, `pending`, `assets`).
 ///
+/// Under `--vendored`, `status` plans the set and nothing else: it writes only
+/// the asset outputs, and fetches no history, reads no token, and looks up no
+/// release.
+///
+/// A config with no packages has no package assets to plan.
+///
 /// Without it, `status` changes nothing in the clone and reads the history
 /// already there. With no token, or when a lookup cannot run
 /// ([`lookup::Unavailable`]), it lists the version commits as not checked,
@@ -491,6 +500,8 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
             assets::write_vendored_github_output(&planned, path)?;
         }
         Some(StatusAssets::Vendored(planned))
+    } else if config.packages.is_empty() {
+        None
     } else {
         let planned = assets::plan(&config, root)?;
         if let Some(path) = &args.github_output {
@@ -500,27 +511,10 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
             .has_assets
             .then_some(StatusAssets::Packages(planned))
     };
-    let token = match &args.github_output {
-        Some(_) => {
-            publish::full_history(root)?;
-            Some(release::resolve_token()?)
-        }
-        None => release::env_token(),
-    };
-    let (unreleased, unreleased_unchecked) = match token {
-        Some(token) => match pending::pending(&config, root, &token, args.skip_assets) {
-            Ok(planned) => {
-                if let Some(path) = &args.github_output {
-                    pending::write_github_output(&planned, path)?;
-                }
-                (Some(unreleased_rows(&planned)), None)
-            }
-            Err(error) if args.github_output.is_none() && lookup::is_unavailable(&error) => {
-                (None, Some(Unchecked::failed(&error)))
-            }
-            Err(error) => return Err(error),
-        },
-        None => (None, Some(Unchecked::missing_token())),
+    let (unreleased, unreleased_unchecked) = if args.vendored.is_some() {
+        (None, Some(Unchecked::vendored()))
+    } else {
+        unreleased_state(args, &config, root)?
     };
     let overall = fragments
         .iter()
@@ -553,6 +547,36 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
         assets,
         unreleased,
         unreleased_unchecked,
+    })
+}
+
+/// The incomplete version commits, or why they were not checked.
+fn unreleased_state(
+    args: &StatusArgs,
+    config: &Config,
+    root: &Path,
+) -> Result<(Option<Vec<ReleaseRow>>, Option<Unchecked>)> {
+    let token = match &args.github_output {
+        Some(_) => {
+            publish::full_history(root)?;
+            Some(release::resolve_token()?)
+        }
+        None => release::env_token(),
+    };
+    Ok(match token {
+        Some(token) => match pending::pending(config, root, &token, args.skip_assets, None) {
+            Ok(planned) => {
+                if let Some(path) = &args.github_output {
+                    pending::write_github_output(&planned, path)?;
+                }
+                (Some(unreleased_rows(&planned)), None)
+            }
+            Err(error) if args.github_output.is_none() && lookup::is_unavailable(&error) => {
+                (None, Some(Unchecked::failed(&error)))
+            }
+            Err(error) => return Err(error),
+        },
+        None => (None, Some(Unchecked::missing_token())),
     })
 }
 

@@ -151,6 +151,9 @@ impl Present for CheckReport {
 pub(super) struct VersionCheckReport {
     pub(super) skip: Option<String>,
     pub(super) rows: Vec<versions::VersionRow>,
+    /// The rules skipped because the config at the merge-base does not load.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) notices: Vec<String>,
 }
 
 impl VersionCheckReport {
@@ -162,19 +165,31 @@ impl VersionCheckReport {
         let report = versions::VersionReport {
             skip: self.skip.clone(),
             rows: self.rows.clone(),
+            notices: Vec::new(),
         };
         report.require_clean().err().map(|error| error.to_string())
+    }
+}
+
+impl VersionCheckReport {
+    /// `document` with one warning per skipped rule.
+    fn with_notices(&self, document: Document) -> Document {
+        self.notices.iter().fold(document, |document, notice| {
+            document.notice(Notice::new(NoticeLevel::Warning, notice.clone()))
+        })
     }
 }
 
 impl Present for VersionCheckReport {
     fn present(&self) -> Document {
         if let Some(skip) = &self.skip {
-            return Document::new().fields(Fields::new().row("exempt", skip.clone()));
+            return self
+                .with_notices(Document::new().fields(Fields::new().row("exempt", skip.clone())));
         }
         let drifted = self.drifted();
         if drifted.is_empty() {
-            return Document::new().fields(Fields::new().row("versions", "match"));
+            return self
+                .with_notices(Document::new().fields(Fields::new().row("versions", "match")));
         }
         let table = drifted.iter().fold(
             Table::new(["name", "default", "local"]).id_column(0),
@@ -186,7 +201,7 @@ impl Present for VersionCheckReport {
                 ])
             },
         );
-        let document = Document::new().table(table);
+        let document = self.with_notices(Document::new().table(table));
         if let Some(message) = self.failure() {
             document.notice(Notice::new(NoticeLevel::Error, message))
         } else {
@@ -233,6 +248,16 @@ impl Unchecked {
     /// No token was set, so no request reached GitHub.
     pub(super) fn missing_token() -> Self {
         let reason = "no GITHUB_TOKEN or GH_TOKEN".to_owned();
+        Self {
+            summary: reason.clone(),
+            chain: reason,
+        }
+    }
+
+    /// `--vendored` plans a set, which reads no package, so no release lookup
+    /// ran.
+    pub(super) fn vendored() -> Self {
+        let reason = "a vendored plan reads no packages".to_owned();
         Self {
             summary: reason.clone(),
             chain: reason,

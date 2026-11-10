@@ -14,7 +14,10 @@
 //!
 //! Each served file must equal its template's render at the versions on HEAD.
 //! Any path that `prepare.stage` names at the merge-base may change, since
-//! `prepare.after` writes it. The Version PR's review covers its content.
+//! `prepare.after` writes it.
+//! A lockfile verctl parses is the exception: only a workspace version the
+//! plan moves may change in it.
+//! The Version PR's review covers the rest of the content.
 
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
@@ -31,6 +34,18 @@ use crate::git::{self, MergeBase};
 use crate::lockfile::{self, Change, Format, Kind, Lockfile};
 use crate::prepare::{self, PlanEntry};
 use crate::{detect, fragment, members, pins, release, templates};
+
+/// The marker of an error that came from loading the config at the
+/// merge-base.
+/// A caller may skip a rule over it instead of failing.
+#[derive(Debug)]
+pub struct BaseConfigFailed;
+
+impl std::fmt::Display for BaseConfigFailed {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("the config at the merge-base does not load")
+    }
+}
 
 /// The most keys a manifest difference names.
 const KEYS_NAMED: usize = 8;
@@ -63,6 +78,11 @@ impl Inputs {
 /// change. Nothing is checked when there is no repository, or no `origin` and
 /// none of `candidates`.
 ///
+/// The config at the merge-base may not load, as when this pull request
+/// removes a key the running verctl refuses.
+/// The replay then has no plan to run, so the check is skipped.
+/// The notice names the check and the load error.
+///
 /// # Errors
 ///
 /// Returns an error listing every difference found:
@@ -73,16 +93,29 @@ impl Inputs {
 /// - a lockfile change other than a planned workspace version.
 ///
 /// It also returns one when the merge-base cannot be read (see
-/// [`MergeBase::read`]), or when the config or fragments there cannot be read
-/// or planned. The same holds when the replay cannot be written, or when
+/// [`MergeBase::read`]), or when the fragments there cannot be read or
+/// planned. The same holds when the replay cannot be written, or when
 /// `cargo metadata` fails on a planned cargo manifest.
-pub fn check(root: &Path, config: &Config, inputs: &Inputs, candidates: &[String]) -> Result<()> {
+pub fn check(
+    root: &Path,
+    config: &Config,
+    inputs: &Inputs,
+    candidates: &[String],
+) -> Result<Vec<String>> {
     let Some(base) = MergeBase::read(root, candidates)? else {
-        return Ok(());
+        return Ok(Vec::new());
     };
-    let problems = problems(root, config, inputs, &base)?;
+    let problems = match problems(root, config, inputs, &base) {
+        Ok(problems) => problems,
+        Err(error) if error.downcast_ref::<BaseConfigFailed>().is_some() => {
+            return Ok(vec![format!(
+                "the Version PR content check is skipped: {error:#}"
+            )]);
+        }
+        Err(error) => return Err(error),
+    };
     if problems.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
     bail!(
         "the Version PR differs from what the version step writes at the merge-base in {count} place(s); run `verctl version --pr` to rewrite it:\n{list}",
@@ -128,14 +161,15 @@ fn problems(root: &Path, head: &Config, inputs: &Inputs, base: &MergeBase) -> Re
                 problems.push(describe(path, expected.as_deref(), actual.as_deref()));
             }
         } else if !served.contains(path) {
-            if let Some(kind) = lockfile::kind(Path::new(path)) {
-                locks.push((path.as_str(), kind));
-            } else if !replay
+            let staged = replay
                 .stage
                 .iter()
-                .any(|pattern| git::matches_stage(pattern, path))
-            {
-                problems.push(format!("{path}: the version step does not write this file"));
+                .any(|pattern| git::matches_stage(pattern, path));
+            match lockfile::kind(Path::new(path)) {
+                Some(kind @ Kind::Parsed(_)) => locks.push((path.as_str(), kind)),
+                _ if staged => {}
+                Some(kind) => locks.push((path.as_str(), kind)),
+                None => problems.push(format!("{path}: the version step does not write this file")),
             }
         }
     }
@@ -186,17 +220,39 @@ impl Moved {
     /// member.
     fn records(&self, format: Format, lock_dir: &Path, name: &str, label: &str) -> bool {
         match format {
-            Format::Cargo | Format::Uv => self.names.contains(name),
+            Format::Cargo => self.names.contains(name),
+            Format::Uv => {
+                let name = pep503(name);
+                self.names.iter().any(|known| pep503(known) == name)
+            }
             Format::Bun | Format::Npm => self.label(lock_dir).as_deref() == Some(label),
         }
     }
+}
+
+/// A Python project name as uv writes it in `uv.lock`: lowercase, with each
+/// run of `-`, `_`, and `.` as one `-` ([PEP 503]).
+///
+/// [PEP 503]: https://peps.python.org/pep-0503/#normalized-names
+fn pep503(name: &str) -> String {
+    let mut normalized = String::with_capacity(name.len());
+    for character in name.chars() {
+        if matches!(character, '-' | '_' | '.') {
+            if !normalized.ends_with('-') {
+                normalized.push('-');
+            }
+        } else {
+            normalized.extend(character.to_lowercase());
+        }
+    }
+    normalized
 }
 
 impl Replay {
     fn run(scratch: &Path, workdir: &Path, root: &Path, inputs: &Inputs) -> Result<Self> {
         let replay_root = scratch.join(inside(workdir, root)?);
         let config = Config::load(&scratch.join(inside(workdir, &inputs.config)?))
-            .context("the config at the merge-base")?;
+            .context(BaseConfigFailed)?;
         let fragments = fragment::load_dir(&scratch.join(inside(workdir, &inputs.dir)?))?;
         let plan = prepare::plan(&config, &fragments, &replay_root)
             .context("the plan of the fragments at the merge-base")?;
@@ -442,6 +498,9 @@ fn stale_locks(base: &MergeBase, moved: &[Moved]) -> Result<Vec<String>> {
         let lock_dir = Path::new(&rel).parent().unwrap_or_else(|| Path::new(""));
         for entry in lockfile.members() {
             if !member.records(*format, lock_dir, &entry.name, &entry.label) {
+                continue;
+            }
+            if *format == Format::Bun && entry.label == "." && entry.version.is_none() {
                 continue;
             }
             if entry.version.as_deref() != Some(member.to.as_str()) {

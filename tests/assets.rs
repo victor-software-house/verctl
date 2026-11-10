@@ -224,6 +224,75 @@ fn a_package_target_packs_the_listed_files() {
     );
 }
 
+/// A `--dry-run` written before `asset` takes effect for the step. The root is
+/// no repository and holds no token, so an upload would fail the run.
+#[test]
+fn a_dry_run_before_asset_uploads_nothing() {
+    let root = files_root();
+    let report = json(&run(
+        root.path(),
+        &["release", "-n", "asset", "linux-x64", "--format", "json"],
+    ));
+    assert_eq!(report["tarball"], "./demo_1.2.3_linux_x64.tar.gz");
+    assert!(report["uploaded"].is_null(), "{report}");
+}
+
+/// A `--config` written after `asset` wins over one written before it, even
+/// when it names the default path.
+#[test]
+fn a_config_after_asset_wins_over_one_before_it() {
+    let root = files_root();
+    let report = json(&run(
+        root.path(),
+        &[
+            "release",
+            "-c",
+            "missing.yaml",
+            "asset",
+            "linux-x64",
+            "-c",
+            ".ctl/ver.yaml",
+            "--dry-run",
+            "--format",
+            "json",
+        ],
+    ));
+    assert_eq!(report["tarball"], "./demo_1.2.3_linux_x64.tar.gz");
+}
+
+/// The build runs as a child of a job that holds a `GITHUB_TOKEN` able to
+/// write contents, and sees neither GitHub credential.
+#[test]
+fn an_asset_build_sees_no_github_credential() {
+    let root = files_root();
+    common::write_config(
+        root.path(),
+        indoc! {r#"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publisher: none
+            assets:
+              build: ["sh", "-c", 'printf "[%s][%s]" "$GITHUB_TOKEN" "$GH_TOKEN" > seen']
+              dir: out/{triple}
+              files: [demo, demod, "demod@.service", LICENSE]
+              linux-x64: {}
+        "#},
+    );
+    let output = common::verctl()
+        .current_dir(root.path())
+        .env("GITHUB_TOKEN", "github")
+        .env("GH_TOKEN", "gh")
+        .args(["release", "asset", "linux-x64", "--dry-run"])
+        .output()
+        .expect("spawn");
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        fs::read_to_string(root.path().join("seen")).expect("seen"),
+        "[][]"
+    );
+}
+
 #[test]
 fn a_package_file_missing_after_the_build_is_named() {
     let root = files_root();
@@ -390,9 +459,10 @@ fn a_vendored_file_missing_after_the_build_is_named() {
     );
 }
 
-/// `status --vendored` writes the set's asset outputs in the packages' shape,
-/// then the release outputs, which list nothing for a config with no
-/// packages. The GitHub API address is closed, so a lookup would fail.
+/// `status --vendored` writes the set's asset outputs in the packages' shape
+/// and nothing else. It needs no token, fetches no history, and looks up no
+/// release. No token is set and the GitHub API address is closed, so any of
+/// those would fail the run.
 #[test]
 fn a_vendored_set_writes_the_same_step_outputs() {
     let root = vendored_root();
@@ -401,7 +471,6 @@ fn a_vendored_set_writes_the_same_step_outputs() {
     let out = root.path().join("github-output");
     let output = common::verctl()
         .current_dir(root.path())
-        .env("GITHUB_TOKEN", "test")
         .env("GITHUB_REPOSITORY", "acme/demo")
         .env("GITHUB_API_URL", "http://127.0.0.1:9")
         .args([
@@ -420,9 +489,6 @@ fn a_vendored_set_writes_the_same_step_outputs() {
             has_assets=true
             tag=libexample-1.4.0
             matrix={"include":[{"id":"linux-x64","labels":["ubuntu-24.04"]},{"id":"macos-arm64","labels":["macos-15"]}]}
-            commits=[]
-            pending=false
-            assets={"include":[]}
         "#}
     );
 }

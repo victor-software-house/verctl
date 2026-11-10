@@ -17,13 +17,23 @@ Each one is of these kinds:
 - a lockfile entry other than a workspace version the plan moves, and a lockfile that does not record each moved version.
 
 A changed `yarn.lock` or `bun.lockb` fails, since verctl does not read them, and so does a changed `pnpm-lock.yaml`, `poetry.lock`, or `pdm.lock`.  
-A path that `prepare.stage` names at the merge-base may change.  
+A path that `prepare.stage` names at the merge-base may change, so a staged `yarn.lock` or `bun.lockb` passes.  
+A lockfile verctl parses, such as `Cargo.lock`, stays checked even when staged.
+
 The plan, the pins, and `prepare.stage` come from `.ctl/ver.yaml` at the merge-base, so a Version PR cannot widen what it may change.
 
 The replay runs no lockfile owner and no `prepare.after` command, and makes no network call.  
 For a Cargo workspace it reads members with `cargo metadata --no-deps --offline`.
 
+When the config at the merge-base does not load, `check --versions` skips the rules that need it and does not fail.  
+That happens in the pull request that removes a key this verctl refuses, such as `prepare.version_label`.  
+The report then carries one notice per skipped rule, naming the rule and the load error.  
+JSON holds the notices under `notices`.
+
+The config on HEAD must still load.
+
 Earlier releases exempted the Version PR branch whatever it changed.
 
 In the library, `versions::report` and `versions::require` take a `content::Inputs` naming the config file and the fragment directory.  
-`content::check` and `content::removes_fragment` are new, with `git::MergeBase`, `git::read_optional`, and `members::versions`.
+`content::check` and `content::removes_fragment` are new, with `git::MergeBase`, `git::read_optional`, and `members::versions`.  
+`content::check` returns the notices of the rules it skipped, and `versions::VersionReport` gains a `notices` field.

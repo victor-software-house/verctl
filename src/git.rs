@@ -37,10 +37,10 @@ pub fn current_branch(root: &Path) -> Option<String> {
 /// Returns an error when `root` is not inside a git repository, or when HEAD
 /// names no commit, as in a repository with no commits.
 pub fn head_sha(root: &Path) -> Result<String> {
-    let repo = discover(root).context("publish needs a git repository to name the tag")?;
+    let repo = discover(root).context("release needs a git repository to name the tag")?;
     let commit = repo
         .head_commit()
-        .context("publish needs HEAD to name the tag")?;
+        .context("release needs HEAD to name the tag")?;
     Ok(commit.id().to_string())
 }
 
@@ -727,9 +727,15 @@ pub fn off_default_history(root: &Path) -> Result<Option<String>> {
     prove_default_history(root, &candidate_names(env_base_ref().as_deref()))
 }
 
-/// Whether `.github/workflows/` at HEAD differs from the default branch's
-/// tip: `None` when the two trees are the same object, or why not, naming
+/// Whether `.github/workflows/` at the commit the run executes differs from
+/// the default branch's tip.
+/// It is `None` when the two trees are the same object, and otherwise names
 /// both commits.
+///
+/// Actions runs the workflows of `GITHUB_SHA`.
+/// In a reusable workflow's publish job HEAD is the version commit instead.
+/// So the tree compared is the one at `GITHUB_SHA` when that variable names a
+/// commit in the repository, and HEAD's otherwise.
 ///
 /// A retry of an old release commit runs its workflows as they were at that
 /// commit. Steps or permissions changed since can publish to the registry and
@@ -743,17 +749,26 @@ pub fn off_default_history(root: &Path) -> Result<Option<String>> {
 /// Returns an error when no repository covers `root`, HEAD has no commit, or
 /// the default branch ref is missing or cannot be resolved.
 pub fn workflows_differ(root: &Path) -> Result<Option<String>> {
+    workflows_differ_at(root, env_run_sha().as_deref())
+}
+
+/// [`workflows_differ`] with the run's commit given in place of `GITHUB_SHA`.
+fn workflows_differ_at(root: &Path, run_sha: Option<&str>) -> Result<Option<String>> {
     let repo = repo_covering(root).with_context(|| {
         format!(
-            "publish cannot compare workflows: no git repository covers {}",
+            "release cannot compare workflows: no git repository covers {}",
             root.display()
         )
     })?;
     let head = repo
         .head_commit()
-        .context("publish cannot compare workflows: HEAD has no commit")?;
+        .context("release cannot compare workflows: HEAD has no commit")?;
+    let (run, label) = match run_sha.and_then(|sha| find_commit_by_hex(&repo, sha)) {
+        Some(commit) => (commit, "GITHUB_SHA"),
+        None => (head, "HEAD"),
+    };
     let upstream = default_upstream_commit(&repo, &candidate_names(env_base_ref().as_deref()))?
-        .context("publish cannot compare workflows: there is no `origin` remote")?;
+        .context("release cannot compare workflows: there is no `origin` remote")?;
     let upstream = repo.find_commit(upstream)?;
     let workflows = |commit: &gix::Commit<'_>| -> Result<Option<gix::ObjectId>> {
         Ok(commit
@@ -761,14 +776,31 @@ pub fn workflows_differ(root: &Path) -> Result<Option<String>> {
             .lookup_entry_by_path(WORKFLOWS)?
             .map(|entry| entry.object_id()))
     };
-    if workflows(&head)? == workflows(&upstream)? {
+    if workflows(&run)? == workflows(&upstream)? {
         return Ok(None);
     }
     Ok(Some(format!(
-        "{WORKFLOWS}/ at HEAD {head} differs from the default branch at {upstream}",
-        head = head.id(),
+        "{WORKFLOWS}/ at {label} {run} differs from the default branch at {upstream}",
+        run = run.id(),
         upstream = upstream.id(),
     )))
+}
+
+/// The commit a full hex SHA names, or `None` when it is not valid hex or
+/// names no commit in the repository.
+fn find_commit_by_hex<'repo>(
+    repo: &'repo gix::Repository,
+    sha: &str,
+) -> Option<gix::Commit<'repo>> {
+    let id = gix::ObjectId::from_hex(sha.as_bytes()).ok()?;
+    repo.find_commit(id).ok()
+}
+
+fn env_run_sha() -> Option<String> {
+    env::var("GITHUB_SHA")
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
 }
 
 /// Where a repository keeps its GitHub Actions workflows.
@@ -1167,17 +1199,17 @@ fn github_credentials(token: &str) -> impl FnMut(Action) -> gix::Result<Option<O
 fn prove_default_history(root: &Path, candidates: &[String]) -> Result<Option<String>> {
     let repo = repo_covering(root).with_context(|| {
         format!(
-            "publish cannot prove HEAD is on the default branch: no git repository covers {}",
+            "release cannot prove HEAD is on the default branch: no git repository covers {}",
             root.display()
         )
     })?;
     let head = repo
         .head_commit()
-        .context("publish cannot prove HEAD is on the default branch: HEAD has no commit")?
+        .context("release cannot prove HEAD is on the default branch: HEAD has no commit")?
         .id()
         .detach();
     let upstream = default_upstream_commit(&repo, candidates)?.context(
-        "publish cannot prove HEAD is on the default branch: there is no `origin` remote; add it and fetch the default branch",
+        "release cannot prove HEAD is on the default branch: there is no `origin` remote; add it and fetch the default branch",
     )?;
     if head == upstream {
         return Ok(None);
@@ -1188,7 +1220,7 @@ fn prove_default_history(root: &Path, candidates: &[String]) -> Result<Option<St
             "HEAD {head} is not an ancestor of the default branch at {upstream}"
         ))),
         Err(error) => Err(error).context(
-            "publish cannot prove HEAD is on the default branch (need a full fetch, not a shallow clone)",
+            "release cannot prove HEAD is on the default branch (need a full fetch, not a shallow clone)",
         ),
     }
 }
@@ -1577,7 +1609,7 @@ pub fn assert_only_allowed(
         return Ok(staged);
     }
     bail!(
-        "prepare produced unexpected paths (declare them in prepare.stage): {}",
+        "version produced unexpected paths (declare them in prepare.stage): {}",
         extra.join(", ")
     );
 }
@@ -3028,6 +3060,10 @@ mod tests {
     fn no_repository_refuses() {
         let dir = tempfile::TempDir::new().unwrap();
         let err = prove(dir.path(), &stock()).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("release cannot prove HEAD"),
+            "{err:#}"
+        );
         assert!(format!("{err:#}").contains("no git repository"), "{err:#}");
     }
 
@@ -3466,6 +3502,49 @@ mod tests {
         track(bare.path(), "main", &added);
         git(bare.path(), &["update-ref", "--no-deref", "HEAD", &first]);
         assert!(super::workflows_differ(bare.path()).unwrap().is_some());
+    }
+
+    /// The publish job of a reusable workflow checks out the version commit,
+    /// while Actions runs the workflows of `GITHUB_SHA`.
+    /// So that commit's tree is the one compared when it names a commit, and
+    /// HEAD's when it does not.
+    #[test]
+    fn the_workflows_compared_are_those_of_the_run_commit() {
+        let (dir, _) = fixture();
+        std::fs::create_dir_all(dir.path().join(".github/workflows")).unwrap();
+        std::fs::write(dir.path().join(".github/workflows/ci.yml"), "on: push\n").unwrap();
+        let release = commit_all(dir.path(), "chore(release): version packages");
+        std::fs::write(
+            dir.path().join(".github/workflows/ci.yml"),
+            "on: [push, pull_request]\n",
+        )
+        .unwrap();
+        let tip = commit_all(dir.path(), "ci: run on pull requests");
+        add_origin(dir.path());
+        track(dir.path(), "main", &tip);
+        git(dir.path(), &["update-ref", "--no-deref", "HEAD", &release]);
+
+        assert_eq!(
+            super::workflows_differ_at(dir.path(), Some(&tip)).unwrap(),
+            None
+        );
+
+        let at_head = super::workflows_differ_at(dir.path(), Some(&"0".repeat(40)))
+            .unwrap()
+            .unwrap();
+        assert!(at_head.contains(&format!("at HEAD {release}")), "{at_head}");
+        let unset = super::workflows_differ_at(dir.path(), None)
+            .unwrap()
+            .unwrap();
+        assert!(unset.contains(&format!("at HEAD {release}")), "{unset}");
+
+        let at_run = super::workflows_differ_at(dir.path(), Some(&release))
+            .unwrap()
+            .unwrap();
+        assert!(
+            at_run.contains(&format!("at GITHUB_SHA {release}")),
+            "{at_run}"
+        );
     }
 
     #[test]

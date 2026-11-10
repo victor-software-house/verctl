@@ -39,6 +39,25 @@ queue:
       - 2026-11-09, breaking-change audit against main at cb1be28 recorded in the change as audit.md, with each breaking item, its state, what it breaks, and the decision it waits on. The target minor moves from 0.4.0 to 0.8.0; decision 8 (0.4.0 from next) is contradicted by what shipped. A first publish beside crates.io trusted publishing is task 6.5, not a new row, because the open stack already holds VER-085 to VER-089.
     plan: openspec/changes/release-state-machine/proposal.md
 
+  - id: VER-117
+    title: Release candidates that never move latest
+    scope: bump, version, release, github, pins, and the release workflow
+    outcome: >-
+      A package ships prerelease versions to its registries and GitHub that only a
+      consumer pinning one exactly receives, so a change reaches real callers before its
+      stable release.
+    blocked_by: []
+    acceptance:
+      - A repository can enter and leave a prerelease mode, and the Version PR in that mode writes versions such as 0.8.0-rc.1, then 0.8.0-rc.2, from the pending fragments.
+      - '`release` publishes a prerelease to crates.io and creates its GitHub Release marked prerelease, with `make_latest` false.'
+      - Leaving the mode writes the stable version from the same fragments, and its CHANGELOG section covers every candidate.
+      - A `pins` entry and a `tool` pin can name a prerelease version, so a consumer can pin `=0.8.0-rc.1` through verctl.
+    notes:
+      - '2026-11-10, operator: a must, so ctl crates can ship incrementally without marking each change an official release.'
+      - '2026-11-10, verctl main 2665f11 has no prerelease mode: bump.rs line 69 clears the prerelease part of every version, and pins refuse a version or ref with a prerelease part.'
+      - Cargo never resolves a requirement such as =0.7.0 or ^0.7 to a prerelease, cargo install takes one only with --version, and the GitHub API /releases/latest skips a prerelease release. Changesets calls the same idea pre mode (changeset pre enter).
+      - Shipping 0.8.0 itself as a candidate first would exercise its publish path, which no run has used yet.
+
   - id: VER-097
     title: Ship cargo and bun as built-ins, with bun-release in Rust
     scope: verctl cargo and bun providers, npm registry client, mise

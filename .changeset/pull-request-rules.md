@@ -20,4 +20,5 @@ For a pull request with either problem, `check` looks up on GitHub whether it is
 A merge queue run skips both rules.
 
 `members::members` reads the workspace with `cargo metadata --offline`, so it never reaches a registry.  
-In the library, `pull_request::problems` is new.
+In the library, `pull_request::problems` is new.  
+It returns `pull_request::Findings`: the problems, and a notice for each rule skipped because the config at the merge-base does not load.

@@ -105,6 +105,9 @@ pub struct VersionReport {
     /// reads as `0.0.0`; any other file a package cannot read fails the
     /// report, as it fails `version`.
     pub rows: Vec<VersionRow>,
+    /// Each rule skipped because the config at the merge-base does not load,
+    /// naming the rule and the load error. Empty when no rule was skipped.
+    pub notices: Vec<String>,
 }
 
 impl VersionReport {
@@ -179,24 +182,27 @@ pub fn report(root: &Path, config: &Config, inputs: &content::Inputs) -> Result<
     }
     let candidates = git::default_branch_candidates();
     if on_version_branch(root) {
-        content::check(root, config, inputs, &candidates)?;
-        return report_with(root, config, Skip::VersionBranch, &[], &[]);
+        let notices = content::check(root, config, inputs, &candidates)?;
+        let report = report_with(root, config, Skip::VersionBranch, &[], &[])?;
+        return Ok(VersionReport { notices, ..report });
     }
     let release_candidates = git::release_branch_candidates();
     let report = report_with(root, config, Skip::None, &candidates, &release_candidates)?;
     let Some(base) = git::MergeBase::read(root, &candidates)? else {
         return Ok(report);
     };
-    let problems = pull_request::problems(root, config, inputs, &base, &release_candidates)?;
+    let found = pull_request::problems(root, config, inputs, &base, &release_candidates)?;
+    let mut notices = found.notices;
+    let problems = found.problems;
     if problems.is_empty()
         && report.drifted().is_empty()
         && !content::removes_fragment(&base, inputs)?
     {
-        return Ok(report);
+        return Ok(VersionReport { notices, ..report });
     }
     let skip = Skip::from_env(root)?;
     match skip {
-        Skip::VersionBranch => content::check(root, config, inputs, &candidates)?,
+        Skip::VersionBranch => notices.extend(content::check(root, config, inputs, &candidates)?),
         Skip::None if !problems.is_empty() => bail!(
             "this pull request makes {count} change(s) only the Version PR may make:\n{list}",
             count = problems.len(),
@@ -208,8 +214,9 @@ pub fn report(root: &Path, config: &Config, inputs: &content::Inputs) -> Result<
         Some(label) => VersionReport {
             skip: Some(label.into()),
             rows: Vec::new(),
+            notices,
         },
-        None => report,
+        None => VersionReport { notices, ..report },
     })
 }
 
@@ -239,6 +246,7 @@ pub fn report_with(
         return Ok(VersionReport {
             skip: Some(label.into()),
             rows: Vec::new(),
+            notices: Vec::new(),
         });
     }
     let rels: Vec<&Path> = config
@@ -276,7 +284,11 @@ pub fn report_with(
             released,
         });
     }
-    Ok(VersionReport { skip: None, rows })
+    Ok(VersionReport {
+        skip: None,
+        rows,
+        notices: Vec::new(),
+    })
 }
 
 /// [`report`], failing when any version drifted.

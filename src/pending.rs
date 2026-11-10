@@ -23,7 +23,8 @@ use crate::driver::Driver;
 use crate::git::{self, VersionCommit};
 use crate::github::{self, ReleaseState};
 use crate::publish::{self, PublishEntry};
-use crate::registry::RegistryCheck;
+use crate::registry::{self, RegistryCheck};
+use crate::registry_token::RegistryToken;
 use crate::{bump, publisher};
 
 /// Every version commit with an incomplete release, and the assets missing at
@@ -116,6 +117,10 @@ struct PackageState {
 /// A config with no packages, such as one that only vendors, has nothing to
 /// release, so `status` works there without a lookup.
 ///
+/// A registry `query` runs with `registry_token` when one is given, as in
+/// `release`, because a private registry needs the same credential to answer.
+/// `status` holds none.
+///
 /// # Errors
 ///
 /// Returns an error when:
@@ -133,7 +138,13 @@ struct PackageState {
 /// right commit is its version commit, or another commit HEAD contains at the
 /// same version (see [`git::tagged_commit`]). Counting a release tagged in the
 /// wrong place as complete would hide it.
-pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> Result<Pending> {
+pub fn pending(
+    config: &Config,
+    root: &Path,
+    token: &str,
+    skip_assets: bool,
+    registry_token: Option<&RegistryToken>,
+) -> Result<Pending> {
     if config.packages.is_empty() {
         return Ok(Pending::default());
     }
@@ -162,6 +173,8 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
         ));
     }
     let release_commits = newest_per_tag(&found);
+    let env = registry_token.map(RegistryToken::env);
+    let env = env.as_slice();
     let mut states = Vec::new();
     let mut releases: BTreeMap<String, ReleaseState> = BTreeMap::new();
     for ((index, spec, driver), entry, tag, _) in &found {
@@ -188,7 +201,7 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
             }
             Some(_) | None => commit,
         };
-        let listed = registry_lists(config, root, spec, entry, release)?;
+        let listed = registry_lists(config, root, spec, entry, release, env)?;
         let declared: &[MatrixTarget] = if *index == 0 { &targets } else { &[] };
         let state = state_of(entry, commit, listed, release, declared, &assets_tag);
         let incomplete = !state.complete;
@@ -197,8 +210,11 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
             let name = config.tags.uses_name().then_some(entry.name.as_str());
             let earlier =
                 git::unreleased_below(root, &root.join(&spec.path), &read, &mut |version| {
-                    let tag = config.tags.render(version, name)?;
-                    Ok(github::release_state(token, &repo, &tag)?.tag.is_some())
+                    let checks = checks_at(config, root, spec, entry, version)?;
+                    version_released(&checks, version, env, || {
+                        let tag = config.tags.render(version, name)?;
+                        Ok(github::release_state(token, &repo, &tag)?.tag.is_some())
+                    })
                 })?;
             for skipped in earlier {
                 states.push(PackageState {
@@ -266,12 +282,15 @@ fn tag_of(planned: &publish::PublishPlan, entry: &PublishEntry) -> Result<String
 /// once its tag exists. `release` creates the tag of a package with an
 /// unchecked upload only after the upload, so the tag is the record. A tag
 /// with only checked uploads is created first and records nothing.
+///
+/// A `query` runs with `env`, as [`RegistryCheck::lists`] describes.
 fn registry_lists(
     config: &Config,
     root: &Path,
     spec: &crate::config::PackageSpec,
     entry: &PublishEntry,
     release: &ReleaseState,
+    env: &[(&str, &str)],
 ) -> Result<bool> {
     if entry.argv.is_empty() {
         return Ok(true);
@@ -280,10 +299,98 @@ fn registry_lists(
         let listed = match &upload.check {
             RegistryCheck::Unchecked => release.tag.is_some(),
             check @ (RegistryCheck::CratesIo { .. } | RegistryCheck::Query { .. }) => {
-                check.lists(&upload.version, &[])?
+                check.lists(&upload.version, env)?
             }
         };
         if !listed {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// The registry checks that say whether `version` of a package is published.
+///
+/// Any package but a workspace has its single check built for `version`,
+/// since a `query` carries the version it was built for.
+/// A workspace package checks the members [`members_at`] keeps.
+fn checks_at(
+    config: &Config,
+    root: &Path,
+    spec: &crate::config::PackageSpec,
+    entry: &PublishEntry,
+    version: &str,
+) -> Result<Vec<RegistryCheck>> {
+    if entry.argv.is_empty() {
+        return Ok(Vec::new());
+    }
+    if publisher::workspace_members(config, spec, root)?.is_some() {
+        let wanted =
+            semver::Version::parse(version).with_context(|| format!("semver {version:?}"))?;
+        let uploads = publisher::uploads(config, spec, root, entry)?;
+        return members_at(uploads, &entry.version, |name| {
+            Ok(registry::crates_io_baseline(registry::CRATES_IO_INDEX, name, &wanted)?.is_some())
+        });
+    }
+    Ok(vec![publisher::registry_check(
+        config, spec, root, version,
+    )?])
+}
+
+/// The checks of the workspace members that took part in an earlier
+/// release.
+///
+/// The members are read at HEAD, so two of them can say nothing about that
+/// release:
+///
+/// - a member whose version is not the package's moves on its own;
+/// - a crates.io member that `existed` says has no version at or below the
+///   earlier one was added since.
+///
+/// When no member is left, [`version_released`] falls back to the tag.
+fn members_at(
+    uploads: Vec<publisher::Upload>,
+    package_version: &str,
+    existed: impl Fn(&str) -> Result<bool>,
+) -> Result<Vec<RegistryCheck>> {
+    let mut checks = Vec::new();
+    for upload in uploads {
+        if upload.version != package_version {
+            continue;
+        }
+        if let RegistryCheck::CratesIo { name } = &upload.check
+            && !existed(name)?
+        {
+            continue;
+        }
+        checks.push(upload.check);
+    }
+    Ok(checks)
+}
+
+/// Whether an earlier `version` of a package counts as released.
+///
+/// When every upload has a registry check, the registry decides.
+/// `release` creates that package's tag before the upload, so a failed upload
+/// leaves a tag for a version nobody published.
+/// A package with an unchecked upload, or with none, is released once its tag
+/// exists, because `release` creates that tag after the upload.
+/// `tag_exists` runs only then.
+fn version_released(
+    checks: &[RegistryCheck],
+    version: &str,
+    env: &[(&str, &str)],
+    tag_exists: impl FnOnce() -> Result<bool>,
+) -> Result<bool> {
+    if checks.is_empty()
+        || checks
+            .iter()
+            .any(|check| matches!(check, RegistryCheck::Unchecked))
+    {
+        return tag_exists();
+    }
+    for check in checks {
+        if !check.lists(version, env)? {
             return Ok(false);
         }
     }
@@ -402,13 +509,14 @@ mod tests {
     use indoc::indoc;
 
     use super::{
-        PackageState, Pending, PendingAsset, PendingPackage, group, newest_per_tag, state_of,
-        write_github_output,
+        PackageState, Pending, PendingAsset, PendingPackage, group, members_at, newest_per_tag,
+        state_of, version_released, write_github_output,
     };
     use crate::assets::MatrixTarget;
     use crate::git::VersionCommit;
     use crate::github::ReleaseState;
     use crate::publish::PublishEntry;
+    use crate::registry::RegistryCheck;
 
     fn entry(name: &str, version: &str) -> PublishEntry {
         PublishEntry {
@@ -607,5 +715,81 @@ mod tests {
                 assets={"include":[]}
             "#}
         );
+    }
+
+    fn query(argv: &[&str]) -> RegistryCheck {
+        RegistryCheck::Query {
+            argv: argv.iter().map(|word| (*word).to_owned()).collect(),
+            dir: std::env::temp_dir(),
+        }
+    }
+
+    /// A tag that exists says nothing about a package whose tag `release`
+    /// creates before the upload: a failed `cargo publish` leaves it behind.
+    #[test]
+    fn an_earlier_version_with_checked_uploads_is_released_when_the_registry_lists_it() {
+        let listed = version_released(&[query(&["echo", "1.0.0"])], "1.0.0", &[], || {
+            panic!("the registry decides, so the tag is not read")
+        })
+        .unwrap();
+        assert!(listed);
+        let unlisted = version_released(&[query(&["false"])], "1.0.0", &[], || Ok(true)).unwrap();
+        assert!(!unlisted);
+        let one_of_two = version_released(
+            &[query(&["echo", "1.0.0"]), query(&["false"])],
+            "1.0.0",
+            &[],
+            || Ok(true),
+        )
+        .unwrap();
+        assert!(!one_of_two);
+    }
+
+    #[test]
+    fn an_earlier_version_with_an_unchecked_upload_or_none_is_released_with_its_tag() {
+        for checks in [
+            vec![],
+            vec![RegistryCheck::Unchecked],
+            vec![query(&["echo", "1.0.0"]), RegistryCheck::Unchecked],
+        ] {
+            assert!(version_released(&checks, "1.0.0", &[], || Ok(true)).unwrap());
+            assert!(!version_released(&checks, "1.0.0", &[], || Ok(false)).unwrap());
+        }
+    }
+
+    fn member(name: &str, version: &str) -> crate::publisher::Upload {
+        crate::publisher::Upload {
+            name: name.to_owned(),
+            version: version.to_owned(),
+            manifest: std::path::PathBuf::from(format!("{name}/Cargo.toml")),
+            argv: vec!["cargo".to_owned(), "publish".to_owned()],
+            check: RegistryCheck::CratesIo {
+                name: name.to_owned(),
+            },
+        }
+    }
+
+    /// A member added since the earlier release, and one that moves on its
+    /// own, say nothing about that release, so only the others are asked.
+    #[test]
+    fn an_earlier_workspace_release_asks_only_the_members_it_had() {
+        let checks = members_at(
+            vec![
+                member("core", "0.7.0"),
+                member("added", "0.7.0"),
+                member("own", "1.4.0"),
+            ],
+            "0.7.0",
+            |name| Ok(name != "added"),
+        )
+        .unwrap();
+        assert_eq!(
+            checks,
+            vec![RegistryCheck::CratesIo {
+                name: "core".to_owned()
+            }]
+        );
+        let none = members_at(vec![member("added", "0.7.0")], "0.7.0", |_| Ok(false)).unwrap();
+        assert_eq!(none, Vec::<RegistryCheck>::new());
     }
 }

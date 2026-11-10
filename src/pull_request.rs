@@ -32,12 +32,16 @@ use crate::publisher;
 /// setting that HEAD's merge-base with the release branch already holds came
 /// with a merge of that branch. It does not count.
 ///
+/// The publish-setting rule needs the config at the merge-base.
+/// That config may not load, as when this pull request removes a key the
+/// running verctl refuses.
+/// The rule is then skipped, and a notice names it and the load error.
+///
 /// # Errors
 ///
 /// Returns an error when any of these cannot be read:
 ///
 /// - the release branch's merge-base, or a CHANGELOG;
-/// - the config at a merge-base;
 /// - a manifest there or in the working tree, which must also parse.
 pub fn problems(
     root: &Path,
@@ -45,16 +49,31 @@ pub fn problems(
     inputs: &Inputs,
     base: &MergeBase,
     release_candidates: &[String],
-) -> Result<Vec<String>> {
-    let mut problems = added_sections(root, config, base, release_candidates)?;
-    problems.extend(publish_changes(
-        root,
-        config,
-        inputs,
-        base,
-        release_candidates,
-    )?);
-    Ok(problems)
+) -> Result<Findings> {
+    let mut found = Findings {
+        problems: added_sections(root, config, base, release_candidates)?,
+        notices: Vec::new(),
+    };
+    match publish_changes(root, config, inputs, base, release_candidates) {
+        Ok(changes) => found.problems.extend(changes),
+        Err(error) if error.downcast_ref::<content::BaseConfigFailed>().is_some() => {
+            found
+                .notices
+                .push(format!("the publish-setting rule is skipped: {error:#}"));
+        }
+        Err(error) => return Err(error),
+    }
+    Ok(found)
+}
+
+/// What the pull request rules found.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Findings {
+    /// Each change only the Version PR may make.
+    pub problems: Vec<String>,
+    /// Each rule skipped, and why.
+    pub notices: Vec<String>,
 }
 
 /// Each version section the working tree adds to a package CHANGELOG.
@@ -189,7 +208,7 @@ impl Snapshot {
         if !path.is_file() {
             return Ok(None);
         }
-        let config = Config::load(&path).context("the config at a merge-base")?;
+        let config = Config::load(&path).context(content::BaseConfigFailed)?;
         let root = config::root_of(&path);
         Ok(Some(Self {
             scratch,

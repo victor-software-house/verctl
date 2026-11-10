@@ -3,10 +3,12 @@ verctl: minor
 verctl:group: changed
 ---
 
-`verctl publish` is now `verctl release`, with the same flags, variables, and behaviour.  
+`verctl publish` is now `verctl release`, with the same flags and variables, except `--plan`, which moved to `status --github-output`.  
+Its JSON report drops `pending`, which `status` holds as `unreleased`, and gains `allowed`.  
 `verctl assets` is now `verctl release asset <target>`.  
 It reads the target from `VERCTL_TARGET`, builds the tarball, and uploads it.  
-`--dry-run` builds it and uploads nothing, and `--vendored <name>` builds and uploads a vendored set.  
+`--dry-run` builds the tarball and uploads nothing, written before or after `asset`, and `--vendored <name>` builds and uploads a vendored set.  
+
 The old verbs are hidden and exit 2 with an error that names the new one.  
 `--build`, `--upload`, and their variables are gone.
 
@@ -24,7 +26,11 @@ Any other error, such as a release tag on the wrong commit or a 401 from a bad t
 
 `status --github-output <file>` fetches the history the plan needs.  
 It writes `has_assets`, `tag`, `matrix`, `commits`, `pending`, and `assets`, the outputs `assets --github-output` and `publish --plan` wrote.  
-`status --vendored <name>` plans a vendored set.  
+
+`status --vendored <name>` plans a vendored set and nothing else.  
+With `--github-output` it writes only `has_assets`, `tag`, and `matrix`, and it fetches no history, reads no token, and looks up no release.  
+A config with no packages, such as one that only vendors, has no package assets to plan, so `status` works there.
+
 `verctl release --plan`, or `VERCTL_PLAN` set for it, exits 2 and names `verctl status --github-output`.  
 Without `--github-output`, `status` never fetches.
 

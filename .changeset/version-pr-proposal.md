@@ -17,3 +17,6 @@ Any other unknown key under `prepare` fails too.
 The reusable `release.yml` runs the verctl the caller pins.  
 Its `plan` job fails first when that verctl is older than 0.8.0.  
 Move the verctl pin and the workflow ref together.
+
+In the library, `VersionPr::from_env` is `VersionPr::new`, which takes the `Proposal` and the root.  
+`release::open_or_update_pr` takes no label argument.

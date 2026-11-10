@@ -869,3 +869,60 @@ fn version_json_lists_follow_up_commands_under_after() {
     assert!(value["after"].is_array(), "{value}");
     assert!(value.get("next").is_none(), "{value}");
 }
+
+/// A config that only vendors declares no packages, which is valid. `status`
+/// plans no package assets for it, and with a token and `--github-output`
+/// writes only the release outputs, which list nothing.
+#[test]
+fn a_config_with_no_packages_has_no_package_assets_to_plan() {
+    let root = TempDir::new().expect("tempdir");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            runners:
+              linux:
+                labels: [ubuntu-24.04]
+            vendored:
+              libexample:
+                version: 1.4.0
+                dir: out/{id}
+                files: [LICENSE]
+                targets:
+                  linux-x64:
+                    runner: linux
+        "},
+    );
+    common::init(root.path());
+    common::commit_all(root.path(), "chore: vendor");
+    let output = common::verctl()
+        .current_dir(root.path())
+        .args(["status", "--format", "json"])
+        .output()
+        .expect("spawn");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("JSON");
+    assert!(value["assets"].is_null(), "{value}");
+
+    let out = root.path().join("github-output");
+    let planned = common::verctl()
+        .current_dir(root.path())
+        .env("GITHUB_TOKEN", "test")
+        .env("GITHUB_REPOSITORY", "acme/demo")
+        .env("GITHUB_API_URL", "http://127.0.0.1:9")
+        .args(["status", "--github-output", out.to_str().expect("utf-8")])
+        .output()
+        .expect("spawn");
+    assert!(planned.status.success(), "{planned:?}");
+    assert_eq!(
+        fs::read_to_string(&out).expect("output"),
+        indoc! {r#"
+            commits=[]
+            pending=false
+            assets={"include":[]}
+        "#}
+    );
+}

@@ -84,14 +84,28 @@ pub fn run_inherit_env(argv: &[String], env: &[(&str, &str)], timeout: Duration)
     inherit(argv, None, env, timeout)
 }
 
-/// `argv[0]` with its arguments, without the variables a registry token
-/// arrives in ([`registry_token::SOURCES`]), so no command verctl starts
-/// inherits one. A command that needs the token gets it back through `env`
-/// under the variable it reads.
-fn command(argv: &[String]) -> duct::Expression {
+/// The variables that carry GitHub credentials.
+/// A publisher, a dependency build script, and an asset build all run as
+/// children of a job that holds a token able to write contents.
+/// None of them inherits one.
+const GITHUB_CREDENTIALS: [&str; 2] = ["GITHUB_TOKEN", "GH_TOKEN"];
+
+/// `argv[0]` with its arguments and `env`, without the variables a registry
+/// token arrives in ([`registry_token::SOURCES`]) or a GitHub credential
+/// ([`GITHUB_CREDENTIALS`]), so no command verctl starts inherits one.
+///
+/// A command that needs one gets it back through `env` under the variable it
+/// reads. `env` is set inside the removals, so a variable named in both stays
+/// set. duct applies the outermost call first, which makes the innermost win.
+fn command(argv: &[String], env: &[(&str, &str)]) -> duct::Expression {
+    let expression = env.iter().fold(
+        duct::cmd(&argv[0], &argv[1..]),
+        |expression, (key, value)| expression.env(key, value),
+    );
     registry_token::SOURCES
         .iter()
-        .fold(duct::cmd(&argv[0], &argv[1..]), |expression, variable| {
+        .chain(&GITHUB_CREDENTIALS)
+        .fold(expression, |expression, variable| {
             expression.env_remove(variable)
         })
 }
@@ -104,10 +118,7 @@ fn inherit(
 ) -> Result<()> {
     ensure!(!argv.is_empty(), "driver argv is empty");
     let (stderr_r, stderr_w) = os_pipe::pipe().context("command stderr pipe")?;
-    let mut expression = command(argv);
-    for (key, value) in env {
-        expression = expression.env(key, value);
-    }
+    let mut expression = command(argv, env);
     if let Some(dir) = dir {
         expression = expression.dir(dir);
     }
@@ -286,10 +297,7 @@ fn capture(
     output_limit: usize,
 ) -> Result<String> {
     ensure!(!argv.is_empty(), "driver argv is empty");
-    let mut expr = command(argv);
-    for (key, value) in env {
-        expr = expr.env(key, value);
-    }
+    let mut expr = command(argv, env);
     if let Some(dir) = dir {
         expr = expr.dir(dir);
     }
@@ -427,7 +435,7 @@ fn take_capped(handle: JoinHandle<io::Result<CapRead>>) -> Result<Vec<u8>> {
 mod tests {
     use std::time::{Duration, Instant};
 
-    use super::{filter, filter_limited, run_inherit};
+    use super::{argv, command, filter, filter_limited, run_inherit};
 
     #[test]
     fn a_failed_command_reports_its_stderr() {
@@ -532,6 +540,42 @@ mod tests {
         assert_eq!(
             format!("{error:#}"),
             "driver command failed: sh -c echo boom >&2; exit 3: exit status: 3: boom"
+        );
+    }
+
+    /// What a child prints for the credential variables.
+    /// `inherited` is set outermost, as this process's environment is, and
+    /// `given` is what verctl hands the child.
+    fn seen_by_child(inherited: &[(&str, &str)], given: &[(&str, &str)]) -> String {
+        let script =
+            r#"printf '[%s][%s][%s]' "$GITHUB_TOKEN" "$GH_TOKEN" "$VERCTL_REGISTRY_TOKEN""#;
+        let mut expression = command(&argv(&["sh", "-c", script]), given);
+        for (key, value) in inherited {
+            expression = expression.env(key, value);
+        }
+        let output = expression.stdout_capture().run().expect("run");
+        String::from_utf8(output.stdout).expect("UTF-8")
+    }
+
+    #[test]
+    fn no_child_inherits_a_github_credential_or_a_registry_token() {
+        let inherited = [
+            ("GITHUB_TOKEN", "github"),
+            ("GH_TOKEN", "gh"),
+            ("VERCTL_REGISTRY_TOKEN", "registry"),
+        ];
+        assert_eq!(seen_by_child(&inherited, &[]), "[][][]");
+    }
+
+    /// A publisher whose `--registry-token-env` names `GITHUB_TOKEN`, as a
+    /// bunfig for GitHub Packages may read it, gets the registry token there
+    /// and nothing else.
+    #[test]
+    fn a_credential_a_command_is_given_stays_set() {
+        let inherited = [("GITHUB_TOKEN", "github"), ("GH_TOKEN", "gh")];
+        assert_eq!(
+            seen_by_child(&inherited, &[("GITHUB_TOKEN", "given")]),
+            "[given][][]"
         );
     }
 }
