@@ -40,7 +40,8 @@ pub enum Command {
     Check(CheckArgs),
     /// Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews.
     Version(VersionArgs),
-    /// Release the versions on HEAD (cargo / bun + GitHub Release).
+    /// Release the versions on HEAD: publish with cargo or bun, and create the
+    /// GitHub Release.
     /// `release asset <target>` builds and uploads one asset.
     Release(ReleaseArgs),
     /// Rewrite pins and render served templates at the versions on HEAD.
@@ -67,10 +68,10 @@ const REMOVED: [(&str, &str); 4] = [
 ];
 
 /// A renamed verb. Each one is hidden from help, and the usage spec marks it
-/// `hide`. It takes any arguments and fails the parse with a usage error, so
-/// it exits 2, reads no config, and names the command that replaced it.
+/// `hide`. It takes any arguments and fails the parse with a usage error. It
+/// then exits 2, reads no config, and names the command that replaced it.
 ///
-/// The enum has no variants: no parse ever produces one, so a handler has
+/// The enum has no variants. No parse ever produces one, so a handler has
 /// nothing to run.
 #[derive(Debug)]
 pub enum Removed {}
@@ -188,9 +189,9 @@ pub struct ReleaseArgs {
     pub step: Option<ReleaseStep>,
 }
 
-/// The value parser of the hidden `release --plan`: the plan moved to
-/// `status --github-output`, so any value that asks for it fails the parse as
-/// a usage error that names the replacement, exiting 2 like a renamed verb.
+/// The value parser of the hidden `release --plan`. `status --github-output`
+/// writes the plan. Any value other than `false` fails the parse with a usage
+/// error that names the replacement, and exits 2 as a renamed verb does.
 fn moved_plan(value: &str) -> Result<bool, String> {
     match value {
         "false" => Ok(false),
@@ -203,8 +204,8 @@ fn moved_plan(value: &str) -> Result<bool, String> {
 /// The steps under `release`.
 #[derive(Debug, Subcommand)]
 pub enum ReleaseStep {
-    /// Build one native GitHub Release tarball declared under `assets`, and
-    /// upload it. `--dry-run` builds and uploads nothing.
+    /// Build one native tarball that `assets` declares for the GitHub Release,
+    /// and upload it. `--dry-run` builds and uploads nothing.
     Asset(AssetArgs),
 }
 

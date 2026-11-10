@@ -33,7 +33,7 @@ completion bootstrap.
 | `status` | — | List pending fragments, the asset plan, and the incomplete version commits. `--github-output` writes the release workflow's plan |
 | `check` | — | Validate fragments, or `--versions` against the default branch |
 | `version` | — | Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews |
-| `release` | — | Release the versions on HEAD (cargo / bun + GitHub Release). `release asset <target>` builds and uploads one asset |
+| `release` | — | Release the versions on HEAD: publish with cargo or bun, and create the GitHub Release. `release asset <target>` builds and uploads one asset |
 | `render` | — | Rewrite pins and render served templates at the versions on HEAD |
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
 | `docs` | — | Wait for docs.rs to build each crates.io crate released at HEAD |
