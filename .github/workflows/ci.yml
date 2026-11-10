@@ -61,6 +61,8 @@ jobs:
     if: ${{ !github.event.pull_request.draft && github.event_name != 'schedule' }}
     name: Plan
     runs-on: ubuntu-latest
+    # Recent runs take under 2 minutes.
+    timeout-minutes: 10
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
@@ -92,6 +94,8 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.labels }}
+    # Recent runs take up to 10 minutes.
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
