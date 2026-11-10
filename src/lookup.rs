@@ -6,7 +6,8 @@ use std::fmt;
 
 /// A lookup that could not run: the walk reached a shallow clone's boundary,
 /// the repository names no GitHub repository, or GitHub or a registry gave no
-/// answer (a failed connection, a timeout, or a 5xx). It says nothing about
+/// answer (a failed connection, a timeout, a 5xx, or a rate limit; see
+/// [`no_answer`]). It says nothing about
 /// the release itself, so `status` reports the check as not run. Any other
 /// error, such as a release tag on the wrong commit, a 401 from a bad token,
 /// or a config that does not resolve, stays an error. The module that makes
@@ -33,6 +34,25 @@ impl Error for Unavailable {
 #[must_use]
 pub fn unavailable(error: anyhow::Error) -> anyhow::Error {
     anyhow::Error::new(Unavailable(error))
+}
+
+/// Whether an HTTP answer with `status` says only that the server cannot
+/// answer now: a 5xx, a 429, or a 403 whose `x-ratelimit-remaining` header in
+/// `headers` is `0`. GitHub answers its primary rate limit with that 403 or a
+/// 429, as its [rate limit docs] say; any other 403 is a refusal.
+///
+/// [rate limit docs]: https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api#exceeding-the-primary-rate-limit
+#[must_use]
+pub fn no_answer(
+    status: reqwest::StatusCode,
+    headers: Option<&reqwest::header::HeaderMap>,
+) -> bool {
+    status.is_server_error()
+        || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        || (status == reqwest::StatusCode::FORBIDDEN
+            && headers
+                .and_then(|headers| headers.get("x-ratelimit-remaining"))
+                .is_some_and(|remaining| remaining.as_bytes() == b"0"))
 }
 
 /// Whether `error`, or a cause under its context, is a lookup that could not

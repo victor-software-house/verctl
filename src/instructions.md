@@ -347,8 +347,9 @@ beside the asset plan's `has_assets`, `tag`, and `matrix`. Without it,
 reports `unreleased` as not checked: `null` in JSON, with the reason in
 `unreleased_unchecked`. A lookup cannot run in a shallow clone, with no
 GitHub `origin`, or with no answer from GitHub or a registry: a failed
-connection, a timeout, or a 5xx. Under `--github-output` that failure
-fails the run. Any other error, such as a release tag on the wrong commit
+connection, a timeout, or a 5xx. A spent rate limit, a 429 or a 403 with
+`x-ratelimit-remaining: 0`, counts as no answer. Under `--github-output`
+that failure fails the run. Any other error, such as a release tag on the wrong commit
 or a 401 from a bad token, fails `status` in both modes.
 `release --plan` fails and names `status --github-output`. `release`
 releases only the packages whose version commit is HEAD, names the

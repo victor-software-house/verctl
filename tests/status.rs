@@ -286,30 +286,43 @@ async fn a_release_tag_on_a_tree_fails_status() {
     assert!(stdout.contains("tag v1.0.0 names Tree"), "{stdout}");
 }
 
-/// A 401 is GitHub's answer to a bad token, which the operator has to fix, so
-/// `status` fails on it rather than reporting the check as not run.
+/// A 401 is GitHub's answer to a bad token, and a 403 without a spent rate
+/// limit is a refusal. The operator has to fix either, so `status` fails on
+/// them rather than reporting the check as not run.
 #[tokio::test]
 async fn a_rejected_token_fails_status() {
-    let output =
-        status_with_tag_lookup(ResponseTemplate::new(401).set_body_json(serde_json::json!({
-            "message": "Bad credentials",
-            "documentation_url": "https://docs.github.com/rest"
-        })))
+    for status in [401, 403] {
+        let output = status_with_tag_lookup(ResponseTemplate::new(status).set_body_json(
+            serde_json::json!({
+                "message": "Bad credentials",
+                "documentation_url": "https://docs.github.com/rest"
+            }),
+        ))
         .await;
-    assert!(!output.status.success(), "{output:?}");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("read tag v1.0.0"), "{stdout}");
+        assert!(!output.status.success(), "{status}: {output:?}");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("read tag v1.0.0"), "{status}: {stdout}");
+    }
 }
 
-/// A 5xx is no answer, so `status` reports the check as not run.
+/// A 5xx, even an HTML page from a proxy, and a spent rate limit (a 429, or a
+/// 403 with `x-ratelimit-remaining: 0`) are no answer, so `status` reports
+/// the check as not run.
 #[tokio::test]
-async fn a_github_5xx_leaves_unreleased_unchecked() {
-    let output = status_with_tag_lookup(ResponseTemplate::new(503)).await;
-    assert!(output.status.success(), "{output:?}");
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("json");
-    assert_eq!(report["unreleased"], serde_json::Value::Null, "{report}");
-    let reason = report["unreleased_unchecked"].as_str().expect("reason");
-    assert!(reason.starts_with("read tag v1.0.0"), "{reason}");
+async fn a_github_that_cannot_answer_now_leaves_unreleased_unchecked() {
+    for answer in [
+        ResponseTemplate::new(502)
+            .set_body_raw("<html><body>Bad gateway</body></html>", "text/html"),
+        ResponseTemplate::new(429),
+        ResponseTemplate::new(403).insert_header("x-ratelimit-remaining", "0"),
+    ] {
+        let output = status_with_tag_lookup(answer).await;
+        assert!(output.status.success(), "{output:?}");
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("JSON");
+        assert!(value["unreleased"].is_null(), "{value}");
+        let reason = value["unreleased_unchecked"].as_str().expect("reason");
+        assert!(reason.starts_with("read tag v1.0.0"), "{reason}");
+    }
 }
 
 #[test]
