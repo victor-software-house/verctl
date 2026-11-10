@@ -66,8 +66,8 @@ includes = [
   # Pinned git:: catalogs follow mise-tasks.
   "mise-tasks",
   "git::https://github.com/victor-software-house/qctl.git//tasks/q?ref=v0.6.0",
-  # The shared Rust tasks, at actions main, 2026-11-09.
-  "git::https://github.com/victor-software-house/actions.git//tasks/rust.toml?ref=d6ce82bb1fe3a3bac6c68619c603993c08990d64",
-  # template:check, template:off, and template:on, at actions main, 2026-11-09.
-  "git::https://github.com/victor-software-house/actions.git//tasks/template.toml?ref=d6ce82bb1fe3a3bac6c68619c603993c08990d64",
+  # The shared Rust tasks, at actions main, 2026-11-10.
+  "git::https://github.com/victor-software-house/actions.git//tasks/rust.toml?ref=a333d6f8cb6a3dfd55088fec5a22924262017212",
+  # template:check, template:off, and template:on, at actions main, 2026-11-10.
+  "git::https://github.com/victor-software-house/actions.git//tasks/template.toml?ref=a333d6f8cb6a3dfd55088fec5a22924262017212",
 ]

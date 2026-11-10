@@ -28,8 +28,16 @@ env:
   MISE_ENV: ci
 
 concurrency:
-  # A draft run gets a group of its own, so it never cancels the ready run.
-  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref_name }}${{ github.event.pull_request.draft && '-draft' || '' }}
+  # Every merge queue entry shares one group, so a newer entry's run cancels the
+  # runs of the entries ahead of it: the queue merges on the newest entry's
+  # result, whose merge-group commit holds every entry ahead of it. Outside the
+  # queue, a draft run gets a group of its own, so it never cancels the ready
+  # run.
+  group: >-
+    ci-${{ github.workflow }}-${{ github.event_name == 'merge_group' && format('queue-{0}',
+    github.event.merge_group.base_ref) || format('{0}-{1}{2}', github.event_name,
+    github.event.pull_request.number || github.ref_name, github.event.pull_request.draft && '-draft'
+    || '') }}
   cancel-in-progress: true
 
 jobs:

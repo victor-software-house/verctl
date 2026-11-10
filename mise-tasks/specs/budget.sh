@@ -40,7 +40,8 @@ find openspec/changes -path openspec/changes/archive -prune -o -type f -name '*.
     }
     function end_note() {
       if (in_note && note_words > note) {
-        printf "%s:%d: evidence note has %d words, over its budget of %d\n", path, note_line, note_words, note
+        printf "%s:%d: evidence note has %d words, over its budget of %d\n",
+          path, note_line, note_words, note
         failed = 1
       }
       in_note = 0
@@ -78,7 +79,8 @@ find openspec/changes -path openspec/changes/archive -prune -o -type f -name '*.
       }
     }
     END {
-      if (failed) print "✘ split each change over a budget into smaller changes, each with its own proposal; do not cut text to fit"
+      if (failed) print "✘ split each change over a budget into smaller changes,",
+        "each with its own proposal; do not cut text to fit"
       exit failed
     }
   '

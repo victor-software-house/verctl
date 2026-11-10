@@ -6,14 +6,18 @@
 # that stdin to the task. For each pushed commit it runs `mise lock` for the
 # lockfile_platforms entries in a detached worktree of that commit, and fails
 # when a lockfile then differs from the commit, so the pusher reviews and
-# commits the change. A delete (all-zero local sha) pushes nothing. The
-# worktree is checked out with no hooks, so a checkout hook of the
-# repository's own does not run in it. Run by hand, with no pre-push lines,
+# commits the change. A delete (all-zero local sha, 40 zeros under SHA-1
+# and 64 under SHA-256) pushes nothing, and a ref whose commits a
+# remote-tracking ref or the remote sha already holds, such as a tag on a
+# pushed commit, was checked when those commits were pushed. The worktree
+# is checked out with no hooks, so a checkout hook of the repository's own
+# does not run in it. Run by hand, with no pre-push lines,
 # it locks the working tree in place and fails when a lockfile then differs
-# from HEAD, which leaves the new locks to commit. `mise lock --dry-run` reports only version changes and
-# misses a missing platform entry or download URL, which the real lock
-# writes. The real lock also leaves out what no machine installs: a platform
-# a tool's `os` option excludes, and one its release ships no build for. It
+# from HEAD, which leaves the new locks to commit. `mise lock --dry-run`
+# reports only version changes and misses a missing platform entry or
+# download URL, which the real lock writes. The real lock also leaves out
+# what no machine installs: a platform a tool's `os` option excludes, and one
+# its release ships no build for. It
 # runs against an empty global and system config directory, because a tool
 # the pusher's own config pins has no entry in any project lock; the
 # repository is trusted by path instead, since the pusher's
@@ -30,9 +34,10 @@
 # machine's own mise.local.toml. Only tracked files count, so an untracked
 # profile the push does not carry cannot fail it. hooks pieces always render
 # mise.dev.toml.
-zero=0000000000000000000000000000000000000000
 scratch=$(mktemp -d) || { echo "✘ mktemp failed; see its error above"; exit 1; }
 trap 'rm -rf "$scratch"; git worktree prune' EXIT
+# sh runs the EXIT trap on a signal only when a trap for it exits.
+trap 'exit 130' INT TERM HUP
 mkdir "$scratch/config" || { echo "✘ mkdir failed; see its error above"; exit 1; }
 
 # check DIR locks each committed profile of the tree in DIR for the
@@ -46,12 +51,24 @@ check() (
   # glob that reads '\' as an escape, so a root holding either fails, and
   # the root's other glob characters are each put in a bracket class.
   case $root in
-    *:*) echo "✘ $root holds ':', which MISE_IGNORED_CONFIG_PATHS splits on; check out the repository at a path without it" >&2; exit 1 ;;
-    *\\*) printf '✘ %s holds a backslash, which the ignore glob reads as an escape; check out the repository at a path without it\n' "$root" >&2; exit 1 ;;
+    *:*)
+      echo "✘ $root holds ':', which MISE_IGNORED_CONFIG_PATHS splits on;" \
+        "check out the repository at a path without it" >&2
+      exit 1
+      ;;
+    *\\*)
+      printf '✘ %s holds a backslash, which the ignore glob reads as an escape; ' "$root" >&2
+      echo "check out the repository at a path without it" >&2
+      exit 1
+      ;;
   esac
   pattern="$(printf '%s' "$root" | sed 's/[[*?{}]/[&]/g')/**/*.local.toml"
-  isolated() { env MISE_CONFIG_DIR="$scratch/config" MISE_SYSTEM_CONFIG_DIR="$scratch/config" MISE_TRUSTED_CONFIG_PATHS="$root" MISE_IGNORED_CONFIG_PATHS="$pattern" "$@"; }
-  configs=$(git ls-files -- 'mise.*.toml') || { echo "✘ git ls-files failed; see its error above" >&2; exit 1; }
+  isolated() {
+    env MISE_CONFIG_DIR="$scratch/config" MISE_SYSTEM_CONFIG_DIR="$scratch/config" \
+      MISE_TRUSTED_CONFIG_PATHS="$root" MISE_IGNORED_CONFIG_PATHS="$pattern" "$@"
+  }
+  configs=$(git ls-files -- 'mise.*.toml') ||
+    { echo "✘ git ls-files failed; see its error above" >&2; exit 1; }
   # The locks of the profiles locked below; no other lock file can fail the push.
   locked=mise.lock
   for config in $configs; do
@@ -60,9 +77,17 @@ check() (
     case $profile in
       hooks | local | *.local) continue ;;
     esac
-    platforms=$(isolated MISE_ENV="$profile" mise settings get lockfile_platforms) || { echo "✘ mise settings get lockfile_platforms failed in the $profile profile; see its error above" >&2; exit 1; }
+    if ! platforms=$(isolated MISE_ENV="$profile" mise settings get lockfile_platforms); then
+      echo "✘ mise settings get lockfile_platforms failed in the $profile profile;" \
+        "see its error above" >&2
+      exit 1
+    fi
     platforms=$(printf '%s' "$platforms" | tr -d '[]" ')
-    [ -n "$platforms" ] || { echo "✘ lockfile_platforms is empty in the $profile profile; list the platforms the locks record in mise.toml" >&2; exit 1; }
+    if [ -z "$platforms" ]; then
+      echo "✘ lockfile_platforms is empty in the $profile profile;" \
+        "list the platforms the locks record in mise.toml" >&2
+      exit 1
+    fi
     # mise lock reports progress even with --quiet, so its output shows only
     # when it fails.
     if ! output=$(isolated MISE_ENV="$profile" mise lock --platform "$platforms" 2>&1); then
@@ -74,7 +99,8 @@ check() (
   done
   # A profile's first lock shows as untracked.
   # shellcheck disable=SC2086 # one lock file name per word
-  git status --porcelain --untracked-files=all -- $locked || { echo "✘ git status failed; see its error above" >&2; exit 1; }
+  git status --porcelain --untracked-files=all -- $locked ||
+    { echo "✘ git status failed; see its error above" >&2; exit 1; }
 )
 
 if [ -t 0 ]; then
@@ -93,16 +119,24 @@ if [ -z "$lines" ]; then
 fi
 status=0
 printf '%s\n' "$lines" | {
-  while read -r ref sha _ _; do
-    [ "$sha" = "$zero" ] && continue
+  while read -r ref sha _ rsha; do
+    case $sha in *[!0]*) ;; *) continue ;; esac
+    known=""
+    case $rsha in *[!0]*) git cat-file -e "$rsha^{commit}" 2>/dev/null && known=$rsha ;; esac
+    # shellcheck disable=SC2086 # an empty $known adds no revision
+    new=$(git rev-list -n 1 "$sha" --not --remotes $known) ||
+      { echo "✘ git rev-list failed for $ref; see its error above"; exit 1; }
+    [ -n "$new" ] || continue
     tree="$scratch/$sha"
     # The same commit pushed under a second ref was checked already.
     [ -d "$tree" ] && continue
-    git -c core.hooksPath=/dev/null worktree add --quiet --detach "$tree" "$sha" </dev/null || { echo "✘ git worktree add failed for $ref; see its error above"; exit 1; }
+    git -c core.hooksPath=/dev/null worktree add --quiet --detach "$tree" "$sha" </dev/null ||
+      { echo "✘ git worktree add failed for $ref; see its error above"; exit 1; }
     changed=$(check "$tree" </dev/null) || exit 1
     if [ -n "$changed" ]; then
       printf '%s\n' "$changed"
-      echo "✘ $ref: these lockfiles differ from its commit after mise lock: run mise run hooks:lockfile on it, review the change and commit it"
+      echo "✘ $ref: these lockfiles differ from its commit after mise lock:" \
+        "run mise run hooks:lockfile on it, review the change and commit it"
       status=1
     fi
   done
