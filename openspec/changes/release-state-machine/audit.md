@@ -3,7 +3,8 @@
 Read from the code on `main` at [cb1be28][main] (0.7.4) on 2026-11-09 (UTC).
 Docs were not taken as evidence.
 The 0.8.0 minor carries every breaking change verctl plans; later work ships as additive patches.
-[Stack #258][stack] already holds two breaks for it: the library `Driver` enum gains a `Text` variant, and every growable public enum is sealed.
+[Its pull request stack][stack] already holds two breaks.
+The library `Driver` enum gains a `Text` variant, and every growable public enum is sealed.
 
 A break is a change to any of these:
 
@@ -63,25 +64,25 @@ Each item shows its state on main, what it breaks, and what it waits on.
    - State on main: Not started.
    - What it breaks: Config: bun publisher keys.
    - Waits on: Decision 7.
-9. Queue row [VER-085][queue], package discovery ([stack #258][stack]).
+9. Queue row [VER-085][queue], package discovery ([the 0.8.0 pull request stack][stack]).
    - State on main: Specified only.
    - What it breaks: Config: with workspace files present, inference adds packages an existing `packages` list leaves out.
      Commands: `check` fails on a changed package with no fragment.
      Library: `PackageSpec` shape.
    - Waits on: the open decisions of [VER-085][queue].
-10. Queue row [VER-086][queue], release groups and tag shapes ([stack #258][stack]).
+10. Queue row [VER-086][queue], release groups and tag shapes ([the 0.8.0 pull request stack][stack]).
     - State on main: Specified only.
     - What it breaks:
       1. Config: a repository with more than one package moves from `v{version}` to `{name}/v{version}` unless its existing tags keep their shape.
       2. Config: reading `.changeset/config.json` with no `groups`; `linked` fails the load.
       3. Library: tag plan types.
     - Waits on: the open decisions of [VER-086][queue].
-11. Queue row [VER-087][queue], dependent ranges and publish order ([stack #258][stack]).
+11. Queue row [VER-087][queue], dependent ranges and publish order ([the 0.8.0 pull request stack][stack]).
     - State on main: Specified only.
     - What it breaks: Commands: `prepare` rewrites explicit internal ranges and bumps dependents a patch.
       `publish` follows the dependency graph and fails on a cycle (queue row [VER-033][queue]).
     - Waits on: the open decisions of [VER-087][queue].
-12. Queue row [VER-088][queue], release immutability ([stack #258][stack]).
+12. Queue row [VER-088][queue], release immutability ([the 0.8.0 pull request stack][stack]).
     - State on main: Specified only.
     - What it breaks: No surface break.
       Behaviour: tags become annotated (GitHub creates them lightweight from the Release today); a Release with assets stays a draft.
@@ -136,7 +137,7 @@ For [VER-070][queue], [VER-076][queue], and [VER-084][queue] only the code was r
 
 `src/lib.rs` exports every module, and its public enums are exhaustive on main.
 Queue row [VER-075][queue] added `Command::Semver` and `Report::Semver` in a patch, which is formally a library break.
-[Stack #258][stack] seals the growable enums in 0.8.0, so later additions stay additive.
+[The 0.8.0 pull request stack][stack] seals the growable enums in 0.8.0, so later additions stay additive.
 Whether earlier patch additions were acceptable is a policy question for the operator.
 
 ## Decisions
@@ -146,7 +147,7 @@ The audit leaves them as recorded and marks in [proposal.md](proposal.md) which 
 
 Decision 8 (ship 0.4.0 from an integration branch `next`) does not match what shipped.
 0.4.0 shipped on 2026-10-12 without this change, and 0.4.1 to 0.7.4 shipped from `main`.
-No `next` branch exists; the 0.8.0 minor is held on [stack #258][stack] instead.
+No `next` branch exists; the 0.8.0 minor is held on [a pull request stack][stack] instead.
 
 [queue]: ../../../tasks.yaml
 [main]: https://github.com/victor-software-house/verctl/commit/cb1be28

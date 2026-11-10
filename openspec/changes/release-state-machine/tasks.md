@@ -26,7 +26,7 @@ State notes are from the code on `main` at [cb1be28][main], read on 2026-11-09 (
 - [x] 0.2 The held branch `feat/011-refresh-lockfile` is deleted unpushed once 0.1 is recorded; proof: `git branch --list feat/011-refresh-lockfile` prints nothing
   - 2026-11-09, `git branch --list feat/011-refresh-lockfile` and `git ls-remote origin refs/heads/feat/011-refresh-lockfile` print nothing.
 - [ ] 0.3 Branch `next` is created from `main`; proof: `git ls-remote origin refs/heads/next` prints a commit
-  - 2026-11-09, not started: no `next` exists. The 0.8.0 work is held on [stack #258][stack] instead, which waits on decision 8.
+  - 2026-11-09, not started: no `next` exists. The 0.8.0 work is held on [a pull request stack][stack] instead, which waits on decision 8.
 
 ## 4. Config, served files, docs
 

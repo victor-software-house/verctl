@@ -296,10 +296,10 @@ More such rows are [VER-033][queue], [VER-034][queue], [VER-035][queue],
 ## 4. Migration: one minor, then patches
 
 In 0.x, a minor is where breaking changes go. Every breaking change therefore
-ships in one release, 0.4.0, and everything after it is a patch that adds
+ships in one release, 0.8.0, and everything after it is a patch that adds
 without breaking.
 
-**What 0.4.0 holds:** every interface a consumer sees.
+**What 0.8.0 holds:** every interface a consumer sees.
 
 1. The final `.ctl/ver.yaml` schema and every removal.
 2. The command set.
@@ -310,7 +310,7 @@ without breaking.
 7. The report fields.
 
 Only values that work ship: `auth: token` is the one registry auth value in
-0.4.0.
+0.8.0.
 
 **What patches add after it:** implementations behind those interfaces and new
 opt-in values. Examples: `auth: oidc`, `provenance: true`, staged publish,
@@ -321,7 +321,7 @@ How the work lands without five releases:
 
 1. An integration branch `next`; each part is a reviewed PR into `next`; one PR
    merges `next` into `main`.
-   - Gain: `main` stays releasable for an urgent 0.3.x patch the whole time.
+   - Gain: `main` stays releasable for an urgent 0.7.x patch the whole time.
    - Cost: a long-lived branch to keep current with `main`; one large final
      merge, though each part was reviewed.
    - Verdict: **chosen**.
@@ -329,7 +329,7 @@ How the work lands without five releases:
    - Gain: no long-lived branch.
    - Cost: `main` is half-migrated, and this repository releases itself from
      `main`.
-     An urgent 0.3.x patch would need a second release base, which is a
+     An urgent 0.7.x patch would need a second release base, which is a
      non-goal.
    - Verdict: rejected.
 3. Old and new paths side by side behind a switch.
@@ -337,7 +337,7 @@ How the work lands without five releases:
    - Cost: a compatibility layer, which the project rules forbid.
    - Verdict: rejected.
 
-The five consumers change once, in the window when 0.4.0 releases.
+The five consumers change once, in the window when 0.8.0 releases.
 qctl, forkctl, ctl-core, unixd, and yamled delete their `prepare` section and
 move to the two workflows.
 qctl and forkctl move four pinned files to templates.
@@ -348,7 +348,7 @@ their previous config from git.
 ## 5. Risks
 
 1. [The five consumers change in one window] → The PR for each consumer is
-   prepared against the `next` build before 0.4.0 releases.
+   prepared against the `next` build before 0.8.0 releases.
    A removed key fails with its replacement.
 
 [drs]: ../derived-release-state/design.md
