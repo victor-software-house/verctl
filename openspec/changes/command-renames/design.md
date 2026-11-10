@@ -68,7 +68,8 @@ An empty list means checked and none, so the two never read alike. A
 lookup that cannot run without `--github-output` is reported the same way,
 with the error as the reason. Such a lookup is a walk that reaches a shallow
 clone's boundary, no GitHub `origin`, or no answer from GitHub or a
-registry: a failed connection, a timeout, or a 5xx. `github.rs`,
+registry. No answer means a failed connection, a timeout, a 5xx, or a spent
+rate limit (a 429, or a 403 with `x-ratelimit-remaining: 0`). `github.rs`,
 `registry.rs`, and `git.rs` mark it where the request fails, with the typed
 `lookup::Unavailable` error, never a message match. Any other error, such
 as a release tag on the wrong commit or on a tree, a 401 from a bad token,

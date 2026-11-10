@@ -400,7 +400,7 @@ async fn fetch_index(url: &str) -> Result<Option<String>> {
                 .map_err(|error| unanswered(error, url))?,
         )),
         reqwest::StatusCode::NOT_FOUND => Ok(None),
-        status if status.is_server_error() => {
+        status if lookup::no_answer(status, Some(response.headers())) => {
             Err(lookup::unavailable(anyhow::anyhow!("GET {url}: {status}")))
         }
         status => bail!("GET {url}: {status}"),
@@ -408,10 +408,11 @@ async fn fetch_index(url: &str) -> Result<Option<String>> {
 }
 
 /// `error` from a request to `url`, marked as a [`lookup::Unavailable`] when
-/// the index gave no answer: the request could not connect, which covers DNS,
-/// or it timed out.
+/// the index gave no answer. The request could not connect, which covers DNS,
+/// or it timed out. Or the body broke off while it was read: a reset, or a
+/// timeout reqwest 0.13 reports as a body error.
 fn unanswered(error: reqwest::Error, url: &str) -> anyhow::Error {
-    let no_answer = error.is_connect() || error.is_timeout();
+    let no_answer = error.is_connect() || error.is_timeout() || error.is_body();
     let error = anyhow::Error::new(error).context(format!("GET {url}"));
     if no_answer {
         lookup::unavailable(error)
@@ -498,6 +499,7 @@ mod tests {
         CargoEnv, CargoTarget, RegistryCheck, cargo_target, crates_io_baseline, crates_io_lists,
         index_path, wait_listed,
     };
+    use crate::lookup;
 
     #[test]
     fn index_paths_follow_the_cargo_layout() {
@@ -509,12 +511,22 @@ mod tests {
     }
 
     async fn lists(body: Option<&str>, name: &str, version: &str) -> bool {
-        let server = MockServer::start().await;
-        let file = format!("/{}", index_path(name));
         let response = body.map_or_else(
             || ResponseTemplate::new(404),
             |body| ResponseTemplate::new(200).set_body_string(body),
         );
+        index_answers(response, name, version).await.unwrap()
+    }
+
+    /// What `crates_io_lists` makes of an index that answers `response` for
+    /// `name`.
+    async fn index_answers(
+        response: ResponseTemplate,
+        name: &str,
+        version: &str,
+    ) -> anyhow::Result<bool> {
+        let server = MockServer::start().await;
+        let file = format!("/{}", index_path(name));
         Mock::given(method("GET"))
             .and(path(file))
             .respond_with(response)
@@ -526,7 +538,24 @@ mod tests {
         tokio::task::spawn_blocking(move || crates_io_lists(&base, &name, &version))
             .await
             .unwrap()
-            .unwrap()
+    }
+
+    /// A rate limit or a 5xx is no answer, so `status` reports the check as
+    /// not run; a plain 403 is a refusal and stays an error.
+    #[tokio::test]
+    async fn an_index_that_cannot_answer_now_is_a_lookup_that_cannot_run() {
+        for response in [
+            ResponseTemplate::new(429),
+            ResponseTemplate::new(403).insert_header("x-ratelimit-remaining", "0"),
+            ResponseTemplate::new(503),
+        ] {
+            let error = index_answers(response, "demo", "0.4.5").await.unwrap_err();
+            assert!(lookup::is_unavailable(&error), "{error:#}");
+        }
+        let error = index_answers(ResponseTemplate::new(403), "demo", "0.4.5")
+            .await
+            .unwrap_err();
+        assert!(!lookup::is_unavailable(&error), "{error:#}");
     }
 
     const DEMO: &str = indoc! {r#"

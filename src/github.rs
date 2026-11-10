@@ -671,24 +671,35 @@ async fn release_state_with(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<R
 }
 
 /// `error` under `context`, marked as a [`lookup::Unavailable`] when GitHub
-/// gave no answer: the request failed in transport (DNS, connect, a timeout, a
-/// dropped connection), or GitHub answered with a 5xx after octocrab's
-/// retries. Any other answer, such as a 401 or 403, stays an error.
+/// gave no answer. Either the request failed in transport (DNS, connect, a
+/// timeout, a connection dropped while the body was read), or GitHub answered
+/// with a 5xx or a rate limit after octocrab's retries. [`lookup::no_answer`]
+/// tells those statuses apart. Any other answer, such as a 401 or a plain 403,
+/// stays an error.
 ///
-/// A transport failure reaches octocrab as `Service` from the HTTP client, or
-/// as `Hyper` while it reads a body. `Service` also carries a request the
-/// client refuses to send, so it counts only when an I/O error caused it.
+/// octocrab 0.54.5 turns every non-2xx answer into `GitHub` with its status
+/// and headers, whatever the body holds. Its `map_github_error` falls back to
+/// the body text when the body is not GitHub's JSON, so an HTML 502 from a
+/// proxy keeps its status. A transport failure reaches octocrab as `Service`
+/// from the HTTP client, or as `Hyper` while it reads a body, alone or inside
+/// `Service`. `Service` also carries a request the client refuses to send, so
+/// it counts only when an I/O or body error caused it.
 fn lookup_failed(error: octocrab::Error, context: String) -> anyhow::Error {
-    let server = matches!(&error, octocrab::Error::GitHub { source, .. } if source.status_code.is_server_error());
+    let refused = matches!(&error, octocrab::Error::GitHub { source, .. }
+        if lookup::no_answer(source.status_code, source.headers.as_ref()));
     let body = matches!(&error, octocrab::Error::Hyper { .. });
     let service = matches!(&error, octocrab::Error::Service { .. });
     let error = anyhow::Error::new(error);
     let transport = service
-        && error
-            .chain()
-            .any(<dyn std::error::Error>::is::<std::io::Error>);
+        && error.chain().any(|cause| {
+            cause.is::<std::io::Error>()
+                || matches!(
+                    cause.downcast_ref::<octocrab::Error>(),
+                    Some(octocrab::Error::Hyper { .. })
+                )
+        });
     let error = error.context(context);
-    if server || body || transport {
+    if refused || body || transport {
         lookup::unavailable(error)
     } else {
         error
