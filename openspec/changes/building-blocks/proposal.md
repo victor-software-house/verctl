@@ -6,7 +6,7 @@ Six of six repositories restate the same lockfile refresh by hand, because
 verctl works it out and only prints it. The only extension point is
 `prepare.after` with `stage` globs, whose effect is unknown.
 
-Queue row: VER-011. This change is one part of
+Queue row: [VER-011][ver-011]. This change is one part of
 [release-state-machine][rsm]; the cargo and bun providers of its blocks are
 [built-in-ecosystems][bie].
 
@@ -50,3 +50,4 @@ The operator approved this as decision 5 of [release-state-machine][rsm] on
 
 [rsm]: ../release-state-machine/proposal.md
 [bie]: ../built-in-ecosystems/proposal.md
+[ver-011]: ../../../tasks.yaml

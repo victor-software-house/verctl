@@ -1,4 +1,4 @@
-# Derive the Version PR branch from its base
+# Derive the Version PR branch from the base branch
 
 ## Why
 
@@ -8,10 +8,13 @@ Auto-merge is `auto-merge.sh`, which a reusable workflow cannot run without a
 second checkout of verctl.
 
 The operator ruled on 2026-10-15 that the minimal slice B of
-[release-state-machine][rsm] is unpaused. This part is its proposal branch
-`verctl/release/<base>`, which [`version-pr-identity`][vpi] states. Queue row: VER-066. This change was
-split from [reusable-release-workflow][rrw] at its capability boundaries; it ships
-as a patch.
+[release-state-machine][rsm] is unpaused.
+This part is its proposal branch `verctl/release/<base>`, which
+[`version-pr-identity`][vpi] defines.
+Queue row: [VER-066][ver-066].
+This change was split from [reusable-release-workflow][rrw] at its capability
+boundaries.
+It ships as a patch.
 
 ## What Changes
 
@@ -41,4 +44,5 @@ moves into `prepare --pr`.
 [rsm]: ../release-state-machine/proposal.md
 [rrw]: ../reusable-release-workflow/proposal.md
 [ver-043]: ../../../tasks.yaml
+[ver-066]: ../../../tasks.yaml
 [vpi]: ../version-pr-identity/proposal.md

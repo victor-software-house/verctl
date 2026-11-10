@@ -17,7 +17,10 @@ A directory that holds more than one of those manifests SHALL fail the load, nam
 
 ### Requirement: Packages with no registry release on GitHub only
 
-A package whose version source is a `VERSION` file, a marker line, or `go.mod`, and that declares no `publisher`, `publish`, or `publishers` entry under its name, SHALL release as `publisher: none` does: a tag and a Release, with no registry upload.
+A package SHALL release as `publisher: none` does, with a tag and a Release and no registry upload, when both of these hold:
+
+- its version source is a `VERSION` file, a marker line, or `go.mod`;
+- it declares no `publisher`, `publish`, or `publishers` entry under its name.
 A `pyproject.toml` package with no `publisher`, `publish`, or `publishers` entry under its name SHALL fail the load and name the `publisher` key, because verctl has no stock Python publisher yet.
 
 #### Scenario: A VERSION package releases on GitHub

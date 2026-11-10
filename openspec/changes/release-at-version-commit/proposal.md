@@ -8,9 +8,12 @@ that was never published. A run that finds nothing to do has no way to
 report that.
 
 The operator ruled on 2026-10-15 that the minimal slice B of
-[release-state-machine][rsm] is unpaused. This part is its release commit from
-first-parent history. Queue row: VER-066. This change was split from
-[reusable-release-workflow][rrw] at its capability boundaries; it ships as a patch.
+[release-state-machine][rsm] is unpaused.
+This part is its release commit from first-parent history.
+Queue row: [VER-066][ver-066].
+This change was split from [reusable-release-workflow][rrw] at its capability
+boundaries.
+It ships as a patch.
 
 ## What Changes
 
@@ -42,3 +45,4 @@ None.
 
 [rsm]: ../release-state-machine/proposal.md
 [rrw]: ../reusable-release-workflow/proposal.md
+[ver-066]: ../../../tasks.yaml

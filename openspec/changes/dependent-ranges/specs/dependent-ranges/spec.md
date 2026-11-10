@@ -11,7 +11,8 @@
 
 ### Requirement: An explicit range follows the new version
 
-`version` SHALL rewrite an explicit internal range that no longer admits the new version, keeping its prefix and operator, and SHALL bump that dependent by a patch.
+`version` SHALL rewrite an explicit internal range that no longer admits the new version, keeping its prefix and operator.
+`version` SHALL bump that dependent by a patch.
 A range the new version still satisfies SHALL stay as written.
 
 #### Scenario: A caret range left behind
@@ -36,9 +37,10 @@ A range the new version still satisfies SHALL stay as written.
 
 ### Requirement: publish follows the dependency graph
 
-`publish` SHALL release packages in topological order of the internal dependency graph, limited to the packages being released, and SHALL fail on a cycle, naming every package in it.
+`publish` SHALL release packages in topological order of the internal dependency graph, limited to the packages being released.
+`publish` SHALL fail on a cycle, naming every package in it.
 
-#### Scenario: A dependent released with its dependency
+#### Scenario: A dependent released with a dependency
 
 - **WHEN** `app` depends on `core`, both release, and `app` is declared first
 - **THEN** `verctl publish` uploads `core` before `app`

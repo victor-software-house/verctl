@@ -3,7 +3,9 @@
 ## Why
 
 A caller cannot keep its registry token in a GitHub environment that admits only the default branch.
-The reusable workflow's jobs run in no environment, so an environment secret never reaches them, and the token must be a repository secret that any branch's workflow can read.
+The reusable workflow's jobs run in no environment, so an environment secret never reaches them.
+
+The token must be a repository secret that any branch's workflow can read.
 A caller cannot set `environment` on the job that calls a reusable workflow; only the called workflow's jobs can ([GitHub, reuse workflows][reuse]).
 
 Two facts shape the fix, both checked with throwaway workflows in this repository on 2026-11-05:
@@ -13,7 +15,7 @@ Two facts shape the fix, both checked with throwaway workflows in this repositor
 
 An environment secret is never named `registry-token`, because secret names hold only letters, digits, and underscores.
 
-Queue row: VER-082.
+Queue row: [VER-082][ver-082].
 
 ## What Changes
 
@@ -43,3 +45,4 @@ None.
 [instructions]: ../../../src/instructions.md
 [readme]: ../../../README.md
 [example]: ../../../examples/workflows/release.yml
+[ver-082]: ../../../tasks.yaml

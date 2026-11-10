@@ -4,6 +4,7 @@
 
 `verctl publish --plan` fails for good once a release tag's commit leaves HEAD's first-parent history, even though HEAD still contains it.
 A forkctl append publish leaves exactly that shape.
+
 It rewrites the patch stack from its base, then merges the old remote tip back as the second parent, keeping the rewritten tree.
 The tagged commit stays in HEAD's history, but only on that second parent.
 
@@ -16,7 +17,7 @@ The next append publish made `293cc62` the first-parent commit at `0.0.1`, and e
 The two commits differ only in `.github/workflows/fork-publish.yml`.
 The registry already had `0.0.1`, so the release was complete.
 
-Queue row: VER-084.
+Queue row: [VER-084][ver-084].
 A patch: it accepts a history that fails today and adds no configuration key.
 
 ## What Changes
@@ -40,3 +41,5 @@ None.
 1. `src/git.rs` and the rustdoc of `src/pending.rs`.
 2. The design of the open change `release-at-version-commit`, split from `reusable-release-workflow`, which stated the first-parent rule.
 3. The operator instructions and skill do not state which tagged commits count, so they do not change.
+
+[ver-084]: ../../../tasks.yaml

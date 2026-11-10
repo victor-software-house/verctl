@@ -3,9 +3,13 @@
 ### Requirement: A patch release is checked for API breaks
 
 `verctl semver` SHALL run `cargo semver-checks --release-type minor`
-against the crates.io baseline for each crates.io crate whose package has no
-pending `minor` or `major` fragment and whose manifest major.minor equals the
-baseline's, and SHALL fail naming each crate whose check fails.
+against the crates.io baseline for each crates.io crate that meets both of
+these:
+
+- its package has no pending `minor` or `major` fragment;
+- its manifest major.minor equals the baseline's.
+
+`verctl semver` SHALL fail naming each crate whose check fails.
 
 #### Scenario: A break on a 0.0.z crate
 
@@ -37,8 +41,8 @@ baseline.
 ### Requirement: Each crate of a workspace package is checked
 
 `verctl semver` SHALL check each publishing member of a virtual workspace
-package under its own crate name, and SHALL skip a crate with no release on
-crates.io.
+package under its own crate name.
+`verctl semver` SHALL skip a crate with no release on crates.io.
 
 #### Scenario: A new member
 
@@ -47,12 +51,15 @@ crates.io.
 
 ### Requirement: A crate with no library target is left out
 
-`verctl semver` SHALL leave out a crates.io crate whose manifest has no
-library target as Cargo resolves it (an explicit `[lib]` table or an
-auto-discovered `src/lib.rs`), or whose library is a proc-macro.
-cargo-semver-checks does not check such a crate, and `verctl semver` SHALL run
-no check for it. The 1.0
-rule below does not apply to such a crate.
+`verctl semver` SHALL leave out a crates.io crate in either of these cases:
+
+- its manifest has no library target as Cargo resolves it (an explicit `[lib]`
+  table or an auto-discovered `src/lib.rs`);
+- its library is a proc-macro.
+
+cargo-semver-checks does not check such a crate.
+`verctl semver` SHALL run no check for it.
+The 1.0 rule below does not apply to such a crate.
 
 #### Scenario: A binary member of a workspace package
 
@@ -62,7 +69,8 @@ rule below does not apply to such a crate.
 ### Requirement: A crate at 1.0 fails
 
 `verctl semver` SHALL fail when a crates.io crate with a library target has
-a manifest version of 1.0 or later, naming the crate and that the rule covers 0.x only.
+a manifest version of 1.0 or later.
+The failure SHALL name the crate and show that the rule covers 0.x only.
 
 #### Scenario: A 1.0 crate
 

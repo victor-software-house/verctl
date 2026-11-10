@@ -2,10 +2,11 @@
 
 ## Context
 
-The stack is guessed from the manifest file name in four places, the lockfile
-refresh is decided in three, and the only extension point is
-`prepare.after`, whose effect is unknown. This change builds a release from
-blocks with one contract each, and makes steps the extension unit.
+The stack is guessed from the manifest file name in four places.
+The lockfile refresh is decided in three.
+The only extension point is `prepare.after`, whose effect is unknown.
+This change builds a release from blocks with one contract each, and makes
+steps the extension unit.
 
 This change is one part of [release-state-machine][rsm]. The cargo and bun
 providers are [built-in-ecosystems][bie].
@@ -37,9 +38,9 @@ Registry blocks.
 2. **Declared ecosystems.** A repository names one under `ecosystems` and gives
    each block a step. A package selects it with `ecosystem: <name>`.
 3. **Per-package override.** Any package may replace one block of its
-   ecosystem with a step and keep the rest built in, for example a cargo crate
-   that publishes through a mise task while verctl still bumps its version and
-   refreshes `Cargo.lock`.
+   ecosystem with a step and keep the rest built in.
+   An example is a cargo crate that publishes through a mise task while
+   verctl still bumps its version and refreshes `Cargo.lock`.
 
 So a built-in is a default, never a ceiling.
 
@@ -74,10 +75,11 @@ Steps attach at these points:
 | `version` | after manifests and lockfiles are written, before served files render | may change only its `writes`; its changes ride the Version PR |
 | `verify` | before any release side effect | may change nothing; a failure stops the release |
 | `publish` | replaces a package's built-in publish | the registry query must list `p@v` afterwards |
-| `released` | after `finalize` | must declare `check`, so a rerun knows it already ran |
+| `released` | after `finalize` | must declare `check`, so a rerun skips a step that already ran |
 
 Steps replace `prepare.after`, `prepare.stage`, and `prepare.stage_ignored`,
-and they answer VER-034's request for publish-time steps. The difference from
+and they answer the request for publish-time steps in queue row
+[VER-034][ver-034]. The difference from
 the old hooks is that every step has a declared effect verctl checks, and
 nothing it does is only printed.
 
@@ -96,9 +98,10 @@ Alternatives considered:
 
 Before this design, steps existed only as `prepare.after`, and the six known
 uses all refreshed `Cargo.lock`. The Lockfile block now does that, so those six
-repositories declare no step at all. Steps remain for what no built-in can
-know: generated version files, smoke tests before publish, announcements after
-a release, and every block of a stack verctl does not ship.
+repositories declare no step at all. Steps remain for what no built-in covers.
+That is generated version files, smoke tests before publish, announcements
+after a release, and every block of a stack verctl does not ship.
 
 [rsm]: ../release-state-machine/design.md
 [bie]: ../built-in-ecosystems/design.md
+[ver-034]: ../../../tasks.yaml

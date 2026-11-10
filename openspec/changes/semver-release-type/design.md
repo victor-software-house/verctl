@@ -2,22 +2,25 @@
 
 ## Context
 
-cargo-semver-checks 0.51.0 maps `--release-type minor` to the level Minor,
-and `supports_requirement(Minor, Major)` is false, so at that level it runs
-exactly the lints whose required update is major: the API breaks. The type
-is applied as given, with no 0.x remapping, so it behaves the same at 0.0.z
-and 0.y.z. Without a type it infers one from the version change, and when
-the version equals the baseline it assumes the smallest next release Cargo
+cargo-semver-checks 0.51.0 maps `--release-type minor` to the level Minor.
+`supports_requirement(Minor, Major)` is false, so at that level it runs
+exactly the lints whose required update is major.
+Those lints are the API breaks.
+The type is applied as given, with no 0.x remapping, so it behaves the same at
+0.0.z and 0.y.z.
+
+Without a type it infers one from the version change.
+When the version equals the baseline it assumes the smallest next release Cargo
 allows: major at 0.0.z, minor at 0.y.z.
 
 ## 1. Packages and crates
 
-Fragments name verctl packages; cargo-semver-checks takes crates. verctl
-already maps one to the other for publishing: `publisher::uploads` gives one
-upload per crate, a member per publishing member of a virtual workspace
-package, each with its registry check. `semver` takes the uploads whose
-check is the crates.io index, so it checks exactly the crates `publish`
-would upload to crates.io.
+Fragments name verctl packages; cargo-semver-checks takes crates.
+verctl already maps one to the other for publishing.
+`publisher::uploads` gives one upload per crate, a member per publishing member
+of a virtual workspace package, each with its registry check.
+`semver` takes the uploads whose check is the crates.io index, so it checks
+exactly the crates `publish` would upload to crates.io.
 
 ## 2. The decision
 
@@ -31,12 +34,13 @@ For each crate, in order:
    gone and the bump is in the manifest.
 5. Otherwise run the check.
 
-Alternative considered: decide from the fragments alone. It lost because
-the Version PR consumes them, so a minor release would be checked as a
-patch on its own Version PR and fail on the break it ships.
+Alternative considered: decide from the fragments alone.
+It lost because the Version PR consumes them.
+So a minor release would be checked as a patch on its own Version PR and fail
+on the break it ships.
 
-The baseline is chosen as cargo-semver-checks chooses it: the newest
-release at or below the version that is neither yanked nor a pre-release.
+The baseline is the one cargo-semver-checks chooses: the newest release at or
+below the version that is neither yanked nor a pre-release.
 The check is passed `--baseline-version` with that release, so the decision
 and the check read the same version.
 
@@ -69,7 +73,9 @@ The repository still pins `cargo-semver-checks`; verctl runs it from PATH.
 
 ## 5. 1.0 and later
 
-No family crate is at 1.0. At 1.0 a break needs a major release, so the
-rule above would let a minor release ship a break against Cargo's rules.
+No family crate is at 1.0.
+At 1.0 a break needs a major release.
+The rule above would let a minor release ship a break against Cargo's rules.
 Reaching 1.0 is the operator's decision, and that decision revisits the
-rule; until then `semver` fails on such a crate instead of guessing.
+rule.
+Until then `semver` fails on such a crate instead of guessing.

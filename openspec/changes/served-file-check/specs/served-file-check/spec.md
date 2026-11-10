@@ -21,8 +21,9 @@ and SHALL name every differing target with its template before it exits.
 ### Requirement: check verifies each pins entry
 
 `verctl check` SHALL fail when a `pins` entry's pattern no longer matches at
-its declared count, or when its file names a version other than the one the
-manifest holds.
+its declared count.
+`verctl check` SHALL also fail when the file of the entry names a version other
+than the one the manifest holds.
 
 #### Scenario: A pins entry left behind
 

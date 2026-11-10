@@ -29,7 +29,7 @@ therefore map the token by name, and neither the computed read nor
 None of the eight callers of `release.yml`, this repository's included, passes
 `secrets: inherit`, `environment`, or `registry-token-env` (read 2026-11-10).
 
-Queue row: VER-104. The operator placed this break in the 0.8.0 minor
+Queue row: [VER-104][ver-104]. The operator placed this break in the 0.8.0 minor
 (operator, 2026-11-10).
 
 ## What Changes
@@ -69,5 +69,6 @@ None.
 4. Archive order: after [release-environment][re], whose spec this changes.
 
 [re]: ../release-environment/proposal.md
+[ver-104]: ../../../tasks.yaml
 [run]: https://github.com/victor-software-house/verctl/actions/runs/42780696593
 [reuse]: https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows

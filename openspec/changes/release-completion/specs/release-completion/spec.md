@@ -3,9 +3,10 @@
 ### Requirement: A release with assets is a draft until every asset is uploaded
 
 verctl SHALL create the GitHub Release as a draft when the package declares
-`assets`, SHALL upload only assets that are not `uploaded`, and SHALL publish
-the draft only when every declared asset is `uploaded`. An existing Release for
-the tag SHALL be updated, never duplicated.
+`assets`.
+It SHALL upload only assets that are not `uploaded`.
+It SHALL publish the draft only when every declared asset is `uploaded`.
+An existing Release for the tag SHALL be updated and SHALL NOT be duplicated.
 
 #### Scenario: One asset job failed
 
@@ -21,8 +22,9 @@ the tag SHALL be updated, never duplicated.
 ### Requirement: A first publication is a stop, not a guess
 
 When a package has never been published and its registry's `auth` is `oidc`,
-verctl SHALL report the package at stage `bootstrap`, name the registry setup
-that is missing, and run no transition for it.
+verctl SHALL report the package at stage `bootstrap`.
+It SHALL name the registry setup that is missing and run no transition for the
+package.
 
 #### Scenario: A new crate under OIDC
 
@@ -49,10 +51,11 @@ released like any other package.
 ### Requirement: Whether a release publishes is decided at its release commit
 
 verctl SHALL decide whether a release publishes from the package's manifest
-and `.ctl/ver.yaml` at its release commit only. A later change of that setting
-SHALL apply from the next version: a version merged while its package
-published SHALL be published even if `publish = false` or `"private": true`
-lands before the release runs, and verctl SHALL offer no way to cancel it.
+and `.ctl/ver.yaml` at its release commit only.
+A later change of that setting SHALL apply from the next version.
+A version merged while its package published SHALL be published even if
+`publish = false` or `"private": true` lands before the release runs.
+verctl SHALL offer no way to cancel that publish.
 
 #### Scenario: A tool crate starts to publish without a bump
 
@@ -60,7 +63,7 @@ lands before the release runs, and verctl SHALL offer no way to cancel it.
 - **THEN** `verctl status` still reports `xtask@0.1.1` as `released`, and `verctl propose` is not blocked by it
 - **AND** the next version of `xtask` goes through `publish`, or `bootstrap` when the registry needs a first publish
 
-#### Scenario: A crate stops publishing before its release ran
+#### Scenario: A crate stops publishing before the release ran
 
 - **WHEN** `demo@0.4.0` was merged while `demo` published, is not yet on crates.io, and a later commit adds `publish = false` without changing the version
 - **THEN** `verctl release` still publishes `demo@0.4.0`, because its release commit publishes

@@ -19,10 +19,13 @@ the pull request from that branch. No configuration SHALL name the branch.
 ### Requirement: Readers of the branch follow it
 
 `verctl check --versions` SHALL exempt a local branch named
-`verctl/release/<base>` instead of `version-packages`, and in CI SHALL exempt
-a pull request whose head repository is the repository, whose head branch is
-`verctl/release/<base>`, and whose current base is `<base>`, read through the
-API.
+`verctl/release/<base>` instead of `version-packages`.
+In CI it SHALL exempt a pull request, read through the API, that meets all of
+these:
+
+- its head repository is the repository;
+- its head branch is `verctl/release/<base>`;
+- its current base is `<base>`.
 
 #### Scenario: Checking versions on the Version PR branch
 

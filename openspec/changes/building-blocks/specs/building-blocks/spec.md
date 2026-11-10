@@ -16,7 +16,8 @@ and name `ecosystems`. Any other manifest SHALL name an ecosystem.
 ### Requirement: A built-in block can be replaced per package
 
 A package SHALL be able to replace its ecosystem's Lockfile or publish block
-with a named step and keep every other block of its ecosystem.
+with a named step.
+The package SHALL keep every other block of its ecosystem.
 
 #### Scenario: A crate that publishes through a mise task
 
@@ -26,12 +27,17 @@ with a named step and keep every other block of its ecosystem.
 
 ### Requirement: Steps run as mise tasks or argv with declared effects
 
-A step SHALL declare exactly one of `task` or `run`. verctl SHALL run a `task`
-step as `mise run --raw <task>` and a `run` step as its argv, pass
-`VERCTL_PLAN` in its environment, and, for a step that runs for a package,
-also `VERCTL_PACKAGE`, `VERCTL_VERSION`, `VERCTL_PREVIOUS_VERSION`,
-`VERCTL_TAG`, and `VERCTL_RELEASE_COMMIT`. It SHALL treat a non-zero exit as
-failure. A step SHALL change only the paths in its `writes`.
+A step SHALL declare exactly one of `task` or `run`.
+verctl SHALL run a `task` step as `mise run --raw <task>` and a `run` step as
+its argv.
+
+verctl SHALL pass `VERCTL_PLAN` in the environment of every step.
+For a step that runs for a package, verctl SHALL also pass `VERCTL_PACKAGE`,
+`VERCTL_VERSION`, `VERCTL_PREVIOUS_VERSION`, `VERCTL_TAG`, and
+`VERCTL_RELEASE_COMMIT`.
+
+verctl SHALL treat a non-zero exit as failure.
+A step SHALL change only the paths in its `writes`.
 
 #### Scenario: A version step writes an undeclared file
 
@@ -59,7 +65,7 @@ verctl SHALL NOT write, patch, or rewrite any lockfile. `Cargo.lock` SHALL be
 written by `cargo update --workspace`, `bun.lock` by
 `bun install --lockfile-only`, `mise.lock` by `mise lock`, and any other
 lockfile by a declared step that lists it in `writes`. verctl SHALL read
-lockfiles only to check that they agree with the manifests, and SHALL compare
+lockfiles only to check that they match the manifests, and SHALL compare
 a lockfile's parsed entries, never its bytes.
 
 #### Scenario: A lock written by another mise version
@@ -75,8 +81,8 @@ a lockfile's parsed entries, never its bytes.
 ### Requirement: A package that publishes depends only on packages that publish
 
 verctl SHALL refuse to load a configuration in which a package that publishes
-depends on a workspace package that does not publish, and SHALL name both
-packages.
+depends on a workspace package that does not publish.
+The refusal SHALL name both packages.
 
 #### Scenario: A published crate depends on a tool crate
 
@@ -104,11 +110,13 @@ development dependency and a bun `devDependencies` entry SHALL NOT count.
 
 ### Requirement: A cargo dependency cycle is refused
 
-Every dependency that counts SHALL also order publishes, and a package SHALL
-wait only on the dependencies that order puts before it. For cargo, verctl
-SHALL refuse to load a configuration in which such dependencies form a cycle,
-because cargo cannot publish crates with cyclic versioned development
-dependencies ([rust-lang/cargo#4242][cargo-4242]).
+Every dependency that counts SHALL also order publishes.
+A package SHALL wait only on the dependencies that order puts before it.
+
+For cargo, verctl SHALL refuse to load a configuration in which such
+dependencies form a cycle.
+Cargo cannot publish crates with cyclic versioned development dependencies
+([rust-lang/cargo#4242][cargo-4242]).
 
 #### Scenario: Two crates test with each other
 

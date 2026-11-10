@@ -9,17 +9,19 @@ input. A repository that wants another title therefore states it in its caller
 workflow, away from `.ctl/ver.yaml`, where every other release setting lives.
 
 `prepare.version_label` labels the Version PR, default `verctl:version`.
-Since [#188][pr188] nothing reads the label: `check --versions` knows the
-Version PR by its head repository, head branch, and base. The label is
-an unused key that costs two GitHub calls, create the label and apply it,
-on every run that opens or updates the pull request.
+Since [#188][pr188] nothing reads the label.
+`check --versions` identifies the Version PR by its head repository, head
+branch, and base. The label is
+an unused key.
+It costs two GitHub calls, create the label and apply it, on every run that
+opens or updates the pull request.
 
 Both are breaking changes the operator placed in the 0.8.0 minor on
 2026-11-09 (operator, 2026-11-09). This is the first slice of the `.ctl/ver.yaml` BREAKING item of
 [release-state-machine](../release-state-machine/proposal.md), and tasks 3.1
 and 3.2 of [`version-pr-identity`](../version-pr-identity/tasks.md).
 
-Queue row: VER-090.
+Queue row: [VER-090][ver-090].
 
 ## What changes
 
@@ -34,10 +36,11 @@ Queue row: VER-090.
    no label. The `prepare` block refuses unknown keys, and a file that still
    sets `version_label` fails to load with a message that says the label is
    gone.
-4. The reusable `release.yml` runs the caller's pinned verctl, so a caller
-   that moves to the 0.8.0 workflow must pin verctl 0.8.0 too. Every job that
-   runs verctl fails first, naming both versions, when the installed verctl is
-   older than 0.8.0.
+4. The reusable `release.yml` runs the caller's pinned verctl.
+   A caller that moves to the 0.8.0 workflow must therefore pin verctl 0.8.0
+   too.
+   Every job that runs verctl fails first, naming both versions, when the
+   installed verctl is older than 0.8.0.
 
 ## Impact
 
@@ -49,3 +52,4 @@ Queue row: VER-090.
    requests, in place of the inputs.
 
 [pr188]: https://github.com/victor-software-house/verctl/pull/188
+[ver-090]: ../../../tasks.yaml

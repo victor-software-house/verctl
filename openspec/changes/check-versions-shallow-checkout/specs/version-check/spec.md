@@ -3,12 +3,15 @@
 ### Requirement: The version check fetches the branches it compares against
 
 Before comparing versions, `verctl check --versions` SHALL fetch
-`origin/<branch>` with its whole history for each of `VERCTL_DEFAULT_BRANCH`,
-the event payload's `repository.default_branch`, and `GITHUB_BASE_REF` that
-is set, when that ref is missing or the clone is
-shallow. In a shallow clone it SHALL undo the boundary, so HEAD's parents are
-fetched too. It SHALL fetch nothing when the clone is not shallow and the ref
-exists, or when none of them is set.
+`origin/<branch>` with its whole history when that ref is missing or the clone
+is shallow.
+The branches are those named by `VERCTL_DEFAULT_BRANCH`, the event payload's
+`repository.default_branch`, and `GITHUB_BASE_REF`, for each that is set.
+
+In a shallow clone it SHALL undo the boundary, so HEAD's parents are fetched
+too.
+It SHALL fetch nothing when the clone is not shallow and the ref exists, or
+when none of them is set.
 
 #### Scenario: A depth-1 pull request merge checkout
 

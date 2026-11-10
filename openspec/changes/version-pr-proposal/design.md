@@ -39,9 +39,10 @@ treats empty as unset.
 
 `prepare.version_label` and `github::ensure_version_label` are removed. A
 `.ctl/ver.yaml` that sets `version_label` fails to load. The message names
-the key, says the Version PR is no longer labeled, and says to delete the
-line. A load error is the only way to say this, because the file is the only
-place the key was ever set.
+the key, shows that the Version PR is no longer labeled, and names the fix:
+delete the line.
+A load error is the only way to show this, because the file is the only place
+the key was ever set.
 
 `Prepare` gains `deny_unknown_fields`, so any other unknown key under
 `prepare` also fails. That is part of the `.ctl/ver.yaml` BREAKING item and costs nothing
@@ -53,7 +54,8 @@ extra in the same minor.
 each step runs `mise run ver <verb>`, the verctl the caller's served task
 pins. The workflow ref and the verctl version are therefore chosen apart.
 A caller on the 0.8.0 workflow with a 0.7 verctl would run `prepare` with no
-title variables and fail late, after the tree is written.
+title variables.
+It would fail late, after the tree is written.
 
 Each job's first verctl step reads `verctl --version` and fails when it is
 below 0.8.0. The message names the installed version and the minimum,
@@ -62,6 +64,6 @@ minimum is a literal in the workflow, raised only when the workflow needs a
 newer verctl.
 
 Alternative considered: install the verctl that matches the workflow ref.
-It lost because the caller's `mise.lock` is the record of what ran, and
+It lost because the caller's `mise.lock` is the record of what ran.
 verctl's own release already passes `verctl-artifact` to put a fresh build
 first on PATH.

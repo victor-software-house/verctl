@@ -44,7 +44,8 @@ A tag shape that `tags.template` cannot match SHALL fail `check` and name a temp
 
 ### Requirement: A Go module in a subdirectory is tagged by its directory
 
-A `go.mod` package outside the root SHALL be tagged `{dir}/v{version}`, the only form the Go toolchain reads, and a template that gives it another tag SHALL fail the load.
+A `go.mod` package outside the root SHALL be tagged `{dir}/v{version}`, the only form the Go toolchain reads.
+A template that gives it another tag SHALL fail the load.
 
 #### Scenario: A nested Go module
 
@@ -64,7 +65,8 @@ A group SHALL get one tag and one Release, whose body holds each member's CHANGE
 
 `tags.floating: [major]` SHALL move a lightweight `v<major>` tag, or `{name}/v<major>`, to each new release in that major.
 No Release SHALL name a floating tag.
-A floating tag is not a release tag: the annotated-only rule and the release-tag ruleset do not cover it, so `publish` can move it while `tags.immutable` is `true`.
+A floating tag is not a release tag.
+The annotated-only rule and the release-tag ruleset do not cover it, so `publish` can move it while `tags.immutable` is `true`.
 
 #### Scenario: A reusable workflow consumers reference by major
 

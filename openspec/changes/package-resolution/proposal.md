@@ -8,7 +8,7 @@ The templates repository has been tagged by hand 75 times, `v0.0.1` to `v0.0.75`
 [`version-files`](../version-files/proposal.md) gives such a repository a version source, a `VERSION` file or a marker line.
 A package still has to name that file, needs a publisher where nothing uploads, and single-file packages in one directory would share a changelog.
 
-Queue row: VER-083. This change was split from `version-files` at one boundary of its work.
+Queue row: [VER-083][ver-083]. This change was split from `version-files` at one boundary of its work.
 That change reads and writes each version source.
 This one resolves which package uses which file.
 
@@ -31,3 +31,5 @@ This one resolves which package uses which file.
 1. Code: `src/config.rs` (directory paths, publisher inference, changelog collisions), tests.
 2. Docs: the instructions, the operator skill, `README.md`, `docs/`.
 3. Adopters: the templates and actions repositories declare `path: .` or a directory per package.
+
+[ver-083]: ../../../tasks.yaml

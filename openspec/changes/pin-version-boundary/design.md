@@ -4,11 +4,16 @@
 
 A pattern is literal text around `{version}`, and `{version}` matches `[0-9]+(\.[0-9]+)*`.
 A version, with its prerelease or build, holds only digits, `.`, `-`, and `+`.
+
 A side's literal is the text between `{version}` and the pattern's edge, on that side.
 The regex can end a version early, or start one late, where that literal is missing or made of those four characters.
-It can also do so where the literal puts a digit, or a `.` and a digit, next to `{version}`: `v{version}.5x` reads `v1.2.3.5x` as 1.2.3, and `x1{version}` reads `x11.2.3` as 1.2.3.
 
-A side is bounded when its literal holds at least one character that is not a digit, `.`, `-`, or `+`, and its character next to `{version}` is neither a digit nor a `.` with a digit beyond it.
+It can also do so where the literal puts a digit, or a `.` and a digit, next to `{version}`.
+For example, `v{version}.5x` reads `v1.2.3.5x` as 1.2.3, and `x1{version}` reads `x11.2.3` as 1.2.3.
+
+A side is bounded when two things hold.
+Its literal holds at least one character that is not a digit, `.`, `-`, or `+`.
+Its character next to `{version}` is neither a digit nor a `.` with a digit beyond it.
 Under `whole_line: true`, the line start or end bounds the side, unless the literal is made only of those four.
 
 `name-{version}.tar.gz` is bounded on both sides: `name-` fixes where the version starts, and `.tar` cannot follow a shorter head of `1.2.3-rc1`.
@@ -52,7 +57,8 @@ Disable path: none. An unbounded pattern can half-rewrite a version, and no repo
 A `tool` pin also moves every include of the tool's own repository, at `?ref=v` followed by a version.
 That rewrite had no right-hand boundary either.
 
-The ref now runs to the end of the URL, at whitespace, a quote, a comma, a `]`, a query separator (`&`, `#`, `;`), or the end of the file.
+The ref now runs to the end of the URL.
+The URL ends at whitespace, a quote, a comma, a `]`, a query separator (`&`, `#`, `;`), or the end of the file.
 
 A ref that starts with a digit must be a whole version.
 Otherwise the pin fails, naming the include, and nothing is written.

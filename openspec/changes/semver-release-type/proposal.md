@@ -6,14 +6,17 @@ The operator set the version rule on 2026-10-19: a release is a patch by
 default, and a real API break bumps the minor.
 
 The shared `semver` task runs `cargo semver-checks` with no release type.
-cargo-semver-checks then infers the type from the version change, and on a
-0.0.z crate between releases it assumes a major release and runs none of
-its lints. A consumer at 0.0.2 reported "0 checks: 0 pass, 260 skip". Under
-Cargo's rules every 0.0.z release may break, so nothing enforces the rule
-there. On a 0.y.z crate it assumes a minor release, which happens to match
-the rule only while no minor fragment is pending.
+cargo-semver-checks then infers the type from the version change.
+On a 0.0.z crate between releases it assumes a major release and runs none of
+its lints.
+A consumer at 0.0.2 reported "0 checks: 0 pass, 260 skip".
 
-Queue row: VER-075.
+Under Cargo's rules every 0.0.z release may break, so nothing enforces the rule
+there.
+On a 0.y.z crate it assumes a minor release, which happens to match the rule
+only while no minor fragment is pending.
+
+Queue row: [VER-075][ver-075].
 A patch: it adds a verb and changes no existing behaviour.
 
 ## What changes
@@ -39,3 +42,5 @@ A patch: it adds a verb and changes no existing behaviour.
    `src/main.rs`, `src/presentation.rs`, `src/lib.rs`.
 2. `src/instructions.md`, `.ctl/operator/instructions.md.jinja`,
    `skills/verctl/SKILL.md`, `.ctl/templates/SKILL.md.jinja`.
+
+[ver-075]: ../../../tasks.yaml
