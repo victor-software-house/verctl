@@ -331,6 +331,21 @@ queue:
     notes:
       - 2026-11-10, three 0.8.0 fragments were reworded to end their first paragraph in a full stop, as a stopgap until this ships as a patch.
 
+  - id: VER-118
+    title: Release jobs reuse compiled work
+    scope: release.yml
+    outcome: >-
+      A release compiles verctl once per platform for the tool, and the asset and
+      publish jobs stop compiling it cold.
+    blocked_by: []
+    acceptance:
+      - The publish job of a verctl release runs no verify build.
+      - Each asset job's mbx step restores the store of the previous release on its runner and reports hits.
+      - The self-release.yml header describes which jobs reuse the build.
+    notes:
+      - '2026-11-10, run 42917622310 compiled verctl 7 times: 3 tool builds, 3 asset builds with no mbx step, and the publish verify build (1m17s).'
+      - The asset jobs build the version commit, which can be older than the run commit, so they cannot always reuse the tool build.
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
@@ -826,6 +841,19 @@ horizon:
     open: verctl 0.8.0 is released.
     notes:
       - It cites ledger rows by id, and docs/ ships in the crate.
+
+  - id: VER-119
+    title: Asset jobs reuse the build job binary
+    scope: release.yml
+    outcome: >-
+      An asset job packs the binary its run already built when it releases the same
+      commit.
+    kind: deferred
+    open: >-
+      The asset jobs still dominate a release after their mbx cache is measured on
+      one release.
+    notes:
+      - Needs a release.yml input and a release asset path that packs a given binary; it helps only callers that build their own binary first.
 
 archive:
   - id: VER-020
