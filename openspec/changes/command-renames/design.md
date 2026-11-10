@@ -68,8 +68,9 @@ An empty list means checked and none, so the two never read alike. A
 check that fails without `--github-output` is reported the same way, with
 the error as the reason. Such a failure is a shallow clone that reaches its
 boundary, no GitHub `origin`, or no network. `status` is a local view, so a
-lookup it only adds must not fail it. Under `--github-output` the error
-fails the run.
+lookup it only adds must not fail it. The human view shows the error's
+top-level message, and JSON keeps its whole chain. Under `--github-output`
+the error fails the run.
 
 Without `--github-output`, `status` changes nothing in the clone: no fetch
 and no unshallow, so a shallow clone checks only the history it has. With

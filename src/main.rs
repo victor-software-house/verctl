@@ -20,7 +20,7 @@ mod presentation;
 use presentation::{
     AssetsReport, CheckReport, CiReport, DocsReport, InstructionsReport, ReleaseReport, ReleaseRow,
     RenderReport, Report, SemverReport, StatusAssets, StatusFragment, StatusPackage, StatusReport,
-    VendoredReport, VersionBump, VersionCheckReport, VersionReport,
+    Unchecked, VendoredReport, VersionBump, VersionCheckReport, VersionReport,
 };
 
 const INSTRUCTIONS: &str = include_str!("instructions.md");
@@ -502,10 +502,10 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
                 }
                 (Some(unreleased_rows(&planned)), None)
             }
-            Err(error) if args.github_output.is_none() => (None, Some(format!("{error:#}"))),
+            Err(error) if args.github_output.is_none() => (None, Some(Unchecked::failed(&error))),
             Err(error) => return Err(error),
         },
-        None => (None, Some("no GITHUB_TOKEN or GH_TOKEN".to_owned())),
+        None => (None, Some(Unchecked::missing_token())),
     };
     let overall = fragments
         .iter()
