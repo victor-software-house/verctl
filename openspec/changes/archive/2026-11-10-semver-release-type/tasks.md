@@ -21,8 +21,7 @@ Compile, format, lint, and test tasks run in pull request CI with
   shrub, at 0.7.0, passed its Semver step with 202 checks in [CI run 42856082509][shrub-ci].
 - [x] 2.4 `plan` leaves out a crate `checkable` rejects.
   A crate is rejected when it has no library target as `docsrs::has_library` resolves it, or when it is a proc-macro, read from its manifest.
-  Proof: `only_a_library_that_is_not_a_proc_macro_is_checkable` passes in CI, and shrub's semver step passes on this release.
-  That step failed on its binary crate `shrub`.
+  Proof: `only_a_library_that_is_not_a_proc_macro_is_checkable` passes in CI, and shrub's semver step passes.
   Evidence, 2026-11-10: shipped in [#197][verctl#197]; shrub's Semver table leaves out its binary.
 
 ## 3. Docs
