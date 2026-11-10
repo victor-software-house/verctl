@@ -11,5 +11,5 @@ Compile, format, lint, and test tasks run in pull request CI with
 
 ## 2. Docs
 
-- [x] 2.1 The rustdoc of `tagged_commit` and `pending`, and the design of `reusable-release-workflow`, state the rule; proof: `rg -n 'off the first-parent' src openspec/changes/reusable-release-workflow` finds no match
+- [x] 2.1 The rustdoc of `tagged_commit` and `pending`, and the design of `release-at-version-commit`, split from `reusable-release-workflow`, state the rule; proof: `rg -n 'off the first-parent' src openspec/changes/release-at-version-commit` finds no match
 - [x] 2.2 Add a `patch` fragment; proof: `verctl check` in CI accepts it

@@ -44,8 +44,9 @@ scenarios. This change carries a MODIFIED delta for each, with the new verb
 and no other change.
 
 Three open changes ship before this one and add requirements that name the
-old verb: `version-files`, `reusable-release-workflow` (the
-`version-pr-branch` capability), and `version-pr-proposal`. This change
+old verb: `version-files`, `derived-version-pr-branch` (the
+`version-pr-branch` capability, split from `reusable-release-workflow`), and
+`version-pr-proposal`. This change
 carries a MODIFIED delta for each of those requirements too, so it is
 archived after them. `prepare` as an `assets` step key in
 `package-asset-files` is a config key, not the verb, and stays.

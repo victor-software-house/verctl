@@ -9,7 +9,7 @@ A Bun or pnpm workspace is not read, so each member would have to be listed agai
 Every monorepo tool read for the [research](../version-files/research.md) declares its members once, at the root: Turborepo and manypkg read the package manager's own declaration, and mise reads root globs and has deprecated scanning every directory.
 Each names a package by its manifest and fails on a duplicate name.
 
-Queue row: VER-083.
+Queue row: VER-085, under the research in VER-083. Which files each package owns, and the `check` that uses it, are in [`package-ownership`](../package-ownership/proposal.md), split from this change at that boundary.
 
 ## What Changes
 
@@ -27,11 +27,7 @@ Queue row: VER-083.
    A duplicate name, or one manifest claimed twice, fails the load and names both files.
    A manifest with no name fails and names the override that fixes it.
 7. A member that does not publish (`"private": true`, `publish = false`) is still versioned, as today.
-8. Each package owns files: by default the directory of its version source and everything below it that no deeper package owns, the rule Turborepo uses to map a changed file to its package.
-   `files` overrides it with globs, for a single-file package such as one reusable workflow.
-9. `check` reports a package whose owned files changed since the merge-base with no fragment naming it, as Bumpy's `check --strict` does, so an unchanged package is never bumped and a changed one is not forgotten.
-   A file no package owns is reported once, not counted against every package.
-10. `status` explains discovery: each package with its provider, its source file, and whether it was inferred, overridden, or added, plus the providers that found nothing and every path a rule skipped.
+8. `status` explains discovery: each package with its provider, its source file, and whether it was inferred, overridden, or added, plus the providers that found nothing and every path a rule skipped.
 
 ## Capabilities
 

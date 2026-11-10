@@ -15,8 +15,9 @@ an unused key that costs two GitHub calls, create the label and apply it,
 on every run that opens or updates the pull request.
 
 Both are breaking changes the operator placed in the 0.8.0 minor on
-2026-11-09 (operator, 2026-11-09). This is BREAKING item 9's first slice and
-task 3.1 and 3.2 of [release-state-machine](../release-state-machine/proposal.md).
+2026-11-09 (operator, 2026-11-09). This is the first slice of the `.ctl/ver.yaml` BREAKING item of
+[release-state-machine](../release-state-machine/proposal.md), and tasks 3.1
+and 3.2 of [`version-pr-identity`](../version-pr-identity/tasks.md).
 
 Queue row: VER-090.
 

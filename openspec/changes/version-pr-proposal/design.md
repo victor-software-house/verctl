@@ -44,7 +44,7 @@ line. A load error is the only way to say this, because the file is the only
 place the key was ever set.
 
 `Prepare` gains `deny_unknown_fields`, so any other unknown key under
-`prepare` also fails. That is part of BREAKING item 9 and costs nothing
+`prepare` also fails. That is part of the `.ctl/ver.yaml` BREAKING item and costs nothing
 extra in the same minor.
 
 ## 5. Version skew between the workflow and verctl

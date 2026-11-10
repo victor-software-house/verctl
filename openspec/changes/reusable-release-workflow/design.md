@@ -12,6 +12,15 @@ for "already published", and creates the tag and the Release at HEAD.
 [release-state-machine][rsm] redesigns all of this for a breaking minor and
 is paused. This change takes the part that needs no breaking change.
 
+This change holds the reusable workflow and its callers. The rest of the
+same slice is split into four changes of its own.
+
+The registry check is
+[registry-publish-check][rpc], and the release at a version commit is
+[release-at-version-commit][ravc]. The docs.rs check is
+[docs-build-check][docs], and the Version PR branch and auto-merge are
+[derived-version-pr-branch][dvpb].
+
 ## 1. The reusable workflow
 
 `.github/workflows/release.yml` declares `on: workflow_call` and nothing else,
@@ -107,7 +116,7 @@ workflow declares, which is why they are inputs to nothing else.
 4. `docs` runs after `publish` finishes, failed or not (`!cancelled()`), when
    `inputs.docs` and `pending` are true, as a matrix over `commits` with no
    parallel limit, each leg at its commit running `verctl docs`
-   (section 2.4). A commit released before a later leg failed is still
+   ([docs-build-check][docs]). A commit released before a later leg failed is still
    checked; a commit whose release tag is missing has nothing to check. It
    never holds `propose` back.
 5. `propose` runs after `publish` succeeds or is skipped, when
@@ -187,196 +196,7 @@ tasks, such as a version sync, which may need those tools. An asset build
 that needs a toolchain from an ignored file names it in its own task, for
 example `mise -C cli x -- cargo build`.
 
-## 2. Idempotent publish
-
-### 2.1 The registry decides "published"
-
-A publisher recipe gains `query`: an argv, with the same placeholders plus
-`{name}` and `{version}`, that exits zero and prints the version when the
-registry has it. It runs in the package's directory, as the publisher does,
-so the registry config the publisher reads (`bunfig.toml`, `.npmrc`) is in
-effect. The stock recipes:
-
-| Publisher | How "published" is decided |
-|:--|:--|
-| `cargo` whose publish target is crates.io (below) | verctl reads the crate's file in the crates.io sparse index, `https://index.crates.io/<prefix>/<name>`, with the prefix and the file name built from the lowercased crate name, and looks for a line whose `vers` equals the version as a semver version |
-| `cargo` with any other target | the package's own `query`, or the stderr match when it declares none |
-| `bun` | `query`: `bun pm view {name}@{version} version` |
-| `none` | nothing; the package publishes to no registry |
-
-A cargo package's publish target is crates.io only when every place Cargo
-reads it agrees. That is, the package sets no `registry` in `.ctl/ver.yaml` (or sets
-`crates-io`), its manifest's `publish` field is absent or names only
-`crates-io`, and the `registry.default` Cargo resolves for the publisher's
-working directory is unset or `crates-io`. verctl resolves it in Cargo's
-documented order ([config hierarchy][cargo-config]): `CARGO_REGISTRY_DEFAULT`,
-then each `.cargo/config.toml` (or legacy `.cargo/config`) from the directory
-the publisher runs in up to the filesystem root, then
-`$CARGO_HOME/config.toml` (or legacy `$CARGO_HOME/config`), with
-`CARGO_HOME` defaulting to `~/.cargo`, the first that sets it winning. The
-stock cargo publisher runs from the repository root with `--manifest-path`,
-so for it the walk starts there, not in the package's directory. When a
-repository overrides the cargo publisher, verctl cannot know the directory it
-runs in, so the target is unknown and the package needs `query`. When a file it reads cannot be parsed or uses
-`include`, the target is unknown. `cargo config get` would answer directly
-but needs a nightly Cargo, which a consumer's release job need not have.
-Any target other than crates.io, and an unknown one, needs `query` for a
-registry check. The same holds for an overridden upload command of any
-publisher: a bun package whose own argv runs `npm publish --registry …` would
-otherwise be checked against the registry the stock `bun pm view` asks.
-
-For a package with a registry check (the crates.io read or a `query`),
-verctl decides first. When the registry has the version, the package is
-`already` and its publisher does not run. Otherwise verctl runs the publisher,
-then decides again with a bounded backoff (registry metadata can lag a
-publish by a short while), and fails unless the registry lists the version
-within that bound. A check that fails during that wait (an index timeout, a
-5xx) counts as not listed for that round, because the upload already
-happened; the last round's error is reported if the bound runs out. The bound
-is a constant with its reason on it. A package
-with no registry check keeps today's rule: the publish succeeds on a zero
-exit, or on stderr that says the version already exists.
-
-The crates.io check is a direct index read because `cargo info`, run in a
-Cargo workspace, can answer for a workspace member from its local manifest
-and report an unpublished crate as `already`. Running it outside the
-workspace lost: Cargo then loses the checkout's registry config, and copying
-that config into a temporary directory drags in parent-directory configs,
-`include` targets, and relative paths. The sparse index is public, needs no
-auth, and is Cargo's own source of truth for crates.io
-([sparse index][cargo-sparse]). Every repository in scope publishes crates to
-crates.io; another registry declares `query`.
-
-The recipe is data, so the exact commands are checked against each tool's
-documentation when they are written, and the reference goes in the doc
-comment. Override: a `publishers` entry or a package's own `query`, which
-also replaces the crates.io read. Disable: `query: []`, which falls back to
-today's stderr match for that package.
-
-The index read and the docs.rs check (section 2.4) use `reqwest`, declared
-directly as 0.13.5 with `default-features = false` and the `rustls` feature.
-The operator approved the dependency on 2026-10-17. gix's HTTP transport
-already builds that version with rustls, so no crate enters the build.
-octocrab is no substitute: pointed at another host it would send the GitHub
-token there. Starting `curl` would make it a tool every consumer must
-declare.
-
-Alternative: verctl's own clients for every registry, as
-[release-state-machine][rsm] section 3.5 plans. Lost for this slice: each
-authenticated registry protocol is a project, while the crates.io index read
-is one unauthenticated request.
-
-### 2.2 The version commit
-
-A package's version commit is the newest commit on the first-parent history
-of the default branch where its manifest version became the version it has at
-HEAD. `verctl publish --plan` finds, for each package, its version commit and
-whether its release is complete: registry, tag, and Release, plus every
-declared asset unless assets are off. The workflow passes `assets: false` as
-`VERCTL_SKIP_ASSETS=true` (`--skip-assets`), so a repository that turns
-assets off still reaches `nothing to release`. It reports every incomplete
-version commit, oldest first, or nothing.
-
-A run that released only the oldest commit would leave a newer one waiting,
-and `propose` pushes `verctl/release/<base>`, not the default branch, so no
-new run would start until an unrelated push. The `publish` matrix therefore
-covers every pending commit in one run.
-
-`verctl publish` refuses to run unless HEAD is a version commit of at least
-one package whose release is incomplete, and it publishes, tags, and
-releases only the packages whose version commit is HEAD. Every other
-incomplete package is left for the run at its own version commit, and the
-report names it. The tag it creates is at HEAD, which is then that
-package's version commit. So a run on a later commit can no longer tag a
-commit that was never published.
-
-A tag that already exists names the release commit when it sits on another
-commit HEAD contains where the package has the same version. A publish rerun
-after later commits tagged a newer HEAD that way, and a version set again
-after a revert keeps the tag from its first release. A branch rewritten and
-merged back with its old tip as the second parent, as a forkctl append
-publish does, keeps the tagged commit only on that parent. In each case the
-registry already has the version, so that commit is the release and its
-assets build there. A tag on a commit with another version, or on a commit
-HEAD does not contain, fails the plan: that release was tagged in the wrong
-place, and counting it complete would hide it.
-
-Alternative: dispatch with a `commit` input to resume. Lost: a missed run, for
-example a pending run replaced in its concurrency group, would then need a
-person to find the commit. The plan job finds it on the next push.
-
-### 2.3 Nothing to release
-
-When every package's release at HEAD's versions is complete, `verctl publish`
-and `verctl publish --plan` report `nothing to release` and exit zero. The
-JSON report carries `"outcome": "nothing-to-release"`, or `"released"` when
-the run changed anything.
-
-### 2.4 The docs.rs build
-
-`verctl docs` takes the packages released at HEAD whose publish target is
-crates.io (section 2.1) and that have a library target as Cargo resolves it:
-an explicit `[lib]` table, or `src/lib.rs` found by target auto-discovery
-unless `package.autolib` is `false`. docs.rs documents no binary-only crate.
-verctl applies Cargo's documented rule itself rather than running
-`cargo metadata`, so the `docs` job needs no Cargo. It checks each such
-package only when the tag `tags.template` names for that package's version
-at HEAD names HEAD on GitHub: the shared `v{version}` tag, or the package's
-own tag when the template has `{name}`. verctl reads the tag through the
-GitHub API, peeling an annotated tag to its commit, never from local refs.
-That is because the `docs` job's checkout fetched no tags, the `publish` job pushed the tag
-from another runner, and the API needs no git credentials in the checkout.
-`verctl publish`
-creates tags only after the registry lists every version (section 2.1), so
-the tag is the record that the publish happened, and no read of a lagging
-index decides it. A crate that reached crates.io while another package
-failed has no tag yet; its commit stays incomplete, and the rerun that
-completes it tags the crate and checks it then. It polls
-`https://docs.rs/crate/<name>/<version>/status.json` with a bounded backoff.
-docs.rs answers 404 until its build of the version starts, then
-`{"doc_status": <bool>, "version": "<version>"}`. `doc_status` is false while
-the build runs and after it failed; the endpoint does not tell the two apart.
-verctl polls until every crate reports `doc_status` true or `--timeout`
-(minutes, default 60, `VERCTL_TIMEOUT`) runs out. It then reports each crate
-as `built`, `failed` (still false), or `unbuilt` (still 404), and exits
-non-zero naming every crate that is not built. A failed build therefore fails
-the job at the timeout, not when docs.rs records it. docs.rs can queue a
-build for a long time, so the check is its own job: a slow queue never
-delays the next version commit's publish or the Version PR.
-
-The docs.rs build does not count toward completeness (section 2.3). A failed
-build cannot be retried for the same version, so a rerun reports `nothing to
-release` and the fix is the next patch release. The failed `docs` job is the
-visible record.
-
-## 3. The Version PR branch
-
-`prepare --pr` commits on `verctl/release/<base>`, where `<base>` is the
-branch the Version PR targets. `check --versions` exempts any branch named
-`verctl/release/<base>` locally, and in CI a pull request with that head
-branch, this repository as its head repository, and `<base>` as its current
-base ([release-state-machine][rsm] section 2.1). The branch is derived, not
-configured.
-
-Alternative: a configurable branch name. Lost: the name identifies the Version
-PR, and [release-state-machine][rsm] section 2.3 already chose the derived
-form.
-
-## 4. Auto-merge in Rust
-
-`prepare --pr --auto-merge` reads the base branch's rules, refuses when none
-requires a status check, and enables auto-merge as a squash titled
-`<title> (#<number>)` with the PR description as body, the behaviour of
-`auto-merge.sh` today. The workflow passes the job's own token as
-`VERCTL_JOB_TOKEN`, and verctl refuses auto-merge when the token it holds is
-that one, because a merge made with it starts no workflow.
-
-Alternative: keep `auto-merge.sh` and call it from the reusable workflow.
-Lost: a called workflow cannot run a script from verctl's repository without a
-second checkout of verctl at the pinned commit, and the action and the
-workflow would carry two copies of the same rule.
-
-## 5. Caller migration
+## 2. Caller migration
 
 1. Add the caller as `.github/workflows/release.yml` and delete
    `version-pr.yml` and `publish.yml`, in one pull request.
@@ -391,7 +211,7 @@ workflow would carry two copies of the same rule.
 The template renders the caller from copier answers, so a repository on the
 template migrates with `copier update`.
 
-## 6. Semver
+## 3. Semver
 
 The change ships in a patch release with no major bump, by the operator's
 ruling on 2026-10-17. Its new flags add fields to the clap argument structs
@@ -406,7 +226,7 @@ The `cli` argument structs become `#[non_exhaustive]` in this release, so a
 later flag is never a breaking change again. `cli::Command` stays exhaustive,
 because the binary matches it without a wildcard arm.
 
-## 7. Non-goals
+## 4. Non-goals
 
 1. Releases from a maintenance base other than the default branch.
 2. Releasing an older version that a newer merged version superseded.
@@ -415,5 +235,7 @@ because the binary matches it without a wildcard arm.
 
 [rsm]: ../release-state-machine/design.md
 [pr-153]: https://github.com/victor-software-house/verctl/pull/153
-[cargo-sparse]: https://doc.rust-lang.org/cargo/reference/registry-index.html#sparse-protocol
-[cargo-config]: https://doc.rust-lang.org/cargo/reference/config.html#hierarchical-structure
+[docs]: ../docs-build-check/design.md
+[rpc]: ../registry-publish-check/design.md
+[ravc]: ../release-at-version-commit/design.md
+[dvpb]: ../derived-version-pr-branch/design.md
