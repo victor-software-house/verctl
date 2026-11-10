@@ -17,8 +17,8 @@ pub enum Format {
     Json,
 }
 
-/// A file whose version sits in its text, with a rule of its own that a key
-/// path cannot state.
+/// A file whose version sits in its text. A key path cannot state the rule for
+/// each file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Text {
@@ -139,17 +139,20 @@ impl Driver {
 
     /// The text of `path`, the file this driver reads and writes.
     ///
-    /// A `VERSION` file that does not exist yet is empty text, which reads as
-    /// `0.0.0`, so a new package needs no file before its first release:
-    /// `version` creates it, and `check` leaves the tree as it was. Its
-    /// directory must exist: a package whose directory is missing is a wrong
-    /// `path`, and `version` would otherwise fail halfway through its writes.
+    /// A `VERSION` file that does not exist yet is empty text.
+    /// Empty text reads as `0.0.0`, so a new package needs no file before its
+    /// first release. `version` creates the file, and `check` leaves the tree
+    /// as it was.
+    ///
+    /// The file's directory must exist. A package whose directory is missing
+    /// has a wrong `path`, and `version` would otherwise fail halfway through
+    /// its writes.
     ///
     /// # Errors
     ///
-    /// Returns an error naming `path` when it cannot be read, or when it is
-    /// missing and the driver is not a `VERSION` file or its directory is
-    /// missing too.
+    /// Returns an error naming `path` when it cannot be read. A missing file
+    /// is an error unless the driver is a `VERSION` file whose directory
+    /// exists.
     pub fn source(&self, path: &Path) -> Result<String> {
         match std::fs::read_to_string(path) {
             Ok(raw) => Ok(raw),
@@ -264,7 +267,7 @@ fn write_toml(raw: &str, keys: &[String], new_version: &str) -> Result<String> {
 /// A `pyproject.toml` that lists `version` in `project.dynamic` has no
 /// static `project.version`: the build backend computes it, and the
 /// [pyproject.toml specification] lets nothing else change it. verctl cannot
-/// bump a version it does not own, so the error says what can.
+/// bump a version it does not own, so the error names what can.
 ///
 /// [pyproject.toml specification]: https://packaging.python.org/en/latest/specifications/pyproject-toml/#dynamic
 fn missing_toml_keys(doc: &DocumentMut, keys: &[String]) -> anyhow::Error {

@@ -25,11 +25,14 @@ pub fn lower(earlier: &str, later: &str) -> bool {
 
 /// The version `bump` moves `current` to.
 ///
-/// Two bumps are refused. A `major` on any 0.x package, because 1.0 is a
-/// decision rather than a fragment. A `minor` or `major` on a package at
-/// `0.0.0`, with or without a pre-release or build suffix, because a new
-/// package releases `0.0.1` first; opening at `0.1.0` is the operator's call,
-/// recorded as `first_minor` on the package.
+/// Two bumps are refused:
+///
+/// - A `major` on any 0.x package, because 1.0 is a decision rather than a
+///   fragment.
+/// - A `minor` or `major` on a `0.0.0` package, including one with a
+///   pre-release or build suffix, because a new package releases `0.0.1` first.
+///
+/// The operator records `first_minor` on a package to open it at `0.1.0`.
 ///
 /// # Errors
 ///

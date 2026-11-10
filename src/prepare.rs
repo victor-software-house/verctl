@@ -29,10 +29,12 @@ pub struct PlanEntry {
 ///
 /// # Errors
 ///
-/// Returns an error when a fragment names a package the config does not
-/// declare, a package's driver or manifest cannot be resolved or read, its
-/// current version cannot be read, or the bump is refused by
-/// [`crate::bump::apply`].
+/// Returns an error when:
+///
+/// - a fragment names a package the config does not declare,
+/// - a package's driver or manifest cannot be resolved or read,
+/// - its current version cannot be read, or
+/// - [`crate::bump::apply`] refuses the bump.
 pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<PlanEntry>> {
     let mut by_name: BTreeMap<&str, Bump> = BTreeMap::new();
     for fragment in fragments {
@@ -94,9 +96,9 @@ pub struct Step {
     pub argv: Vec<String>,
     /// Where it runs.
     pub dir: PathBuf,
-    /// The lockfile it rewrites, which the Version PR commits, when verctl
-    /// knows it. A command a repository declares stages what it writes
-    /// through `prepare.stage`.
+    /// The lockfile it rewrites, which the Version PR commits. Only a detected
+    /// owner's command sets it. A command a repository declares stages what it
+    /// writes through `prepare.stage`.
     pub lockfile: Option<PathBuf>,
 }
 

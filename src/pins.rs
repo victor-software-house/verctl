@@ -30,11 +30,15 @@ pub fn current_versions(root: &Path, config: &Config) -> Result<Vec<(String, Str
 ///
 /// # Errors
 ///
-/// Returns an error when a pin file lies outside `root` or is a symlink,
-/// cannot be read or written, or has no `[tools]` entry for the pinned tool. It
-/// also returns one when a pin has a pattern that is malformed or matches a
-/// number of times its `occurrences` does not allow. Files rewritten before the
-/// failing pin stay changed.
+/// Returns an error when:
+///
+/// - a pin file lies outside `root` or is a symlink;
+/// - a pin file cannot be read or written;
+/// - a pin file has no `[tools]` entry for the pinned tool;
+/// - a pin has a pattern that is malformed or matches a number of times its
+///   `occurrences` does not allow.
+///
+/// Files rewritten before the failing pin stay changed.
 pub fn write(root: &Path, pins: &[Pin], versions: &[(String, String)]) -> Result<Vec<PathBuf>> {
     apply(root, pins, versions, true)
 }
@@ -55,7 +59,7 @@ pub fn plan(root: &Path, pins: &[Pin], versions: &[(String, String)]) -> Result<
 pub struct Stale {
     /// The pinned file, as the entry names it.
     pub file: PathBuf,
-    /// What is wrong: a pattern that no longer matches at its declared count,
+    /// What is wrong: a pattern that does not match at its declared count,
     /// a file that cannot be rewritten, or one that names another version.
     pub problem: String,
 }
@@ -156,16 +160,17 @@ fn rewrite_tool(body: &str, tool: &str, version: &str, path: &Path) -> Result<St
 }
 
 /// The version in every occurrence of `pattern.match`, where `{version}`
-/// marks it. The rest is literal, so a bash header, a README sentence, and a
-/// YAML value all rewrite the same way with nothing assumed about the file.
+/// marks it. The rest is literal. A bash header, a README sentence, and a
+/// YAML value all rewrite the same way, with nothing assumed about the file.
+///
 /// `Config::load` refuses a pattern with nothing marking where the version
-/// starts and ends, so a longer version here fails to match rather than
+/// starts and ends. So a longer version here fails to match instead of
 /// matching by its numeric head.
 ///
-/// How often the file must say it is declared, never inferred, and both
-/// directions are release-stopping: fewer than declared means the pin no
-/// longer tracks anything, more means a version spelling nobody accounted
-/// for. See `Occurrences` for the vocabulary.
+/// The file must hold the version exactly as often as declared. The count is
+/// never inferred. A count off in either direction stops the release. Too few
+/// means the pin tracks nothing, and too many means a version spelling nobody
+/// accounted for. See `Occurrences` for the vocabulary.
 fn rewrite_pattern(body: &str, pattern: &PinPattern, version: &str) -> Result<String> {
     let text = &pattern.r#match;
     let (before, after) = text
@@ -174,9 +179,10 @@ fn rewrite_pattern(body: &str, pattern: &PinPattern, version: &str) -> Result<St
     if after.contains(PLACEHOLDER) {
         bail!("pattern {text:?} has more than one {PLACEHOLDER}");
     }
-    // `R` is CRLF mode: without it `$` sits only before `\n`, so a file checked
-    // out with CRLF endings has a `\r` between the version and the line end and
-    // matches nothing: a correct file stopping a release.
+    // `R` is carriage return and line feed (CRLF) mode. Without it `$` matches
+    // only before `\n`. A file checked out with CRLF endings has a `\r` between
+    // the version and the line end. It matches nothing, so a correct file stops
+    // a release.
     let (open, close) = if pattern.whole_line {
         ("(?mR)^", "$")
     } else {
@@ -200,14 +206,14 @@ fn rewrite_pattern(body: &str, pattern: &PinPattern, version: &str) -> Result<St
 }
 
 /// Every `?ref=v…` include that names this tool's own repository. A sibling
-/// repo's include sitting in the same file is not ours to move, so the URL
-/// path must carry the tool's own name.
+/// repo's include in the same file is not ours to move. The URL path must
+/// carry the tool's own name.
 ///
 /// The ref runs to the end of the URL or to the next query separator (`&`,
-/// `#`, `;`), so a ref that starts with a version
-/// and goes on, such as `v1.2.3-rc1`, fails rather than having its numeric
-/// head moved and its tail kept. A ref that is not a version at all, such as
-/// a branch, is not a pin and stays put.
+/// `#`, `;`). A ref that starts with a version and goes on, such as
+/// `v1.2.3-rc1`, fails. Its numeric head is never moved with its tail kept. A
+/// ref that is not a version at all, such as a branch, is not a pin and stays
+/// put.
 fn rewrite_own_refs(body: &str, tool: &str, version: &str) -> Result<String> {
     let name = escape(tool.rsplit(['/', ':']).next().unwrap_or(tool));
     let finder = Regex::new(&format!(
@@ -241,9 +247,14 @@ mod tests {
     const VERCTL: &str = "github:victor-software-house/verctl";
     const DOC: &str = "README.md";
 
-    /// One hand-authored file, every version spelling a repo really carries:
-    /// a tagged include, a tarball invocation, a bare mention, a sibling
-    /// repo's pin that is not ours, and a non-version that must not match.
+    /// One hand-authored file with every version spelling a repo really
+    /// carries:
+    ///
+    /// - a tagged include
+    /// - a tarball invocation
+    /// - a bare mention
+    /// - a sibling repo's pin that is not ours
+    /// - a non-version that must not match
     const BEFORE: &str = indoc! {r#"
         # verctl
 
@@ -307,7 +318,7 @@ mod tests {
     }
 
     /// `check` lists each pin left behind: one that names another version,
-    /// and one whose pattern no longer matches at its declared count.
+    /// and one whose pattern does not match at its declared count.
     #[test]
     fn stale_names_each_pin_left_behind() {
         let root = TempDir::new().unwrap();
@@ -711,8 +722,8 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), before);
     }
 
-    /// A tool entry and the includes that fetch it, in one file, at once,
-    /// including a sibling repo's include, which is not ours to move.
+    /// A tool entry and the includes that fetch it, in one file, at once.
+    /// A sibling repo's include in that file is not ours to move.
     #[test]
     fn a_tool_entry_and_its_own_includes_move_together() {
         let root = TempDir::new().unwrap();
@@ -748,8 +759,8 @@ mod tests {
     }
 
     /// An include whose ref is a prerelease is not a version this rewrites.
-    /// Moving its numeric head would leave the tail on a tag that names
-    /// another release, so the pin fails and the file stays as it was.
+    /// Moving its numeric head would leave the tail on a tag of another
+    /// release. So the pin fails and the file stays as it was.
     #[test]
     fn an_include_with_a_prerelease_ref_fails_instead_of_half_rewriting() {
         let root = TempDir::new().unwrap();
@@ -845,9 +856,9 @@ mod tests {
         );
     }
 
-    /// A line-owning spelling anchors on the line, not on whatever text sits
-    /// next to it. Every case here is the same pattern against a different
-    /// document, because what changes is the neighbourhood, not the spelling.
+    /// A line-owning spelling anchors on the line and ignores the text next to
+    /// it. Every case here is the same pattern against a different document.
+    /// Only the neighbourhood changes.
     #[test]
     fn a_whole_line_pattern_owns_its_line_and_nothing_else() {
         let cases = [
@@ -942,7 +953,7 @@ mod tests {
         }
     }
 
-    /// Owning a line says nothing about how many lines: the arity still does.
+    /// Owning a line does not set how many lines match. The arity does.
     #[test]
     fn a_whole_line_pattern_counts_lines_the_way_its_arity_says() {
         let root = TempDir::new().unwrap();

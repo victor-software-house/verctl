@@ -1,4 +1,4 @@
-//! Hidden `--usage-spec` and the served-task mount line.
+//! The hidden `--usage-spec` flag and the mount line of a served task.
 
 mod common;
 
@@ -55,15 +55,18 @@ fn template_mount_is_ctl_core() {
     );
 }
 
-/// In prefix output mode, which mise uses for several tasks at once or when
-/// `MISE_TASK_OUTPUT=prefix` is set, mise relays a task's output itself unless
-/// the task is `raw`. It appends an SGR reset to every relayed line whenever
-/// its own colour is on, which `CLICOLOR_FORCE=1` turns on even into a pipe.
-/// A single task defaults to `interleave`, which passes output through, so the
-/// test forces prefix mode: without `raw` it fails. The served task, rendered
-/// from its template, runs in a scrubbed environment with a stub `verctl` on
-/// PATH, so neither the caller's mise configuration nor a download is
-/// involved.
+/// In prefix output mode, mise relays a task's output itself unless the task
+/// is `raw`. Mise uses that mode for several tasks at once, or when
+/// `MISE_TASK_OUTPUT=prefix` is set.
+///
+/// The relay appends a Select Graphic Rendition (SGR) reset to every line
+/// whenever mise's own colour is on. `CLICOLOR_FORCE=1` turns that on even into
+/// a pipe. A single task defaults to `interleave`, which passes output through.
+/// The test therefore forces prefix mode, and without `raw` it fails.
+///
+/// The served task is rendered from its template. It runs in a scrubbed
+/// environment, with a stub `verctl` on `PATH`. Neither the caller's mise
+/// configuration nor a download is involved.
 #[test]
 fn the_served_task_pipes_json_without_an_escape_byte() {
     let mut environment = minijinja::Environment::new();

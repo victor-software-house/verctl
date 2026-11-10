@@ -569,7 +569,7 @@ fn prepare_reads_first_minor_from_the_package() {
     assert_eq!(plan[0].to, "0.1.0");
 }
 
-/// The stock `pyproject.toml` driver moves `project.version` and nothing
+/// The stock driver for `pyproject.toml` moves `project.version` and nothing
 /// else, comments and layout included.
 #[test]
 fn pyproject_changes_only_the_version() {
@@ -813,8 +813,8 @@ fn a_version_file_with_more_than_a_version_fails() {
     }
 }
 
-/// A `VERSION` path whose directory is missing is a wrong path, not a new
-/// package: the plan fails before `version` writes anything.
+/// A `VERSION` path whose directory is missing is a wrong path, so it is never
+/// a new package. The plan fails before `version` writes anything.
 #[test]
 fn a_version_file_in_a_missing_directory_fails() {
     let root = TempDir::new().expect("tmp");

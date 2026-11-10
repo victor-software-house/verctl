@@ -1,8 +1,10 @@
-//! The Version PR content check: a branch whose changes the version step
-//! makes from the merge-base passes, and every other change fails and is
-//! named. Each fixture commits a merge-base on `main`, then builds the Version
-//! PR on `verctl/release/main` with the version step's own library calls, so
-//! the expected bytes come from the code under test and not from a copy.
+//! The check on the content of a Version PR. A branch passes when every change
+//! is one the version step makes from the merge-base. Every other change fails
+//! and is named.
+//!
+//! Each fixture commits a merge-base on `main`. It then builds the Version PR
+//! on `verctl/release/main` with the version step's own library calls. The
+//! expected bytes therefore come from the code under test.
 
 #![expect(
     clippy::expect_used,

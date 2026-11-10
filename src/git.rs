@@ -30,7 +30,7 @@ pub fn current_branch(root: &Path) -> Option<String> {
     Some(name.shorten().to_string())
 }
 
-/// The commit HEAD currently names, as a full hex SHA.
+/// The commit HEAD names, as a full hex SHA.
 ///
 /// # Errors
 ///
@@ -60,10 +60,12 @@ const NEED_FULL_FETCH: &str =
 ///
 /// # Errors
 ///
-/// Returns an error when `origin` exists but its default branch ref cannot be
-/// resolved, or when HEAD names no commit. It also returns one when there is no
-/// merge-base (a shallow clone, for one), or when the merge-base commit or its
-/// tree cannot be read.
+/// Returns an error when:
+///
+/// - `origin` exists but resolving its default branch ref fails;
+/// - HEAD names no commit;
+/// - there is no merge-base (a shallow clone, for one);
+/// - the merge-base commit or its tree cannot be read.
 pub fn files_on_merge_base(
     root: &Path,
     rels: &[&Path],
@@ -91,9 +93,9 @@ pub fn files_on_merge_base(
 }
 
 /// `rel` as a path inside the repository. A relative path joins the
-/// canonical root rather than being canonicalized itself, so a file deleted
-/// from the working tree still finds its committed copy: the version guard
-/// has to see a manifest that a pull request removed.
+/// canonical root without being canonicalized itself. A file deleted from the
+/// working tree still resolves to its committed copy this way. The version
+/// guard has to see a manifest that a pull request removed.
 fn git_path(root: &Path, rel: &Path, workdir: Option<&Path>) -> Option<PathBuf> {
     let abs = if rel.is_absolute() {
         rel.canonicalize().ok()?
@@ -109,8 +111,8 @@ fn git_path(root: &Path, rel: &Path, workdir: Option<&Path>) -> Option<PathBuf> 
 }
 
 /// The tree at the merge-base of HEAD and the pull request's base, and the
-/// paths the working tree changes against it. The Version PR content check
-/// replays the version step on this tree.
+/// paths the working tree changes against it. The content check for a Version
+/// PR replays the version step on this tree.
 #[derive(Debug)]
 pub struct MergeBase {
     repo: gix::Repository,
@@ -212,7 +214,7 @@ impl MergeBase {
     }
 
     /// Each path, relative to the working tree's root, that differs from the
-    /// merge-base: a file by its bytes, a symlink by its target, and a
+    /// merge-base. A file differs by its bytes, a symlink by its target, and a
     /// submodule by its commit.
     #[must_use]
     pub fn changed(&self) -> &BTreeSet<String> {
@@ -244,12 +246,12 @@ impl MergeBase {
         read_optional(&self.workdir.join(rel))
     }
 
-    /// Write every regular file of the merge-base tree under `dir`, with its
-    /// executable bit.
+    /// Write every regular file of the merge-base tree under `dir`. Each file
+    /// keeps its executable bit.
     ///
     /// The whole tree is written because the replay's readers are not a fixed
-    /// list: `cargo metadata` expands member globs and needs each member's
-    /// target files, and a pin or a served file can name any path. Symlinks
+    /// list. `cargo metadata` expands member globs and needs each member's
+    /// target files. A pin or a served file can name any path. Symlinks
     /// are not recreated, so no write through one leaves `dir`.
     ///
     /// # Errors
@@ -319,7 +321,7 @@ pub fn read_optional(path: &Path) -> Result<Option<Vec<u8>>> {
 
 /// Every entry in `tree` other than a directory, by path, with its object and
 /// kind. A symlink or a submodule holds no bytes the version step writes, so
-/// the content check never replays one, but it still lists one that changed.
+/// the content check never replays one. It still lists one that changed.
 fn files_of(tree: &gix::Tree<'_>) -> Result<BTreeMap<String, (gix::ObjectId, EntryKind)>> {
     Ok(tree
         .traverse()
@@ -364,23 +366,32 @@ pub struct AddedBy {
     pub subject: String,
 }
 
-/// The commit that added `path`: the newest commit on HEAD's first-parent
-/// history whose tree has the file and whose first parent's tree does not. A
-/// squash merge is that commit, and its subject carries the pull request
-/// number. When that commit is a merge and another parent already has the
-/// file, the file arrived with the merged branch, so the walk continues down
-/// that parent's first-parent history. A fragment merged from `next` links the
-/// pull request that added it there, not the merge. A merge titled with its
-/// pull request, `Title (#12)`, whose branch commits name none is the commit
-/// named instead, so a repository that merges with merge commits keeps its
-/// pull request links: the deepest such merge on the way down wins.
+/// The commit that added `path`. It is the newest commit on HEAD's
+/// first-parent history whose tree has the file and whose first parent's tree
+/// does not.
 ///
-/// No repository, and a file HEAD does not track, is `None`: a fixture outside
-/// git, or a fragment not committed yet, has no commit to name. A shallow
-/// clone that ends before the adding commit is `None` too: a commit listed in
-/// `.git/shallow` is the boundary, so it counts as parentless, and naming it
-/// would link the wrong commit. A parent that exists but cannot be loaded is
-/// treated the same way.
+/// A squash merge is that commit, and its subject carries the pull request
+/// number.
+///
+/// When that commit is a merge and another parent already has the file, the
+/// file arrived with the merged branch. The walk then continues down that
+/// parent's first-parent history. A fragment merged from `next` links the pull
+/// request that added it there, instead of the merge.
+///
+/// A merge titled with its pull request, `Title (#N)`, may have branch commits
+/// that name none. That merge is then the commit named instead. A repository
+/// that merges with merge commits thus keeps its pull request links. The
+/// deepest such merge on the way down wins.
+///
+/// The result is `None` in these cases:
+///
+/// - There is no repository, or HEAD does not track the file. A fixture outside
+///   git, or a fragment not committed yet, has no commit to name.
+/// - A shallow clone ends before the adding commit. A commit listed in
+///   `.git/shallow` is the boundary and counts as parentless, and naming it
+///   would link the wrong commit.
+/// - A parent exists but cannot be loaded. It is treated like the shallow
+///   boundary.
 ///
 /// # Errors
 ///
@@ -453,18 +464,24 @@ pub struct VersionCommit {
 /// The newest commit on HEAD's first-parent history where the version `read`
 /// finds in `path` became the version it has at HEAD.
 ///
-/// The walk follows first parents only, so a merge counts as the commit that
-/// brought the version to this branch, which is where the release happens.
+/// The walk follows first parents only. A merge therefore counts as the commit
+/// that brought the version to this branch, which is where the release
+/// happens.
 /// `read` returns `None` when a revision of the file holds no version, which
 /// counts as a different version.
 ///
 /// # Errors
 ///
-/// Returns an error when `root` is in no repository, `path` is outside it,
-/// HEAD has no version in `path`, or a commit or tree cannot be read. It also
-/// returns one when the walk reaches a shallow clone's boundary before the
-/// version changes: the commit that set it is not in the clone, so a full fetch
-/// is needed. That error is a [`lookup::Unavailable`].
+/// Returns an error when:
+///
+/// - `root` is in no repository;
+/// - `path` is outside it;
+/// - HEAD has no version in `path`;
+/// - a commit or tree cannot be read.
+///
+/// It also returns an error when the walk reaches a shallow clone's boundary
+/// before the version changes. The commit that set the version is not in the
+/// clone, so a full fetch is needed. That error is a [`lookup::Unavailable`].
 pub fn version_commit(
     root: &Path,
     path: &Path,
@@ -514,13 +531,17 @@ pub fn version_commit(
 /// when HEAD contains `sha` and `sha` carries that version.
 ///
 /// A release tag can name a commit other than [`version_commit`] and still be
-/// that version's release. One case is a publish rerun after later commits
-/// tagged a newer HEAD at the same version. Another is a version set again
-/// after a revert, which keeps the tag from its first release. A tagged commit
-/// can also leave the first-parent history while HEAD keeps it. A forkctl
-/// append publish rewrites a branch and merges it back with its old tip as the
-/// second parent, so only that parent holds the tagged commit. The new
-/// first-parent commit at the same version may change other files.
+/// that version's release. Three cases qualify:
+///
+/// - A publish rerun after later commits tagged a newer HEAD at the same
+///   version.
+/// - A version set again after a revert, which keeps the tag from its first
+///   release.
+/// - A tagged commit that left the first-parent history while HEAD keeps it. A
+///   forkctl append publish rewrites a branch and merges it back with its old
+///   tip as the second parent. Only that parent then holds the tagged commit.
+///   The new first-parent commit at the same version may change other files.
+///
 /// In every case the registry already has the version, so the tag's commit is
 /// the release. Only the version is compared, never the tree.
 ///
@@ -531,11 +552,16 @@ pub fn version_commit(
 ///
 /// # Errors
 ///
-/// Returns an error when `root` is in no repository, `path` is outside it,
-/// HEAD has no version in `path`, or a commit or tree cannot be read. It also
-/// returns one when the walk reaches a shallow clone's boundary before finding
-/// `sha`, a [`lookup::Unavailable`], or when no merge-base can be computed
-/// between a first-parent commit and `sha`.
+/// Returns an error when:
+///
+/// - `root` is in no repository;
+/// - `path` is outside it;
+/// - HEAD has no version in `path`;
+/// - a commit or tree cannot be read.
+///
+/// It also returns a [`lookup::Unavailable`] error when the walk reaches a
+/// shallow clone's boundary before finding `sha`. It returns an error too when
+/// no merge-base can be computed between a first-parent commit and `sha`.
 pub fn tagged_commit(
     root: &Path,
     path: &Path,
@@ -588,9 +614,11 @@ pub fn tagged_commit(
 ///
 /// Every commit on `line` newer than the merge that brought `sha` in contains
 /// it too. The search tests HEAD, then indices 1, 2, 4, 8, … until one does
-/// not contain `sha` or `line` ends, and bisects that last interval, so a merge
-/// `d` commits below HEAD costs O(log d) merge-base walks. `None` when `sha`
-/// names no commit, carries another version, or HEAD does not contain it.
+/// not contain `sha` or `line` ends. It then bisects that last interval, so
+/// finding a merge `d` commits below HEAD takes O(log d) merge-base walks.
+///
+/// `None` when `sha` names no commit, carries another version, or HEAD does
+/// not contain it.
 fn merged_release(
     repo: &gix::Repository,
     line: &[gix::ObjectId],
@@ -655,7 +683,7 @@ fn named(commit: &gix::Commit<'_>) -> Result<AddedBy> {
     })
 }
 
-/// The pull request a squash-merge subject names: a trailing `(#12)`.
+/// The pull request a squash-merge subject names: a trailing `(#N)`.
 pub(crate) fn pull_request_number(subject: &str) -> Option<u64> {
     let (_, digits) = subject.trim_end().strip_suffix(')')?.rsplit_once("(#")?;
     if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -673,20 +701,28 @@ pub fn upstream_default_branch(root: &Path) -> Option<String> {
 /// Whether HEAD is off the default-branch history: `None` when the default
 /// branch contains HEAD, or why it does not, naming both commits.
 ///
-/// Being off the branch is a finding the caller may allow. Not knowing is
-/// not: a proof that cannot run fails, and says which fact is missing. A check
-/// that passed by skipping itself would let a release run from any commit, in
-/// exactly the CI shapes where the proof matters. Each of these fails: no
-/// repository, no HEAD commit, no `origin` remote, an `origin` with no
-/// peelable default-tracking ref, and a shallow clone that cannot walk the
-/// graph.
+/// Being off the branch is a finding the caller may allow. A missing fact is
+/// not a finding: a proof that cannot run fails and names the missing fact.
+/// A check that passed by skipping itself would let a release run from any
+/// commit, in exactly the CI shapes where the proof matters.
+///
+/// Each of these fails:
+///
+/// - no repository;
+/// - no HEAD commit;
+/// - no `origin` remote;
+/// - an `origin` with no peelable default-tracking ref;
+/// - a shallow clone that cannot walk the graph.
 ///
 /// # Errors
 ///
-/// Returns an error when no repository covers `root`, HEAD has no commit, or
-/// there is no `origin` remote. It also returns one when the default branch
-/// ref cannot be resolved, or when the merge-base cannot be computed, as in a
-/// shallow clone.
+/// Returns an error when:
+///
+/// - no repository covers `root`;
+/// - HEAD has no commit;
+/// - there is no `origin` remote;
+/// - resolving the default branch ref fails;
+/// - the merge-base cannot be computed, as in a shallow clone.
 pub fn off_default_history(root: &Path) -> Result<Option<String>> {
     prove_default_history(root, &candidate_names(env_base_ref().as_deref()))
 }
@@ -697,14 +733,15 @@ pub fn off_default_history(root: &Path) -> Result<Option<String>> {
 ///
 /// A retry of an old release commit runs its workflows as they were at that
 /// commit. Steps or permissions changed since can publish to the registry and
-/// then fail to tag, and the registry cannot take a version back. Equal tree
-/// ids prove equal content, so no file is read. A tree that is missing on both
-/// sides counts as equal.
+/// then fail to tag, and the registry cannot take a version back.
+///
+/// Equal tree ids prove equal content, so no file is read. A tree that is
+/// missing on both sides counts as equal.
 ///
 /// # Errors
 ///
 /// Returns an error when no repository covers `root`, HEAD has no commit, or
-/// the default branch ref cannot be resolved or is missing.
+/// the default branch ref is missing or cannot be resolved.
 pub fn workflows_differ(root: &Path) -> Result<Option<String>> {
     let repo = repo_covering(root).with_context(|| {
         format!(
@@ -761,22 +798,34 @@ pub struct Unreleased {
 ///    strictly below v, so v was not abandoned.
 ///
 /// List each skipped v once, at the oldest commit in the range whose version
-/// is v. A revert is then simply a later commit that sets an older v again,
-/// and the listing stays at the original version commit.
+/// is v. A revert is then a later commit that sets an older v again, and the
+/// listing stays at the original version commit.
 ///
-/// The range stops below a version `released` accepts, below `0.0.0`, below a
-/// revision with no version, below a version that is not semver, or at the
-/// root, which it includes. Each version change in it is collected, newest
-/// first, and the definition applied to them. Empty means the version commit
-/// of HEAD's version is the only one since the last release. `read` reads one
-/// revision of `path`, as in [`version_commit`].
+/// The range stops at whichever comes first:
+///
+/// - below a version `released` accepts;
+/// - below `0.0.0`;
+/// - below a revision with no version;
+/// - below a version that is not semver;
+/// - at the root, which it includes.
+///
+/// Each version change in the range is collected, newest first, and the
+/// definition applied to them. Empty means the version commit of HEAD's
+/// version is the only one since the last release. `read` reads one revision of
+/// `path`, as in [`version_commit`].
 ///
 /// # Errors
 ///
-/// Returns an error when `root` is in no repository, `path` is outside it,
-/// HEAD has no version in `path`, a commit or tree cannot be read, or
-/// `released` fails. It also returns one when the walk reaches a shallow
-/// clone's boundary before it stops, a [`lookup::Unavailable`].
+/// Returns an error when:
+///
+/// - `root` is in no repository;
+/// - `path` is outside it;
+/// - HEAD has no version in `path`;
+/// - a commit or tree cannot be read;
+/// - `released` fails.
+///
+/// It also returns a [`lookup::Unavailable`] error when the walk reaches a
+/// shallow clone's boundary before it stops.
 pub fn unreleased_below(
     root: &Path,
     path: &Path,
@@ -913,8 +962,8 @@ pub fn github_git_user() -> &'static str {
 
 /// `VERCTL_DEFAULT_BRANCH` only.
 ///
-/// `GITHUB_BASE_REF` is a candidate for `off_default_history`,
-/// not a name to rewrite `origin/HEAD` with.
+/// `GITHUB_BASE_REF` is a candidate for `off_default_history` only. It never
+/// names a branch to rewrite `origin/HEAD` with.
 #[must_use]
 pub fn configured_default_branch() -> Option<String> {
     env::var("VERCTL_DEFAULT_BRANCH")
@@ -924,16 +973,19 @@ pub fn configured_default_branch() -> Option<String> {
 }
 
 /// Point `origin/HEAD` at `origin/<branch>`. Fetch that one ref only
-/// when it is missing. The fetch is the branch's history, not a
-/// depth-1 tip: `off_default_history` walks parents.
+/// when it is missing. The fetch gets the branch's history instead of a
+/// depth-1 tip, because `off_default_history` walks parents.
 ///
 /// An empty `branch`, no repository, and no `origin` remote are each a no-op.
 ///
 /// # Errors
 ///
-/// Returns an error when the fetch fails (remote unreachable, credentials
-/// rejected, or the branch absent on the remote), when `origin/<branch>` is
-/// still missing afterwards, or when `origin/HEAD` cannot be updated.
+/// Returns an error when:
+///
+/// - the fetch fails (remote unreachable, credentials rejected, or the branch
+///   absent on the remote);
+/// - `origin/<branch>` is still missing afterwards;
+/// - `origin/HEAD` cannot be updated.
 pub fn ensure_origin_head(root: &Path, branch: &str, fetch: &FetchDefault) -> Result<()> {
     if branch.is_empty() {
         return Ok(());
@@ -979,20 +1031,26 @@ fn shallow_hint() -> &'static str {
 
 /// Fetch the whole history of `origin/<branch>` when the clone is shallow.
 ///
-/// A depth-1 checkout, the default of `actions/checkout`, ends at a commit
-/// with no parents, so finding the commit that set a version, finding a tag's
-/// commit, and proving HEAD is on the default branch all stop at the boundary.
+/// A depth-1 checkout, which is the default of `actions/checkout`, ends at a
+/// commit that has no parents. All of these then stop at the boundary:
+///
+/// - finding the commit that set a version;
+/// - finding a tag's commit;
+/// - proving HEAD is on the default branch.
+///
 /// Fetching the default branch without a depth limit removes that boundary for
 /// every commit on it, the version commit included.
 ///
 /// A clone that is not shallow, an empty `branch`, no repository, and no
-/// `origin` remote are each a no-op; the walks then report the boundary.
+/// `origin` remote are each a no-op. The walks then report the boundary.
 ///
 /// # Errors
 ///
-/// Returns an error when the shallow boundary cannot be read, or when the
-/// fetch fails (remote unreachable, credentials rejected, or the branch absent
-/// on the remote).
+/// Returns an error when:
+///
+/// - the shallow boundary cannot be read;
+/// - the fetch fails (remote unreachable, credentials rejected, or the branch
+///   absent on the remote).
 pub fn ensure_full_history(root: &Path, branch: &str, fetch: &FetchDefault) -> Result<()> {
     if branch.is_empty() {
         return Ok(());
@@ -1019,9 +1077,11 @@ pub fn ensure_full_history(root: &Path, branch: &str, fetch: &FetchDefault) -> R
 ///
 /// # Errors
 ///
-/// Returns an error when the shallow boundary cannot be read, or when the
-/// fetch fails (remote unreachable, credentials rejected, or the branch absent
-/// on the remote).
+/// Returns an error when:
+///
+/// - the shallow boundary cannot be read;
+/// - the fetch fails (remote unreachable, credentials rejected, or the branch
+///   absent on the remote).
 pub fn ensure_comparable(root: &Path, branch: &str, fetch: &FetchDefault) -> Result<()> {
     if branch.is_empty() {
         return Ok(());
@@ -1146,13 +1206,16 @@ pub fn workdir_covering(dir: &Path) -> Option<PathBuf> {
 
 /// Every path git tracks under `root`, relative to `root` itself.
 ///
-/// The index, not a directory walk: build output, vendored trees, and
-/// anything else gitignored is not part of what this repo publishes. The index
-/// speaks in paths from the working tree, and `root` is a project inside it
+/// The list comes from the index instead of a directory walk. Build output,
+/// vendored trees, and anything else gitignored is not part of what this repo
+/// publishes.
+///
+/// The index holds paths from the working tree. `root` is a project inside it
 /// (one repository may hold several), so anything outside `root` is not this
-/// project's, and what is left is rebased onto it. A tree with no repository
-/// tracks nothing (it cannot serve a file by tag), but a repository whose
-/// index cannot be read is an error, never an empty answer.
+/// project's. What is left is rebased onto `root`.
+///
+/// A tree with no repository tracks nothing (it cannot serve a file by tag). A
+/// repository whose index cannot be read is an error, never an empty answer.
 ///
 /// # Errors
 ///
@@ -1173,11 +1236,13 @@ pub fn tracked(root: &Path) -> Result<Vec<PathBuf>> {
 
 /// Whether the repository is told to ignore `rel`, a path relative to `root`.
 ///
-/// Ignoring a file is a repo saying it is not part of what it publishes. It is
-/// the same statement `tracked` already reads the index for. So an ignored file
-/// is not a forgotten one, and nothing should ask its author to commit it. A
-/// file under an ignored directory is ignored too, as git has it: gix matches
-/// the one path it is given, so each parent directory is asked first.
+/// Ignoring a file marks it as not part of what the repo publishes. That is
+/// the same fact `tracked` already reads the index for. So an ignored file is
+/// not a forgotten one, and nothing should ask its author to commit it.
+///
+/// A file under an ignored directory is ignored too, as git has it. gix
+/// matches the one path it is given, so each parent directory is checked
+/// first.
 #[must_use]
 pub fn is_ignored(root: &Path, rel: &Path) -> bool {
     let Some(repo) = repo_covering(root) else {
@@ -1209,8 +1274,8 @@ pub fn is_ignored(root: &Path, rel: &Path) -> bool {
 /// Whether a repository covers `root` at all.
 ///
 /// `tracked` answers "nothing" both for an empty index and for a tree with no
-/// repository, and those are different states: a file the index does not carry
-/// is untracked only where an index exists to not carry it.
+/// repository. Those are different states: a file the index does not carry is
+/// untracked only where an index exists to not carry it.
 #[must_use]
 pub fn is_repository(root: &Path) -> bool {
     repo_covering(root).is_some()
@@ -1229,20 +1294,20 @@ fn project_prefix(repo: &gix::Repository, root: &Path) -> PathBuf {
 
 /// The repository that covers `dir`, searching upward, as it is on disk.
 ///
-/// A git hook exports repository-local variables for its own git process:
+/// A git hook exports repository-local variables for its own git process.
 /// pre-commit sets `GIT_INDEX_FILE` to a temporary index, given as a path
 /// relative to git's working directory, and may set `GIT_DIR` and
-/// `GIT_WORK_TREE`. verctl ignores them, as libgit2 did, so a command answers
-/// the same inside a hook and outside one: gix's catch-all permission for
-/// `GIT_*` variables is denied, which drops those overrides, while identity
-/// and HTTP variables keep their own permissions. `GIT_DIR` is never read,
-/// because discovery starts from `dir`, not from the environment. Nothing in
-/// this module writes the index.
+/// `GIT_WORK_TREE`. verctl ignores them, as libgit2 did, so a command behaves
+/// the same inside a hook and outside one.
+///
+/// gix's catch-all permission for `GIT_*` variables is denied, which drops
+/// those overrides. Identity and HTTP variables keep their own permissions.
+/// `GIT_DIR` is never read, because discovery starts from `dir` instead of the
+/// environment. Nothing in this module writes the index.
 ///
 /// Fetches and branch updates write reflog entries, which gix refuses without
-/// a committer, and a CI runner often has no git identity configured: the
-/// [`fallback_identity`] fills that gap, while a configured identity still
-/// wins.
+/// a committer. A CI runner often has no git identity configured, so
+/// [`fallback_identity`] fills that gap. A configured identity still wins.
 fn discover(dir: &Path) -> Result<gix::Repository> {
     let mapping = Mapping {
         full: open_options(Trust::Full),
@@ -1322,13 +1387,18 @@ pub fn default_branch_candidates() -> Vec<String> {
     candidate_names(env_base_ref().as_deref())
 }
 
-/// `VERCTL_DEFAULT_BRANCH`, then the event's repository default branch
-/// ([`crate::github::event_default_branch`]), then `main` / `master`, then
-/// `GITHUB_BASE_REF`: the branch
-/// releases come from, whatever branch a pull request targets. The event's
-/// default names a default branch with another name, which Actions leaves
-/// without `origin/HEAD`; the pull request's base comes last for a run with
-/// neither.
+/// The branch releases come from, whatever branch a pull request targets. The
+/// candidates, in order:
+///
+/// 1. `VERCTL_DEFAULT_BRANCH`;
+/// 2. the event's repository default branch
+///    ([`crate::github::event_default_branch`]);
+/// 3. `main` / `master`;
+/// 4. `GITHUB_BASE_REF`.
+///
+/// The event's default covers a default branch with another name, which
+/// Actions leaves without `origin/HEAD`. The pull request's base comes last,
+/// for a run with neither.
 #[must_use]
 pub fn release_branch_candidates() -> Vec<String> {
     release_candidate_names(
@@ -1382,8 +1452,8 @@ pub fn comparison_branches() -> Vec<String> {
     names
 }
 
-/// Like `default_branch_candidates`, with the base ref passed in instead of
-/// read from the environment.
+/// Like `default_branch_candidates`, but the caller supplies the base ref and
+/// the environment is not read.
 #[must_use]
 pub fn default_branch_candidates_from(base_ref: Option<&str>) -> Vec<String> {
     candidate_names(base_ref)
@@ -1564,16 +1634,19 @@ pub enum PushOutcome {
 /// Commits `paths` onto `branch` without moving HEAD, then force-pushes
 /// `branch` to `github` over HTTPS with `token`.
 ///
-/// Returns [`PushOutcome::Empty`] without pushing when `paths` leave the tree
-/// unchanged.
+/// When `paths` leave the tree unchanged, nothing is pushed and the result is
+/// [`PushOutcome::Empty`].
 ///
 /// # Errors
 ///
-/// Returns an error when `root` is not inside a git repository, when the
-/// repository has no workdir or HEAD names no commit, or when a path lies
-/// outside the workdir, is not UTF-8, or cannot be read or filtered. It also
-/// returns one when the commit or branch ref cannot be written, or when
-/// `git push` fails or runs past five minutes.
+/// Returns an error when:
+///
+/// - `root` is not inside a git repository;
+/// - the repository has no workdir, or HEAD names no commit;
+/// - a path lies outside the workdir, is not UTF-8, or cannot be read or
+///   filtered;
+/// - the commit or branch ref cannot be written;
+/// - `git push` fails or runs past five minutes.
 pub fn commit_branch_and_push(
     root: &Path,
     branch: &str,
@@ -1606,9 +1679,9 @@ fn absolute_workdir(repo: &gix::Repository) -> Result<PathBuf> {
 /// own process sees.
 const PUSH_TOKEN: &str = "VERCTL_GIT_TOKEN";
 
-/// The credential helper `git push` runs: it answers `get` with
-/// `x-access-token` and the token from [`PUSH_TOKEN`], and ignores `store`
-/// and `erase`, so the token is never in argv, a URL, or a credential store.
+/// The credential helper `git push` runs. For `get` it supplies
+/// `x-access-token` and the token from [`PUSH_TOKEN`]. It ignores `store` and
+/// `erase`, so the token is never in argv, a URL, or a credential store.
 const PUSH_CREDENTIAL_HELPER: &str = r#"!f() { test "$1" = get || return 0; echo username=x-access-token; echo "password=$VERCTL_GIT_TOKEN"; }; f"#;
 
 /// How long a push may run before it is killed.
@@ -1618,13 +1691,16 @@ const PUSH_TIMEOUT: Duration = Duration::from_mins(5);
 /// push yet.
 ///
 /// `credential.helper=` first clears every helper the user configured, so no
-/// keychain answers or stores in its place; `GIT_TERMINAL_PROMPT=0` makes a
-/// rejected token fail instead of waiting for input. The repository's own
-/// hooks do not run (`--no-verify`): the branch is generated, and libgit2,
-/// which pushed it before, never ran hooks either. `--git-dir` names the
-/// repository outright, so a `GIT_DIR` a hook exported cannot redirect the
-/// push. The error, which carries git's stderr, can hold the URL but not the
-/// token, since git only ever saw the variable's name.
+/// keychain supplies a credential or stores one in its place.
+/// `GIT_TERMINAL_PROMPT=0` makes a rejected token fail instead of waiting for
+/// input.
+///
+/// The repository's own hooks do not run (`--no-verify`): the branch is
+/// generated, and libgit2, which pushed it before, never ran hooks either.
+///
+/// `--git-dir` names the repository outright, so a `GIT_DIR` a hook exported
+/// cannot redirect the push. The error, which carries git's stderr, can hold
+/// the URL but not the token, since git only ever saw the variable's name.
 fn push(git_dir: &Path, url: &str, branch: &str, token: &str) -> Result<()> {
     let git_dir = git_dir
         .canonicalize()
@@ -1657,12 +1733,15 @@ fn push(git_dir: &Path, url: &str, branch: &str, token: &str) -> Result<()> {
     Ok(())
 }
 
-/// Writes a commit of `parent`'s tree with `paths` taken from the working
-/// tree, and points `branch` at it. HEAD, the index, and the working tree are
-/// left alone: the tree is edited in memory. `None` when the tree is
-/// unchanged. A path that no longer exists is removed from the tree. Each file
+/// Writes a commit that starts from `parent`'s tree and takes `paths` from the
+/// working tree, then points `branch` at it. HEAD, the index, and the working
+/// tree are left alone, because the tree is edited in memory. `None` when the
+/// tree is unchanged.
+///
+/// A path missing from the working tree is removed from the tree. Each file
 /// passes through the `.gitattributes` clean filters first, as `git add` runs
-/// them, so `text` normalization and LFS pointers match what git would store.
+/// them. So `text` normalization and Large File Storage (LFS) pointers match
+/// what git would store.
 fn write_commit_on_branch(
     repo: &gix::Repository,
     workdir: &Path,
@@ -1723,8 +1802,8 @@ fn write_commit_on_branch(
 }
 
 /// The tree entry kind and content for the file at `abs`, which sits at `rel`
-/// in the working tree: a symbolic link stores its target, and a file stores
-/// what the clean `filters` make of it and keeps its executable bit.
+/// in the working tree. A symbolic link stores its target. A file stores what
+/// the clean `filters` make of it and keeps its executable bit.
 fn worktree_entry(
     filters: &mut gix::filter::Pipeline<'_>,
     index: &gix::index::State,
@@ -1765,12 +1844,14 @@ fn file_kind(_meta: &std::fs::Metadata) -> EntryKind {
 }
 
 /// `path` relative to the working tree. A relative `path` is taken from the
-/// workdir. An absolute one may spell the workdir as given or canonical:
-/// the dirty-path check returns canonical paths, while the plan keeps the
-/// spelling verctl was started with, and a checkout behind a symlink spells
-/// them differently. Both spellings of the workdir are tried against `path`
-/// as given and against `path` with its parent canonicalized, which still
-/// works for a file that was deleted.
+/// workdir. An absolute one may spell the workdir as given or canonical. The
+/// dirty-path check returns canonical paths. The plan keeps the spelling
+/// verctl was started with, and a checkout behind a symlink spells them
+/// differently.
+///
+/// Both spellings of the workdir are tried against `path` as given and against
+/// `path` with its parent canonicalized. The second try still works for a file
+/// that was deleted.
 fn workdir_rel(workdir: &Path, path: &Path) -> Result<PathBuf> {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
@@ -1927,11 +2008,14 @@ mod tests {
         listed: &'static [usize],
     }
 
-    /// The definition over each history the review raised. A skipped version
-    /// is listed at its oldest commit in the range, even below a revert. An
-    /// abandoned version, one a later commit took strictly below, is not
-    /// listed. A version first set by a downward change is listed. The
-    /// untagged history reaches the root, which is in the range.
+    /// The definition over each history the review raised:
+    ///
+    /// - A skipped version is listed at its oldest commit in the range, even
+    ///   below a revert.
+    /// - An abandoned version, one a later commit took strictly below, is not
+    ///   listed.
+    /// - A version first set by a downward change is listed.
+    /// - The untagged history reaches the root, which is in the range.
     #[test]
     fn the_walk_lists_each_live_skipped_version_once() {
         let walks = [
@@ -2089,10 +2173,11 @@ mod tests {
         );
     }
 
-    /// A history in the shape a forkctl append publish leaves: `set` starts at
-    /// `0.0.1`, `published` follows it with a workflow change, then the branch
-    /// is rewritten from `set` and merged back with `published` as the second
-    /// parent, keeping the rewritten tree. `published_version` is the version
+    /// A history in the shape a forkctl append publish leaves. `set` starts at
+    /// `0.0.1`, and `published` follows it with a workflow change. Then the
+    /// branch is rewritten from `set` and merged back with `published` as the
+    /// second parent, keeping the rewritten tree. `published_version` is the
+    /// version
     /// `published` carries. Returns `published`.
     fn rewritten_and_merged_back(dir: &Path, published_version: &str) -> String {
         init(dir);
@@ -2231,7 +2316,7 @@ mod tests {
     }
 
     /// A fragment that reached HEAD through a merge commit names the commit
-    /// that added it on the merged branch, not the merge.
+    /// that added it on the merged branch, instead of the merge.
     #[test]
     fn added_by_follows_a_merge_to_the_commit_that_added_the_file() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -2270,8 +2355,8 @@ mod tests {
     }
 
     /// A merge titled with its pull request is named when the branch commit
-    /// that added the file names none: merge-commit repositories keep their
-    /// pull request links.
+    /// that added the file names none. Merge-commit repositories thus keep
+    /// their pull request links.
     #[test]
     fn added_by_names_a_titled_merge_over_an_unnamed_branch_commit() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -2762,8 +2847,8 @@ mod tests {
         out
     }
 
-    /// A file under a `text` attribute is stored with LF endings, as `git add`
-    /// stores it, whatever the working tree holds.
+    /// A file under a `text` attribute is stored with line feed (LF) endings,
+    /// as `git add` stores it, whatever the working tree holds.
     #[test]
     fn the_commit_applies_clean_filters() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -3137,8 +3222,8 @@ mod tests {
 
     /// The `actions/checkout` pull request case: a depth-1 fetch of
     /// `refs/pull/1/merge`, no `origin/main`, and `main` moved on since the
-    /// merge ref was made, so the merge-base is HEAD's first parent, not the
-    /// tip.
+    /// merge ref was made. The merge-base is therefore HEAD's first parent,
+    /// instead of the tip.
     #[test]
     fn a_pull_request_merge_checkout_compares_against_its_merge_base() {
         let upstream = tempfile::TempDir::new().unwrap();
@@ -3318,8 +3403,8 @@ mod tests {
         prove(dir.path(), &stock()).unwrap();
     }
 
-    /// Being off the branch is a finding, not an error, and names both
-    /// commits.
+    /// Being off the branch is a finding instead of an error, and it names
+    /// both commits.
     #[test]
     fn head_off_default_history_fails() {
         let (dir, first) = fixture();

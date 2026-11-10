@@ -193,9 +193,9 @@ fn a_depth_1_clone_leaves_unreleased_unchecked() {
     );
 }
 
-/// `verctl status --format json` with a token, in a repository at
-/// `demo@1.0.0` whose `origin` is GitHub, where GitHub answers the lookup of
-/// tag `v1.0.0` with `answer`.
+/// `verctl status --format json` with a token and a repository at
+/// `demo@1.0.0` whose `origin` is GitHub. GitHub answers the lookup of tag
+/// `v1.0.0` with `answer`.
 #[expect(
     clippy::expect_used,
     reason = "fixture setup fails the test outright; the status run is the result"
@@ -261,9 +261,9 @@ fn tag_ref(kind: &str, sha: &str) -> ResponseTemplate {
     }))
 }
 
-/// A release tag GitHub reports on a commit HEAD does not hold at that
-/// version is a wrong answer, not a lookup that could not run, so `status`
-/// fails on it even without `--github-output`.
+/// A release tag that GitHub reports on a commit HEAD does not hold at that
+/// version is a wrong answer. It is not a lookup that could not run, so
+/// `status` fails on it even without `--github-output`.
 #[tokio::test]
 async fn a_misplaced_release_tag_fails_status() {
     let output = status_with_tag_lookup(tag_ref(
@@ -305,9 +305,9 @@ async fn a_rejected_token_fails_status() {
     }
 }
 
-/// A 5xx, even an HTML page from a proxy, and a spent rate limit (a 429, or a
-/// 403 with `x-ratelimit-remaining: 0`) are no answer, so `status` reports
-/// the check as not run.
+/// A 5xx, even an HTML page from a proxy, is no answer. A spent rate limit is
+/// none either: a 429, or a 403 with `x-ratelimit-remaining: 0`. In both
+/// cases `status` reports the check as not run.
 #[tokio::test]
 async fn a_github_that_cannot_answer_now_leaves_unreleased_unchecked() {
     for answer in [
@@ -360,7 +360,8 @@ fn json_errors_use_stdout_and_one_envelope() {
 
 /// Agent shells force colour through `CLICOLOR_FORCE`, `FORCE_COLOR`, and
 /// `COLORTERM`. JSON output, a JSON error, and a parse error under
-/// `--format json` stay plain whatever they say, so `jq` never sees an ESC.
+/// `--format json` stay plain whatever those variables hold, so `jq` never
+/// sees an escape byte.
 #[test]
 fn json_output_holds_no_escape_byte_under_forced_colour() {
     let root = TempDir::new().expect("tempdir");

@@ -3,11 +3,15 @@
 //!
 //! verctl never writes a lockfile: each moves through its owner
 //! ([`crate::detect::owner`]). `check` parses the merge-base and HEAD copies
-//! and compares them entry by entry with [`Lockfile::compare`]. A workspace
-//! member is told from a registry entry of the same name by its source: no
-//! `source` in `Cargo.lock`, a `workspaces` key in `bun.lock`, a path outside
-//! `node_modules/` in `package-lock.json`, and an `editable` or `virtual`
-//! source in `uv.lock`.
+//! and compares them entry by entry with [`Lockfile::compare`].
+//!
+//! A registry entry and a workspace member can share a name, so they differ
+//! by source:
+//!
+//! - `Cargo.lock`: a member has no `source`.
+//! - `bun.lock`: a member sits under a `workspaces` key.
+//! - `package-lock.json`: a member is a path outside `node_modules/`.
+//! - `uv.lock`: a member has an `editable` or `virtual` source.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -168,7 +172,7 @@ impl Lockfile {
 
     /// What changed from `self` to `newer`, in key order. An entry whose key
     /// carries its version, a registry package's, shows a version move as
-    /// one [`Change::Changed`], not a removal and an addition.
+    /// one [`Change::Changed`] instead of a removal and an addition.
     #[must_use]
     pub fn compare(&self, newer: &Self) -> Vec<Change> {
         let mut changes = Vec::new();
@@ -418,9 +422,9 @@ fn parse_bun(text: &str) -> Result<Lockfile> {
 }
 
 /// `package-lock.json`, lockfile version 2 or 3: `packages` keyed by path.
-/// `""` is the root and a path outside `node_modules/` a workspace member;
-/// a `node_modules/` path is an installed package or a link to a member,
-/// which records no version. The top-level `version` is the root's.
+/// `""` is the root, and a path outside `node_modules/` is a workspace member.
+/// A `node_modules/` path is an installed package or a link to a member, and a
+/// link records no version. The top-level `version` is the root's.
 fn parse_npm(text: &str) -> Result<Lockfile> {
     let Value::Object(mut top) =
         serde_json::from_str::<Value>(text).context("parse package-lock.json")?

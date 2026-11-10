@@ -1,10 +1,12 @@
 //! What `check --versions` requires of a pull request that is not the Version
 //! PR, beyond its versions.
 //!
-//! Such a pull request may not add a CHANGELOG section for a version: only the
-//! Version PR writes one, for the version it moves to. And a pull request that
-//! changes whether a package publishes must add a fragment that bumps it, so
-//! the next Version PR releases that package under the new setting.
+//! Such a pull request may not add a CHANGELOG section for a version. Only the
+//! Version PR writes one, for the version it moves to.
+//!
+//! A pull request that changes whether a package publishes must add a fragment
+//! that bumps it. The next Version PR then releases that package under the new
+//! setting.
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -25,10 +27,10 @@ use crate::publisher;
 /// changed without an added fragment that bumps it. [`crate::versions::report`]
 /// fails with them unless the pull request is the Version PR.
 ///
-/// `base` is the merge-base with the pull request's base, and
+/// `base` is the merge-base with the pull request's base.
 /// `release_candidates` name the release branch. A section or a publish
 /// setting that HEAD's merge-base with the release branch already holds came
-/// with a merge of that branch, so it does not count.
+/// with a merge of that branch. It does not count.
 ///
 /// # Errors
 ///
@@ -108,8 +110,10 @@ fn section_versions(changelog: &str) -> BTreeSet<Version> {
 }
 
 /// Each package, declared at the merge-base and in the working tree, whose
-/// publish setting differs between them while no added fragment bumps it,
-/// unless HEAD's merge-base with the release branch already holds the setting.
+/// publish setting differs between them while no added fragment bumps it.
+///
+/// A setting that HEAD's merge-base with the release branch already holds does
+/// not count.
 fn publish_changes(
     root: &Path,
     config: &Config,
@@ -257,9 +261,9 @@ impl fmt::Display for Publishes {
     }
 }
 
-/// What a package publishes under `config` with its config root at `root`,
-/// or `None` when its manifest is missing there. `tree` is the root of the
-/// tree it reads, which no manifest lookup leaves.
+/// What a package publishes under `config`, rooted at `root`, or `None` when
+/// its manifest is missing there. `tree` is the root of the tree it reads, and
+/// no manifest lookup leaves it.
 fn publishes(
     config: &Config,
     spec: &PackageSpec,
@@ -297,13 +301,16 @@ fn publishes(
 }
 
 /// Whether the `Cargo.toml` at `manifest`, holding `text`, sets
-/// `package.publish` to `false` or `[]`. With `publish.workspace = true` the
-/// value is `workspace.package.publish` of its workspace root: the file
-/// `package.workspace` names, else the same file when it holds a
-/// `[workspace]`, else the nearest ancestor manifest that does, as Cargo
-/// finds it. The search stays inside `tree` and never passes through a
-/// symlink, so the merge-base copy and the working tree resolve the same
-/// root, and no manifest outside the repository is read.
+/// `package.publish` to `false` or `[]`.
+///
+/// With `publish.workspace = true`, the value is `workspace.package.publish`
+/// of its workspace root. That root is the file `package.workspace` names.
+/// Without that key it is the same file when it holds a `[workspace]`, else
+/// the nearest ancestor manifest that does, as Cargo finds it.
+///
+/// The search stays inside `tree` and never passes through a symlink. The
+/// merge-base copy and the working tree therefore resolve the same root, and no
+/// manifest outside the repository is read.
 fn cargo_opts_out(manifest: &Path, text: &str, tree: &Path) -> Result<bool> {
     let document = text.parse::<DocumentMut>()?;
     let Some(package) = document.get("package") else {
@@ -563,9 +570,10 @@ mod tests {
         assert!(!cargo_opts_out(&member, text, &tree).expect("toml"));
     }
 
-    /// A workspace reached through a directory symlink does not count,
-    /// whether `package.workspace` names the link or the package itself sits
-    /// below one, as in the merge-base copy, which holds no links.
+    /// A workspace reached through a directory symlink does not count. That
+    /// holds whether `package.workspace` names the link or the package itself
+    /// sits below one. Skipping it matches the merge-base copy, which holds no
+    /// links.
     #[test]
     fn a_workspace_behind_a_directory_symlink_is_skipped() {
         let dir = TempDir::new().expect("tempdir");

@@ -1,4 +1,5 @@
-//! Committed operator documents rendered from Clap and consumer-owned prose.
+//! Operator files kept in the repository. Clap and the consumer's prose build
+//! them.
 
 use std::collections::BTreeMap;
 use std::fs;

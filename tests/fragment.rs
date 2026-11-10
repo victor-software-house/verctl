@@ -1,5 +1,4 @@
-//! Parsing and loading of Changesets-format fragments, including their front
-//! matter and groups.
+//! Fragments in the Changesets format, with their front matter and groups.
 
 use std::fs;
 

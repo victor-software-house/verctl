@@ -1,7 +1,7 @@
 //! Render the files a repo serves, from templates that say what they are for.
 //!
 //! Every template lives flat in `.ctl/templates/` and **declares where it
-//! goes**, in Jinja's own syntax rather than a manifest beside it or a mirrored
+//! goes** in Jinja's own syntax. It needs no manifest beside it and no mirrored
 //! directory tree:
 //!
 //! ```jinja
@@ -11,11 +11,11 @@
 //! #MISE tools = { "github:victor-software-house/qctl" = "{{ versions["qctl"] }}" }
 //! ```
 //!
-//! Jinja has no frontmatter, but a top-level `{% set %}` is its equivalent: an
-//! export, readable from the evaluated state, so the metadata travels inside
-//! the file it describes. `q.jinja` above serves `tasks/q/q`: the file name
-//! defaults to the template's own, so most templates declare one line, and
-//! nothing accumulates in configuration.
+//! Jinja has no frontmatter, but a top-level `{% set %}` is its equivalent.
+//! It is an export, readable from the evaluated state, so the metadata
+//! travels inside the file it describes. `q.jinja` above serves `tasks/q/q`.
+//! The file name defaults to the template's own. Most templates therefore
+//! declare one line, and nothing accumulates in configuration.
 //!
 //! `Declared` is the whole schema, parsed once and resolved into a checked
 //! `Served`. Trim declarations with `{%- … -%}`: a shebang has to stay on line
@@ -39,10 +39,10 @@ use crate::cli::Cli;
 use crate::config::{Pin, Templates};
 use crate::git;
 
-/// What a template declares about the file it serves, in Jinja's own syntax:
-/// top-level `{%- set … -%}` exports, read as one schema and checked at the
-/// boundary. Other exports are the template's own business: a name it uses to
-/// build a line is not a declaration.
+/// What a template declares about the file it serves. The declarations are
+/// top-level `{%- set … -%}` exports in Jinja's own syntax, read as one schema
+/// and checked at the boundary. Other exports are the template's own business.
+/// A name it uses to build a line is not a declaration.
 #[derive(Debug, Deserialize, Validate)]
 #[garde(allow_unvalidated)]
 struct Declared {
@@ -50,12 +50,14 @@ struct Declared {
     #[serde(default)]
     #[garde(custom(inside_the_repo))]
     path: PathBuf,
-    /// The target file's name. Unsaid, it is this template's own name without
-    /// the suffix, which is what a served file almost always wants, so the
-    /// fallback is seeded before parsing and this is never absent.
+    /// The target file's name. When undeclared, it is this template's own name
+    /// without the suffix, which a served file almost always wants. The
+    /// fallback is seeded before parsing, so this is never absent.
     #[garde(custom(one_file_name))]
     name: String,
-    /// Whether the target is executable. Git records one bit of mode for a
+    /// Whether the target is executable.
+    ///
+    /// Git records one bit of mode for a
     /// regular file and nothing else ("only 0755 and 0644 are valid for
     /// regular files", gitformat-index). Its other modes are not files a
     /// template renders: 120000 is a symlink, 160000 a gitlink, 040000 a tree.
@@ -68,11 +70,14 @@ struct Declared {
 ///
 /// # Errors
 ///
-/// Returns an error when the tracked files cannot be listed, when a template
-/// exists in the source tree but is neither tracked nor ignored, or when a
-/// template cannot be read, parsed, or rendered. It also fails when a
-/// template's declarations do not match the schema, when its target escapes
-/// the repository or is a symlink, or when a target cannot be written.
+/// Returns an error when:
+///
+/// - the tracked files cannot be listed;
+/// - a template exists in the source tree but is neither tracked nor ignored;
+/// - a template cannot be read, parsed, or rendered;
+/// - a template's declarations do not match the schema;
+/// - a template's target escapes the repository or is a symlink;
+/// - a target cannot be written.
 pub fn write(
     root: &Path,
     config: &Templates,
@@ -99,9 +104,9 @@ pub fn write(
 
 /// Whether this repo serves anything from a template at all.
 ///
-/// A repo that serves nothing must not pay for what rendering needs (reading
-/// every package's manifest to build the version map), so the caller asks
-/// first.
+/// A repo that serves nothing must not pay for what rendering needs. That cost
+/// is reading every package's manifest to build the version map, so the caller
+/// checks first.
 ///
 /// # Errors
 ///
@@ -230,8 +235,8 @@ fn render(
 }
 
 /// A served file has one owner. `version` rewrites pins before it renders
-/// templates, so a template would overwrite a pin's edit without a word, and
-/// the target is known only once its template has rendered.
+/// templates. A template would then overwrite a pin's edit without a word. The
+/// target is known only once its template has rendered.
 fn refuse_pinned(template: &Path, target: &Path, pins: &[Pin]) -> Result<()> {
     if let Some(pin) = pins
         .iter()
@@ -258,9 +263,9 @@ fn without_cur_dir(path: &Path) -> impl Iterator<Item = Component<'_>> {
 }
 
 impl Declared {
-    /// Read the whole schema out of an evaluated template at once, over a
-    /// seeded `name`. Types and shapes are the schema's business: `path = 5`
-    /// and `name = "a/b"` fail here, not at write time.
+    /// Read the whole schema at once from an evaluated template, with `name`
+    /// seeded. Types and shapes belong to the schema: `path = 5` and
+    /// `name = "a/b"` fail here instead of at write time.
     fn parse(template: &Path, config: &Templates, state: &State<'_, '_>) -> Result<Self> {
         let mut exports: BTreeMap<&str, Value> = state
             .exports()
@@ -296,14 +301,17 @@ impl Declared {
     }
 }
 
-/// Every tracked template in the source tree. Flat or nested, the layout says
-/// nothing: each template declares its own target.
+/// Every tracked template in the source tree. Flat or nested, the layout does
+/// not matter: each template declares its own target.
 ///
-/// Only tracked, because `version` stages what it renders: a template git does
-/// not carry would put a served file on the tag with no source beside it, and
-/// `check` would have nothing to compare against on a fresh clone. But one that
-/// is present and untracked stops the run rather than rendering nothing.
-/// Adding a served file and getting silence served the stale file instead.
+/// Only tracked templates count, because `version` stages what it renders. A
+/// template git does not carry would put a served file on the tag with no
+/// source beside it. `check` would also have nothing to compare against on a
+/// fresh clone.
+///
+/// A template that is present and untracked stops the run instead of rendering
+/// nothing. Without that stop, adding a served file would give silence and
+/// serve the stale file.
 fn sources(root: &Path, config: &Templates) -> Result<Vec<PathBuf>> {
     let tracked: Vec<PathBuf> = git::tracked(root)?
         .into_iter()
@@ -344,13 +352,13 @@ fn refuse_untracked(root: &Path, config: &Templates, tracked: &[PathBuf]) -> Res
     );
 }
 
-/// Every template on disk under `dir`, at any depth. A directory that is not
+/// Every template in `dir` and its subdirectories. A directory that is not
 /// there holds none: a repo serving nothing writes no source tree.
 ///
-/// Symlinks are skipped rather than followed, so one pointing at an ancestor
-/// cannot recurse forever and one pointing outside cannot pull a foreign file
-/// into this repo's answer. `ensure_inside` refuses a symlinked target for the
-/// same reason.
+/// Symlinks are skipped instead of followed. One pointing at an ancestor could
+/// otherwise recurse forever, and one pointing outside could pull a foreign
+/// file into this repo's answer. `ensure_inside` refuses a symlinked target for
+/// the same reason.
 fn present(dir: &Path, suffix: &str) -> Result<Vec<PathBuf>> {
     let Ok(entries) = fs::read_dir(dir) else {
         return Ok(Vec::new());
@@ -616,7 +624,8 @@ mod tests {
         }
     }
 
-    /// Which pairs exist at all: the tree varies here, not the versions.
+    /// Which pairs exist at all. Here the tree varies and the versions stay
+    /// fixed.
     #[test]
     fn an_untracked_template_stops_the_run_and_one_outside_is_ignored() {
         let moved = versions(&[("verctl", "0.0.2"), ("ctl-core", "1.2.3")]);
@@ -646,9 +655,9 @@ mod tests {
         );
     }
 
-    /// The layout says nothing, so neither does the search: a template nested
-    /// under the source tree counts, and every loose one is named at once
-    /// rather than one release at a time.
+    /// The layout does not matter, so the search ignores it. A template nested
+    /// under the source tree counts. Every loose one is named together instead
+    /// of one per release.
     #[test]
     fn every_untracked_template_is_named_at_whatever_depth_it_sits() {
         let root = repo(&[(SERVED, BEFORE)]);
@@ -766,8 +775,8 @@ mod tests {
         }
     }
 
-    /// A template's other variables are its own business: a `tool` it uses to
-    /// build a line is not a declaration, and must not fail the schema.
+    /// A template's other variables are its own business. A `tool` it uses to
+    /// build a line is not a declaration and must not fail the schema.
     #[test]
     fn an_export_the_schema_does_not_know_is_the_templates_own() {
         let root = repo(&[(
@@ -869,8 +878,9 @@ mod tests {
         );
     }
 
-    /// Unsaid is not "leave it": a served file's mode is part of what the tag
-    /// carries, so silence means 0644 and a stale 0755 is corrected.
+    /// An undeclared mode does not mean "leave it". A served file's mode is
+    /// part of what the tag carries. The default is 0644, so a stale 0755 is
+    /// corrected.
     #[test]
     fn a_template_that_says_nothing_about_mode_serves_0644() {
         let root = repo(&[(TEMPLATE_PATH, TEMPLATE), (SERVED, BEFORE)]);
@@ -922,8 +932,9 @@ mod tests {
     /// templates. `version` still works there, as it did before templates
     /// existed. A repository whose index cannot be read is a different case,
     /// and `git::tracked` reports that as an error.
-    /// One repository may hold several projects. The index speaks in paths from
-    /// the working tree, so a project in a subdirectory has to be found by the
+    ///
+    /// One repository may hold several projects. The index lists paths from
+    /// the working tree. A project in a subdirectory has to be found by the
     /// path it uses itself, and a sibling project's templates are not its.
     #[test]
     fn a_project_below_the_repository_root_serves_its_own_templates() {
@@ -951,8 +962,8 @@ mod tests {
         );
     }
 
-    /// A repo that serves nothing says so before anything is read on its
-    /// behalf: rendering needs every package's version, and a repo with no
+    /// A repo that serves nothing is detected before anything is read on its
+    /// behalf. Rendering needs every package's version, and a repo with no
     /// template must not pay for that map.
     #[test]
     fn a_repo_with_no_template_serves_nothing() {
@@ -962,8 +973,9 @@ mod tests {
         assert!(any(serving.path(), &Templates::default()).unwrap());
     }
 
-    /// Ignoring a file is a repo disowning it, which is the same statement
-    /// `tracked` reads the index for, so nothing asks its author to commit it.
+    /// Ignoring a file is a repo disowning it. That is the same statement
+    /// `tracked` reads the index for, so the author is never required to commit
+    /// the file.
     #[test]
     fn an_ignored_template_is_disowned_rather_than_forgotten() {
         let root = repo(&[(SERVED, BEFORE), (".gitignore", "*.local.jinja\n")]);
@@ -983,9 +995,9 @@ mod tests {
         assert_eq!(read(&root, SERVED), BEFORE);
     }
 
-    /// A symlink is not followed, so a directory outside this repository cannot
-    /// have its templates counted as ours, which would ask whoever ran the
-    /// release to commit a file that is not theirs.
+    /// A symlink is not followed. A directory outside this repository therefore
+    /// cannot have its templates counted as ours. That would require whoever
+    /// ran the release to commit a file that is not theirs.
     #[test]
     fn a_symlink_out_of_the_repository_serves_nothing_of_its_own() {
         let elsewhere = TempDir::new().unwrap();
@@ -1008,8 +1020,8 @@ mod tests {
     }
 
     /// A template here is not untracked: there is no index to not carry it.
-    /// Such a tree cannot serve a file by tag at all, so it renders nothing and
-    /// says nothing, rather than failing the way a repository would.
+    /// Such a tree cannot serve a file by tag at all. It renders nothing and
+    /// reports nothing, instead of failing the way a repository would.
     #[test]
     fn a_tree_with_no_repository_has_no_templates() {
         let root = TempDir::new().unwrap();

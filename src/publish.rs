@@ -1,8 +1,8 @@
 //! Publish the versions already on HEAD and open a GitHub Release.
 //!
-//! How each package is published comes from `[publishers.*]`. Cargo and
-//! bun are stock recipes, not the only stacks. How tags are named comes
-//! from `[tags].template`; see [`tags_for`].
+//! How each package is published comes from `[publishers.*]`.
+//! Cargo and bun are stock recipes, and other stacks work as well.
+//! How tags are named comes from `[tags].template`; see [`tags_for`].
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -40,7 +40,7 @@ pub struct TagPlan {
     pub packages: Vec<PublishEntry>,
 }
 
-/// A package at its version on HEAD, with the command that uploads it.
+/// A package and its version on HEAD, plus the command that uploads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishEntry {
     /// Package name.
@@ -134,9 +134,10 @@ pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome
 
 /// The proofs a run may go past, each refused unless the operator allows it.
 ///
-/// The one-version-commit proof has none: publishing past a skipped version
-/// leaves a gap in the registry that no later run fills, and the fix is to
-/// release the older commit first.
+/// The one-version-commit proof has none.
+/// Publishing past a skipped version leaves a gap in the registry that no
+/// later run fills.
+/// The fix is to release the older commit first.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Allow {
     /// Publish when `.github/workflows/` at HEAD differs from the default
@@ -231,28 +232,38 @@ pub struct Waiting {
 /// incomplete, and report nothing to release when every release is complete.
 ///
 /// A tag whose packages all have a registry check, or no upload, gets its tag
-/// and Release before any upload; any other tag gets them after its uploads
-/// (see `tags_before_upload`).
+/// and Release before any upload.
+/// Any other tag gets them after its uploads (see `tags_before_upload`).
 ///
 /// A run on any other commit with an incomplete release fails before any side
-/// effect and names the version commits, so a later commit can never tag one
-/// that was never published. With `skip_assets`, declared assets do not count
-/// toward completeness. A package at `0.0.0` is never released and needs no
-/// changelog section. A dry run plans every other package and asks nothing.
+/// effect and names the version commits.
+/// A later commit can therefore never tag a version that was never published.
+///
+/// With `skip_assets`, declared assets do not count toward completeness.
+/// A package at `0.0.0` is never released and needs no changelog section.
+/// A dry run plans every other package and queries no registry.
 ///
 /// Before any publisher, tag, or Release call, the run proves the release
-/// commit: the default branch contains it, its `.github/workflows/` matches
-/// the default branch's tip, and each package it releases has one version
-/// commit since its last release. `allow` lets the run go past the first two,
-/// and each one it goes past is listed in [`PublishRun::allowed`].
+/// commit in three ways:
+///
+/// - The default branch contains it.
+/// - Its `.github/workflows/` matches the tip of the default branch.
+/// - Each package it releases has one version commit since its last release.
+///
+/// `allow` lets the run go past the first two.
+/// [`PublishRun::allowed`] lists each one the run goes past.
 ///
 /// # Errors
 ///
-/// Returns an error when the plan cannot be resolved, a changelog lacks the
-/// heading for a package version, a proof refuses or cannot run, or no token
-/// is set. It also returns one when a registry or GitHub lookup fails, HEAD is
-/// not the version commit of an incomplete release, or a publisher, tag, or
-/// Release step fails.
+/// Returns an error when:
+///
+/// - The plan cannot be resolved.
+/// - A changelog lacks the heading for a package version.
+/// - A proof refuses or cannot run.
+/// - No token is set.
+/// - A registry or GitHub lookup fails.
+/// - HEAD is not the version commit of an incomplete release.
+/// - A publisher, tag, or Release step fails.
 pub fn run_pending(
     config: &Config,
     root: &Path,
@@ -342,12 +353,16 @@ pub fn run_pending(
     })
 }
 
-/// Open the Releases of the tags created before the uploads, at `head`. An
-/// existing tag must name it. GitHub refusing one for a missing permission
-/// is returned beside the URLs rather than stopping the run, so the uploads
-/// still run and a rerun with a token that has it has only the Release left
-/// to do. Any other failure, such as a tag that names another commit, stops
-/// the run here.
+/// Open, at `head`, the Releases of the tags that exist before the uploads.
+/// An existing tag must point at `head`.
+///
+/// When GitHub refuses a Release for a missing permission, the refusal is
+/// returned beside the URLs and the run goes on.
+/// The uploads still run, and a rerun with a token that has the permission
+/// has only the Release left to do.
+///
+/// Any other failure, such as a tag that points at another commit, stops the
+/// run here.
 fn open_early(
     config: &Config,
     root: &Path,
@@ -408,11 +423,16 @@ fn run_uploads(
 }
 
 /// Whether `tag` is created before the uploads: when no package under it
-/// uploads without a registry check. Completion then comes from the registry,
-/// so a tag created first claims nothing, and the run that merged the Version
-/// PR creates it while HEAD is still the default branch tip. A rerun at that
-/// commit after a later merge changed `.github/workflows` would otherwise need
-/// `workflows: write` to create the Release, which `GITHUB_TOKEN` cannot hold.
+/// uploads without a registry check.
+/// Completion then comes from the registry, so a tag created first claims
+/// nothing.
+/// The run that merged the Version PR creates it while HEAD is still the
+/// default branch tip.
+///
+/// A rerun at that commit after a later merge changed `.github/workflows`
+/// would otherwise need `workflows: write` to create the Release, which
+/// `GITHUB_TOKEN` cannot hold.
+///
 /// An unchecked upload has only its tag as the record that it ran, so its tag
 /// still follows the upload.
 fn tags_before_upload(tag: &TagPlan, uploads: &[(&PublishEntry, Vec<Upload>)]) -> bool {
@@ -446,8 +466,9 @@ fn open_release(
 }
 
 /// What a dry run would publish: every package not at `0.0.0`, a workspace
-/// package as its members in publish order, and every tag. It asks no
-/// registry. With every package at `0.0.0`, there is nothing to release.
+/// package as its members in publish order, and every tag.
+/// It queries no registry.
+/// With every package at `0.0.0`, there is nothing to release.
 fn dry_run_plan(config: &Config, root: &Path, planned: &PublishPlan) -> Result<PublishRun> {
     let releases = planned
         .tags
@@ -517,13 +538,16 @@ fn at_head<'a>(
 /// Run one upload under its registry check, and return `already` when the
 /// registry had the version.
 ///
-/// With a check, the registry decides: a listed version skips the publisher,
-/// and after the publisher runs the version must appear within `delays`. A
-/// publisher that fails saying the version exists counts only when the
-/// registry then lists it, since that is a publish the earlier check missed
-/// while the index lagged. Without a check, a zero exit or that stderr is
-/// enough. A publisher stopped by a registry rate limit fails with the time
-/// the registry gives for the next attempt (see [`rate_limited`]).
+/// With a check, the registry decides.
+/// A listed version skips the publisher, and after the publisher runs the
+/// version must appear within `delays`.
+/// A publisher that fails with a version-exists message counts only when the
+/// registry then lists the version.
+/// That case is a publish the earlier check missed while the index lagged.
+///
+/// Without a check, a zero exit or that stderr is enough.
+/// A publisher stopped by a registry rate limit fails with the time the
+/// registry gives for the next attempt (see [`rate_limited`]).
 fn publish_checked(upload: &Upload, delays: &[Duration]) -> Result<Option<String>> {
     let already = || Some("already".to_owned());
     let check = &upload.check;
@@ -557,12 +581,13 @@ fn publish_checked(upload: &Upload, delays: &[Duration]) -> Result<Option<String
     Err(error).context(coord)
 }
 
-/// What a registry said when it refused an upload for its rate limit: the
-/// time it gives after "try again after", or the status alone. `None` when
-/// `message` is no rate limit.
+/// What a registry reported when it refused an upload for its rate limit.
+/// That is the time it gives after "try again after", or the status alone.
+/// `None` when `message` is no rate limit.
 ///
 /// crates.io answers with status 429 and "Please try again after <time> or
-/// email help@crates.io", as its [rate limits] page documents.
+/// email help@crates.io".
+/// The [rate limits] page of crates.io documents this reply.
 ///
 /// [rate limits]: https://crates.io/docs/rate-limits
 fn rate_limited(message: &str) -> Option<String> {
@@ -597,8 +622,9 @@ impl From<&PublishEntry> for PublishLine {
     }
 }
 
-/// Remove a shallow clone's boundary before any history walk: verctl owns the
-/// fetch, so a depth-1 checkout still finds its version commit.
+/// Remove a shallow clone's boundary before any history walk.
+/// Verctl owns the fetch, so a depth-1 checkout still finds its version
+/// commit.
 ///
 /// # Errors
 ///
@@ -655,9 +681,11 @@ fn prove_version_commit(
 }
 
 /// Refuse a package HEAD releases while an earlier commit's version of it is
-/// still unreleased: publishing this one would skip that version, and nothing
-/// would publish it later. `waiting` holds those versions, oldest first,
-/// because the plan lists each one at the commit that set it.
+/// still unreleased.
+/// Publishing this one would skip that version, and nothing would publish it
+/// later.
+/// `waiting` holds those versions, oldest first, because the plan lists each
+/// one at the commit that set it.
 fn refuse_skipped_versions(
     here: &pending::PendingCommit,
     waiting: &[Waiting],
@@ -695,10 +723,12 @@ fn already_published(message: &str) -> bool {
 ///
 /// # Errors
 ///
-/// Returns an error when `packages` is empty, when a template without
-/// `{name}` meets more than one version, when a template with `{name}`
-/// renders the same tag for two packages, or when the template cannot be
-/// rendered.
+/// Returns an error when:
+///
+/// - `packages` is empty.
+/// - A template without `{name}` meets more than one version.
+/// - A template with `{name}` renders the same tag for two packages.
+/// - The template cannot be rendered.
 pub fn tags_for(config: &Config, packages: &[PublishEntry]) -> Result<Vec<TagPlan>> {
     ensure!(
         !packages.is_empty(),
@@ -948,10 +978,10 @@ mod tests {
 
         /// The argv that runs `body` as a shell script written to `name`.
         ///
-        /// The script runs through `sh` rather than being executed itself:
-        /// tests run in parallel, and a file just written can still be open
-        /// in a child another test forked, so executing it fails with
-        /// `ETXTBSY` (Text file busy).
+        /// The script runs through `sh` instead of being executed itself.
+        /// Tests run in parallel, and a freshly written file can still be open
+        /// in a child that another test forked.
+        /// Executing it then fails with `ETXTBSY` (Text file busy).
         fn script(dir: &Path, name: &str, body: &str) -> Vec<String> {
             let path = dir.join(name);
             fs::write(&path, body).unwrap();
@@ -983,8 +1013,8 @@ mod tests {
             }
         }
 
-        /// A query that prints the version from its `listed_after`-th call on,
-        /// counting calls in a file, and exits non-zero before that.
+        /// A query that prints the version from its `listed_after`-th call on.
+        /// It counts calls in a file and exits non-zero before that.
         fn query(dir: &Path, listed_after: u32) -> RegistryCheck {
             let calls = dir.join("calls");
             let argv = script(

@@ -1,16 +1,21 @@
 //! Check each crates.io crate's public API at the release type its pending
 //! release allows.
 //!
-//! A release is a patch by default, and a real API break bumps the minor. So
-//! a crate whose next release is a patch must not break its API: `semver`
-//! runs `cargo semver-checks --release-type minor`, which runs only the lints
-//! that need a major release in Cargo's terms. A crate whose next release
-//! bumps the minor may break it, so `semver` skips it. The rule covers 0.x
-//! only: at 1.0 a break needs a major release, and reaching 1.0 is an
-//! operator decision that revisits the rule, so a crate at 1.0 or later
-//! fails the run. A crate cargo-semver-checks cannot check, one with no
-//! library target or a proc-macro, gets no row, and the 1.0 rule, which is
-//! about API breaks, does not apply to it.
+//! A release is a patch by default, and a real API break bumps the minor.
+//! A crate whose next release is a patch must therefore not break its API.
+//! For it, `semver` runs `cargo semver-checks --release-type minor`, which
+//! runs only the lints that need a major release in Cargo's terms.
+//! A crate whose next release bumps the minor may break its API, so `semver`
+//! skips it.
+//!
+//! The rule covers 0.x only.
+//! At 1.0 a break needs a major release.
+//! Reaching 1.0 is an operator decision that revisits the rule, so a crate at
+//! 1.0 or later fails the run.
+//!
+//! A crate that cargo-semver-checks cannot check gets no row.
+//! That covers a crate with no library target and a proc-macro.
+//! The 1.0 rule is about API breaks, so it does not apply to such a crate.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -53,7 +58,7 @@ pub enum Decision {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub struct SemverLine {
-    /// The crate name crates.io knows.
+    /// The crate name on crates.io.
     pub name: String,
     /// The verctl package that releases it.
     pub package: String,
@@ -77,16 +82,21 @@ struct Planned {
 /// Check every crates.io crate whose next release is a patch, and report
 /// every crate with the decision taken.
 ///
-/// A package's next release is a patch unless a fragment in `fragments`
-/// bumps it further, or its manifest's major.minor already differs from the
-/// crates.io baseline. A workspace package counts once per publishing
-/// member, and a crate `checkable` rejects is left out.
+/// The next release of a package is a patch unless a fragment in `fragments`
+/// bumps it further.
+/// It is also not a patch when the major.minor in its manifest already differs
+/// from the crates.io baseline.
+/// Each publishing member counts a workspace package once.
+/// The report leaves out any crate that `checkable` rejects.
 ///
 /// # Errors
 ///
-/// Returns an error when the plan, a manifest, a publisher, or the crates.io
-/// index cannot be read, when a crate is at 1.0 or later, or when any check
-/// fails or cannot run, naming each failed crate.
+/// Returns an error when:
+///
+/// - The plan, a manifest, a publisher, or the crates.io index cannot be read.
+/// - A crate is at 1.0 or later.
+/// - Any check fails or cannot run, in which case the error names each failed
+///   crate.
 pub fn run(config: &Config, root: &Path, fragments: &[Fragment]) -> Result<Vec<SemverLine>> {
     let planned = plan(config, root, fragments)?;
     let mut lines = Vec::with_capacity(planned.len());
@@ -115,7 +125,7 @@ pub fn run(config: &Config, root: &Path, fragments: &[Fragment]) -> Result<Vec<S
                 Ok(()) => Decision::Passed,
                 Err(error) => {
                     // The full output is already on stderr; the first line
-                    // says whether the tool exited, timed out, or never ran.
+                    // shows whether the tool exited, timed out, or never ran.
                     let error = format!("{error:#}");
                     let cause = error.lines().next().unwrap_or_default();
                     failed.push(format!("{}@{} ({cause})", line.name, line.version));

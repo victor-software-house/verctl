@@ -1,5 +1,6 @@
 //! `check` against served files and pins, and `render` as the command that
-//! fixes what `check` refuses, run through the binary in a real repository.
+//! fixes what `check` refuses. Both run through the binary in a real
+//! repository.
 
 #![expect(
     clippy::expect_used,
@@ -143,8 +144,8 @@ fn a_template_edit_fails_check_until_render() {
     assert!(output.status.success(), "{}", stderr(&output));
 }
 
-/// A pin left at another version, and one whose pattern no longer matches,
-/// both fail `check` and are named.
+/// A pin left at another version, and one whose pattern does not match, both
+/// fail `check` and are named.
 #[test]
 fn check_names_a_stale_pin() {
     let root = repo();

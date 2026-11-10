@@ -1,8 +1,8 @@
 //! Native release assets. Only the targets listed under `assets`.
 //!
 //! Each named entry is one target: the platform it produces and the single
-//! machine that builds it. One platform is one tarball is one machine, so
-//! `runner` names one machine from `runners` and is not a list: two machines
+//! machine that builds it. One platform is one tarball is one machine. So
+//! `runner` names one machine from `runners` and is not a list. Two machines
 //! under one target would overwrite each other's tarball.
 //!
 //! Omit `assets` when there is no host binary. Override `prepare`, `build`,
@@ -81,8 +81,8 @@ enum Pack {
     Files { dir: String, files: Vec<String> },
 }
 
-/// A platform verctl knows, so a repo that wants the usual thing writes only
-/// its name. Every field is a default the repo may override.
+/// A platform built into verctl. A repo that wants the usual values writes
+/// only its name. Every field is a default the repo may override.
 #[derive(Clone, Copy, Debug)]
 struct Known {
     id: &'static str,
@@ -133,11 +133,15 @@ const STOCK_BINARY: &str = "target/{triple}/release/{bin}";
 ///
 /// # Errors
 ///
-/// Returns an error when a declared runner is invalid, the config declares no
-/// packages, the first package's manifest cannot be read or its version
-/// parsed, or the tag template cannot be rendered. It also fails when an asset
-/// target names an undeclared runner, or is outside the built-in set without
-/// declaring `runner`, `os`, `arch`, and `triple`.
+/// Returns an error when:
+///
+/// - a declared runner is invalid;
+/// - the config declares no packages;
+/// - the first package's manifest cannot be read or its version parsed;
+/// - the tag template cannot be rendered;
+/// - an asset target names an undeclared runner;
+/// - an asset target is outside the built-in set without declaring `runner`,
+///   `os`, `arch`, and `triple`.
 pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
     runners::declared(config)?;
     let package = config
@@ -239,15 +243,18 @@ fn write_matrix_output(
     github::write_output(path, &body)
 }
 
-/// Builds the target `id` and packs its binary, or the `files` under `dir`,
-/// into a tarball under `root`.
+/// Builds the target `id` and writes a tarball to `root`. The tarball holds
+/// its binary, or the `files` under `dir`.
 ///
 /// # Errors
 ///
-/// Returns an error when `id` is not a target in `plan`, when the prepare,
-/// build, or `tar` command cannot run, times out, or exits unsuccessfully, or
-/// when the release binary, or a path `files` lists, is missing after the
-/// build. It also fails when a path is not valid UTF-8.
+/// Returns an error when:
+///
+/// - `id` is not a target in `plan`;
+/// - the prepare, build, or `tar` command cannot run, times out, or exits
+///   unsuccessfully;
+/// - the release binary, or a path `files` lists, is missing after the build;
+/// - a path is not valid UTF-8.
 pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
     let target = plan
         .matrix
@@ -433,15 +440,18 @@ pub fn write_vendored_github_output(plan: &VendoredPlan, path: &Path) -> Result<
     write_matrix_output(path, !plan.targets.is_empty(), &plan.tag, include)
 }
 
-/// Runs the set's `build` for target `id`, then packs the listed files from
-/// `dir` into the target's archive under `root`, each at its place under
-/// `dir`.
+/// Runs the set's `build` for target `id`, then packs the listed files of
+/// `dir` into the target's archive. Each file keeps its place under `dir`.
+/// The archive goes to `root`.
 ///
 /// # Errors
 ///
-/// Returns an error when `id` is not a target of the set, when the build or
-/// `tar` cannot run, times out, or exits unsuccessfully, when a listed file is
-/// missing after the build, or when a path is not valid UTF-8.
+/// Returns an error when:
+///
+/// - `id` is not a target of the set;
+/// - the build or `tar` cannot run, times out, or exits unsuccessfully;
+/// - a listed file is missing after the build;
+/// - a path is not valid UTF-8.
 pub fn build_vendored(plan: &VendoredPlan, id: &str, root: &Path) -> Result<PathBuf> {
     let target = plan
         .targets
@@ -484,10 +494,15 @@ pub fn build_vendored(plan: &VendoredPlan, id: &str, root: &Path) -> Result<Path
 ///
 /// # Errors
 ///
-/// Returns an error when no token is set, the GitHub repository or HEAD cannot
-/// be read, or the notes file cannot be read. It also returns one when the
-/// Release cannot be read or created, an upload fails, GitHub reports no
-/// digest for the archive, or the checksum file cannot be written.
+/// Returns an error when:
+///
+/// - no token is set;
+/// - the GitHub repository or HEAD cannot be read;
+/// - the notes file cannot be read;
+/// - the Release cannot be read or created;
+/// - an upload fails;
+/// - GitHub reports no digest for the archive;
+/// - the checksum file cannot be written.
 pub fn upload_vendored(plan: &VendoredPlan, root: &Path, archive: &Path) -> Result<VendoredUpload> {
     let token = crate::release::resolve_token()?;
     let repo = github::repo(root)?;
@@ -528,9 +543,9 @@ fn resolve_target(
     version: &str,
 ) -> Result<MatrixTarget> {
     let known = KNOWN.iter().find(|known| known.id == id);
-    // A target outside the built-in set describes a platform verctl knows
-    // nothing about, so it must describe all of it. Partial records used to
-    // pass and reach `cargo build --target ""`.
+    // A target outside the built-in set describes a platform verctl has no
+    // defaults for, so it must describe all of it. A partial record would
+    // reach `cargo build --target ""`.
     let Some(known) = known else {
         let (Some(runner), Some(os), Some(arch), Some(triple)) = (
             spec.runner.as_deref(),

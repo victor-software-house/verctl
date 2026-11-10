@@ -3,10 +3,10 @@
 //!
 //! A repository declares its packages in `.ctl/ver.yaml` and writes one
 //! Markdown fragment per change under `.changeset/`. verctl turns the pending
-//! fragments into version bumps and changelog sections, opens one Version PR
-//! for them, and publishes the versions once that pull request merges. The
-//! command line in [`cli`] is the supported interface; the modules below are
-//! the pieces it is built from, and every fallible function returns
+//! fragments into version bumps and changelog sections. It opens one Version
+//! PR for them and publishes the versions once that pull request merges. The
+//! command line in [`cli`] is the supported interface. The modules below are
+//! the pieces it is built from. Every fallible function returns
 //! [`anyhow::Result`] with context that names what failed.
 //!
 //! ## Quick start
@@ -30,7 +30,7 @@
 //! # Ok::<(), anyhow::Error>(())
 //! ```
 //!
-//! ## How a release flows
+//! ## Release flow
 //!
 //! 1. [`config::Config`] is the parsed and validated `.ctl/ver.yaml`.
 //! 2. [`fragment::load_dir`] reads the pending fragments, and [`prepare::plan`]

@@ -71,10 +71,10 @@ fn docs_report(args: &verctl::cli::DocsArgs) -> Result<DocsReport> {
     })
 }
 
-/// Fragments that parse and that `version` would accept: every package they
-/// name is declared, and no bump they ask for is refused. Then the served
-/// files, whether or not a fragment is pending, since a hand edit fails
-/// here and not at the next release that overwrites it.
+/// Fragments that parse and that `version` would accept. Every package they
+/// name is declared, and no bump in them is refused. The served files are
+/// checked too, whether or not a fragment is pending. A hand edit then fails
+/// here, before the next release overwrites it.
 fn check_report(args: &CheckArgs) -> Result<CheckReport> {
     let fragments = fragment::load_dir(&args.dir)?;
     let config = Config::load(&args.config)?;
@@ -89,8 +89,8 @@ fn check_report(args: &CheckArgs) -> Result<CheckReport> {
 }
 
 /// Every template target and `pins` file that differs from what verctl would
-/// write at the versions the manifests hold, listed in one error so one run
-/// names every file to fix.
+/// write at the versions the manifests hold. One error lists them all, so one
+/// run names every file to fix.
 fn check_served(root: &Path, config: &Config) -> Result<()> {
     let mut problems = Vec::new();
     if !config.pins.is_empty() {
@@ -138,10 +138,10 @@ fn versions_report(args: &CheckArgs) -> Result<VersionCheckReport> {
 
 /// The versions templates render from.
 ///
-/// A pin moves only what this release names, but a template renders a whole
-/// file: a served file that mentions a package no fragment bumped still has to
-/// say that package's current version. That map costs every manifest a read, so
-/// a repo that serves nothing from a template never builds it.
+/// A pin moves only what this release names. A template renders a whole file,
+/// so a served file must also show the current version of each package that
+/// no fragment bumped. That map costs a read of every manifest, so a repo that
+/// serves nothing from a template never builds it.
 fn versions_for_templates(
     root: &Path,
     config: &Config,
@@ -345,9 +345,8 @@ fn preview_report(
     })
 }
 
-/// What `version --pr` would do to the Version PR, as far as a preview can
-/// tell without writing: the branch needs the base, and the lookup needs a
-/// token.
+/// What `version --pr` would do to the Version PR, found without writing
+/// anything. The branch needs the base, and the lookup needs a token.
 fn preview_pr(root: &Path) -> String {
     let Ok(base) = github::base_branch(root) else {
         return formatdoc!(
@@ -386,8 +385,8 @@ fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
 
 /// Every `pins` entry, then every template, at the versions the manifests
 /// hold: the files `check` compares. Both are planned before either is
-/// written, so a pin that no longer matches, a template that fails, or a file
-/// both claim changes nothing.
+/// written. A pin that does not match, a template that fails, or a file both
+/// claim therefore leaves every file unchanged.
 fn render_report(args: &RenderArgs) -> Result<RenderReport> {
     let config = Config::load(&args.config)?;
     let root = &config::root_of(&args.config);
@@ -461,15 +460,18 @@ fn ci_report(args: &verctl::cli::CiArgs) -> Result<CiReport> {
 /// The fragments, the asset plan, and the incomplete version commits.
 ///
 /// With `--github-output`, `status` fetches the full history and needs a
-/// token, so the workflow's plan is never partial, and it writes the asset
+/// token, so the workflow's plan is never partial. It writes the asset
 /// outputs (`has_assets`, `tag`, `matrix`) and the release outputs
-/// (`commits`, `pending`, `assets`). Without it, `status` changes nothing in
-/// the clone: it reads the history already there, and with no token, or
-/// when a lookup cannot run ([`lookup::Unavailable`]), it reports the
-/// version commits as not checked, with the reason, rather than as none.
+/// (`commits`, `pending`, `assets`).
+///
+/// Without it, `status` changes nothing in the clone and reads the history
+/// already there. With no token, or when a lookup cannot run
+/// ([`lookup::Unavailable`]), it lists the version commits as not checked,
+/// with the reason. It never lists them as none.
+///
 /// Any other error, such as a release tag on the wrong commit, fails
-/// `status` in both modes, and under `--github-output` a lookup that cannot
-/// run fails it too, since the workflow must not plan from a guess.
+/// `status` in both modes. Under `--github-output`, a lookup that cannot run
+/// fails it too, since the workflow must not plan from a guess.
 fn status_report(args: &StatusArgs) -> Result<StatusReport> {
     let fragments = fragment::load_dir(&args.dir)?;
     let config = Config::load(&args.config)?;

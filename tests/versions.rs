@@ -56,9 +56,9 @@ fn repo_with_origin_main(version: &str) -> TempDir {
     dir
 }
 
-/// A Version PR's changes left in the working tree: the merge-base on
-/// `origin/main` holds demo 1.0.0 and one patch fragment, and the tree holds
-/// 1.0.1, its CHANGELOG section, and no fragment.
+/// A Version PR's changes left in the working tree. The merge-base on
+/// `origin/main` holds demo 1.0.0 and one patch fragment. The tree holds 1.0.1,
+/// its CHANGELOG section, and no fragment.
 fn version_pr() -> TempDir {
     let dir = TempDir::new().unwrap();
     common::init(dir.path());
@@ -112,14 +112,15 @@ fn is_host_actions_key(key: &str) -> bool {
     key == "CI" || key.starts_with("GITHUB_")
 }
 
-/// Everything the child may keep: no host Actions key, and nothing
-/// [`common::is_cleared`] strips from every verctl child, since `env_clear`
-/// followed by `envs` would otherwise put those back. Split from the
-/// environment it reads so the rule is testable against a planted one:
-/// `std::env` cannot be given a non-Unicode key without `set_var`, and
-/// `unsafe_code = "forbid"` rules that out. `vars()` would panic on such a key,
-/// so this never decodes one: a key we cannot read is not a key we are
-/// stripping.
+/// Everything the child may keep: no host Actions key, and nothing stripped
+/// from every verctl child by [`common::is_cleared`]. Otherwise `env_clear`
+/// followed by `envs` would put those back.
+///
+/// Split from the environment it reads so the rule is testable against a
+/// planted one. `std::env` cannot be given a non-Unicode key without
+/// `set_var`, and `unsafe_code = "forbid"` rules that out. `vars()` would
+/// panic on such a key, so this never decodes one. A key we cannot read is not
+/// a key we are stripping.
 fn inherited(
     vars: impl IntoIterator<Item = (OsString, OsString)>,
 ) -> impl Iterator<Item = (OsString, OsString)> {
@@ -154,8 +155,8 @@ fn hand_edited_version_fails() {
     );
 }
 
-/// Deleting a released `VERSION` file is drift, not a new package: the next
-/// `version` would read `0.0.0` and write `0.0.1` over `1.2.0`.
+/// Deleting a released `VERSION` file is drift and never a new package. The
+/// next `version` would read `0.0.0` and write `0.0.1` over `1.2.0`.
 #[test]
 fn deleting_a_released_version_file_fails() {
     let dir = TempDir::new().unwrap();
@@ -531,8 +532,9 @@ fn a_pull_request_that_changes_no_version_reads_no_api() {
     assert!(!stdout.contains("version-pr"), "{stdout}");
 }
 
-/// A merge queue run skips a changed version without reading the API: the
-/// Version PR's own entry, and every entry behind it, carry its versions.
+/// A merge queue run skips a changed version without reading the API. The
+/// Version PR's own entry carries its versions, and so does every entry behind
+/// it.
 #[test]
 fn a_merge_queue_run_skips_a_changed_version() {
     let dir = repo_with_origin_main("1.0.0");
@@ -571,8 +573,8 @@ async fn a_version_branch_from_a_fork_is_not_an_exemption() {
     assert!(!pull_request_passes(&server));
 }
 
-/// A base changed after opening no longer matches the head branch, whatever
-/// the event payload said.
+/// A base changed after opening does not match the head branch, whatever the
+/// event payload held.
 #[tokio::test]
 async fn a_retargeted_version_pr_is_not_an_exemption() {
     let server = pull_api("owner/demo", "verctl/release/main", "next").await;
@@ -730,7 +732,7 @@ fn a_hand_edit_on_the_version_branch_fails() {
     assert!(stderr.contains("does not write"), "{stderr}");
 }
 
-/// The Changesets branch name is no longer a Version PR: a hand edit there
+/// The Changesets branch name is not a Version PR: a hand edit there
 /// fails like anywhere else.
 #[test]
 fn old_version_packages_branch_is_not_exempt() {
@@ -1029,9 +1031,9 @@ fn a_changelog_with_no_origin_passes() {
     assert!(passed, "{text}");
 }
 
-/// `main` released demo 1.0.1 with publishing turned on after `next`
-/// branched from it, and `next` merges `main`: the publish change came with
-/// its release, whose fragment the Version PR consumed.
+/// `next` branched from `main`. Then `main` released demo 1.0.1 and turned
+/// publishing on. Now `next` merges `main`. The publish change came with that
+/// release, and the Version PR consumed its fragment.
 #[test]
 fn a_released_publish_change_merged_into_next_passes() {
     let dir = unpublished_crate();

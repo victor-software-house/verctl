@@ -12,9 +12,9 @@ use std::process::Command;
 use indoc::indoc;
 use tempfile::TempDir;
 
-/// Write a repo's declarations where verctl looks for them, and hand back the
-/// path so a test can pass it to `-c` or `Config::load` without spelling the
-/// layout again.
+/// Write a repo's declarations where verctl looks for them. Return the path, so
+/// a test can pass it to `-c` or `Config::load` without spelling the layout
+/// again.
 pub(crate) fn write_config(root: &Path, yaml: &str) -> PathBuf {
     let path = root.join(verctl::config::FILE);
     fs::create_dir_all(path.parent().expect("parent")).expect("dir");
@@ -78,17 +78,19 @@ const COLOUR: [&str; 5] = [
 const TOKENS: [&str; 2] = ["GITHUB_TOKEN", "GH_TOKEN"];
 
 /// Whether no child verctl may inherit `key`: an agent-shell colour variable,
-/// a GitHub token, or any `VERCTL_*` flag binding. Stripping them lets the
-/// suite pass in any shell or CI job, with every flag and token coming from
-/// argv or the test unless a test sets its variable back on top. A key that
-/// is not UTF-8 is none of these.
+/// a GitHub token, or any `VERCTL_*` flag binding.
+///
+/// Stripping them lets the suite pass in any shell or CI job. Every flag and
+/// token then comes from argv or the test, unless a test sets its variable
+/// back on top. A key that is not UTF-8 is none of these.
 pub(crate) fn is_cleared(key: &OsStr) -> bool {
     key.to_str().is_some_and(|key| {
         key.starts_with("VERCTL_") || COLOUR.contains(&key) || TOKENS.contains(&key)
     })
 }
 
-/// The verctl binary under test, without any variable [`is_cleared`] names.
+/// The verctl binary under test, with every variable that [`is_cleared`]
+/// matches removed.
 pub(crate) fn verctl() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_verctl"));
     for (name, _) in std::env::vars_os() {
@@ -99,8 +101,9 @@ pub(crate) fn verctl() -> Command {
     command
 }
 
-/// Run `git` with `args` in `dir` under a fixed identity and no user or system
-/// configuration, and return its trimmed stdout. A failure panics with stderr.
+/// Run `git` with `args` in `dir`, and return its trimmed stdout. The run uses
+/// a fixed identity and no user or system configuration. A failure panics with
+/// stderr.
 pub(crate) fn git(dir: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .current_dir(dir)
@@ -132,8 +135,8 @@ pub(crate) fn init(dir: &Path) {
     git(dir, &["init", "-q", "-b", "main"]);
 }
 
-/// Commit everything in `dir` on top of HEAD, with `subject`, and return the
-/// new commit's id. An unchanged tree still commits.
+/// Commit everything in `dir` as a child of HEAD, using `subject`, and return
+/// the new commit's id. An unchanged tree still commits.
 pub(crate) fn commit_all(dir: &Path, subject: &str) -> String {
     git(dir, &["add", "-A"]);
     git(dir, &["commit", "-q", "--allow-empty", "-m", subject]);

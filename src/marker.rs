@@ -1,11 +1,12 @@
-//! A package's version on one marker line of a file of any type: a comment
-//! opener (`#`, `//`, or `<!--`), `version:`, a space, and the version, with
-//! an optional `-->` after it.
+//! A package's version on one marker line of any file type.
+//! The line holds a comment opener (`#`, `//`, or `<!--`), `version:`, a
+//! space, and the version, with an optional `-->` after it.
 //!
 //! A single file can be a package, such as one reusable workflow. Its
 //! version has to live in the file, and a comment is the one place every
-//! format leaves alone. A package opts in with `marker: true`: a stray
-//! `# version:` line never changes how verctl reads a file nobody declared.
+//! format leaves alone. A package opts in with `marker: true`. A stray
+//! `# version:` line then never changes how verctl reads a file nobody
+//! declared.
 
 use anyhow::{Result, bail};
 use semver::Version;
@@ -17,7 +18,7 @@ const OPENERS: [&str; 3] = ["<!--", "//", "#"];
 /// The key every marker line spells.
 const KEY: &str = "version:";
 
-/// The one marker line: where its version sits and what it says.
+/// The one marker line: where its version sits and what it holds.
 struct Marker<'a> {
     /// Byte range of the version text in the file.
     start: usize,
@@ -31,7 +32,7 @@ struct Marker<'a> {
 /// # Errors
 ///
 /// Returns an error when the file holds no marker line, more than one, or one
-/// whose value is not a version; the error names the line numbers.
+/// whose value is not a version. The error names the line numbers.
 pub(crate) fn read(raw: &str) -> Result<String> {
     Ok(marker(raw)?.version.to_owned())
 }
@@ -78,9 +79,9 @@ fn marker(raw: &str) -> Result<Marker<'_>> {
     Ok(marker)
 }
 
-/// The marker on `line`, which starts at byte `offset` of the file, when the
-/// line is one: optional indentation, an opener, `version:`, one space, the
-/// value, and nothing after it but `-->` for an HTML comment.
+/// The marker on `line`, when the line is one. The line starts at byte
+/// `offset` of the file. It holds optional indentation, an opener, `version:`,
+/// one space, the value, and nothing after it but `-->` for an HTML comment.
 fn parse_line(line: &str, offset: usize) -> Option<Marker<'_>> {
     let content = line.trim_end_matches(['\n', '\r']);
     let trimmed = content.trim_start();

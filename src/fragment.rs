@@ -51,7 +51,7 @@ impl Bump {
 pub struct PackageBump {
     /// Package name.
     pub name: String,
-    /// Bump the fragment asks for.
+    /// Bump the fragment declares.
     pub bump: Bump,
 }
 
@@ -115,9 +115,11 @@ pub struct Fragment {
     pub packages: Vec<PackageBump>,
     /// The body, trimmed. It becomes the changelog entry.
     pub summary: String,
-    /// The heading this entry goes under. `None` is a fragment that names no
-    /// group: it lands under [`Group::Changed`] when another entry in the same
-    /// section names one, and a section where none does stays a flat list.
+    /// The heading this entry goes under.
+    ///
+    /// `None` marks a fragment that names no group. It lands under
+    /// [`Group::Changed`] when another entry in the same section names one.
+    /// A section where none does stays a flat list.
     pub group: Option<Group>,
 }
 
@@ -137,10 +139,13 @@ impl Fragment {
 ///
 /// # Errors
 ///
-/// Returns an error when the text does not start with front matter, when the
-/// front matter is not a mapping of strings, when its `verctl:group` is
-/// unknown, when it names no package, or when a bump is not `major`, `minor`,
-/// `patch`, or `none`.
+/// Returns an error when:
+///
+/// - the text does not start with front matter;
+/// - the front matter is not a mapping of strings;
+/// - its `verctl:group` is unknown;
+/// - it names no package;
+/// - a bump is not `major`, `minor`, `patch`, or `none`.
 pub fn parse_str(raw: &str, path: impl Into<PathBuf>) -> Result<Fragment> {
     let path = path.into();
     let input = Input::new(path.display().to_string(), raw);

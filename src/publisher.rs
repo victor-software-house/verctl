@@ -180,7 +180,7 @@ enum Appended {
     /// The recipe's config or registry arguments, else `default_argv`
     /// (`--access public`): the full upload command.
     Upload,
-    /// The recipe's config or registry arguments, so a stock query asks the
+    /// The recipe's config or registry arguments, so a stock query targets the
     /// registry the upload goes to.
     StockQuery,
     /// Nothing: a query a repository declares runs as written, and reaches
@@ -208,14 +208,15 @@ fn resolve_registry(aliases: &BTreeMap<String, String>, registry: Option<&str>) 
     }
 }
 
-/// Replace each `{placeholder}` in `parts` with its value in `ctx`.
+/// Replace each `{placeholder}` in `parts` with the value `ctx` holds for it.
 ///
 /// A placeholder left after expansion fails the run instead of dropping its
-/// argument: dropping shortened the command line, so a typo such as
-/// `{registr}` surfaced later as another tool's error. A known placeholder
-/// with no value for this package, such as `{registry}` on a package with no
-/// registry, fails the same way. Text in braces that is not a placeholder
-/// name, such as a JSON argument, passes through.
+/// argument. A dropped argument would shorten the command line, and a typo
+/// such as `{registr}` would surface later as another tool's error.
+///
+/// A known placeholder with no value for this package, such as `{registry}`
+/// on a package with no registry, fails the same way. Text in braces that is
+/// not a placeholder name, such as a JSON argument, passes through.
 ///
 /// # Errors
 ///
@@ -289,8 +290,9 @@ const BUN_QUERY: [&str; 5] = ["bun", "pm", "view", "{name}@{version}", "version"
 
 /// The publisher name for a package released only on GitHub: a tag and a
 /// Release, with assets when declared, and no registry step. Its argv is
-/// empty, which `release` reads as "nothing to upload"; every other publisher
-/// must render a command, so an empty one never passes for this mode.
+/// empty, and `release` reads that as "nothing to upload". Every other
+/// publisher must render a command. An empty argv therefore never passes for
+/// this mode.
 pub const RELEASE_ONLY: &str = "none";
 
 /// Resolve a package's noun, label, and upload command from config and stock
@@ -387,16 +389,24 @@ fn releases_on_github_only(file_name: &str) -> bool {
 /// A package's own `query` wins, then its `publishers` entry's, and an empty
 /// one turns the check off. Otherwise a stock cargo package whose publish
 /// target is crates.io is read from the sparse index, and a stock recipe's
-/// query applies. A package with an overridden command, for any publisher, or
-/// a cargo package with a target verctl cannot tell, has no check unless it
-/// declares `query`. That is because verctl cannot know the directory such a
-/// command runs in, nor the registry it uploads to.
+/// query applies.
+///
+/// A package has no check unless it declares `query` when it has either of
+/// these:
+///
+/// - an overridden command, for any publisher;
+/// - a cargo publish target that cannot be identified.
+///
+/// The directory such a command runs in and the registry it uploads to cannot
+/// be determined from the config.
 ///
 /// The registry is asked for the name the manifest declares (`package.name`
-/// in `Cargo.toml`, `name` in `package.json`), not the label `.ctl/ver.yaml`
-/// gives the package. A stock query takes the recipe's registry or config
-/// arguments, so it asks the registry the upload goes to; a declared query
-/// runs as written, with `{registry}` and `{config}` to place them itself.
+/// in `Cargo.toml`, `name` in `package.json`). The label `.ctl/ver.yaml` gives
+/// the package is unused.
+///
+/// A stock query takes the recipe's registry or config arguments, so it
+/// targets the registry the upload goes to. A declared query runs as written.
+/// It uses `{registry}` and `{config}` to place those arguments itself.
 ///
 /// # Errors
 ///
@@ -539,11 +549,15 @@ pub fn uploads(
 /// The members a workspace package publishes, in publish order, or `None`
 /// when the package is not one.
 ///
-/// A workspace package uses the stock cargo publisher, overrides neither the
-/// upload command nor the `query` on the package or on `publishers.cargo`, and
-/// points `path` at a virtual workspace manifest, whose root names no crate
-/// to publish. Declaring `publish` on the package runs that one command
-/// instead.
+/// A workspace package:
+///
+/// - uses the stock cargo publisher;
+/// - overrides neither the upload command nor the `query` on the package or on
+///   `publishers.cargo`;
+/// - points `path` at a virtual workspace manifest, whose root names no crate
+///   to publish.
+///
+/// Declaring `publish` on the package runs that one command instead.
 ///
 /// # Errors
 ///
@@ -606,7 +620,7 @@ fn query_check(
 }
 
 /// The package name a manifest declares: `package.name` in `Cargo.toml`,
-/// `name` in `package.json`, which is what the registry knows it by.
+/// `name` in `package.json`, which is the name the registry lists it under.
 fn manifest_name(manifest: &Path) -> Result<String> {
     let raw = std::fs::read_to_string(manifest).with_context(|| manifest.display().to_string())?;
     let name = if manifest
@@ -736,9 +750,9 @@ mod tests {
         );
     }
 
-    /// A Go module is fetched from its tag, and a `VERSION` file or a marker
-    /// line names no registry, so with nothing said each releases on GitHub
-    /// only; a publisher the package names still wins.
+    /// A Go module is fetched from its tag. A `VERSION` file or a marker line
+    /// names no registry. With no publisher declared, each releases on GitHub
+    /// only. A publisher the package names still wins.
     #[test]
     fn version_sources_with_no_registry_release_on_github_only() {
         let config = crate::config::Config::parse(indoc! {"
