@@ -116,6 +116,58 @@ fn a_package_target_plans_and_packs_as_before() {
     );
 }
 
+/// No command verctl starts inherits a registry token's variable: only the
+/// publisher gets the token, under its own name. The build writes the
+/// environment it sees.
+#[test]
+fn a_build_inherits_no_registry_token() {
+    let root = TempDir::new().expect("tmp");
+    common::write_config(
+        root.path(),
+        indoc! {r#"
+            packages:
+              - name: demo
+                path: Cargo.toml
+            assets:
+              build: ["sh", "-c", "env > seen"]
+              binary: out/{bin}
+              linux-x64: {}
+        "#},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.2.3"
+        "#},
+    )
+    .expect("cargo");
+    fs::create_dir_all(root.path().join("out")).expect("out");
+    fs::write(root.path().join("out/demo"), "binary").expect("binary");
+    let output = common::verctl()
+        .current_dir(root.path())
+        .env("VERCTL_REGISTRY_TOKEN", "from-secret")
+        .env("VERCTL_TRUSTED_PUBLISHING_TOKEN", "from-trusted")
+        .env("BUILD_SEES", "this")
+        .args([
+            "release",
+            "asset",
+            "linux-x64",
+            "--dry-run",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("spawn");
+    json(&output);
+    let seen = fs::read_to_string(root.path().join("seen")).expect("seen");
+    assert!(seen.contains("BUILD_SEES=this"), "{seen}");
+    assert!(!seen.contains("VERCTL_REGISTRY_TOKEN"), "{seen}");
+    assert!(!seen.contains("VERCTL_TRUSTED_PUBLISHING_TOKEN"), "{seen}");
+    assert!(!seen.contains("from-"), "{seen}");
+}
+
 /// A package whose release is two executables, a service unit, and a licence,
 /// all already in place under the triple's directory.
 fn files_root() -> TempDir {

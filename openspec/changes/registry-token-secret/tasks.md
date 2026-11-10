@@ -17,4 +17,10 @@ Compile, format, lint, and test tasks run in pull request CI with
 - [x] 2.2 A `minor` fragment names the old call and the new one; proof: the fragment in the pull request
 - [ ] 2.3 CI passes on the pull request: `operator_docs`, `lint:workflows`, and the workflow policy; proof: the verify run on the pushed commit
 
+## 3. Token handling in verctl
+
+- [ ] 3.1 `verctl release` reads `VERCTL_REGISTRY_TOKEN` and `VERCTL_TRUSTED_PUBLISHING_TOKEN`, refuses both, and checks `--registry-token-env`; proof: `both_registry_tokens_fail_before_any_work`, `a_registry_token_variable_that_is_no_name_is_a_usage_error`, and `registry_token_env_takes_a_variable_name` pass in CI
+- [ ] 3.2 Only the publisher and its query run with the token; proof: `the_publisher_and_its_query_run_with_the_registry_token` and `a_build_inherits_no_registry_token` pass in CI
+- [ ] 3.3 The publish step of `release.yml` is `run: mise run ver release` with the three variables in `env:`; proof: `rg -n 'TRUSTED_TOKEN|export "\$\{REGISTRY_TOKEN_ENV' .github/workflows/release.yml` prints nothing, and `lint:workflows` and the workflow policy pass in CI
+
 [run]: https://github.com/victor-software-house/verctl/actions/runs/42780696593

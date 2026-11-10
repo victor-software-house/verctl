@@ -57,11 +57,15 @@ A caller on the 0.8.0 workflow with a 0.7 verctl would run `prepare` with no
 title variables.
 It would fail late, after the tree is written.
 
-Each job's first verctl step reads `verctl --version` and fails when it is
-below 0.8.0. The message names the installed version and the minimum,
+The `plan` job's first verctl step reads `verctl --version` and fails when
+it is below 0.8.0. The message names the installed version and the minimum,
 and says to move the verctl pin and the workflow ref together. The
 minimum is a literal in the workflow, raised only when the workflow needs a
-newer verctl.
+newer verctl. Every other job needs `plan`, so the check runs once
+(operator, 2026-11-10). `publish`, `assets`, and `docs` check out each
+version commit and run the verctl it pins; a pending commit that pins a
+verctl older than 0.8.0 fails there on the `release` verb, which that
+verctl lacks, before it can publish.
 
 Alternative considered: install the verctl that matches the workflow ref.
 It lost because the caller's `mise.lock` is the record of what ran.

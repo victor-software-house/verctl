@@ -37,6 +37,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+      id-token: write # downloads tools through the release mirror
     env:
       MISE_ENV: ci
     steps:
@@ -45,7 +46,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up mise
-        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
         with:
           version: 2026.10.25
           cache: true
@@ -68,7 +69,8 @@ jobs:
     permissions:
       contents: write # tags, Releases, assets, and verctl/release/main without the App
       pull-requests: write # the Version PR without the App
-      # crates.io trusted publishing in release.yml's publish job.
+      # crates.io trusted publishing in release.yml's publish job, and the
+      # release mirror in every release.yml job.
       id-token: write
     with:
       # mise.release.toml's ver task runs verctl from PATH, where each job

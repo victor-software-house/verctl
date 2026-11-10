@@ -17,8 +17,10 @@ name: Release
 #         app-private-key: ${{ secrets.CHANGESET_VERSION_APP_PRIVATE_KEY }}
 #
 # GitHub checks each called job's permissions when the run starts, so every
-# caller grants id-token: write, which the publish job requests, whether or
-# not it publishes to crates.io.
+# caller grants id-token: write, which every job requests: publish for
+# crates.io trusted publishing, and each job for the organization's mise
+# action, which downloads tools through the release mirror. A job without
+# the grant downloads from GitHub and logs a notice.
 #
 # One flow: plan every incomplete version commit, publish each in history
 # order, build the assets its Release lacks, check docs.rs, then open or
@@ -26,6 +28,16 @@ name: Release
 # settings in env and runs `mise run ver <verb>`: the served task execs the
 # verctl the caller pins. verctl's own release passes verctl-artifact instead,
 # so each job runs the verctl that run built once for its platform.
+#
+# Every other job needs plan, so plan alone checks what they share: the
+# pinned verctl is 0.8.0 or later, and each mise-ignored-config-paths entry
+# is a plain relative path. publish, assets, and docs take the checked paths
+# from plan's outputs.
+#
+# publish, assets, and docs check out the version commit, so they run the
+# verctl that commit pins. A pending version commit that pins verctl older
+# than 0.8.0 fails in publish and assets, because that verctl has no
+# release verb: move its pin together with this workflow's ref.
 
 on:
   workflow_call:
@@ -84,7 +96,9 @@ on:
           Colon-separated mise config paths, relative to the repository root,
           that the plan, publish, assets, and docs jobs ignore, so they skip
           tools only the repository's own tasks need. propose keeps them,
-          because prepare.after runs those tasks. Empty ignores none.
+          because prepare.after runs those tasks. plan checks the entries
+          once. Empty ignores none and leaves MISE_IGNORED_CONFIG_PATHS
+          unset, so .miserc.toml still applies.
         type: string
         default: ""
       verctl-artifact:
@@ -100,14 +114,16 @@ on:
         description: >-
           The variable the publisher reads the registry token from, such as
           CARGO_REGISTRY_TOKEN for crates.io or CARGO_REGISTRIES_<NAME>_TOKEN
-          for another cargo registry. It names no secret.
+          for another cargo registry. It names no secret. Only the publisher
+          and its registry query see the token, under this name.
         type: string
         default: CARGO_REGISTRY_TOKEN
       crates-io-trusted-publishing:
         description: >-
-          Publish to crates.io with a token from trusted publishing, exported
-          as registry-token-env, instead of the registry-token secret. Each
-          crate lists the caller's workflow file as its trusted publisher.
+          Publish to crates.io with a token from trusted publishing, handed
+          to the publisher as registry-token-env, in place of the
+          registry-token secret. Each crate lists the caller's workflow file
+          as its trusted publisher.
         type: boolean
         default: false
       environment:
@@ -131,7 +147,7 @@ on:
         required: false
       registry-token:
         description: >-
-          Registry token for the publisher, exported as registry-token-env.
+          Registry token, handed to the publisher as registry-token-env.
           A token stored in an environment is mapped here by its stored name.
           Without it, the publisher uses whatever credential its config finds.
         required: false
@@ -155,10 +171,12 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read # reads history; tags and Releases are read through the API
+      id-token: write # downloads tools through the release mirror
     outputs:
       commits: ${{ steps.plan.outputs.commits }}
       pending: ${{ steps.plan.outputs.pending }}
       assets: ${{ steps.plan.outputs.assets }}
+      mise-ignored-config-paths: ${{ steps.ignored.outputs.paths }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -166,11 +184,13 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - name: Ignore mise config paths
+        id: ignored
         if: inputs.mise-ignored-config-paths != ''
         env:
           IGNORED: ${{ inputs.mise-ignored-config-paths }}
         # Set only when the input is set: mise takes an empty
         # MISE_IGNORED_CONFIG_PATHS as the list, overriding .miserc.toml.
+        # The later jobs read the checked value from this job's outputs.
         run: |
           case "${IGNORED}" in
             *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
@@ -179,17 +199,16 @@ jobs:
           # segment, or a leading or trailing slash, could name the
           # repository root or a path outside it, so it fails the job.
           IFS=: read -ra paths <<< "${IGNORED}"
-          joined=""
           for p in "${paths[@]}"; do
             case "/${p}/" in
               *//*|*/./*|*/../*)
                 echo "::error::mise-ignored-config-paths entry '${p}' is not a plain relative path"; exit 1 ;;
             esac
-            joined+="${GITHUB_WORKSPACE}/${p}:"
           done
-          echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
+          echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
+          echo "paths=${IGNORED}" >> "${GITHUB_OUTPUT}"
       - name: Set up mise
-        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
         with:
           version: ${{ inputs.mise-version }}
           cache: true
@@ -213,6 +232,8 @@ jobs:
       - name: Require verctl 0.8.0 or later
         # The caller's pin chooses verctl, apart from this workflow's ref.
         # A build from this run already matches the workflow, so it skips.
+        # Every later job needs this one, so it checks once; the header
+        # says what an older pin on a version commit does.
         if: inputs.verctl-artifact == ''
         env:
           MINIMUM: 0.8.0
@@ -245,7 +266,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write # creates the release tag and the GitHub Release
-      id-token: write # crates.io trusted publishing
+      id-token: write # crates.io trusted publishing, and the release mirror
     # One run releases every pending version commit, oldest first, and stops
     # at the first that fails. A running leg is never cancelled half way.
     # GitHub keeps one pending job per group, so a leg still waiting when a
@@ -269,30 +290,14 @@ jobs:
           ref: ${{ matrix.commit }}
           fetch-depth: 0
       - name: Ignore mise config paths
-        if: inputs.mise-ignored-config-paths != ''
+        # plan checked the paths. The variable stays unset when there are
+        # none, so .miserc.toml still applies.
+        if: needs.plan.outputs.mise-ignored-config-paths != ''
         env:
-          IGNORED: ${{ inputs.mise-ignored-config-paths }}
-        # Set only when the input is set: mise takes an empty
-        # MISE_IGNORED_CONFIG_PATHS as the list, overriding .miserc.toml.
-        run: |
-          case "${IGNORED}" in
-            *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
-          esac
-          # Each entry is a plain relative path: an empty, ".", or ".."
-          # segment, or a leading or trailing slash, could name the
-          # repository root or a path outside it, so it fails the job.
-          IFS=: read -ra paths <<< "${IGNORED}"
-          joined=""
-          for p in "${paths[@]}"; do
-            case "/${p}/" in
-              *//*|*/./*|*/../*)
-                echo "::error::mise-ignored-config-paths entry '${p}' is not a plain relative path"; exit 1 ;;
-            esac
-            joined+="${GITHUB_WORKSPACE}/${p}:"
-          done
-          echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
+          IGNORED: ${{ needs.plan.outputs.mise-ignored-config-paths }}
+        run: echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
       - name: Set up mise
-        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
         with:
           version: ${{ inputs.mise-version }}
           cache: true
@@ -313,20 +318,6 @@ jobs:
         run: |
           chmod +x "${BUILD_DIR}/verctl"
           echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
-      - name: Require verctl 0.8.0 or later
-        # The caller's pin chooses verctl, apart from this workflow's ref.
-        # A build from this run already matches the workflow, so it skips.
-        if: inputs.verctl-artifact == ''
-        env:
-          MINIMUM: 0.8.0
-        run: |
-          installed="$(mise run --quiet ver --version)"
-          installed="${installed##* }"
-          lowest="$(printf '%s\n' "${MINIMUM}" "${installed}" | sort -V | head -n 1)"
-          if [ "${lowest}" != "${MINIMUM}" ]; then
-            echo "::error::verctl ${installed} is older than ${MINIMUM}, the minimum this release workflow needs. Move the verctl pin and the workflow ref together."
-            exit 1
-          fi
       # crates.io matches the token's repository and the caller's workflow
       # file against the crate's trusted publishers, and the action's post
       # step revokes the token when the job ends.
@@ -344,32 +335,13 @@ jobs:
           # The token is read only under its declared name. A caller whose
           # token lives in an environment maps the stored name to
           # registry-token, and this job, running in that environment,
-          # receives the environment's value.
-          REGISTRY_TOKEN: ${{ secrets.registry-token }}
-          TRUSTED_TOKEN: ${{ steps.crates-io.outputs.token }}
-          REGISTRY_TOKEN_ENV: ${{ inputs.registry-token-env }}
-        # The token is exported under the caller's chosen name with a shell
-        # builtin, so it never reaches a process's argv or a file.
-        run: |
-          if [ -n "${TRUSTED_TOKEN}" ]; then
-            if [ -n "${REGISTRY_TOKEN}" ]; then
-              echo "::error::pass the registry-token secret or crates-io-trusted-publishing, not both"
-              exit 1
-            fi
-            REGISTRY_TOKEN=${TRUSTED_TOKEN}
-          fi
-          unset TRUSTED_TOKEN
-          if [ -n "${REGISTRY_TOKEN}" ]; then
-            case "${REGISTRY_TOKEN_ENV}" in
-              ''|[0-9]*|*[!A-Za-z0-9_]*)
-                echo "::error::registry-token-env is not a variable name: ${REGISTRY_TOKEN_ENV}"
-                exit 1
-                ;;
-            esac
-            export "${REGISTRY_TOKEN_ENV}=${REGISTRY_TOKEN}"
-          fi
-          unset REGISTRY_TOKEN
-          exec mise run ver release
+          # receives the environment's value. verctl refuses both tokens
+          # at once, checks registry-token-env, and hands the token to each
+          # publisher under that name alone.
+          VERCTL_REGISTRY_TOKEN: ${{ secrets.registry-token }}
+          VERCTL_TRUSTED_PUBLISHING_TOKEN: ${{ steps.crates-io.outputs.token }}
+          VERCTL_REGISTRY_TOKEN_ENV: ${{ inputs.registry-token-env }}
+        run: mise run ver release
 
   assets:
     name: ${{ matrix.id }} at ${{ matrix.commit }}
@@ -389,6 +361,7 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: write # uploads the tarball to the GitHub Release
+      id-token: write # downloads tools through the release mirror
     # One tool at a time, in every mise command of the job: on macOS runners
     # rustup fails to rename a component download ("could not rename
     # 'downloaded' file") when mise installs two Rust toolchains at once,
@@ -406,30 +379,14 @@ jobs:
           ref: ${{ matrix.commit }}
           fetch-depth: 0
       - name: Ignore mise config paths
-        if: inputs.mise-ignored-config-paths != ''
+        # plan checked the paths. The variable stays unset when there are
+        # none, so .miserc.toml still applies.
+        if: needs.plan.outputs.mise-ignored-config-paths != ''
         env:
-          IGNORED: ${{ inputs.mise-ignored-config-paths }}
-        # Set only when the input is set: mise takes an empty
-        # MISE_IGNORED_CONFIG_PATHS as the list, overriding .miserc.toml.
-        run: |
-          case "${IGNORED}" in
-            *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
-          esac
-          # Each entry is a plain relative path: an empty, ".", or ".."
-          # segment, or a leading or trailing slash, could name the
-          # repository root or a path outside it, so it fails the job.
-          IFS=: read -ra paths <<< "${IGNORED}"
-          joined=""
-          for p in "${paths[@]}"; do
-            case "/${p}/" in
-              *//*|*/./*|*/../*)
-                echo "::error::mise-ignored-config-paths entry '${p}' is not a plain relative path"; exit 1 ;;
-            esac
-            joined+="${GITHUB_WORKSPACE}/${p}:"
-          done
-          echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
+          IGNORED: ${{ needs.plan.outputs.mise-ignored-config-paths }}
+        run: echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
       - name: Set up mise
-        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
         with:
           version: ${{ inputs.mise-version }}
           cache: true
@@ -450,20 +407,6 @@ jobs:
         run: |
           chmod +x "${BUILD_DIR}/verctl"
           echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
-      - name: Require verctl 0.8.0 or later
-        # The caller's pin chooses verctl, apart from this workflow's ref.
-        # A build from this run already matches the workflow, so it skips.
-        if: inputs.verctl-artifact == ''
-        env:
-          MINIMUM: 0.8.0
-        run: |
-          installed="$(mise run --quiet ver --version)"
-          installed="${installed##* }"
-          lowest="$(printf '%s\n' "${MINIMUM}" "${installed}" | sort -V | head -n 1)"
-          if [ "${lowest}" != "${MINIMUM}" ]; then
-            echo "::error::verctl ${installed} is older than ${MINIMUM}, the minimum this release workflow needs. Move the verctl pin and the workflow ref together."
-            exit 1
-          fi
       - name: Build and upload
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -487,6 +430,7 @@ jobs:
     timeout-minutes: 75
     permissions:
       contents: read # reads the release tag through the API
+      id-token: write # downloads tools through the release mirror
     strategy:
       fail-fast: false
       matrix:
@@ -499,30 +443,14 @@ jobs:
           ref: ${{ matrix.commit }}
           fetch-depth: 0
       - name: Ignore mise config paths
-        if: inputs.mise-ignored-config-paths != ''
+        # plan checked the paths. The variable stays unset when there are
+        # none, so .miserc.toml still applies.
+        if: needs.plan.outputs.mise-ignored-config-paths != ''
         env:
-          IGNORED: ${{ inputs.mise-ignored-config-paths }}
-        # Set only when the input is set: mise takes an empty
-        # MISE_IGNORED_CONFIG_PATHS as the list, overriding .miserc.toml.
-        run: |
-          case "${IGNORED}" in
-            *$'\n'*) echo "::error::mise-ignored-config-paths is one line"; exit 1 ;;
-          esac
-          # Each entry is a plain relative path: an empty, ".", or ".."
-          # segment, or a leading or trailing slash, could name the
-          # repository root or a path outside it, so it fails the job.
-          IFS=: read -ra paths <<< "${IGNORED}"
-          joined=""
-          for p in "${paths[@]}"; do
-            case "/${p}/" in
-              *//*|*/./*|*/../*)
-                echo "::error::mise-ignored-config-paths entry '${p}' is not a plain relative path"; exit 1 ;;
-            esac
-            joined+="${GITHUB_WORKSPACE}/${p}:"
-          done
-          echo "MISE_IGNORED_CONFIG_PATHS=${joined%:}" >> "${GITHUB_ENV}"
+          IGNORED: ${{ needs.plan.outputs.mise-ignored-config-paths }}
+        run: echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
       - name: Set up mise
-        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
         with:
           version: ${{ inputs.mise-version }}
           cache: true
@@ -543,20 +471,6 @@ jobs:
         run: |
           chmod +x "${BUILD_DIR}/verctl"
           echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
-      - name: Require verctl 0.8.0 or later
-        # The caller's pin chooses verctl, apart from this workflow's ref.
-        # A build from this run already matches the workflow, so it skips.
-        if: inputs.verctl-artifact == ''
-        env:
-          MINIMUM: 0.8.0
-        run: |
-          installed="$(mise run --quiet ver --version)"
-          installed="${installed##* }"
-          lowest="$(printf '%s\n' "${MINIMUM}" "${installed}" | sort -V | head -n 1)"
-          if [ "${lowest}" != "${MINIMUM}" ]; then
-            echo "::error::verctl ${installed} is older than ${MINIMUM}, the minimum this release workflow needs. Move the verctl pin and the workflow ref together."
-            exit 1
-          fi
       - name: Wait for docs.rs
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -579,6 +493,7 @@ jobs:
     permissions:
       contents: write # pushes verctl/release/<base> when no App token is minted
       pull-requests: write # opens the Version PR when no App token is minted
+      id-token: write # downloads tools through the release mirror
     concurrency:
       group: verctl-propose-${{ github.repository }}
       cancel-in-progress: true
@@ -592,7 +507,7 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
       - name: Set up mise
-        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
         with:
           version: ${{ inputs.mise-version }}
           cache: true
@@ -610,20 +525,6 @@ jobs:
         run: |
           chmod +x "${BUILD_DIR}/verctl"
           echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
-      - name: Require verctl 0.8.0 or later
-        # The caller's pin chooses verctl, apart from this workflow's ref.
-        # A build from this run already matches the workflow, so it skips.
-        if: inputs.verctl-artifact == ''
-        env:
-          MINIMUM: 0.8.0
-        run: |
-          installed="$(mise run --quiet ver --version)"
-          installed="${installed##* }"
-          lowest="$(printf '%s\n' "${MINIMUM}" "${installed}" | sort -V | head -n 1)"
-          if [ "${lowest}" != "${MINIMUM}" ]; then
-            echo "::error::verctl ${installed} is older than ${MINIMUM}, the minimum this release workflow needs. Move the verctl pin and the workflow ref together."
-            exit 1
-          fi
       - name: Mint the Version PR token
         id: app-token
         if: env.HAS_APP == 'true'

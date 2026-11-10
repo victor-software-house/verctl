@@ -45,6 +45,13 @@ Queue row: [VER-104][ver-104]. The operator placed this break in the 0.8.0 minor
    `crates-io-trusted-publishing`.
 4. With `environment` set, the App secrets now reach the propose job, because
    the caller keeps its `secrets:` map.
+5. verctl, not a shell script, hands the token to the publisher. The publish
+   step sets `VERCTL_REGISTRY_TOKEN`, `VERCTL_TRUSTED_PUBLISHING_TOKEN`, and
+   `VERCTL_REGISTRY_TOKEN_ENV` and runs `mise run ver release`. `verctl
+   release` refuses both tokens at once, checks the variable name, and starts
+   only the publisher and its registry query with the token, under that
+   name. The step's 20-line
+   script is gone (operator, 2026-11-10).
 
 ## Capabilities
 
@@ -62,11 +69,13 @@ None.
 1. Workflow: `.github/workflows/release.yml`. This repository's caller,
    `self-release.yml`, maps no token and passes no `secrets: inherit`, so it
    does not change.
-2. Docs: the instructions and their template, `README.md`, and
-   `examples/workflows/release.yml`.
-3. Callers: none of the seven outside this repository passes what this change
+2. Code: `src/registry_token.rs`, `--registry-token-env` in `src/cli.rs`,
+   and the publisher run in `src/publish.rs` and `src/process.rs`.
+3. Docs: the instructions and their template, the operator skill and its
+   template, `README.md`, and `examples/workflows/release.yml`.
+4. Callers: none of the seven outside this repository passes what this change
    removes, so none has to change its call for this item.
-4. Archive order: after [release-environment][re], whose spec this changes.
+5. Archive order: after [release-environment][re], whose spec this changes.
 
 [re]: ../release-environment/proposal.md
 [ver-104]: ../../../tasks.yaml

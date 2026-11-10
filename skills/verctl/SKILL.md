@@ -187,6 +187,12 @@ and `allow-workflow-change`) go past one, and the report lists it under
 unreleased version commit since its last tag is refused with no flag:
 `status` lists that commit first, so release it before the newer one.
 
+`release` reads the registry token from `VERCTL_REGISTRY_TOKEN` or
+`VERCTL_TRUSTED_PUBLISHING_TOKEN`, never from a flag, and fails when both are
+set. Only the publisher and its registry `query` get the token, under
+`--registry-token-env` (`VERCTL_REGISTRY_TOKEN_ENV`, default
+`CARGO_REGISTRY_TOKEN`). `release.yml` sets all three in its publish step.
+
 `docs` waits for docs.rs to build each crates.io library crate released at
 HEAD and fails on a build that failed or never arrived (`--timeout`, minutes,
 default 60).

@@ -56,9 +56,10 @@ message that names the key and says to delete it.
 
 ### Requirement: The workflow refuses an older verctl
 
-Each job of the reusable `release.yml` that runs verctl SHALL first compare
+The `plan` job of the reusable `release.yml` SHALL first compare
 `verctl --version` with the minimum the workflow names. It SHALL fail when
 the installed version is lower, and the failure SHALL name both versions.
+Every other job needs `plan`, so none of them SHALL repeat the check.
 
 #### Scenario: A caller pins verctl 0.7.4
 

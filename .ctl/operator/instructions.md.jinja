@@ -112,17 +112,23 @@ input is optional and defaults to verctl's: `version-pr`, `publish`,
 `registry-token-env`, `crates-io-trusted-publishing`, `environment`, and
 `verctl-artifact` (verctl's own release only: each job runs a verctl
 build from the calling run); secrets `app-client-id`, `app-private-key`,
-`registry-token`. Each job first requires verctl 0.8.0 or later, unless
+`registry-token`. The plan job first requires verctl 0.8.0 or later, unless
 `verctl-artifact` is set: the caller's pin chooses verctl apart from the
-workflow ref, so move both together. `mise-ignored-config-paths` takes colon-separated
+workflow ref, so move both together. The later jobs check out each version
+commit and run the verctl it pins, so a pending version commit that pins
+verctl older than 0.8.0 fails on the `release` verb. `mise-ignored-config-paths` takes colon-separated
 config paths relative to the repository root, such as `mise.toml`, that
 every job but propose ignores, so they install only the release tools;
 propose keeps them because `prepare.after` runs the repository's tasks.
+The plan job checks the paths once.
 `crates-io-trusted-publishing: true` publishes to crates.io with a
 trusted-publishing token in place of the `registry-token` secret; each
 crate lists the caller's repository and workflow file as its trusted
-publisher. The publish job requests `id-token: write`, so every caller
-grants it. `environment` names a GitHub environment for the publish job,
+publisher. Every job requests `id-token: write`, so every caller grants
+it: the publish job for trusted publishing, and every job for
+`victor-software-house/actions/mise`, which downloads tools through the
+organization's release mirror. A job without the grant downloads from
+GitHub and logs a notice. `environment` names a GitHub environment for the publish job,
 the only job that reads a registry token, so the token can live only in
 an environment that admits the default branch. The caller maps the
 token's stored name, such as `CARGO_REGISTRY_TOKEN`, to the
@@ -361,7 +367,15 @@ is not semver, and otherwise at the root. `status` lists each skipped
 version once, at its oldest commit in the range, oldest first, so the
 workflow releases it before the newer one. The reusable `release.yml`
 takes the `allow-workflow-change` and `allow-off-default-branch` boolean
-inputs, default `false`, and passes them through `env:`. It does not sniff the
+inputs, default `false`, and passes them through `env:`.
+`release` reads the registry token from `VERCTL_REGISTRY_TOKEN` or
+`VERCTL_TRUSTED_PUBLISHING_TOKEN`, which no flag takes, and fails when both
+are set. It runs each publisher, and the registry `query` that checks it,
+with the token under `--registry-token-env` (`VERCTL_REGISTRY_TOKEN_ENV`,
+default `CARGO_REGISTRY_TOKEN`); a value that is not a variable name is a
+usage error. No other command it starts sees either token variable. The
+publish step of `release.yml` sets the three from the `registry-token`
+secret, `crates-io-trusted-publishing`, and `registry-token-env`. It does not sniff the
 commit subject and does not treat `GITHUB_REF_NAME` as the default
 (that is the branch being pushed). `verctl release` points `origin/HEAD`
 at `origin/<default>` only when `VERCTL_DEFAULT_BRANCH` is set. It

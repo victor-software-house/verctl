@@ -280,7 +280,7 @@ fn registry_lists(
         let listed = match &upload.check {
             RegistryCheck::Unchecked => release.tag.is_some(),
             check @ (RegistryCheck::CratesIo { .. } | RegistryCheck::Query { .. }) => {
-                check.lists(&upload.version)?
+                check.lists(&upload.version, &[])?
             }
         };
         if !listed {

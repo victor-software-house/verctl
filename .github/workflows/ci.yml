@@ -63,6 +63,11 @@ jobs:
     runs-on: ubuntu-latest
     # Recent runs take under 2 minutes.
     timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+      id-token: write # downloads tools through the release mirror
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
@@ -71,7 +76,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up mise
-        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
         with:
           version: 2026.10.25
           cache: true
@@ -96,6 +101,11 @@ jobs:
     runs-on: ${{ matrix.labels }}
     # Recent runs take up to 10 minutes.
     timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+      id-token: write # downloads tools through the release mirror
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -103,7 +113,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - name: Set up mise
-        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
         with:
           version: 2026.10.25
           cache: true

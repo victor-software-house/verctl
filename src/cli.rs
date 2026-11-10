@@ -184,6 +184,14 @@ pub struct ReleaseArgs {
     /// The proofs `release` may go past.
     #[command(flatten)]
     pub allow: AllowArgs,
+    /// The variable each publisher reads the registry token from, such as
+    /// `CARGO_REGISTRY_TOKEN` for crates.io or `CARGO_REGISTRIES_<NAME>_TOKEN`
+    /// for another cargo registry. The token itself comes from
+    /// `VERCTL_REGISTRY_TOKEN` or `VERCTL_TRUSTED_PUBLISHING_TOKEN`, and no
+    /// flag takes it, so it never reaches an argv. Only the publisher and its
+    /// registry `query` run with it.
+    #[arg(long, default_value = "CARGO_REGISTRY_TOKEN", value_parser = variable_name)]
+    pub registry_token_env: String,
     /// `release asset <target>`. Without it, `release` publishes.
     #[command(subcommand)]
     pub step: Option<ReleaseStep>,
@@ -198,6 +206,26 @@ fn moved_plan(value: &str) -> Result<bool, String> {
         _ => Err(
             "--plan is now status --github-output: run verctl status --github-output".to_owned(),
         ),
+    }
+}
+
+/// The value parser of `--registry-token-env`: a variable name as POSIX
+/// defines one, letters, digits, and underscores that do not start with a
+/// digit ([POSIX Name]). A name outside that set could not be exported by a
+/// shell, and a publisher run from one would never see the token.
+///
+/// [POSIX Name]: https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap03.html#tag_03_216
+fn variable_name(value: &str) -> Result<String, String> {
+    let mut chars = value.chars();
+    let starts = chars
+        .next()
+        .is_some_and(|first| first == '_' || first.is_ascii_alphabetic());
+    if starts && chars.all(|rest| rest == '_' || rest.is_ascii_alphanumeric()) {
+        Ok(value.to_owned())
+    } else {
+        Err(format!(
+            "{value:?} is not a variable name: use letters, digits, and underscores, and start with a letter or an underscore"
+        ))
     }
 }
 
@@ -516,6 +544,28 @@ mod tests {
         assert!(parse(&["verctl", "release", "--dry-run"]).is_ok());
     }
 
+    /// `--registry-token-env` takes a variable name a shell could export, and
+    /// anything else fails the parse as a usage error before any work.
+    #[test]
+    fn registry_token_env_takes_a_variable_name() {
+        for name in ["CARGO_REGISTRY_TOKEN", "NODE_AUTH_TOKEN", "_token2"] {
+            let cli = parse(&["verctl", "release", "--registry-token-env", name]).expect(name);
+            let Command::Release(args) = cli.command else {
+                panic!("expected release");
+            };
+            assert_eq!(args.registry_token_env, name);
+        }
+        for name in ["", "1TOKEN", "CARGO-TOKEN", "TOKEN=x", "A B"] {
+            let error = parse(&["verctl", "release", "--registry-token-env", name])
+                .expect_err("a bad name must not parse");
+            assert_eq!(error.exit_code(), 2, "{name:?}");
+            assert!(
+                error.to_string().contains("is not a variable name"),
+                "{name:?}: {error}"
+            );
+        }
+    }
+
     /// `release asset` takes its target as an argument or from
     /// `VERCTL_TARGET`, so a workflow sets `env:` and runs the bare verb.
     #[test]
@@ -559,6 +609,7 @@ mod tests {
                 "VERCTL_ALLOW_OFF_DEFAULT_BRANCH",
             ),
             ("config", "VERCTL_CONFIG"),
+            ("registry_token_env", "VERCTL_REGISTRY_TOKEN_ENV"),
         ] {
             let arg = release
                 .get_arguments()

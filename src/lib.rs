@@ -93,6 +93,7 @@ pub mod publish;
 pub mod publisher;
 pub mod pull_request;
 pub mod registry;
+pub mod registry_token;
 /// The token for `--pr` and the versions a release will carry.
 pub mod release;
 pub mod runners;

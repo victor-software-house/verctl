@@ -91,8 +91,8 @@ override.
 | `verctl-artifact` | string | `""` | for verctl's own release. Each job downloads the build `<prefix>-<runner.os>-<runner.arch>` uploaded earlier in the calling run and puts it first on PATH. Empty runs the verctl the caller pins (section 1.3) |
 | `title` | string | `""` | Version PR title; empty means `chore(release): version packages` |
 | `commit-message` | string | `""` | Version PR commit message; empty means the title |
-| `registry-token-env` | string | `CARGO_REGISTRY_TOKEN` | the variable the `registry-token` secret is exported as for the publisher |
-| `crates-io-trusted-publishing` | boolean | `false` | publish to crates.io with a trusted-publishing token, in place of the `registry-token` secret (see the note after the tables) |
+| `registry-token-env` | string | `CARGO_REGISTRY_TOKEN` | the variable verctl hands the registry token to the publisher under |
+| `crates-io-trusted-publishing` | boolean | `false` | publish to crates.io with a trusted-publishing token from `rust-lang/crates-io-auth-action`, handed to the publisher as `registry-token-env`, in place of the `registry-token` secret (see the note after the tables) |
 
 | Secret | Required | Without it |
 |:--|:--|:--|
@@ -210,15 +210,25 @@ Installing that stack in each of them costs minutes and can fail on tools the
 release never starts.
 
 `mise-ignored-config-paths` names those files.
-A step before `jdx/mise-action` resolves each path against `GITHUB_WORKSPACE`
-and writes `MISE_IGNORED_CONFIG_PATHS` to `GITHUB_ENV`.
+The `plan` job checks each entry once and exposes the list as an output.
+In `plan`, `publish`, `assets`, and `docs`, a one-line step before the mise
+action writes the list to `MISE_IGNORED_CONFIG_PATHS` in `GITHUB_ENV`.
 So the action and every later step skip them.
-The paths are made absolute because mise resolves a relative entry against the
-cwd only since jdx/mise#12169 (August 2026).
-A caller may pin an older `mise-version`.
+The entries stay relative.
+mise resolves a relative entry against the directory it runs in since 2026.8.9
+(jdx/mise#12169), and every step runs at the repository root.
+The input defaults to mise 2026.10.25, and every caller passed 2026.9.17 or
+later on 2026-11-10.
+
+Joining each entry onto `GITHUB_WORKSPACE` in `plan` was considered and
+rejected, because an asset runner on another operating system has another
+workspace path.
+A job-level `env:` was also rejected.
+GitHub sets a job variable even when its value is empty, which would replace
+the paths `.miserc.toml` ignores.
 
 Each entry must be a plain relative path.
-An entry fails the job when it has an empty, `.`, or `..` segment, or a
+An entry fails the `plan` job when it has an empty, `.`, or `..` segment, or a
 leading or trailing slash.
 Such an entry could name the repository root or a path outside it.
 

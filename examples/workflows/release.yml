@@ -10,7 +10,7 @@ on:
 permissions:
   contents: write # tags, Releases, and assets
   pull-requests: write # the Version PR when no App secret is mapped
-  id-token: write # the publish job requests it, for crates.io trusted publishing
+  id-token: write # every job requests it: crates.io trusted publishing and the release mirror
 
 jobs:
   release:

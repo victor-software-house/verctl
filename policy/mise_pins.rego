@@ -37,7 +37,7 @@ deny contains msg if {
 	some f in workflows
 	some name, job in f.contents.jobs
 	some step in job.steps
-	startswith(step.uses, "jdx/mise-action@")
+	startswith(step.uses, "victor-software-house/actions/mise@")
 	v := step["with"].version
 	literal(v)
 	v != min_version
