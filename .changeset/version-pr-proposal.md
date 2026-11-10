@@ -14,5 +14,5 @@ A config that still sets the key fails to load, and the error names the key to d
 Any other unknown key under `prepare` fails too.
 
 The reusable `release.yml` runs the verctl the caller pins.  
-So each job fails first when that verctl is older than 0.8.0.  
+Its `plan` job fails first when that verctl is older than 0.8.0.  
 Move the verctl pin and the workflow ref together.
