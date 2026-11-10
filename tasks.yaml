@@ -165,6 +165,19 @@ queue:
       - '`verctl assets` without `dir` and `files` plans, names, and packs exactly as before.'
     plan: openspec/changes/package-asset-files/proposal.md
 
+  - id: VER-107
+    title: Let an asset target pack its own files
+    scope: src/config.rs, src/assets.rs
+    outcome: >-
+      A release whose platforms ship different files declares a list on each target
+      that differs from the shared one.
+    blocked_by: []
+    acceptance:
+      - An `assets` target that declares `files` makes `verctl release asset <target>` pack exactly that list from `assets.dir`, with the placeholders replaced, and fail naming that list when a path is missing after the build.
+      - An `assets` target without `files` packs the shared `assets.files`, as before.
+      - The load fails, naming the target, when its `files` comes without `assets.dir`, is empty, sits beside `assets.binary`, or holds a path that leaves the repository.
+    plan: openspec/changes/asset-target-files/proposal.md
+
   - id: VER-082
     title: Run the registry publish in a caller-named environment
     scope: release.yml publish job
