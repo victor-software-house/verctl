@@ -1,12 +1,14 @@
 //! Which version commits still need a release.
 //!
-//! A release is complete when the registry lists each package's version and
-//! its tag, its Release, and every declared asset exist. `status` lists
-//! every version commit with an incomplete release, oldest first, so the
-//! workflow can release each at its own commit; `release` releases only the
-//! packages whose version commit is HEAD. A version an earlier commit set and
-//! no release has, skipped when a later Version PR merged first, is listed at
-//! the commit that set it.
+//! A release is complete when the registry lists each package's version, and
+//! its tag, its Release, and every declared asset exist.
+//!
+//! `status` lists every version commit with an incomplete release, oldest
+//! first. The workflow can then release each at its own commit. `release`
+//! releases only the packages whose version commit is HEAD.
+//!
+//! A version an earlier commit set and no release has is listed at the commit
+//! that set it. That happens when a later Version PR merged first.
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
@@ -103,9 +105,10 @@ struct PackageState {
 /// released, and its first release is the `0.0.1` a Version PR prepares (see
 /// [`bump::unreleased`]).
 ///
-/// For a package whose release is incomplete, each earlier version on HEAD's
-/// first-parent line since its last tag is listed too, at the commit that set
-/// it (see [`git::unreleased_below`]), with every declared asset missing.
+/// A package whose release is incomplete also lists each earlier version on
+/// HEAD's first-parent line since its last tag. Each is listed at the commit
+/// that set it, with every declared asset missing (see
+/// [`git::unreleased_below`]).
 ///
 /// With `skip_assets`, declared assets do not count toward completeness, so a
 /// repository that turns assets off still reaches nothing to release.
@@ -115,17 +118,21 @@ struct PackageState {
 ///
 /// # Errors
 ///
-/// Returns an error when a package's version, driver, or publisher cannot be
-/// resolved, its version commit cannot be found (see
-/// [`git::version_commit`]), the repository has no GitHub `origin`, or a
-/// registry or GitHub lookup fails. A lookup that cannot run is a
-/// [`crate::lookup::Unavailable`]: no GitHub repository, no answer from GitHub or a
-/// registry, or a walk that reaches a shallow clone's boundary.
+/// Returns an error when:
 ///
-/// It also returns one when a package's tag names a commit that is neither
-/// its version commit nor another commit HEAD contains at the same version
-/// (see [`git::tagged_commit`]). That release was tagged in the wrong place,
-/// and counting it complete would hide it.
+/// - a package's version, driver, or publisher cannot be resolved;
+/// - its version commit cannot be found (see [`git::version_commit`]);
+/// - the repository has no GitHub `origin`;
+/// - a registry or GitHub lookup fails.
+///
+/// A lookup that cannot run is a [`crate::lookup::Unavailable`]. It covers a
+/// missing GitHub repository, no answer from GitHub or a registry, and a walk
+/// that reaches a shallow clone's boundary.
+///
+/// It also returns an error when a package's tag names the wrong commit. The
+/// right commit is its version commit, or another commit HEAD contains at the
+/// same version (see [`git::tagged_commit`]). Counting a release tagged in the
+/// wrong place as complete would hide it.
 pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> Result<Pending> {
     if config.packages.is_empty() {
         return Ok(Pending::default());
@@ -224,9 +231,9 @@ fn version_in(driver: &Driver, raw: &str) -> Option<String> {
 
 /// The commit that releases each tag: the newest version commit among the
 /// packages under it. A shared `v{version}` tag can cover packages whose
-/// manifests reached that version in different commits, and only the newest
-/// of those has every one of them at the tagged version, so the release and
-/// its tag belong there.
+/// manifests reached that version in different commits. Only the newest of
+/// those has every one of them at the tagged version, so the release and its
+/// tag belong there.
 fn newest_per_tag<S, E>(found: &[(S, E, String, VersionCommit)]) -> BTreeMap<&str, VersionCommit> {
     let mut newest: BTreeMap<&str, VersionCommit> = BTreeMap::new();
     for (_, _, tag, commit) in found {
@@ -253,8 +260,10 @@ fn tag_of(planned: &publish::PublishPlan, entry: &PublishEntry) -> Result<String
 }
 
 /// Whether the registry has `entry`'s version: for a workspace package, every
-/// member's. A package with no registry, or an upload with no check, counts as
-/// listed once its tag exists: `release` creates the tag of a package with an
+/// member's.
+///
+/// A package with no registry, or an upload with no check, counts as listed
+/// once its tag exists. `release` creates the tag of a package with an
 /// unchecked upload only after the upload, so the tag is the record. A tag
 /// with only checked uploads is created first and records nothing.
 fn registry_lists(
@@ -479,7 +488,7 @@ mod tests {
     }
 
     /// A version an earlier commit set and no release has is planned at that
-    /// commit, before HEAD's, and its assets upload to its own tag.
+    /// commit, before HEAD's. Its assets upload to its own tag.
     #[test]
     fn a_skipped_version_is_planned_first_with_its_own_tag() {
         let declared = [target("linux-x64")];

@@ -5,15 +5,16 @@
 //! directory. The replay plans the fragments there, writes each manifest
 //! through its driver, applies each pin, prepends each CHANGELOG section, and
 //! removes each consumed fragment. It compares the result with the working
-//! tree byte for byte.
+//! tree exactly.
 //!
 //! The replay runs no lockfile owner and no `prepare.after` command, and
 //! reaches no network, so it gives the same answer with or without a
-//! registry. A lockfile is read through [`crate::lockfile`] instead: only the
-//! workspace versions the plan moves may change in it. A served file must
-//! equal its template's render at the versions on HEAD. A path that
-//! `prepare.stage` names at the merge-base may change, since `prepare.after`
-//! writes it; its content is left to the Version PR's review.
+//! registry. The check reads a lockfile through [`crate::lockfile`] instead:
+//! only the workspace versions the plan moves may change in it.
+//!
+//! Each served file must equal its template's render at the versions on HEAD.
+//! Any path that `prepare.stage` names at the merge-base may change, since
+//! `prepare.after` writes it. The Version PR's review covers its content.
 
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
@@ -181,7 +182,7 @@ impl Moved {
         })
     }
 
-    /// Whether `entry` in a lockfile of `format` at `lock_dir` records this
+    /// Whether `entry` in the `format` lockfile at `lock_dir` records this
     /// member.
     fn records(&self, format: Format, lock_dir: &Path, name: &str, label: &str) -> bool {
         match format {
@@ -327,8 +328,9 @@ fn toml_name(text: &str, table: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// The served files, relative to the working tree, after adding each one
-/// that differs from its render at the versions on HEAD to `problems`.
+/// The served files, relative to the working tree. Each one that differs
+/// from its render is added to `problems`. The render uses the versions on
+/// HEAD.
 fn served(
     root: &Path,
     head: &Config,
@@ -461,7 +463,8 @@ fn parse(format: Format, bytes: &[u8]) -> Result<Lockfile> {
 }
 
 /// One line naming how a file the version step writes differs from the
-/// replay: the keys of a TOML or JSON manifest, or the first differing line.
+/// replay. It lists the keys of a TOML or JSON manifest, or the first
+/// differing line.
 fn describe(path: &str, expected: Option<&[u8]>, actual: Option<&[u8]>) -> String {
     match (expected, actual) {
         (Some(_), None) => format!("{path}: the version step writes this file, and it is missing"),

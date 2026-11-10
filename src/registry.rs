@@ -1,10 +1,12 @@
 //! Whether a registry already lists a package version.
 //!
-//! `release` asks before it runs a publisher, so a rerun after a partial
-//! failure skips the upload, and asks again afterwards, so a publisher that
-//! exits zero without publishing fails the run. A stock cargo package bound for
-//! crates.io is read from the crates.io sparse index; any other package asks
-//! through its recipe's `query`, or has no check and keeps the stderr match.
+//! `release` checks the registry before it runs a publisher, so a rerun after
+//! a partial failure skips the upload. It checks again afterwards, so a
+//! publisher that exits zero without publishing fails the run.
+//!
+//! A cargo package that the stock publisher sends to crates.io is read from
+//! the crates.io sparse index. Any other package is checked through its
+//! recipe's `query`, or has no check and keeps the stderr match.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -15,10 +17,10 @@ use toml_edit::{DocumentMut, Item};
 
 use crate::{lookup, process};
 
-/// The crates.io sparse index root.
+/// The root URL of the crates.io sparse index.
 ///
-/// The index is public, needs no auth, and is Cargo's own source of truth for
-/// crates.io, as the [sparse protocol] documents.
+/// The index is public and needs no auth. It is the listing Cargo itself
+/// trusts for crates.io, as the [sparse protocol] documents.
 ///
 /// [sparse protocol]: https://doc.rust-lang.org/cargo/reference/registry-index.html#sparse-protocol
 pub const CRATES_IO_INDEX: &str = "https://index.crates.io";
@@ -33,9 +35,11 @@ const QUERY_TIMEOUT: Duration = Duration::from_mins(1);
 /// How long one sparse index request may take.
 const INDEX_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// The pauses between the checks after a publish. The crates.io index and
-/// npm-compatible metadata can trail a successful upload by tens of seconds,
-/// so one check right after the publisher exits would fail a good release.
+/// How long to wait between the checks after a publish. The crates.io index
+/// and npm-compatible metadata can trail a successful upload by tens of
+/// seconds. One check right after the publisher exits would then fail a good
+/// release.
+///
 /// The total stays near two minutes, short enough that a publisher which
 /// exited zero without publishing still fails the job promptly.
 pub const LISTING_DELAYS: [Duration; 6] = [
@@ -75,15 +79,20 @@ impl RegistryCheck {
     ///
     /// # Errors
     ///
-    /// Returns an error when the crates.io index answers with a status other
-    /// than 200 or 404, or with a line that is not a JSON version record, or
-    /// when a `query` cannot be started or times out. A `query` that exits
-    /// non-zero is an answer, not an error: the version is not listed.
+    /// Returns an error when:
     ///
-    /// Only a registry that gave no answer is a [`lookup::Unavailable`]: an
-    /// index request that could not connect or timed out, an index 5xx, or a
-    /// `query` that timed out. A line that does not parse and a `query` that
-    /// cannot be started stay errors.
+    /// - the crates.io index answers with a status other than 200 or 404;
+    /// - the crates.io index answers with a line that is not a JSON version
+    ///   record;
+    /// - a `query` cannot be started or times out.
+    ///
+    /// A `query` that exits non-zero gives an answer instead of an error: the
+    /// version is not listed.
+    ///
+    /// Only a registry that gave no answer is a [`lookup::Unavailable`]. That
+    /// covers an index request that could not connect or timed out, an index
+    /// 5xx, and a `query` that timed out. A line that does not parse and a
+    /// `query` that cannot be started stay errors.
     pub fn lists(&self, version: &str) -> Result<bool> {
         match self {
             Self::CratesIo { name } => crates_io_lists(CRATES_IO_INDEX, name, version),
@@ -97,7 +106,7 @@ impl RegistryCheck {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CargoTarget {
-    /// Every place Cargo reads the target agrees on crates.io.
+    /// Every place Cargo reads the target names crates.io.
     CratesIo,
     /// Some place names another registry, or forbids publishing.
     Other,
@@ -134,17 +143,24 @@ impl CargoEnv {
 
 /// Where the stock cargo publisher would publish the package in `manifest`.
 ///
-/// It is crates.io only when every place Cargo reads the target agrees: the
-/// package's `registry` in `.ctl/ver.yaml` is unset, empty, or `crates-io`;
-/// the manifest's `publish` is absent, `true`, or names only `crates-io`; and
-/// the `registry.default` Cargo resolves for `cwd` is unset or `crates-io`.
-/// The stock publisher runs from the repository root with `--manifest-path`,
-/// so `cwd` is that root, not the package directory.
+/// It is crates.io only when all of these hold:
 ///
-/// `registry.default` resolves in Cargo's documented order, the first that
-/// sets it winning: `CARGO_REGISTRY_DEFAULT`, then `.cargo/config.toml` in
-/// `cwd` and each parent up to the filesystem root, then the one in
-/// `CARGO_HOME`. A directory with both `config` and `config.toml` is read from
+/// - the package's `registry` in `.ctl/ver.yaml` is unset, empty, or
+///   `crates-io`;
+/// - the manifest's `publish` is absent, `true`, or names only `crates-io`;
+/// - the `registry.default` Cargo resolves for `cwd` is unset or `crates-io`.
+///
+/// The stock publisher runs from the repository root with `--manifest-path`,
+/// so `cwd` is that root instead of the package directory.
+///
+/// `registry.default` resolves in Cargo's documented order. The first source
+/// that sets it wins:
+///
+/// 1. `CARGO_REGISTRY_DEFAULT`;
+/// 2. `.cargo/config.toml` in `cwd` and each parent up to the filesystem root;
+/// 3. the config in `CARGO_HOME`.
+///
+/// A directory with both `config` and `config.toml` is read from
 /// the extensionless file, as Cargo does ([hierarchical structure]).
 ///
 /// # Errors
@@ -172,10 +188,12 @@ pub fn cargo_target(
 /// `publish` list `cargo metadata` resolves for it: `None` when the member
 /// names no registry, which allows any.
 ///
-/// It agrees with [`cargo_target`]: crates.io only when the package's
-/// `registry` is unset, empty, or `crates-io`, the list is absent or names
-/// only `crates-io`, and the `registry.default` Cargo resolves for `cwd` is
-/// unset or `crates-io`.
+/// It follows [`cargo_target`]. The result is crates.io only when all of
+/// these hold:
+///
+/// - the package's `registry` is unset, empty, or `crates-io`;
+/// - the list is absent or names only `crates-io`;
+/// - the `registry.default` Cargo resolves for `cwd` is unset or `crates-io`.
 #[must_use]
 pub fn cargo_member_target(
     package_registry: Option<&str>,
@@ -209,7 +227,7 @@ fn with_default(manifest: CargoTarget, cwd: &Path, env: &CargoEnv) -> CargoTarge
     }
 }
 
-/// What the manifest's `package.publish` says.
+/// What the manifest's `package.publish` holds.
 fn manifest_publish(document: &DocumentMut) -> CargoTarget {
     let Some(publish) = document
         .get("package")
@@ -307,9 +325,13 @@ fn index_path(name: &str) -> String {
 ///
 /// # Errors
 ///
-/// Returns an error when `name` is not ASCII, `version` is not semver, the
-/// request fails, the index answers with a status other than 200 or 404, or a
-/// line in the crate's file is not a JSON version record.
+/// Returns an error when:
+///
+/// - `name` is not ASCII;
+/// - `version` is not semver;
+/// - the request fails;
+/// - the index answers with a status other than 200 or 404;
+/// - a line in the crate's file is not a JSON version record.
 pub fn crates_io_lists(base: &str, name: &str, version: &str) -> Result<bool> {
     ensure!(
         !name.is_empty() && name.is_ascii(),
@@ -333,10 +355,11 @@ pub fn crates_io_lists(base: &str, name: &str, version: &str) -> Result<bool> {
     Ok(false)
 }
 
-/// The release cargo-semver-checks compares `current` of `name` against: the
-/// highest version in the crates.io index under `base` that is at most
-/// `current`, is not a pre-release, and is not yanked, or else the highest
-/// version at most `current`. `None` when the index has no such version.
+/// The release cargo-semver-checks compares `current` of `name` against.
+/// It is the highest version that the crates.io index under `base` lists, is
+/// at most `current`, and is neither a pre-release nor yanked. Otherwise it is
+/// the highest version at most `current`. `None` when the index has no such
+/// version.
 ///
 /// This is cargo-semver-checks 0.51.0's own choice (`choose_baseline_version`
 /// in `src/rustdoc_gen.rs`), so a decision made from it holds for the
@@ -421,8 +444,8 @@ fn unanswered(error: reqwest::Error, url: &str) -> anyhow::Error {
     }
 }
 
-/// crates.io asks automated clients to identify themselves, as its
-/// [data access policy] says.
+/// Automated clients must identify themselves to crates.io, as its
+/// [data access policy] requires.
 ///
 /// [data access policy]: https://crates.io/data-access
 fn user_agent() -> String {
@@ -446,17 +469,19 @@ fn query_lists(argv: &[String], dir: &Path, version: &str) -> Result<bool> {
     }
 }
 
-/// Whether a [`process::run_in`] error is the command exiting non-zero, which
-/// a `query` uses to say "not listed", rather than a failure to run it.
+/// Whether an error from [`process::run_in`] is the command exiting non-zero.
+/// A `query` uses that exit for "not listed". A failure to run it is another
+/// case.
 fn is_exit_failure(error: &anyhow::Error) -> bool {
     error.downcast_ref::<process::ExitFailure>().is_some()
 }
 
-/// Ask `check` until it lists `version`, pausing for each of `delays` in turn.
+/// Ask `check` until it lists `version`. Pause between asks, using each entry
+/// of `delays` in turn.
 ///
-/// The publish already happened, so a failed check (an index timeout, a 5xx)
-/// counts as "not listed yet" for that round rather than failing the release;
-/// only the last round's error is reported.
+/// The publish already happened. A failed check (an index timeout, a 5xx)
+/// therefore counts as "not listed yet" for that round and does not fail the
+/// release. Only the last round's error is reported.
 ///
 /// # Errors
 ///
@@ -541,7 +566,7 @@ mod tests {
     }
 
     /// A rate limit or a 5xx is no answer, so `status` reports the check as
-    /// not run; a plain 403 is a refusal and stays an error.
+    /// not run. A plain 403 is a refusal and stays an error.
     #[tokio::test]
     async fn an_index_that_cannot_answer_now_is_a_lookup_that_cannot_run() {
         for response in [
