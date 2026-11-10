@@ -16,6 +16,11 @@ prepare:
 packages:
   - name: verctl
     path: Cargo.toml
+    # The stock cargo recipe plus --no-verify. CI's Package step builds the
+    # packed crate on every merge-queue run, and the queue moves main to the
+    # commit it tested, so the publish job's own verify build compiled the
+    # same crate a second time, cold.
+    publish: [cargo, publish, --locked, --no-verify, --manifest-path, "{path}"]
 
 # GitHub's hosted arm64 Linux runner, free for a public repo. It builds the
 # linux-arm64 tarball natively: the TLS stack (aws-lc-sys, ring) compiles C,
