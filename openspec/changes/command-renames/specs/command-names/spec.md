@@ -53,13 +53,20 @@ SHALL build and upload that set's archive instead.
 
 `verctl status` SHALL list each version commit whose release is incomplete
 under `unreleased`, oldest first, with the asset plan beside the
-fragments. Without `GITHUB_TOKEN` or `GH_TOKEN`, it SHALL report
-`unreleased` as `null` in JSON with the reason in `unreleased_unchecked`.
+fragments. Without `GITHUB_TOKEN` or `GH_TOKEN`, or when the check fails
+and `--github-output` is not set, it SHALL report `unreleased` as `null` in
+JSON with the reason in `unreleased_unchecked`.
 
 #### Scenario: No token
 
 - **WHEN** neither `GITHUB_TOKEN` nor `GH_TOKEN` is set and `verctl status --format json` runs
 - **THEN** it exits zero, `unreleased` is `null`, and `unreleased_unchecked` is `no GITHUB_TOKEN or GH_TOKEN`
+
+#### Scenario: A check that fails
+
+- **WHEN** `GITHUB_TOKEN` is set, the clone has no GitHub `origin`, and `verctl status --format json` runs
+- **THEN** it exits zero, `unreleased` is `null`, and `unreleased_unchecked` holds the error
+- **AND** `verctl status --github-output out` in the same clone exits non-zero
 
 ### Requirement: status writes the release plan
 

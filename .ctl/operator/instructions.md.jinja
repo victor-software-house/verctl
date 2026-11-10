@@ -287,8 +287,10 @@ incomplete release, oldest first, under `unreleased`. With
 `GITHUB_TOKEN` or `GH_TOKEN`, and writes `commits` (a JSON list),
 `pending`, and `assets` (a job matrix of commit, target, and labels),
 beside the asset plan's `has_assets`, `tag`, and `matrix`. Without it,
-`status` fetches nothing, and with no token it reports `unreleased` as
-not checked: `null` in JSON, with the reason in `unreleased_unchecked`.
+`status` fetches nothing. With no token, or when the check fails, such
+as in a shallow clone, it reports `unreleased` as not checked: `null` in
+JSON, with the reason in `unreleased_unchecked`. Under `--github-output`
+the same failure fails the run.
 `release --plan` fails and names `status --github-output`. `release`
 releases only the packages whose version commit is HEAD, names the
 others, and fails before any side effect on a commit that releases

@@ -463,8 +463,10 @@ fn ci_report(args: &verctl::cli::CiArgs) -> Result<CiReport> {
 /// token, so the workflow's plan is never partial, and it writes the asset
 /// outputs (`has_assets`, `tag`, `matrix`) and the release outputs
 /// (`commits`, `pending`, `assets`). Without it, `status` changes nothing in
-/// the clone: it reads the history already there, and with no token it
-/// reports the version commits as not checked rather than as none.
+/// the clone: it reads the history already there, and with no token, or
+/// when the check fails, it reports the version commits as not checked,
+/// with the reason, rather than as none. Under `--github-output` a failed
+/// check fails the run, since the workflow must not plan from a guess.
 fn status_report(args: &StatusArgs) -> Result<StatusReport> {
     let fragments = fragment::load_dir(&args.dir)?;
     let config = Config::load(&args.config)?;
@@ -492,13 +494,16 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
         None => release::env_token(),
     };
     let (unreleased, unreleased_unchecked) = match token {
-        Some(token) => {
-            let planned = pending::pending(&config, root, &token, args.skip_assets)?;
-            if let Some(path) = &args.github_output {
-                pending::write_github_output(&planned, path)?;
+        Some(token) => match pending::pending(&config, root, &token, args.skip_assets) {
+            Ok(planned) => {
+                if let Some(path) = &args.github_output {
+                    pending::write_github_output(&planned, path)?;
+                }
+                (Some(unreleased_rows(&planned)), None)
             }
-            (Some(unreleased_rows(&planned)), None)
-        }
+            Err(error) if args.github_output.is_none() => (None, Some(format!("{error:#}"))),
+            Err(error) => return Err(error),
+        },
         None => (None, Some("no GITHUB_TOKEN or GH_TOKEN".to_owned())),
     };
     let overall = fragments
