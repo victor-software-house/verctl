@@ -337,7 +337,8 @@ It triggers on push to the default branch and on `workflow_dispatch`, and runs o
 Every job is safe to rerun.  
 A run with nothing pending reports `nothing to release`.  
 Every input is optional and defaults to verctl's, so a caller passes only what differs.  
-Steps set `env:` and run `mise run ver <verb>`, so the caller serves the `ver` task and pins verctl in its mise config.
+Steps set `env:` and run `mise run ver <verb>`, so the caller serves the `ver` task and pins verctl in its mise config.  
+`plan` alone checks that the pinned verctl is 0.8.0 or later, and checks each `mise-ignored-config-paths` entry.
 
 A registry token stored in a GitHub environment that admits only the default branch is out of reach of every other branch.  
 Pass `environment: <name>`, and map the token by its stored name: `registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}`.  
@@ -348,6 +349,11 @@ The App secrets stay in the same `secrets:` map.
 `registry-token-env` names only the variable the publisher reads the token from (`CARGO_REGISTRY_TOKEN` by default).  
 A crate's first publish maps the token and turns `crates-io-trusted-publishing` off for that one release, because the workflow refuses both.
 
+The publish step sets `VERCTL_REGISTRY_TOKEN` from the secret and `VERCTL_TRUSTED_PUBLISHING_TOKEN` from trusted publishing.  
+`verctl release` fails when both are set.  
+It gives the token to each publisher and its registry `query` under `--registry-token-env` (`VERCTL_REGISTRY_TOKEN_ENV`).  
+No other command it starts gets either variable.
+
 To migrate from `version-pr.yml` and `publish.yml`, do it in one pull request:
 
 1. Add the caller as `.github/workflows/release.yml`.
@@ -357,7 +363,8 @@ To migrate from `version-pr.yml` and `publish.yml`, do it in one pull request:
 The first push after the merge opens the Version PR from `verctl/release/<base>`.
 
 Adopt the caller when no release is pending, or merge the adoption before the Version PR.  
-Each release runs at its version commit, and an older version commit lacks the `ver` task the reusable workflow runs.
+Each release runs at its version commit, and an older version commit lacks the `ver` task the reusable workflow runs.  
+A pending version commit that pins verctl older than 0.8.0 fails on the `release` verb, so move its pin with the workflow ref.
 
 GitHub refuses a Release at a commit whose `.github/workflows` differs from the default branch unless the token holds `workflows: write`, which `GITHUB_TOKEN` cannot.  
 So some packages get their tag and Release before their uploads, in the run that merged the Version PR.

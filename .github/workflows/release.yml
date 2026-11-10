@@ -30,9 +30,7 @@ name: Release
 # Every other job needs plan, so plan alone checks what they share: the
 # pinned verctl is 0.8.0 or later, and each mise-ignored-config-paths entry
 # is a plain relative path. publish, assets, and docs take the checked paths
-# from plan's outputs. The paths stay relative, so ignoring any needs mise
-# 2026.8.9 or later, which resolves a relative MISE_IGNORED_CONFIG_PATHS
-# entry against the directory it runs in (jdx/mise#12169).
+# from plan's outputs.
 #
 # publish, assets, and docs check out the version commit, so they run the
 # verctl that commit pins. A pending version commit that pins verctl older
@@ -84,11 +82,7 @@ on:
         type: string
         default: '["ubuntu-latest"]'
       mise-version:
-        description: >-
-          The mise that installs the caller's tools, verctl included.
-          mise-ignored-config-paths needs 2026.8.9 or later, the first mise
-          that resolves a relative MISE_IGNORED_CONFIG_PATHS entry against
-          the directory it runs in.
+        description: The mise that installs the caller's tools, verctl included.
         type: string
         default: 2026.10.25
       mise-env:
@@ -102,7 +96,7 @@ on:
           tools only the repository's own tasks need. propose keeps them,
           because prepare.after runs those tasks. plan checks the entries
           once. Empty ignores none and leaves MISE_IGNORED_CONFIG_PATHS
-          unset, so .miserc.toml still applies. Needs mise 2026.8.9 or later.
+          unset, so .miserc.toml still applies.
         type: string
         default: ""
       verctl-artifact:

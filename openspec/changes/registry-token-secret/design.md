@@ -15,7 +15,6 @@
    Removing the input and always exporting `CARGO_REGISTRY_TOKEN` was considered and lost: a caller publishing to another registry would have no way to name its variable.
 4. **The refusal of a token beside trusted publishing stays.**
    It no longer needs the guard that skipped the computed read under trusted publishing, because nothing is read unless the caller maps it.
-
 5. **verctl hands the token to the publisher.**
    The publish step sets the token in `VERCTL_REGISTRY_TOKEN` or `VERCTL_TRUSTED_PUBLISHING_TOKEN`, and the variable name in `VERCTL_REGISTRY_TOKEN_ENV`, then runs the bare verb.
    `verctl release` fails before any other work when both tokens are set.
