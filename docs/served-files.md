@@ -170,6 +170,9 @@ pins:
   - A side is bounded when its literal holds at least one character that is
     not a digit, `.`, `-`, or `+`. A version and its prerelease or build hold
     only those four.
+  - The character next to `{version}` must not be a digit, or a `.` with a
+    digit beyond it, even when the rest of the literal bounds the side.
+    `v{version}.5x` against `v1.2.3.5x` would pin 1.2.3 and keep `.5x`.
   - Under `whole_line`, the line start or end bounds the side, unless the
     literal on that side is made only of those four characters.
 
@@ -180,6 +183,7 @@ pins:
   | `{version}`, `verctl-{version}`, `verctl@{version}.` | refused |
   | `v{version}-`, `-{version}`, `{version}.1` | refused |
   | `version: {version}-` with `whole_line` | refused |
+  | `v{version}.5x`, `v{version}1x`, `x1.{version}`, `x1{version}` | refused |
 
 - Every verb that reads `.ctl/ver.yaml` refuses a pattern with an open side,
   naming the pattern and the side. With both boundaries, a longer version

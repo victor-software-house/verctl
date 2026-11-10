@@ -261,6 +261,9 @@ is not a digit, `.`, `-`, or `+`. Under
 `whole_line: true`, the line start or end bounds the side, unless the
 literal on that side is made only of those four characters.
 
+The character next to `{version}` must not be a digit, or a `.` with a
+digit beyond it: `v{version}.5x` would read `v1.2.3.5x` as 1.2.3.
+
 Loading `.ctl/ver.yaml` refuses a pattern with an open side, naming it
 and the side. A prerelease such as `0.1.1-rc1` then fails to match
 instead of having its numeric head rewritten.
