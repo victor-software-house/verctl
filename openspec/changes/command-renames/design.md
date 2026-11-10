@@ -2,8 +2,9 @@
 
 ## 1. A removed verb names its replacement
 
-`verctl prepare` and `verctl pin` stay in the command enum, hidden from help
-and from the usage spec. Each takes any arguments and exits 2, the code clap
+`verctl prepare` and `verctl pin` stay as hidden commands, out of help.
+The usage spec marks them `hide`, so mise leaves them out of its help and
+completion. Each takes any arguments and exits 2, the code clap
 uses for a usage error, with one line on stderr: `prepare is now version: run
 verctl version` and `pin is now render: run verctl render`. Under
 `--format json` the same message is the JSON error on stdout.

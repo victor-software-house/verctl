@@ -143,7 +143,7 @@ mise tasks only.
 Human writes `.changeset/*.md` only. **Write the fragment on the same
 PR that ships the behavior.** Do not save them up for a release dump.
 Never hand-edit versions or
-CHANGELOG. `prepare --pr` is the Version PR. `verctl check --versions`
+CHANGELOG. `version --pr` is the Version PR. `verctl check --versions`
 compares each manifest to the merge-base of HEAD and the default
 branch. Exempt on a `verctl/release/<base>` branch locally, or when the
 GitHub event's pull request has this repository as its head repository and
@@ -189,7 +189,7 @@ with `verctl-artifact: verctl` and `MISE_ENV=ci,release`, so every
 release job runs that build; `mise.release.toml` is only a `ver`
 task that runs `verctl` from PATH, with no pin. Build verctl from
 source only there, never in every job. `.miserc.toml`
-defaults local `MISE_ENV` to `dev`. `prepare`
+defaults local `MISE_ENV` to `dev`. `version`
 rewrites `pins` onto the Version PR commit, because the tag names
 that commit and publish pushes nothing but the tag. Actions run
 `verctl` from PATH.

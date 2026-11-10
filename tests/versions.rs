@@ -117,7 +117,7 @@ fn hand_edited_version_fails() {
 }
 
 /// Deleting a released `VERSION` file is drift, not a new package: the next
-/// `prepare` would read `0.0.0` and write `0.0.1` over `1.2.0`.
+/// `version` would read `0.0.0` and write `0.0.1` over `1.2.0`.
 #[test]
 fn deleting_a_released_version_file_fails() {
     let dir = TempDir::new().unwrap();
@@ -142,7 +142,7 @@ fn deleting_a_released_version_file_fails() {
 }
 
 /// A declared package whose manifest is gone fails the check and names it,
-/// as `prepare` would, instead of dropping out of the report.
+/// as `version` would, instead of dropping out of the report.
 #[test]
 fn a_missing_manifest_fails_and_names_the_package() {
     let dir = repo_with_origin_main("1.0.0");

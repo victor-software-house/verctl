@@ -1,5 +1,5 @@
 # This repo's own package. A .changeset fragment plus
-# `mise run ver prepare --pr` opens the first Version PR.
+# `mise run ver version --pr` opens the first Version PR.
 
 # examples/mise.toml and skills/verctl/SKILL.md are served from
 # .ctl/templates/, so they need no pin. mise.release.toml is the one

@@ -29,4 +29,4 @@ runs:
         GITHUB_TOKEN: ${{ inputs.token }}
         VERCTL_CONFIG: ${{ inputs.config }}
         VERCTL_DRY_RUN: ${{ inputs.dry-run }}
-      run: exec verctl prepare --pr
+      run: exec verctl version --pr

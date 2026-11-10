@@ -304,7 +304,7 @@ fn dry_run_of_a_missing_version_file_has_nothing_to_release() {
 }
 
 /// A version file `publish` cannot read fails and names the package, as
-/// `prepare` does.
+/// `version` does.
 #[test]
 fn dry_run_names_the_package_whose_version_it_cannot_read() {
     let root = TempDir::new().unwrap();

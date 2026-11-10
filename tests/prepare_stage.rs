@@ -1,4 +1,4 @@
-//! What `prepare` is allowed to write: `prepare.after`, `pins`,
+//! What `version` is allowed to write: `prepare.after`, `pins`,
 //! and unexpected dirty paths.
 #![allow(
     clippy::unwrap_used,
@@ -56,7 +56,7 @@ fn write_min(root: &Path, extra: &str) {
 fn prepare(root: &Path) -> std::process::Output {
     common::verctl()
         .current_dir(root)
-        .args(["prepare", "--no-pr"])
+        .args(["version", "--no-pr"])
         .output()
         .unwrap()
 }
@@ -166,7 +166,7 @@ fn bunfig_is_passed_as_config() {
 }
 
 /// The tag names the Version PR commit, so a pin rewritten after publish
-/// never reaches the tree a consumer fetches by ref. `prepare` writes it.
+/// never reaches the tree a consumer fetches by ref. `version` writes it.
 #[test]
 fn pins_move_with_the_bump() {
     let root = TempDir::new().unwrap();
@@ -215,7 +215,7 @@ fn pins_move_with_the_bump() {
 }
 
 /// A rewritten pin is part of the release, not a surprise in the worktree.
-/// Without that, the dirty check would reject the file `prepare` just wrote.
+/// Without that, the dirty check would reject the file `version` just wrote.
 #[test]
 fn a_rewritten_pin_is_not_unexpected_dirt() {
     let root = TempDir::new().unwrap();
@@ -294,7 +294,7 @@ fn a_dry_run_reports_the_pin_without_writing_it() {
     init_repo(root.path());
     let output = common::verctl()
         .current_dir(root.path())
-        .args(["prepare", "--no-pr", "--dry-run"])
+        .args(["version", "--no-pr", "--dry-run"])
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -455,7 +455,7 @@ fn prepare_ignores_hook_variables() {
         &["read-tree", "--empty", "--index-output=.git/hook-index"],
     );
     let index = fs::read(root.path().join(".git/index")).unwrap();
-    let dry_run = ["prepare", "--no-pr", "--dry-run", "--color", "never"];
+    let dry_run = ["version", "--no-pr", "--dry-run", "--color", "never"];
     let plain = verctl(root.path(), &dry_run, &[]);
     assert!(
         plain.status.success(),
@@ -475,7 +475,7 @@ fn prepare_ignores_hook_variables() {
     assert_eq!(fs::read(root.path().join(".git/index")).unwrap(), index);
     assert_eq!(common::git(root.path(), &["status", "--porcelain"]), "");
     let index = fs::read(root.path().join(".git/index")).unwrap();
-    let applied = verctl(root.path(), &["prepare", "--no-pr"], &HOOK_ENV);
+    let applied = verctl(root.path(), &["version", "--no-pr"], &HOOK_ENV);
     assert!(
         applied.status.success(),
         "{}",

@@ -20,9 +20,9 @@ completion bootstrap.
 | `instructions` | — | Print the installed-version operator contract |
 | `status` | — | List pending .changeset fragments |
 | `check` | — | Validate fragments, or `--versions` against the default branch |
-| `prepare` | — | Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews |
+| `version` | — | Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews |
 | `publish` | — | Publish the versions on HEAD (cargo / bun + GitHub Release) |
-| `pin` | — | Rewrite collocated tool pins to the versions on HEAD |
+| `render` | — | Rewrite collocated tool pins to the versions on HEAD |
 | `assets` | — | Plan or build native GitHub Release tarballs declared under `assets` |
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
 | `docs` | — | Wait for docs.rs to build each crates.io crate released at HEAD |
@@ -66,12 +66,12 @@ separate operator decision, never the first fragment's bump.
 any lookup, so a repo can adopt the release workflow before its first
 release.
 
-`prepare` and `check` refuse a `minor` or `major` fragment on a package
+`version` and `check` refuse a `minor` or `major` fragment on a package
 at `0.0.0`, including its pre-releases and builds, naming the package.
 To open at `0.1.0` on purpose,
 the operator sets `first_minor: true` on that package in `.ctl/ver.yaml`;
 the key does nothing once the package has released. `check` plans the
-pending fragments against `.ctl/ver.yaml` the way `prepare` does, so a
+pending fragments against `.ctl/ver.yaml` the way `version` does, so a
 repo that runs it in its verify task fails the pull request that adds
 such a fragment.
 
@@ -209,12 +209,12 @@ runs `verctl` from PATH, with no pin. A release that installed its own
 tarball could only ever run the previous release, which is exactly
 when new behaviour is needed. Consumers run their pin, because the
 verctl they install is independent of the version they release.
-`verctl pin` rewrites collocated `github:…/verctl` entries (and
-`?ref=v…` includes) to the versions on HEAD; `prepare` calls it, so
+`verctl render` rewrites collocated `github:…/verctl` entries (and
+`?ref=v…` includes) to the versions on HEAD; `version` calls it, so
 the Version PR commit carries them.
 
 A package's `path` names the file that holds its version. `Cargo.toml`,
-`package.json`, and `pyproject.toml` need no driver: `prepare` rewrites
+`package.json`, and `pyproject.toml` need no driver: `version` rewrites
 `workspace.package.version` or `package.version`, `version`, and
 `project.version` in place and keeps every other byte. A `pyproject.toml`
 whose `project.dynamic` lists `version` fails, because its build backend
@@ -227,7 +227,7 @@ comments directly above that line fails the bump, because Go reads it together w
 version comment. A bump to v2 or later fails until
 the module path ends in `/v<major>`, and a Go module with no publisher
 releases on GitHub only. A `VERSION` file holds one version and a newline.
-A missing one reads as `0.0.0`: `check` leaves it missing and `prepare`
+A missing one reads as `0.0.0`: `check` leaves it missing and `version`
 writes it. Its directory must exist, or the plan fails before any write.
 With no publisher, a `VERSION` package releases on GitHub only.
 `marker: true` makes any file a package: its version is the one line such
@@ -236,10 +236,10 @@ and no such line, or two, fails. It takes no driver, and with no publisher
 it releases on GitHub only.
 A lockfile
 beside the manifest or above it in the repository adds its refresh to the
-next steps: `cargo update --workspace` for `Cargo.lock`, the package
+report's `after` commands: `cargo update --workspace` for `Cargo.lock`, the package
 manager's install for a JavaScript lockfile, and `uv lock` for `uv.lock`.
 
-`prepare` writes versions, per-package CHANGELOG.md (next to each
+`version` writes versions, per-package CHANGELOG.md (next to each
 manifest), and consumes fragments (same as `changeset version`).
 `prepare.after` is one argv run after bumps; `prepare.stage`
 lists extra globs that command may write. Any other dirty path
@@ -261,8 +261,8 @@ verctl reads the repository that covers the directory it runs in, as
 it is on disk. Inside a git hook it ignores `GIT_INDEX_FILE`,
 `GIT_WORK_TREE`, and `GIT_DIR`, and it never writes the index.
 
-`prepare --dry-run` and `prepare --preview` print the same plan and
-write nothing. `prepare --pr --dry-run` also lists consumed fragments
+`version --dry-run` and `version --preview` print the same plan and
+write nothing. `version --pr --dry-run` also lists consumed fragments
 and whether the Version PR would open or update. Preview does not
 require GitHub auth.
 
@@ -375,7 +375,7 @@ more, such as a second executable, a service unit, or a licence, set
 each listed path exists, then packs `tar czf <asset> -C <dir> <files>`,
 with `{bin}`, `{version}`, `{id}`, `{os}`, `{arch}`, and `{triple}`
 replaced. Publish pushes
-nothing but the tag. `pins` are rewritten by `prepare`, on the
+nothing but the tag. `pins` are rewritten by `version`, on the
 Version PR commit the tag will name, so the released tree carries its
 own pins. A pin that must name an already-published tarball (a repo's
 own bootstrap tool) is not a `pins` entry. OIDC trusted publishing
@@ -433,7 +433,7 @@ verctl decides how many jobs there are; the workflow file decides
 where a fixed job runs. `ci` and `assets` exist because only the
 repo knows how many verify checks or tarballs it wants, and a static
 YAML file cannot declare N jobs when N is unknown. `plan`, `crate`,
-`pin`, and `prepare` are always exactly one job each, so their
+`render`, and `version` are always exactly one job each, so their
 `runs-on` is a literal in the workflow the consumer owns, not a
 config key. Do not add one. There is no `release` runner section and
 none is planned: publishing a crate twice is wrong the same way two

@@ -102,7 +102,7 @@ pub struct VersionReport {
     pub skip: Option<String>,
     /// One row per package. A missing `VERSION` file in an existing directory
     /// reads as `0.0.0`; any other file a package cannot read fails the
-    /// report, as it fails `prepare`.
+    /// report, as it fails `version`.
     pub rows: Vec<VersionRow>,
 }
 

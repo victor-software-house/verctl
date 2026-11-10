@@ -1,4 +1,4 @@
-//! The `status`, `check`, and `prepare` commands as run through the binary,
+//! The `status`, `check`, and `version` commands as run through the binary,
 //! including JSON output.
 
 mod common;
@@ -118,10 +118,11 @@ fn json_output_holds_no_escape_byte_under_forced_colour() {
     fs::write(bad.join("bad.md"), "nope").expect("write");
     let good = good.to_str().expect("UTF-8 path");
     let bad = bad.to_str().expect("UTF-8 path");
-    let cases: [&[&str]; 4] = [
+    let cases: [&[&str]; 5] = [
         &["status", "--format", "json", "-d", good],
         &["check", "--format", "json", "-d", bad],
-        &["prepare", "--bogus", "--format", "json"],
+        &["version", "--bogus", "--format", "json"],
+        &["--format", "json", "pin", "--dry-run"],
         &["--format=json", "nosuchverb"],
     ];
     for args in cases {
@@ -188,7 +189,7 @@ fn prepare_cli_writes_cargo() {
     let root = demo_root();
     let output = common::verctl()
         .current_dir(root.path())
-        .args(["prepare"])
+        .args(["version"])
         .output()
         .expect("spawn");
     assert!(
@@ -205,7 +206,7 @@ fn prepare_dry_run_writes_nothing() {
     let root = demo_root();
     let output = common::verctl()
         .current_dir(root.path())
-        .args(["prepare", "-n", "--color", "never"])
+        .args(["version", "-n", "--color", "never"])
         .output()
         .expect("spawn");
     assert!(
@@ -237,7 +238,7 @@ fn prepare_pr_preview_needs_no_auth_and_writes_nothing() {
         .current_dir(root.path())
         .env_remove("GITHUB_TOKEN")
         .env_remove("GH_TOKEN")
-        .args(["prepare", "--pr", "--preview", "--color", "never"])
+        .args(["version", "--pr", "--preview", "--color", "never"])
         .output()
         .expect("spawn");
     assert!(
@@ -259,7 +260,7 @@ fn prepare_no_pr_still_writes() {
     let root = demo_root();
     let output = common::verctl()
         .current_dir(root.path())
-        .args(["prepare", "--no-pr"])
+        .args(["version", "--no-pr"])
         .output()
         .expect("spawn");
     assert!(
@@ -295,7 +296,7 @@ fn prepare_pr_noops_without_fragments() {
         .current_dir(root.path())
         .env_remove("GITHUB_TOKEN")
         .env_remove("GH_TOKEN")
-        .args(["prepare", "--pr", "--color", "never"])
+        .args(["version", "--pr", "--color", "never"])
         .output()
         .expect("spawn");
     assert!(
@@ -315,7 +316,7 @@ fn prepare_pr_fails_closed_without_github_auth() {
         .env_remove("GITHUB_TOKEN")
         .env_remove("GH_TOKEN")
         .current_dir(root.path())
-        .args(["prepare", "--pr"])
+        .args(["version", "--pr"])
         .output()
         .expect("spawn");
     assert!(!output.status.success());
@@ -340,7 +341,7 @@ fn help_has_short_and_long() {
         assert!(stdout.contains("--version"), "{stdout}");
     }
     let output = common::verctl()
-        .args(["prepare", "-h"])
+        .args(["version", "-h"])
         .output()
         .expect("spawn");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -375,7 +376,7 @@ fn prepare_refuses_auto_merge() {
     let root = demo_root();
     let output = common::verctl()
         .current_dir(root.path())
-        .args(["prepare", "--pr", "--auto-merge", "--color", "never"])
+        .args(["version", "--pr", "--auto-merge", "--color", "never"])
         .output()
         .expect("spawn");
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -484,7 +485,7 @@ fn an_empty_verctl_config_means_the_default() {
     let root = demo_root();
     let output = common::verctl()
         .current_dir(root.path())
-        .args(["prepare", "--dry-run", "--format", "json"])
+        .args(["version", "--dry-run", "--format", "json"])
         .env("VERCTL_CONFIG", "")
         .output()
         .expect("spawn");
@@ -496,7 +497,7 @@ fn an_empty_verctl_config_means_the_default() {
 }
 
 /// `check` plans without writing, so a package whose `VERSION` file does not
-/// exist yet passes and the file stays missing until `prepare` writes it.
+/// exist yet passes and the file stays missing until `version` writes it.
 #[test]
 fn check_leaves_a_missing_version_file_missing() {
     let root = TempDir::new().expect("tmp");
@@ -533,4 +534,83 @@ fn check_leaves_a_missing_version_file_missing() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(!root.path().join("actions/setup/VERSION").exists());
+}
+
+/// `prepare` is now `version`. The hidden verb takes any arguments, reads no
+/// config, and fails as a usage error that names the replacement.
+#[test]
+fn prepare_exits_2_and_names_version() {
+    let root = TempDir::new().expect("tempdir");
+    let output = common::verctl()
+        .current_dir(root.path())
+        .args(["prepare", "--pr", "--color", "never"])
+        .output()
+        .expect("spawn");
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, Vec::<u8>::new());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("prepare is now version: run verctl version"),
+        "{stderr}"
+    );
+}
+
+/// `pin` is now `render`. Under `--format json` the failure is the JSON error
+/// on stdout.
+#[test]
+fn pin_exits_2_and_names_render_in_json() {
+    let root = TempDir::new().expect("tempdir");
+    let output = common::verctl()
+        .current_dir(root.path())
+        .args(["--format", "json", "pin", "--dry-run"])
+        .output()
+        .expect("spawn");
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stderr, Vec::<u8>::new());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("JSON");
+    assert_eq!(value["status"], "err");
+    let message = value["error"]["message"].as_str().expect("message");
+    assert!(
+        message.contains("pin is now render: run verctl render"),
+        "{message}"
+    );
+}
+
+#[test]
+fn help_leaves_out_the_removed_verbs() {
+    let output = common::verctl()
+        .args(["--help", "--color", "never"])
+        .output()
+        .expect("spawn");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("version"), "{stdout}");
+    assert!(stdout.contains("render"), "{stdout}");
+    for removed in ["prepare", "pin "] {
+        assert!(
+            !stdout
+                .lines()
+                .any(|line| line.trim_start().starts_with(removed)),
+            "{stdout}"
+        );
+    }
+}
+
+/// The version report lists follow-up commands under `after`; 0.7 called
+/// the field `next`.
+#[test]
+fn version_json_lists_follow_up_commands_under_after() {
+    let root = demo_root();
+    let output = common::verctl()
+        .current_dir(root.path())
+        .args(["version", "--dry-run", "--format", "json"])
+        .output()
+        .expect("spawn");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("JSON");
+    assert!(value["after"].is_array(), "{value}");
+    assert!(value.get("next").is_none(), "{value}");
 }

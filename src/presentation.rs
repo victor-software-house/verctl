@@ -9,9 +9,9 @@ pub(super) enum Report {
     Check(CheckReport),
     VersionCheck(VersionCheckReport),
     Status(StatusReport),
-    Prepare(PrepareReport),
+    Version(VersionReport),
     Publish(PublishReport),
-    Pin(PinReport),
+    Render(RenderReport),
     Assets(AssetsReport),
     Vendored(VendoredReport),
     Ci(CiReport),
@@ -26,9 +26,9 @@ impl Present for Report {
             Self::Check(report) => report.present(),
             Self::VersionCheck(report) => report.present(),
             Self::Status(report) => report.present(),
-            Self::Prepare(report) => report.present(),
+            Self::Version(report) => report.present(),
             Self::Publish(report) => report.present(),
-            Self::Pin(report) => report.present(),
+            Self::Render(report) => report.present(),
             Self::Assets(report) => report.present(),
             Self::Vendored(report) => report.present(),
             Self::Ci(report) => report.present(),
@@ -43,9 +43,9 @@ impl Present for Report {
             Self::Instructions(_)
             | Self::Check(_)
             | Self::Status(_)
-            | Self::Prepare(_)
+            | Self::Version(_)
             | Self::Publish(_)
-            | Self::Pin(_)
+            | Self::Render(_)
             | Self::Assets(_)
             | Self::Vendored(_)
             | Self::Ci(_)
@@ -249,31 +249,31 @@ impl Present for StatusReport {
 }
 
 #[derive(Clone, Serialize)]
-pub(super) struct PrepareReport {
-    pub(super) bumps: Vec<PrepareBump>,
+pub(super) struct VersionReport {
+    pub(super) bumps: Vec<VersionBump>,
     pub(super) changelog: String,
     pub(super) consume: Vec<String>,
     pub(super) pins: Vec<String>,
     pub(super) pr: Option<String>,
-    pub(super) next: Vec<String>,
+    pub(super) after: Vec<String>,
     pub(super) dry_run: bool,
 }
 
 #[derive(Clone, Serialize)]
-pub(super) struct PrepareBump {
+pub(super) struct VersionBump {
     pub(super) name: String,
     pub(super) from: String,
     pub(super) to: String,
     pub(super) bump: String,
 }
 
-impl Present for PrepareReport {
+impl Present for VersionReport {
     fn present(&self) -> Document {
         let no_version_change = self.bumps.is_empty()
             && self.changelog.trim().is_empty()
             && self.consume.is_empty()
             && self.pins.is_empty()
-            && self.next.is_empty()
+            && self.after.is_empty()
             && self.pr.as_deref().is_none_or(|pr| pr == "no-op");
         if no_version_change {
             let mut fields = Fields::new().row("no-op", "no version-changing fragments");
@@ -310,8 +310,8 @@ impl Present for PrepareReport {
         if let Some(pr) = &self.pr {
             fields = fields.row("pr", pr.clone());
         }
-        for command in &self.next {
-            fields = fields.row("next", command.clone());
+        for command in &self.after {
+            fields = fields.row("after", command.clone());
         }
         if self.dry_run {
             fields = fields.row("dry-run", "nothing written");
@@ -420,11 +420,11 @@ impl Present for PublishReport {
 }
 
 #[derive(Serialize)]
-pub(super) struct PinReport {
+pub(super) struct RenderReport {
     pub(super) files: Vec<String>,
 }
 
-impl Present for PinReport {
+impl Present for RenderReport {
     fn present(&self) -> Document {
         if self.files.is_empty() {
             return Document::new().fields(Fields::new().row("pins", "none"));
@@ -525,8 +525,8 @@ mod tests {
     use verctl::publish;
 
     use super::{
-        CheckReport, PrepareReport, PublishReport, ReleaseRow, Report, StatusFragment,
-        StatusPackage, StatusReport,
+        CheckReport, PublishReport, ReleaseRow, Report, StatusFragment, StatusPackage,
+        StatusReport, VersionReport,
     };
 
     fn publish_report(outcome: publish::Outcome, pending: Vec<ReleaseRow>) -> Report {
@@ -606,20 +606,20 @@ mod tests {
     }
 
     #[test]
-    fn empty_prepare_dry_run_reports_both_states() {
-        let report = Report::Prepare(PrepareReport {
+    fn empty_version_dry_run_reports_both_states() {
+        let report = Report::Version(VersionReport {
             bumps: Vec::new(),
             changelog: String::new(),
             consume: Vec::new(),
             pins: Vec::new(),
             pr: None,
-            next: Vec::new(),
+            after: Vec::new(),
             dry_run: true,
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
             .width(80)
             .capture(&report)
-            .expect("prepare report");
+            .expect("version report");
         assert!(pretty.text().contains("no version-changing fragments"));
         assert!(pretty.text().contains("nothing written"));
     }

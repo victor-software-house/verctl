@@ -625,4 +625,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
           VERCTL_PR: "true"
-        run: mise run ver prepare
+        run: mise run ver version

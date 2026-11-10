@@ -2220,7 +2220,7 @@ mod tests {
         );
     }
 
-    /// `prepare --pr` runs from the repository root and finds it as `.`, and
+    /// `version --pr` runs from the repository root and finds it as `.`, and
     /// gix then reports `.` as the workdir, which no path strips. The commit
     /// resolves the workdir absolute first. The test binary runs in this
     /// crate's checkout, which is that root.

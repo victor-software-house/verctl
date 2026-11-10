@@ -25,7 +25,8 @@ take every flag the pins rewrite took in verctl 0.7.
 
 `verctl prepare` and `verctl pin` SHALL exit 2 without reading the config,
 and their error SHALL name the command that replaced them. Neither SHALL
-appear in `--help` or in the usage spec.
+appear in `--help`. The usage spec SHALL mark both `hide`, which keeps
+them out of mise help and completion.
 
 #### Scenario: The old version verb
 
@@ -36,3 +37,8 @@ appear in `--help` or in the usage spec.
 
 - **WHEN** a user runs `verctl --format json pin --dry-run`
 - **THEN** it exits 2 and the JSON error on stdout says `pin is now render: run verctl render`
+
+#### Scenario: The usage spec
+
+- **WHEN** mise runs `verctl --usage-spec=ver` to read the task grammar
+- **THEN** the `cmd prepare` and `cmd pin` nodes carry `hide=#true`

@@ -19,7 +19,7 @@ PATH.
 ```sh
 mise run ver status
 mise run ver check
-mise run ver prepare --pr
+mise run ver version --pr
 ```
 
 Never `mise run ver --`. The `--` in `#USAGE mount` is mise's
@@ -32,9 +32,9 @@ completion bootstrap.
 | `instructions` | — | Print the installed-version operator contract |
 | `status` | — | List pending .changeset fragments |
 | `check` | — | Validate fragments, or `--versions` against the default branch |
-| `prepare` | — | Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews |
+| `version` | — | Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews |
 | `publish` | — | Publish the versions on HEAD (cargo / bun + GitHub Release) |
-| `pin` | — | Rewrite collocated tool pins to the versions on HEAD |
+| `render` | — | Rewrite collocated tool pins to the versions on HEAD |
 | `assets` | — | Plan or build native GitHub Release tarballs declared under `assets` |
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
 | `docs` | — | Wait for docs.rs to build each crates.io crate released at HEAD |
@@ -62,7 +62,7 @@ thin caller), not changesets/action; its steps run `mise run ver <verb>`
 with settings in `env:`.
 Do not assemble changelog strings in ad-hoc Rust. Do not add a Node adapter.
 
-`prepare --pr` opens the Version PR against `GITHUB_REF_NAME`, else
+`version --pr` opens the Version PR against `GITHUB_REF_NAME`, else
 `VERCTL_DEFAULT_BRANCH`, else the branch `origin/HEAD` names, and fails before
 writing anything when none is set; it never guesses `main`. `proposal.title` and
 `proposal.commit_message` in `.ctl/ver.yaml` set the title and commit
@@ -75,7 +75,7 @@ merges it.
 
 A new package starts at `0.0.0`. Its first fragment is a `patch`, so its
 first release is `0.0.1`. Moving to `0.1.0` or `1.0.0` is a separate operator
-decision, never the first fragment's bump. `prepare` and `check` refuse a
+decision, never the first fragment's bump. `version` and `check` refuse a
 `minor` or `major` fragment on a `0.0.0` package; `first_minor: true` on the
 package in `.ctl/ver.yaml` opens it at `0.1.0`, and only the operator sets it.
 `publish` and `publish --plan` leave a package at `0.0.0` out, so a repo can
@@ -98,7 +98,7 @@ config, so it ignores the task's own `#MISE tools` pin, while mise already puts
 that pin first on PATH. Removing it is only safe together with rendering the
 pin, or the task freezes on whatever version the file happens to name.
 
-`pin` rewrites those collocated pins onto HEAD.
+`render` rewrites those collocated pins onto HEAD.
 
 Machines are `runners` entries with `labels`, declared once and named by
 the jobs that run on them: a `ci` job takes `runners`, one check each; an
@@ -107,7 +107,7 @@ machine. Only `labels` reach `runs-on`; a name resolves against
 `runners` or fails.
 
 verctl decides how many jobs there are; the workflow file decides where a
-fixed job runs. `plan`, `crate`, and `prepare` are always one job
+fixed job runs. `plan`, `crate`, and `version` are always one job
 each, so their `runs-on` is a literal in the consumer's workflow, not a
 config key. Do not add one, and do not add a `release` runner section.
 
@@ -122,7 +122,7 @@ fails, because its build backend sets the version. A `go.mod` package keeps
 its version as `// vX.Y.Z` on the `module` line and, with no publisher,
 releases on GitHub only; a v2 bump needs the `/v2` module path first. A
 `VERSION` file holds only the version; a missing one in an existing
-directory reads as `0.0.0` until `prepare` writes it, and with no publisher
+directory reads as `0.0.0` until `version` writes it, and with no publisher
 it releases on GitHub only.
 `marker: true` versions any one file, such as a reusable workflow, on its
 one `# version: X.Y.Z` line, and also releases on GitHub only.

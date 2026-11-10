@@ -9,7 +9,7 @@ after publish is never served. The tag is created at that commit
 instead of being reused.
 
 This document is the contract for how those files stay correct. It is the design
-`prepare`, `check`, and `pins` implement; read it before adding a key.
+`version`, `check`, and `pins` implement; read it before adding a key.
 
 ## Goals
 
@@ -83,7 +83,7 @@ name it uses to build a line is not a declaration.
 Trim declarations with `{%- … -%}`: a shebang has to stay on line one.
 
 Committing one template adds a served file; deleting it retires it. Only a
-tracked template renders, because `prepare` stages what it writes: one git does
+tracked template renders, because `version` stages what it writes: one git does
 not carry would put a served file on the tag with no source beside it, and
 `check` would have nothing to compare against on a fresh clone. An untracked
 template in the source tree therefore **fails the run, naming the file**:
@@ -224,10 +224,10 @@ written until every rewrite in it succeeds.
 
 ## 6. Validated at every moment that can serve a wrong version
 
-- **`prepare`**: rewrites pins and renders templates onto the Version PR
+- **`version`**: rewrites pins and renders templates onto the Version PR
   commit, the commit the tag will name, and stages them automatically. A repo
   never lists rendered outputs in `prepare.stage`.
-- **`prepare --dry-run` / `--preview`**: runs the same validation and writes
+- **`version --dry-run` / `--preview`**: runs the same validation and writes
   nothing.
 - **`check`** (every PR and push): patterns still match at their declared
   arity, and every served file still equals what its template renders at the

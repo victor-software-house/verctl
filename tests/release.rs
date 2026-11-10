@@ -200,7 +200,7 @@ fn each_package_gets_its_own_changelog() {
     .unwrap();
     let output = common::verctl()
         .current_dir(root.path())
-        .args(["prepare", "--no-pr"])
+        .args(["version", "--no-pr"])
         .output()
         .unwrap();
     assert!(
@@ -375,7 +375,7 @@ fn local_prepare_writes_changelog_and_consumes() {
     .unwrap();
     let output = common::verctl()
         .current_dir(root.path())
-        .args(["prepare", "--no-pr"])
+        .args(["version", "--no-pr"])
         .output()
         .unwrap();
     assert!(
@@ -385,7 +385,7 @@ fn local_prepare_writes_changelog_and_consumes() {
     );
     assert!(
         !frag.exists(),
-        "prepare consumes fragments after writing CHANGELOG"
+        "version consumes fragments after writing CHANGELOG"
     );
     let log = fs::read_to_string(root.path().join("CHANGELOG.md")).unwrap();
     assert!(log.contains("# Changelog"), "{log}");
@@ -456,7 +456,7 @@ fn prepare_links_the_pull_request_or_commit_that_added_each_fragment() {
         .current_dir(root.path())
         .env_remove("GITHUB_TOKEN")
         .env_remove("GH_TOKEN")
-        .args(["prepare", "--no-pr"])
+        .args(["version", "--no-pr"])
         .output()
         .unwrap();
     assert!(
@@ -479,7 +479,7 @@ fn prepare_links_the_pull_request_or_commit_that_added_each_fragment() {
 }
 
 /// With no `GITHUB_REF_NAME`, no `VERCTL_DEFAULT_BRANCH`, and no
-/// `origin/HEAD`, `prepare --pr` fails before it writes anything instead of
+/// `origin/HEAD`, `version --pr` fails before it writes anything instead of
 /// opening the Version PR against `main`.
 #[test]
 fn prepare_pr_without_a_known_base_fails_before_writing() {
@@ -501,7 +501,7 @@ fn prepare_pr_without_a_known_base_fails_before_writing() {
         .env_remove("GH_TOKEN")
         .env_remove("GITHUB_REF_NAME")
         .env_remove("VERCTL_DEFAULT_BRANCH")
-        .args(["prepare", "--pr"])
+        .args(["version", "--pr"])
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);

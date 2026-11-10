@@ -141,9 +141,9 @@ impl Driver {
     ///
     /// A `VERSION` file that does not exist yet is empty text, which reads as
     /// `0.0.0`, so a new package needs no file before its first release:
-    /// `prepare` creates it, and `check` leaves the tree as it was. Its
+    /// `version` creates it, and `check` leaves the tree as it was. Its
     /// directory must exist: a package whose directory is missing is a wrong
-    /// `path`, and `prepare` would otherwise fail halfway through its writes.
+    /// `path`, and `version` would otherwise fail halfway through its writes.
     ///
     /// # Errors
     ///
@@ -181,7 +181,7 @@ impl Driver {
     }
 
     /// Refuse `new_version` when the file's own format forbids it, before
-    /// anything is written, so `prepare --dry-run` refuses it too.
+    /// anything is written, so `version --dry-run` refuses it too.
     ///
     /// # Errors
     ///
