@@ -4,7 +4,10 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use ctl_core::prelude::*;
-use verctl::cli::{CheckArgs, Cli, Command, PublishArgs, StatusArgs, VersionArgs};
+use verctl::cli::{
+    AssetArgs, CheckArgs, Cli, Command, ReleaseArgs, ReleaseStep, RenderArgs, StatusArgs,
+    VersionArgs,
+};
 use verctl::config::{self, Config};
 use verctl::fragment::{self, Bump};
 use verctl::{
@@ -15,8 +18,8 @@ use verctl::{
 mod presentation;
 
 use presentation::{
-    AssetsReport, CheckReport, CiReport, DocsReport, InstructionsReport, PublishReport, ReleaseRow,
-    RenderReport, Report, SemverReport, StatusFragment, StatusPackage, StatusReport,
+    AssetsReport, CheckReport, CiReport, DocsReport, InstructionsReport, ReleaseReport, ReleaseRow,
+    RenderReport, Report, SemverReport, StatusAssets, StatusFragment, StatusPackage, StatusReport,
     VendoredReport, VersionBump, VersionCheckReport, VersionReport,
 };
 
@@ -36,12 +39,14 @@ fn execute(cli: Cli) -> Result<Report> {
         Command::Check(args) if args.versions => versions_report(&args).map(Report::VersionCheck),
         Command::Check(args) => check_report(&args).map(Report::Check),
         Command::Version(args) => version_report(&args).map(Report::Version),
-        Command::Publish(args) => publish_report(&args).map(Report::Publish),
-        Command::Render(args) => render_report(&args).map(Report::Render),
-        Command::Assets(args) => match &args.vendored {
-            Some(name) => vendored_report(&args, name).map(Report::Vendored),
-            None => assets_report(&args).map(Report::Assets),
+        Command::Release(args) => match &args.step {
+            Some(ReleaseStep::Asset(asset)) => match &asset.vendored {
+                Some(name) => vendored_report(asset, name).map(Report::Vendored),
+                None => asset_report(asset).map(Report::Assets),
+            },
+            None => release_report(&args).map(Report::Release),
         },
+        Command::Render(args) => render_report(&args).map(Report::Render),
         Command::Ci(args) => ci_report(&args).map(Report::Ci),
         Command::Docs(args) => docs_report(&args).map(Report::Docs),
         Command::Semver(args) => semver_report(&args).map(Report::Semver),
@@ -336,63 +341,21 @@ fn preview_pr(root: &Path) -> String {
     }
 }
 
-fn publish_report(args: &verctl::cli::PublishArgs) -> Result<PublishReport> {
+fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
     let config = Config::load(&args.config)?;
     let root = &config::root_of(&args.config);
-    if args.plan {
-        return publish_plan_report(args, &config, root);
-    }
     let allow = publish::Allow {
         workflow_change: args.allow.allow_workflow_change,
         off_default_branch: args.allow.allow_off_default_branch,
     };
     let run = publish::run_pending(&config, root, args.dry_run(), args.skip_assets, allow)?;
-    Ok(PublishReport {
+    Ok(ReleaseReport {
         outcome: run.outcome,
         packages: run.published.packages,
         releases: run.published.releases,
         waiting: run.waiting.iter().map(ReleaseRow::from).collect(),
-        pending: Vec::new(),
         allowed: run.allowed,
         dry_run: args.dry_run(),
-    })
-}
-
-/// `publish --plan`: every incomplete version commit, written to
-/// `$GITHUB_OUTPUT` for the workflow's matrix when Actions set it.
-fn publish_plan_report(
-    args: &verctl::cli::PublishArgs,
-    config: &Config,
-    root: &std::path::Path,
-) -> Result<PublishReport> {
-    publish::full_history(root)?;
-    let token = release::resolve_token()?;
-    let pending = pending::pending(config, root, &token, args.skip_assets)?;
-    if let Some(path) = std::env::var_os("GITHUB_OUTPUT").filter(|path| !path.is_empty()) {
-        pending::write_github_output(&pending, std::path::Path::new(&path))?;
-    }
-    Ok(PublishReport {
-        outcome: if pending.is_empty() {
-            publish::Outcome::NothingToRelease
-        } else {
-            publish::Outcome::Released
-        },
-        packages: Vec::new(),
-        releases: Vec::new(),
-        waiting: Vec::new(),
-        pending: pending
-            .commits
-            .iter()
-            .flat_map(|commit| {
-                commit.packages.iter().map(|package| ReleaseRow {
-                    name: package.name.clone(),
-                    version: package.version.clone(),
-                    commit: commit.sha.clone(),
-                })
-            })
-            .collect(),
-        allowed: Vec::new(),
-        dry_run: false,
     })
 }
 
@@ -400,7 +363,7 @@ fn publish_plan_report(
 /// hold: the files `check` compares. Both are planned before either is
 /// written, so a pin that no longer matches, a template that fails, or a file
 /// both claim changes nothing.
-fn render_report(args: &PublishArgs) -> Result<RenderReport> {
+fn render_report(args: &RenderArgs) -> Result<RenderReport> {
     let config = Config::load(&args.config)?;
     let root = &config::root_of(&args.config);
     let versions = pins::current_versions(root, &config)?;
@@ -421,55 +384,38 @@ fn render_report(args: &PublishArgs) -> Result<RenderReport> {
     })
 }
 
-fn assets_report(args: &verctl::cli::AssetsArgs) -> Result<AssetsReport> {
+/// `release asset <target>`: build the target's tarball, then upload it to
+/// `--tag`, or the first package's tag, unless `--dry-run` asks for the build
+/// alone.
+fn asset_report(args: &AssetArgs) -> Result<AssetsReport> {
     let config = Config::load(&args.config)?;
     let root = &config::root_of(&args.config);
     let planned = assets::plan(&config, root)?;
-    if let Some(path) = &args.github_output {
-        assets::write_github_output(&planned, path)?;
-    }
-    if let Some(id) = &args.build {
-        let tarball = assets::build(&planned, id, root)?;
-        let uploaded = if args.upload {
-            let tag = args.tag.as_deref().unwrap_or(planned.tag.as_str());
-            Some(assets::upload(root, tag, &tarball)?)
-        } else {
-            None
-        };
-        return Ok(AssetsReport {
-            plan: planned,
-            tarball: Some(tarball.display().to_string()),
-            uploaded,
-        });
-    }
-    anyhow::ensure!(!args.upload, "--upload requires --build");
+    let tarball = assets::build(&planned, &args.target, root)?;
+    let uploaded = if args.dry_run() {
+        None
+    } else {
+        let tag = args.tag.as_deref().unwrap_or(planned.tag.as_str());
+        Some(assets::upload(root, tag, &tarball)?)
+    };
     Ok(AssetsReport {
         plan: planned,
-        tarball: None,
-        uploaded: None,
+        tarball: Some(tarball.display().to_string()),
+        uploaded,
     })
 }
 
-fn vendored_report(args: &verctl::cli::AssetsArgs, name: &str) -> Result<VendoredReport> {
+/// `release asset <target> --vendored <name>`: build the set's archive for
+/// the target, then upload it with its checksum unless `--dry-run`.
+fn vendored_report(args: &AssetArgs, name: &str) -> Result<VendoredReport> {
     let config = Config::load(&args.config)?;
     let root = &config::root_of(&args.config);
     let planned = assets::plan_vendored(&config, name)?;
-    if let Some(path) = &args.github_output {
-        assets::write_vendored_github_output(&planned, path)?;
-    }
-    let Some(id) = &args.build else {
-        anyhow::ensure!(!args.upload, "--upload requires --build");
-        return Ok(VendoredReport {
-            plan: planned,
-            archive: None,
-            uploaded: None,
-        });
-    };
-    let archive = assets::build_vendored(&planned, id, root)?;
-    let uploaded = if args.upload {
-        Some(assets::upload_vendored(&planned, root, &archive)?)
-    } else {
+    let archive = assets::build_vendored(&planned, &args.target, root)?;
+    let uploaded = if args.dry_run() {
         None
+    } else {
+        Some(assets::upload_vendored(&planned, root, &archive)?)
     };
     Ok(VendoredReport {
         plan: planned,
@@ -487,8 +433,50 @@ fn ci_report(args: &verctl::cli::CiArgs) -> Result<CiReport> {
     Ok(CiReport { plan: planned })
 }
 
+/// The fragments, the asset plan, and the incomplete version commits.
+///
+/// With `--github-output`, `status` fetches the full history and needs a
+/// token, so the workflow's plan is never partial, and it writes the asset
+/// outputs (`has_assets`, `tag`, `matrix`) and the release outputs
+/// (`commits`, `pending`, `assets`). Without it, `status` changes nothing in
+/// the clone: it reads the history already there, and with no token it
+/// reports the version commits as not checked rather than as none.
 fn status_report(args: &StatusArgs) -> Result<StatusReport> {
     let fragments = fragment::load_dir(&args.dir)?;
+    let config = Config::load(&args.config)?;
+    let root = &config::root_of(&args.config);
+    let assets = if let Some(name) = &args.vendored {
+        let planned = assets::plan_vendored(&config, name)?;
+        if let Some(path) = &args.github_output {
+            assets::write_vendored_github_output(&planned, path)?;
+        }
+        Some(StatusAssets::Vendored(planned))
+    } else {
+        let planned = assets::plan(&config, root)?;
+        if let Some(path) = &args.github_output {
+            assets::write_github_output(&planned, path)?;
+        }
+        planned
+            .has_assets
+            .then_some(StatusAssets::Packages(planned))
+    };
+    let token = match &args.github_output {
+        Some(_) => {
+            publish::full_history(root)?;
+            Some(release::resolve_token()?)
+        }
+        None => release::env_token(),
+    };
+    let (unreleased, unreleased_unchecked) = match token {
+        Some(token) => {
+            let planned = pending::pending(&config, root, &token, args.skip_assets)?;
+            if let Some(path) = &args.github_output {
+                pending::write_github_output(&planned, path)?;
+            }
+            (Some(unreleased_rows(&planned)), None)
+        }
+        None => (None, Some("no GITHUB_TOKEN or GH_TOKEN".to_owned())),
+    };
     let overall = fragments
         .iter()
         .map(fragment::Fragment::max_bump)
@@ -517,7 +505,25 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
                     .collect(),
             })
             .collect(),
+        assets,
+        unreleased,
+        unreleased_unchecked,
     })
+}
+
+/// Every package at an incomplete version commit, oldest commit first.
+fn unreleased_rows(planned: &pending::Pending) -> Vec<ReleaseRow> {
+    planned
+        .commits
+        .iter()
+        .flat_map(|commit| {
+            commit.packages.iter().map(|package| ReleaseRow {
+                name: package.name.clone(),
+                version: package.version.clone(),
+                commit: commit.sha.clone(),
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]

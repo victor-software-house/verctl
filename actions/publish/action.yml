@@ -1,4 +1,4 @@
-name: verctl publish
+name: verctl release
 description: >-
   After the Version PR merges, publish cargo and bun packages and open
   the GitHub Release. Requires `verctl` on PATH.
@@ -24,11 +24,11 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Publish
+    - name: Release
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.token }}
         VERCTL_CONFIG: ${{ inputs.config }}
         VERCTL_DRY_RUN: ${{ inputs.dry-run }}
         VERCTL_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-      run: exec verctl publish
+      run: exec verctl release

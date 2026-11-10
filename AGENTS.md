@@ -198,7 +198,7 @@ defaults local `MISE_ENV` to `dev`. `version`
 rewrites `pins` onto the Version PR commit, because the tag names
 that commit and publish pushes nothing but the tag. Actions run
 `verctl` from PATH.
-`publish` is exact-SHA plus a matching per-package CHANGELOG heading.
+`release` is exact-SHA plus a matching per-package CHANGELOG heading.
 Before any upload it proves the commit: the default branch contains it,
 its `.github/workflows/` tree equals the default tip's, and no package
 has a skipped version since its last tag. Only the first two have an

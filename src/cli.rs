@@ -33,33 +33,38 @@ pub struct Cli {
 pub enum Command {
     /// Print the installed-version operator contract.
     Instructions,
-    /// List pending .changeset fragments.
+    /// List pending fragments, the asset plan, and the incomplete version
+    /// commits. `--github-output` writes the release workflow's plan.
     Status(StatusArgs),
     /// Validate fragments, or `--versions` against the default branch.
     Check(CheckArgs),
     /// Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews.
     Version(VersionArgs),
-    /// Publish the versions on HEAD (cargo / bun + GitHub Release).
-    Publish(PublishArgs),
+    /// Release the versions on HEAD (cargo / bun + GitHub Release).
+    /// `release asset <target>` builds and uploads one asset.
+    Release(ReleaseArgs),
     /// Rewrite pins and render served templates at the versions on HEAD.
-    Render(PublishArgs),
-    /// Plan or build native GitHub Release tarballs declared under `assets`.
-    Assets(AssetsArgs),
+    Render(RenderArgs),
     /// Plan the validation jobs declared in `[ci]`.
     Ci(CiArgs),
     /// Wait for docs.rs to build each crates.io crate released at HEAD.
     Docs(DocsArgs),
     /// Check the API of each crates.io crate whose next release is a patch.
     Semver(SemverArgs),
-    /// The hidden verbs `prepare` and `pin`, which fail and name their
-    /// replacement.
+    /// The hidden verbs `prepare`, `pin`, `publish`, and `assets`, which fail
+    /// and name their replacement.
     #[command(flatten)]
     Removed(Removed),
 }
 
 /// The verbs verctl 0.8.0 renamed, each paired with the command that
 /// replaced it.
-const REMOVED: [(&str, &str); 2] = [("prepare", "version"), ("pin", "render")];
+const REMOVED: [(&str, &str); 4] = [
+    ("prepare", "version"),
+    ("pin", "render"),
+    ("publish", "release"),
+    ("assets", "release asset"),
+];
 
 /// A renamed verb. Each one is hidden from help, and the usage spec marks it
 /// `hide`. It takes any arguments and fails the parse with a usage error, so
@@ -157,75 +162,121 @@ pub struct CiArgs {
     pub github_output: Option<PathBuf>,
 }
 
-/// Arguments of `publish` and `render`.
+/// Arguments of `release`.
 #[derive(Debug, Args)]
 #[non_exhaustive]
-pub struct PublishArgs {
+pub struct ReleaseArgs {
     /// Package map. Defaults to .ctl/ver.yaml in the current directory.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
     pub config: PathBuf,
     /// The shared `--dry-run` flag.
     #[command(flatten)]
     pub dry: DryRunArgs,
-    /// List every version commit whose release is incomplete, oldest first,
-    /// and write `commits`, `pending`, and `assets` to `$GITHUB_OUTPUT` when
-    /// it is set. Publishes nothing. `publish` only.
-    #[arg(long)]
+    /// Moved to `verctl status --github-output`. Hidden; setting it, or
+    /// `VERCTL_PLAN`, fails the parse and names the replacement.
+    #[arg(long, hide = true, value_parser = moved_plan)]
     pub plan: bool,
     /// Leave declared assets out of the completeness check, for a workflow
-    /// that builds none. `publish` only.
+    /// that builds none.
     #[arg(long)]
     pub skip_assets: bool,
-    /// The proofs `publish` may go past.
+    /// The proofs `release` may go past.
     #[command(flatten)]
     pub allow: AllowArgs,
+    /// `release asset <target>`. Without it, `release` publishes.
+    #[command(subcommand)]
+    pub step: Option<ReleaseStep>,
 }
 
-/// The proofs `publish` may go past, each an independent switch with its own
-/// variable. `publish` only.
+/// The value parser of the hidden `release --plan`: the plan moved to
+/// `status --github-output`, so any value that asks for it fails the parse as
+/// a usage error that names the replacement, exiting 2 like a renamed verb.
+fn moved_plan(value: &str) -> Result<bool, String> {
+    match value {
+        "false" => Ok(false),
+        _ => Err(
+            "--plan is now status --github-output: run verctl status --github-output".to_owned(),
+        ),
+    }
+}
+
+/// The steps under `release`.
+#[derive(Debug, Subcommand)]
+pub enum ReleaseStep {
+    /// Build one native GitHub Release tarball declared under `assets`, and
+    /// upload it. `--dry-run` builds and uploads nothing.
+    Asset(AssetArgs),
+}
+
+/// The proofs `release` may go past, each an independent switch with its own
+/// variable.
 #[derive(Debug, Args)]
 #[non_exhaustive]
 pub struct AllowArgs {
-    /// Publish even when `.github/workflows/` at HEAD differs from the
-    /// default branch's tip. The report lists it under `allowed`. `publish`
-    /// only.
+    /// Release even when `.github/workflows/` at HEAD differs from the
+    /// default branch's tip. The report lists it under `allowed`.
     #[arg(long)]
     pub allow_workflow_change: bool,
-    /// Publish from a commit the default branch does not contain. The report
-    /// lists it under `allowed`. `publish` only.
+    /// Release from a commit the default branch does not contain. The report
+    /// lists it under `allowed`.
     #[arg(long)]
     pub allow_off_default_branch: bool,
 }
 
-/// Arguments of `assets`.
+/// Arguments of `release asset`.
 #[derive(Debug, Args)]
 #[non_exhaustive]
-pub struct AssetsArgs {
+pub struct AssetArgs {
+    /// The target id to build (`darwin-arm64`, `linux-x64`). A workflow sets
+    /// `VERCTL_TARGET` and runs the bare verb.
+    #[arg(env = "VERCTL_TARGET")]
+    pub target: String,
     /// Package map. Defaults to .ctl/ver.yaml in the current directory.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
     pub config: PathBuf,
-    /// Plan, build, or upload this set under `vendored` instead of `assets`.
+    /// The shared `--dry-run` flag: build the tarball and upload nothing.
+    #[command(flatten)]
+    pub dry: DryRunArgs,
+    /// Build and upload this set under `vendored` instead of `assets`. With
+    /// it, the upload creates the set's Release when it is missing and adds a
+    /// `.sha256` beside the archive.
     #[arg(long, conflicts_with = "tag")]
     pub vendored: Option<String>,
-    /// Build this target id (`darwin-arm64`, `linux-x64`). Plan only when
-    /// omitted.
-    #[arg(long)]
-    pub build: Option<String>,
-    /// Upload the built tarball to the GitHub Release for `--tag`. With
-    /// `--vendored`, create the set's Release when it is missing and upload a
-    /// `.sha256` beside the archive.
-    #[arg(long)]
-    pub upload: bool,
     /// Release tag (`v0.0.1`). Defaults to the first package's tag. A vendored
     /// set declares its own.
     #[arg(long)]
     pub tag: Option<String>,
-    /// Write `has_assets`, `tag`, and `matrix` for `$GITHUB_OUTPUT`.
-    #[arg(long, value_hint = clap::ValueHint::FilePath)]
-    pub github_output: Option<PathBuf>,
 }
 
-impl PublishArgs {
+impl ReleaseArgs {
+    /// Whether `--dry-run` was given.
+    #[must_use]
+    pub fn dry_run(&self) -> bool {
+        self.dry.dry_run
+    }
+}
+
+impl AssetArgs {
+    /// Whether `--dry-run` was given.
+    #[must_use]
+    pub fn dry_run(&self) -> bool {
+        self.dry.dry_run
+    }
+}
+
+/// Arguments of `render`.
+#[derive(Debug, Args)]
+#[non_exhaustive]
+pub struct RenderArgs {
+    /// Package map. Defaults to .ctl/ver.yaml in the current directory.
+    #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
+    pub config: PathBuf,
+    /// The shared `--dry-run` flag.
+    #[command(flatten)]
+    pub dry: DryRunArgs,
+}
+
+impl RenderArgs {
     /// Whether `--dry-run` was given.
     #[must_use]
     pub fn dry_run(&self) -> bool {
@@ -240,6 +291,21 @@ pub struct StatusArgs {
     /// Directory of fragments. Defaults to .changeset.
     #[arg(short = 'd', long, default_value = ".changeset", value_hint = clap::ValueHint::DirPath)]
     pub dir: PathBuf,
+    /// Package map. Defaults to .ctl/ver.yaml in the current directory.
+    #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
+    pub config: PathBuf,
+    /// Plan this set under `vendored` instead of the packages' `assets`.
+    #[arg(long)]
+    pub vendored: Option<String>,
+    /// Leave declared assets out of the completeness check, for a workflow
+    /// that builds none.
+    #[arg(long)]
+    pub skip_assets: bool,
+    /// Fetch the full history and write the release workflow's plan to this
+    /// file: `has_assets`, `tag`, `matrix`, `commits`, `pending`, and
+    /// `assets`. Needs `GITHUB_TOKEN` or `GH_TOKEN`.
+    #[arg(long, value_hint = clap::ValueHint::FilePath)]
+    pub github_output: Option<PathBuf>,
 }
 
 /// Arguments of `check`.
@@ -385,6 +451,14 @@ mod tests {
     fn removed_verbs_name_their_replacement() {
         for (words, message) in [
             (
+                ["verctl", "publish", "--dry-run"].as_slice(),
+                "publish is now release: run verctl release",
+            ),
+            (
+                ["verctl", "assets", "--build", "linux-x64", "--upload"].as_slice(),
+                "assets is now release asset: run verctl release asset",
+            ),
+            (
                 ["verctl", "prepare", "--pr"].as_slice(),
                 "prepare is now version: run verctl version",
             ),
@@ -411,7 +485,7 @@ mod tests {
     #[test]
     fn removed_verbs_are_hidden() {
         let command = Cli::command();
-        for name in ["prepare", "pin"] {
+        for name in ["prepare", "pin", "publish", "assets"] {
             let removed = command
                 .find_subcommand(name)
                 .unwrap_or_else(|| panic!("{name}"));
@@ -419,14 +493,64 @@ mod tests {
         }
     }
 
+    /// `release --plan` moved to `status --github-output`. The flag is
+    /// hidden, and setting it fails as a usage error that names the move.
+    #[test]
+    fn release_plan_names_status_github_output() {
+        let error = parse(&["verctl", "release", "--plan"]).expect_err("--plan must not parse");
+        assert_eq!(error.exit_code(), 2);
+        assert!(
+            error.to_string().contains(
+                "--plan is now status --github-output: run verctl status --github-output"
+            ),
+            "{error}"
+        );
+        let command = Cli::command();
+        let release = command.find_subcommand("release").expect("release");
+        let plan = release
+            .get_arguments()
+            .find(|arg| arg.get_id() == "plan")
+            .expect("plan");
+        assert!(plan.is_hide_set());
+        assert!(parse(&["verctl", "release", "--dry-run"]).is_ok());
+    }
+
+    /// `release asset` takes its target as an argument or from
+    /// `VERCTL_TARGET`, so a workflow sets `env:` and runs the bare verb.
+    #[test]
+    fn release_asset_takes_its_target() {
+        let cli = parse(&["verctl", "release", "asset", "linux-x64", "--dry-run"]).expect("parse");
+        let Command::Release(super::ReleaseArgs {
+            step: Some(super::ReleaseStep::Asset(asset)),
+            ..
+        }) = cli.command
+        else {
+            panic!("expected release asset");
+        };
+        assert_eq!(asset.target, "linux-x64");
+        assert!(asset.dry_run());
+        let command = Cli::command();
+        let asset = command
+            .find_subcommand("release")
+            .and_then(|release| release.find_subcommand("asset"))
+            .expect("release asset");
+        let target = asset
+            .get_arguments()
+            .find(|arg| arg.get_id() == "target")
+            .expect("target");
+        assert_eq!(
+            target.get_env(),
+            Some(OsString::from("VERCTL_TARGET").as_os_str())
+        );
+    }
+
     /// The release workflow sets these and runs the bare verb, so each must
     /// read its variable at subcommand depth.
     #[test]
-    fn publish_flags_read_their_variables() {
+    fn release_flags_read_their_variables() {
         let command = Cli::command();
-        let publish = command.find_subcommand("publish").expect("publish");
+        let release = command.find_subcommand("release").expect("release");
         for (id, variable) in [
-            ("plan", "VERCTL_PLAN"),
             ("skip_assets", "VERCTL_SKIP_ASSETS"),
             ("allow_workflow_change", "VERCTL_ALLOW_WORKFLOW_CHANGE"),
             (
@@ -435,7 +559,7 @@ mod tests {
             ),
             ("config", "VERCTL_CONFIG"),
         ] {
-            let arg = publish
+            let arg = release
                 .get_arguments()
                 .find(|arg| arg.get_id() == id)
                 .unwrap_or_else(|| panic!("{id}"));

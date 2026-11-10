@@ -30,7 +30,7 @@ Their `config` input SHALL default to empty.
 #### Scenario: A caller that sets nothing
 
 - **WHEN** a workflow uses `actions/publish` with no inputs
-- **THEN** the step runs `exec verctl publish` with `VERCTL_CONFIG` empty, and verctl reads `.ctl/ver.yaml`
+- **THEN** the step runs `exec verctl release` with `VERCTL_CONFIG` empty, and verctl reads `.ctl/ver.yaml`
 
 #### Scenario: A dry run
 

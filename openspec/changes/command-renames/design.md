@@ -2,11 +2,12 @@
 
 ## 1. A removed verb names its replacement
 
-`verctl prepare` and `verctl pin` stay as hidden commands, out of help.
-The usage spec marks them `hide`, so mise leaves them out of its help and
-completion. Each takes any arguments and exits 2, the code clap
-uses for a usage error, with one line on stderr: `prepare is now version: run
-verctl version` and `pin is now render: run verctl render`. Under
+`verctl prepare`, `pin`, `publish`, and `assets` stay as hidden commands,
+out of help. The usage spec marks them `hide`, so mise leaves them out of
+its help and completion. Each takes any arguments and exits 2, the code
+clap uses for a usage error, with one line on stderr, such as `prepare is
+now version: run verctl version` and `assets is now release asset: run
+verctl release asset`. Under
 `--format json` the same message is the JSON error on stdout.
 
 Alternative considered: let clap refuse the old verb as an unknown command.
@@ -38,7 +39,44 @@ Moving templates onto `ctl_core::served` is still a later change.
 their names in `.ctl/ver.yaml`. Renaming them belongs to the config reshape,
 which the operator kept out of 0.8.0.
 
-## 5. Specs move with the names
+## 5. `release` and `release asset`
+
+`release` keeps every flag `publish` took except `--plan`. That flag stays
+hidden on `release`, and any value but false fails the parse with `--plan
+is now status --github-output: run verctl status --github-output`.
+
+`release asset <target>` takes its target as a positional with
+`VERCTL_TARGET`, since a positional gets no `EnvPrefix` binding. It builds
+the tarball and uploads it unless `--dry-run`. With `--vendored <name>` it
+builds and uploads that set's archive instead. One verb replaces the
+`--build` and `--upload` pair, so a workflow step cannot upload what it did
+not build.
+
+## 6. `status` holds the plan
+
+`status` reports the fragments, the asset plan, and the version commits
+with an incomplete release, under `unreleased`, oldest first.
+`--skip-assets` leaves missing assets out of that check, as it did on
+`publish --plan`. A missing `.ctl/ver.yaml` fails `status` as it fails
+every other verb that reads the config.
+
+Finding unreleased commits asks GitHub, so it needs `GITHUB_TOKEN` or
+`GH_TOKEN`. Without one, `status` still succeeds: JSON holds
+`"unreleased": null` and `unreleased_unchecked` holds the reason, and the
+human view reads `unreleased  not checked (no GITHUB_TOKEN or GH_TOKEN)`.
+An empty list means checked and none, so the two never read alike.
+
+Without `--github-output`, `status` changes nothing in the clone: no fetch
+and no unshallow, so a shallow clone checks only the history it has. With
+`--github-output <file>`, it fetches the history the plan needs, requires a
+token, and writes the outputs under the names `assets --github-output` and
+`publish --plan` used, so `release.yml` changes only the verb it calls.
+
+Alternative considered: keep `publish --plan` as `release --plan` until
+0.9.0. It lost because 0.9.0's plan job runs `status --github-output`, and
+moving it then would be a second break.
+
+## 7. Specs move with the names
 
 Eight requirements in `changelog-references`, `env-flags`, `git-access`,
 `version-pr-auto-merge`, and `versioning` name `prepare` in their text or
@@ -55,3 +93,9 @@ archived after them. `prepare` as an `assets` step key in
 
 `dependent-ranges`, `package-discovery`, and `release-groups` are built after
 0.8.0, so their deltas already say `version`.
+
+For `publish`, this change carries a MODIFIED delta for each requirement in
+`env-flags`, `presentation`, `release-only`, `release-plan`,
+`release-preconditions`, and `release-tag-order` that names the verb. Other
+open changes that name `publish`, `publish --plan`, or `assets` keep their
+text; each is rewritten to the new names when it is archived.

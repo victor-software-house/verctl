@@ -10,7 +10,7 @@ pub(super) enum Report {
     VersionCheck(VersionCheckReport),
     Status(StatusReport),
     Version(VersionReport),
-    Publish(PublishReport),
+    Release(ReleaseReport),
     Render(RenderReport),
     Assets(AssetsReport),
     Vendored(VendoredReport),
@@ -27,7 +27,7 @@ impl Present for Report {
             Self::VersionCheck(report) => report.present(),
             Self::Status(report) => report.present(),
             Self::Version(report) => report.present(),
-            Self::Publish(report) => report.present(),
+            Self::Release(report) => report.present(),
             Self::Render(report) => report.present(),
             Self::Assets(report) => report.present(),
             Self::Vendored(report) => report.present(),
@@ -44,7 +44,7 @@ impl Present for Report {
             | Self::Check(_)
             | Self::Status(_)
             | Self::Version(_)
-            | Self::Publish(_)
+            | Self::Release(_)
             | Self::Render(_)
             | Self::Assets(_)
             | Self::Vendored(_)
@@ -208,6 +208,61 @@ pub(super) struct StatusReport {
     pub(super) pending: usize,
     pub(super) max: String,
     pub(super) fragments: Vec<StatusFragment>,
+    /// The asset plan: the packages' when they declare targets, a vendored
+    /// set's under `--vendored`, and `null` when there is none.
+    pub(super) assets: Option<StatusAssets>,
+    /// Every package at an incomplete version commit, oldest first. `null`
+    /// means not checked, never nothing pending; `unreleased_unchecked` says
+    /// why.
+    pub(super) unreleased: Option<Vec<ReleaseRow>>,
+    /// Why `unreleased` was not checked, or `null` when it was.
+    pub(super) unreleased_unchecked: Option<String>,
+}
+
+/// The asset plan `status` shows.
+#[derive(Serialize)]
+#[serde(untagged)]
+pub(super) enum StatusAssets {
+    Packages(assets::AssetsPlan),
+    Vendored(assets::VendoredPlan),
+}
+
+impl StatusAssets {
+    fn table(&self) -> Table {
+        let rows: Vec<[String; 3]> = match self {
+            Self::Packages(plan) => plan
+                .matrix
+                .include
+                .iter()
+                .map(|row| [row.id.clone(), row.labels.join(", "), row.asset.clone()])
+                .collect(),
+            Self::Vendored(plan) => plan
+                .targets
+                .iter()
+                .map(|target| {
+                    [
+                        target.id.clone(),
+                        target.labels.join(", "),
+                        target.asset.clone(),
+                    ]
+                })
+                .collect(),
+        };
+        rows.into_iter().fold(
+            Table::new(["target", "runs-on", "asset"]).token_column(0),
+            Table::row,
+        )
+    }
+
+    fn fields(&self, fields: Fields) -> Fields {
+        match self {
+            Self::Packages(plan) => fields.row("tag", plan.tag.clone()),
+            Self::Vendored(plan) => fields
+                .row("vendored", plan.name.clone())
+                .row("version", plan.version.clone())
+                .row("tag", plan.tag.clone()),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -225,26 +280,45 @@ pub(super) struct StatusPackage {
 
 impl Present for StatusReport {
     fn present(&self) -> Document {
-        if self.pending == 0 {
-            return Document::new().fields(Fields::new().row("pending", "0"));
+        let mut document = Document::new();
+        if self.pending > 0 {
+            document = document.table(self.fragments.iter().fold(
+                Table::new(["file", "package", "bump"]).id_column(1),
+                |table, fragment| {
+                    fragment.packages.iter().fold(table, |table, package| {
+                        table.row([
+                            fragment.file.clone(),
+                            package.name.clone(),
+                            package.bump.clone(),
+                        ])
+                    })
+                },
+            ));
         }
-        let table = self.fragments.iter().fold(
-            Table::new(["file", "package", "bump"]).id_column(1),
-            |table, fragment| {
-                fragment.packages.iter().fold(table, |table, package| {
-                    table.row([
-                        fragment.file.clone(),
-                        package.name.clone(),
-                        package.bump.clone(),
-                    ])
-                })
-            },
-        );
-        Document::new().table(table).fields(
-            Fields::new()
-                .row("pending", self.pending.to_string())
-                .row("max", self.max.clone()),
-        )
+        if let Some(assets) = &self.assets {
+            document = document.table(assets.table());
+        }
+        if let Some(rows) = &self.unreleased
+            && !rows.is_empty()
+        {
+            document = document.table(release_rows(rows));
+        }
+        let mut fields = Fields::new().row("pending", self.pending.to_string());
+        if self.pending > 0 {
+            fields = fields.row("max", self.max.clone());
+        }
+        fields = match &self.assets {
+            Some(assets) => assets.fields(fields),
+            None => fields.row("assets", "none"),
+        };
+        fields = match (&self.unreleased, &self.unreleased_unchecked) {
+            (Some(rows), _) => fields.row("unreleased", rows.len().to_string()),
+            (None, reason) => fields.row(
+                "unreleased",
+                format!("not checked ({})", reason.as_deref().unwrap_or("unknown")),
+            ),
+        };
+        document.fields(fields)
     }
 }
 
@@ -325,20 +399,18 @@ impl Present for VersionReport {
 }
 
 #[derive(Serialize)]
-pub(super) struct PublishReport {
+pub(super) struct ReleaseReport {
     pub(super) outcome: publish::Outcome,
     pub(super) packages: Vec<publish::PublishLine>,
     pub(super) releases: Vec<String>,
     /// Incomplete packages left for the run at their own version commit.
     pub(super) waiting: Vec<ReleaseRow>,
-    /// `--plan`: every incomplete package, at its version commit.
-    pub(super) pending: Vec<ReleaseRow>,
     /// The proofs the operator allowed this run to go past.
     pub(super) allowed: Vec<publish::Allowed>,
     pub(super) dry_run: bool,
 }
 
-impl PublishReport {
+impl ReleaseReport {
     /// One `allowed` row per proof the run went past, so the log of a run
     /// that went past one says so.
     fn allowed_rows(&self, fields: Fields) -> Fields {
@@ -382,7 +454,7 @@ fn release_rows(rows: &[ReleaseRow]) -> Table {
     )
 }
 
-impl Present for PublishReport {
+impl Present for ReleaseReport {
     fn present(&self) -> Document {
         match self.outcome {
             publish::Outcome::NothingToRelease => {
@@ -390,9 +462,6 @@ impl Present for PublishReport {
                     .fields(self.allowed_rows(Fields::new().row("outcome", "nothing to release")));
             }
             publish::Outcome::Released => {}
-        }
-        if !self.pending.is_empty() {
-            return Document::new().table(release_rows(&self.pending));
         }
         if self.packages.is_empty() && self.releases.is_empty() {
             return Document::new().fields(Fields::new().row("no-op", "nothing to publish"));
@@ -542,17 +611,16 @@ mod tests {
     use verctl::publish;
 
     use super::{
-        CheckReport, PublishReport, ReleaseRow, Report, StatusFragment, StatusPackage,
+        CheckReport, ReleaseReport, ReleaseRow, Report, StatusFragment, StatusPackage,
         StatusReport, VersionReport,
     };
 
-    fn publish_report(outcome: publish::Outcome, pending: Vec<ReleaseRow>) -> Report {
-        Report::Publish(PublishReport {
+    fn release_report(outcome: publish::Outcome) -> Report {
+        Report::Release(ReleaseReport {
             outcome,
             packages: Vec::new(),
             releases: Vec::new(),
             waiting: Vec::new(),
-            pending,
             allowed: Vec::new(),
             dry_run: false,
         })
@@ -562,12 +630,11 @@ mod tests {
     /// lists it under `allowed`.
     #[test]
     fn an_allowed_proof_is_on_the_record_in_both_shapes() {
-        let report = Report::Publish(PublishReport {
+        let report = Report::Release(ReleaseReport {
             outcome: publish::Outcome::NothingToRelease,
             packages: Vec::new(),
             releases: Vec::new(),
             waiting: Vec::new(),
-            pending: Vec::new(),
             allowed: vec![publish::Allowed {
                 check: publish::Check::WorkflowChange,
                 reason: ".github/workflows/ at HEAD aaa differs from the default branch at bbb"
@@ -600,7 +667,7 @@ mod tests {
 
     #[test]
     fn nothing_to_release_says_so_in_both_shapes() {
-        let report = publish_report(publish::Outcome::NothingToRelease, Vec::new());
+        let report = release_report(publish::Outcome::NothingToRelease);
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
             .width(80)
             .capture(&report)
@@ -617,24 +684,6 @@ mod tests {
             .expect("json");
         let value: serde_json::Value = serde_json::from_str(json.text()).expect("JSON");
         assert_eq!(value["outcome"], "nothing-to-release");
-    }
-
-    #[test]
-    fn a_plan_lists_each_package_at_its_version_commit() {
-        let report = publish_report(
-            publish::Outcome::Released,
-            vec![ReleaseRow {
-                name: "core".into(),
-                version: "0.3.1".into(),
-                commit: "aaa".into(),
-            }],
-        );
-        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
-            .width(80)
-            .capture(&report)
-            .expect("pretty");
-        assert!(pretty.text().contains("core"), "{}", pretty.text());
-        assert!(pretty.text().contains("aaa"), "{}", pretty.text());
     }
 
     #[test]
@@ -687,12 +736,11 @@ mod tests {
     #[test]
     fn release_urls_stay_whole_at_the_fallback_width() {
         let url = "https://github.com/victor-software-house/example-repository/releases/tag/example-package@12.34.56";
-        let report = Report::Publish(PublishReport {
+        let report = Report::Release(ReleaseReport {
             outcome: publish::Outcome::Released,
             packages: Vec::new(),
             releases: vec![url.into()],
             waiting: Vec::new(),
-            pending: Vec::new(),
             allowed: Vec::new(),
             dry_run: false,
         });
@@ -709,12 +757,11 @@ mod tests {
 
     #[test]
     fn releases_without_packages_have_no_empty_table() {
-        let report = Report::Publish(PublishReport {
+        let report = Report::Release(ReleaseReport {
             outcome: publish::Outcome::Released,
             packages: Vec::new(),
             releases: vec!["https://example.test/v1".into()],
             waiting: Vec::new(),
-            pending: Vec::new(),
             allowed: Vec::new(),
             dry_run: false,
         });
@@ -743,6 +790,13 @@ mod tests {
                     bump: "minor".into(),
                 }],
             }],
+            assets: None,
+            unreleased: Some(vec![ReleaseRow {
+                name: "demo".into(),
+                version: "0.3.1".into(),
+                commit: "aaa".into(),
+            }]),
+            unreleased_unchecked: None,
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
             .width(80)
@@ -757,8 +811,16 @@ mod tests {
                 │ change.md ┆ demo    ┆ minor │
                 └───────────┴─────────┴───────┘
 
-                pending  1
-                    max  minor
+                ┌──────┬─────────┬────────┐
+                │ name ┆ version ┆ commit │
+                ╞══════╪═════════╪════════╡
+                │ demo ┆ 0.3.1   ┆ aaa    │
+                └──────┴─────────┴────────┘
+
+                   pending  1
+                       max  minor
+                    assets  none
+                unreleased  1
             "},
         );
         let json = View::new(OutputFormat::Json, ColorMode::Never)
@@ -774,7 +836,42 @@ mod tests {
                     "max": "minor",
                     "packages": [{ "name": "demo", "bump": "minor" }],
                 }],
+                "assets": null,
+                "unreleased": [{ "name": "demo", "version": "0.3.1", "commit": "aaa" }],
+                "unreleased_unchecked": null,
             })
         );
+    }
+
+    /// An unchecked list is `null` with a reason, never `[]`, so automation
+    /// cannot read "not checked" as "nothing pending".
+    #[test]
+    fn unchecked_unreleased_is_null_with_its_reason() {
+        let report = Report::Status(StatusReport {
+            pending: 0,
+            max: "none".into(),
+            fragments: Vec::new(),
+            assets: None,
+            unreleased: None,
+            unreleased_unchecked: Some("no GITHUB_TOKEN or GH_TOKEN".into()),
+        });
+        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+            .width(80)
+            .capture(&report)
+            .expect("pretty");
+        assert_eq!(
+            pretty.text(),
+            formatdoc! {"
+                   pending  0
+                    assets  none
+                unreleased  not checked (no GITHUB_TOKEN or GH_TOKEN)
+            "},
+        );
+        let json = View::new(OutputFormat::Json, ColorMode::Never)
+            .capture(&report)
+            .expect("json");
+        let value: serde_json::Value = serde_json::from_str(json.text()).expect("JSON");
+        assert!(value["unreleased"].is_null());
+        assert_eq!(value["unreleased_unchecked"], "no GITHUB_TOKEN or GH_TOKEN");
     }
 }

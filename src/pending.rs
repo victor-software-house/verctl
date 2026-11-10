@@ -1,9 +1,9 @@
 //! Which version commits still need a release.
 //!
 //! A release is complete when the registry lists each package's version and
-//! its tag, its Release, and every declared asset exist. `publish --plan` lists
+//! its tag, its Release, and every declared asset exist. `status` lists
 //! every version commit with an incomplete release, oldest first, so the
-//! workflow can release each at its own commit; `publish` releases only the
+//! workflow can release each at its own commit; `release` releases only the
 //! packages whose version commit is HEAD. A version an earlier commit set and
 //! no release has, skipped when a later Version PR merged first, is listed at
 //! the commit that set it.
@@ -110,6 +110,9 @@ struct PackageState {
 /// With `skip_assets`, declared assets do not count toward completeness, so a
 /// repository that turns assets off still reaches nothing to release.
 ///
+/// A config with no packages, such as one that only vendors, has nothing to
+/// release, so `status` works there without a lookup.
+///
 /// # Errors
 ///
 /// Returns an error when a package's version, driver, or publisher cannot be
@@ -120,6 +123,9 @@ struct PackageState {
 /// contains at the same version (see [`git::tagged_commit`]). That release was
 /// tagged in the wrong place, and counting it complete would hide it.
 pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> Result<Pending> {
+    if config.packages.is_empty() {
+        return Ok(Pending::default());
+    }
     let planned = publish::plan(config, root)?;
     let repo = github::repo(root)?;
     let (targets, assets_tag) = if skip_assets || config.assets.is_none() {
@@ -232,7 +238,7 @@ fn newest_per_tag<S, E>(found: &[(S, E, String, VersionCommit)]) -> BTreeMap<&st
     newest
 }
 
-/// The tag `publish` would create for `entry`.
+/// The tag `release` would create for `entry`.
 fn tag_of(planned: &publish::PublishPlan, entry: &PublishEntry) -> Result<String> {
     planned
         .tags
@@ -244,7 +250,7 @@ fn tag_of(planned: &publish::PublishPlan, entry: &PublishEntry) -> Result<String
 
 /// Whether the registry has `entry`'s version: for a workspace package, every
 /// member's. A package with no registry, or an upload with no check, counts as
-/// listed once its tag exists: `publish` creates the tag of a package with an
+/// listed once its tag exists: `release` creates the tag of a package with an
 /// unchecked upload only after the upload, so the tag is the record. A tag
 /// with only checked uploads is created first and records nothing.
 fn registry_lists(

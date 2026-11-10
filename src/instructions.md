@@ -18,12 +18,11 @@ completion bootstrap.
 | Command | Aliases | Purpose |
 |:--|:--|:--|
 | `instructions` | — | Print the installed-version operator contract |
-| `status` | — | List pending .changeset fragments |
+| `status` | — | List pending fragments, the asset plan, and the incomplete version commits. `--github-output` writes the release workflow's plan |
 | `check` | — | Validate fragments, or `--versions` against the default branch |
 | `version` | — | Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews |
-| `publish` | — | Publish the versions on HEAD (cargo / bun + GitHub Release) |
+| `release` | — | Release the versions on HEAD (cargo / bun + GitHub Release). `release asset <target>` builds and uploads one asset |
 | `render` | — | Rewrite pins and render served templates at the versions on HEAD |
-| `assets` | — | Plan or build native GitHub Release tarballs declared under `assets` |
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
 | `docs` | — | Wait for docs.rs to build each crates.io crate released at HEAD |
 | `semver` | — | Check the API of each crates.io crate whose next release is a patch |
@@ -62,7 +61,7 @@ A new package starts at `0.0.0`. Its first fragment is a `patch`, so
 its first release is `0.0.1`: `0.0.x` is the initial line. Moving to
 `0.1.0`, where a package claims a usable API, or to `1.0.0` is a
 separate operator decision, never the first fragment's bump.
-`publish` and `publish --plan` leave a package at `0.0.0` out before
+`release` and `status` leave a package at `0.0.0` out before
 any lookup, so a repo can adopt the release workflow before its first
 release.
 
@@ -172,14 +171,14 @@ reusable workflow runs, so its publish fails with `no task ver found`.
 GitHub refuses to create a Release with 403 "Resource not accessible
 by integration" when the version commit's `.github/workflows` differs
 from the default branch. The Releases API then needs `workflows: write`,
-which `GITHUB_TOKEN` cannot hold. So `publish` creates the tag and
+which `GITHUB_TOKEN` cannot hold. So `release` creates the tag and
 Release of a package whose uploads all have a registry check, or that
 has no upload, before its uploads. The run that merged the Version PR
 creates them while HEAD is the default branch tip, and a rerun after a
 failed upload finds them. A package with an unchecked upload is tagged
 after its upload, because its tag is the record that the upload ran; a
 merge that changes a workflow while its release is pending brings the
-403 back, and `publish` names the permission. Rerun `verctl publish` at
+403 back, and `release` names the permission. Rerun `verctl release` at
 that commit with a token that holds it.
 
 Do not hand-edit versions. `verctl check --versions` compares each
@@ -276,7 +275,7 @@ write nothing. `version --pr --dry-run` also lists consumed fragments
 and whether the Version PR would open or update. Preview does not
 require GitHub auth.
 
-`publish` ships the versions already on HEAD, then a GitHub Release.
+`release` ships the versions already on HEAD, then a GitHub Release.
 A package's version commit is the newest commit on HEAD's first-parent
 history where its manifest version became the version at HEAD. Its release
 tag may instead sit on a commit that HEAD holds only through a merge, such
@@ -285,14 +284,20 @@ when the package's version there equals its version at HEAD. A tag on a
 commit HEAD does not contain, or at another version, fails. A release
 is complete when the registry lists the version and its tag, its Release,
 and every declared asset exist; `--skip-assets` (`VERCTL_SKIP_ASSETS`)
-leaves assets out. `publish --plan` lists every version commit with an
-incomplete release, oldest first, and writes `commits` (a JSON list),
-`pending`, and `assets` (a job matrix of commit, target, and labels) to
-`$GITHUB_OUTPUT` when it is set. `publish` releases only the packages
-whose version commit is HEAD, names the others, and fails before any side
-effect on a commit that releases nothing. When every release is complete,
-both report `nothing to release` and exit zero; the JSON report's
-`outcome` is `nothing-to-release` or `released`.
+leaves assets out. `status` lists every version commit with an
+incomplete release, oldest first, under `unreleased`. With
+`--github-output <file>` it fetches the full history, needs
+`GITHUB_TOKEN` or `GH_TOKEN`, and writes `commits` (a JSON list),
+`pending`, and `assets` (a job matrix of commit, target, and labels),
+beside the asset plan's `has_assets`, `tag`, and `matrix`. Without it,
+`status` fetches nothing, and with no token it reports `unreleased` as
+not checked: `null` in JSON, with the reason in `unreleased_unchecked`.
+`release --plan` fails and names `status --github-output`. `release`
+releases only the packages whose version commit is HEAD, names the
+others, and fails before any side effect on a commit that releases
+nothing. When every release is complete, `release` reports `nothing to
+release` and exits zero; its JSON report's `outcome` is
+`nothing-to-release` or `released`.
 It refuses unless each package version has a matching CHANGELOG
 heading (the Version PR writes those), HEAD is an ancestor of the
 default branch (`origin/HEAD`, then `GITHUB_BASE_REF`, then
@@ -305,18 +310,22 @@ can publish to the registry and then fail to tag.
 past either one, and the report lists each under `allowed`: a row in the
 human view, and `allowed: [{check, reason}]` in JSON. A check that cannot
 run, as with no `origin` or no default-branch ref, refuses even with a
-flag set. `publish` also refuses a package whose first-parent history
-since its last release tag holds an earlier version commit, because
-publishing would skip that version; no flag allows it. `publish --plan`
-lists such a version at the commit that set it, oldest first, so the
+flag set. `release` also refuses a package with a skipped version,
+because releasing past it would skip that version for good; no flag
+allows it. A version v is skipped when some commit in the first-parent
+range from HEAD has v, v is below HEAD's version, and no newer commit in
+the range has a version strictly below v. The range ends before a
+released version, `0.0.0`, a revision with no version, or a version that
+is not semver, and otherwise at the root. `status` lists each skipped
+version once, at its oldest commit in the range, oldest first, so the
 workflow releases it before the newer one. The reusable `release.yml`
 takes the `allow-workflow-change` and `allow-off-default-branch` boolean
 inputs, default `false`, and passes them through `env:`. It does not sniff the
 commit subject and does not treat `GITHUB_REF_NAME` as the default
-(that is the branch being pushed). `verctl publish` points `origin/HEAD`
+(that is the branch being pushed). `verctl release` points `origin/HEAD`
 at `origin/<default>` only when `VERCTL_DEFAULT_BRANCH` is set. It
 fetches that one ref (with history, not at depth 1) only when it is
-missing. With `VERCTL_DEFAULT_BRANCH` set, `publish` and `publish --plan`
+missing. With `VERCTL_DEFAULT_BRANCH` set, `release` and `status --github-output`
 first fetch the whole history of that branch when the clone is shallow,
 so a depth-1 checkout still finds each version commit; without it, a
 shallow clone fails and says to fetch the history. GitHub git HTTPS authenticates as `x-access-token`; the token
@@ -324,18 +333,18 @@ is never in the URL and never sent as Bearer. Locally `git clone`
 already has the ref; otherwise `git remote set-head origin --auto`. How is a `publishers` entry: argv + placeholders.
 Cargo and bun are stock recipes (first-class examples). Override or
 add another stack without a new verb. `publisher: none` releases a
-package on GitHub only: `publish` creates its tag and Release, and
-`assets` its tarballs, with no registry upload. Use it for a private
+package on GitHub only: `release` creates its tag and Release, and
+`release asset` its tarballs, with no registry upload. Use it for a private
 binary, such as a Cargo package with `publish = false`. A `registry`
 or `publish` on the same package fails the load, and so does a
 `publishers.none` entry. Every other publisher must render a command.
-Before a publisher runs, `publish` asks the registry. A stock cargo
+Before a publisher runs, `release` asks the registry. A stock cargo
 package whose publish target is crates.io (its `registry`, its manifest's
 `publish`, and Cargo's `registry.default` all agree) is read from the
 crates.io sparse index; any other package runs its recipe's `query`
 (stock bun: `bun pm view {name}@{version} version`) in its directory. A
 listed version is `already`, and its publisher does not run. After a
-publish, `publish` asks again for about two minutes, counting a failed
+publish, `release` asks again for about two minutes, counting a failed
 check as not listed yet, and fails unless the registry lists the version. A package with no check (`query: []`, or a
 package with an overridden command, or a cargo package with another target, and no `query`)
 succeeds on a zero exit or on stderr saying the version exists. A stock
@@ -392,14 +401,15 @@ After the Version PR merges, the next push runs the reusable workflow's
 `publish` matrix at each version commit. A hand-written workflow uses
 `victor-software-house/verctl/actions/publish` instead. Native tarballs
 are the `assets` matrix, only when an `assets` target is declared;
-`verctl assets` prints the matrix, and `--build` + `--upload` is
-`actions/asset`. A tarball holds the one `binary` (default
+`verctl status` shows the matrix, and `verctl release asset <target>`
+(`VERCTL_TARGET`) builds the tarball and uploads it, as
+`actions/asset` does; `--dry-run` builds it and uploads nothing. A tarball holds the one `binary` (default
 `target/{triple}/release/{bin}`), packed as `bin`. When a release holds
 more, such as a second executable, a service unit, or a licence, set
-`assets.dir` and `assets.files` instead of `binary`: `--build` checks
+`assets.dir` and `assets.files` instead of `binary`: `release asset` checks
 each listed path exists, then packs `tar czf <asset> -C <dir> <files>`,
 with `{bin}`, `{version}`, `{id}`, `{os}`, `{arch}`, and `{triple}`
-replaced. Publish pushes
+replaced. `release` pushes
 nothing but the tag. `pins` are rewritten by `version`, on the
 Version PR commit the tag will name, so the released tree carries its
 own pins. A pin that must name an already-published tarball (a repo's
@@ -413,12 +423,13 @@ Declare it as `vendored.<name>`: `version`, `tag` (default
 it must contain `{id}` and end in `.tar.gz`), an optional `build` argv,
 `dir`, the `files` to pack from it, optional `notes`, and `targets`,
 each naming one `runner`. Fragments never bump its version and
-`publish` never reads it; a config that vendors may declare no
-packages. `verctl assets --vendored <name>` (`VERCTL_VENDORED`) plans
-the set and writes the same `has_assets`, `tag`, and `matrix` outputs.
-`--build <id>` runs `build` with `{name}`, `{version}`, and `{id}`
-replaced, then packs `tar czf <archive> -C <dir> <files>`. `--upload`
-creates the Release at HEAD when it is missing, never marked latest,
+`release` never reads it; a config that vendors may declare no
+packages. `verctl status --vendored <name>` (`VERCTL_VENDORED`) plans
+the set, and with `--github-output` writes the same `has_assets`,
+`tag`, and `matrix` outputs. `verctl release asset <id> --vendored
+<name>` runs `build` with `{name}`, `{version}`, and `{id}` replaced,
+then packs `tar czf <archive> -C <dir> <files>`. Unless `--dry-run`, it
+then creates the Release at HEAD when it is missing, never marked latest,
 with `notes` as its body, then attaches the archive and
 `<archive>.sha256`, written from the digest GitHub reports for the
 stored archive. An asset the Release already holds is `already`; to

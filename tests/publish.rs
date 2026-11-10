@@ -10,7 +10,7 @@ use tempfile::TempDir;
 fn publish_stdout(root: &std::path::Path) -> String {
     let output = common::verctl()
         .current_dir(root)
-        .args(["publish", "--dry-run", "--color", "never"])
+        .args(["release", "--dry-run", "--color", "never"])
         .output()
         .unwrap_or_else(|error| panic!("spawn verctl: {error}"));
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -326,7 +326,7 @@ fn dry_run_names_the_package_whose_version_it_cannot_read() {
     .unwrap();
     let output = common::verctl()
         .current_dir(root.path())
-        .args(["publish", "--dry-run", "--color", "never"])
+        .args(["release", "--dry-run", "--color", "never"])
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -367,7 +367,7 @@ fn dry_run_refuses_differing_versions_without_name() {
     .unwrap();
     let output = common::verctl()
         .current_dir(root.path())
-        .args(["publish", "--dry-run", "--color", "never"])
+        .args(["release", "--dry-run", "--color", "never"])
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -399,7 +399,7 @@ fn publish_without_changelog_section_fails() {
     .unwrap();
     let output = common::verctl()
         .current_dir(root.path())
-        .args(["publish", "--color", "never"])
+        .args(["release", "--color", "never"])
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -444,7 +444,7 @@ fn publish_with_matching_changelog_asks_for_token() {
         .current_dir(root.path())
         .env_remove("GITHUB_TOKEN")
         .env_remove("GH_TOKEN")
-        .args(["publish", "--color", "never"])
+        .args(["release", "--color", "never"])
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -484,14 +484,16 @@ fn a_package_at_0_0_0_plans_nothing() {
         .env("GITHUB_TOKEN", "test")
         .env("GITHUB_REPOSITORY", "acme/demo")
         .env("GITHUB_API_URL", "http://127.0.0.1:9")
-        .env("GITHUB_OUTPUT", &github_output)
-        .args(["publish", "--plan", "--color", "never"])
+        .arg("status")
+        .arg("--github-output")
+        .arg(&github_output)
+        .args(["--format", "json"])
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stderr}");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("nothing to release"), "{stdout}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["unreleased"], serde_json::json!([]));
     let written = fs::read_to_string(&github_output).unwrap();
     assert!(written.contains("pending=false"), "{written}");
 }
@@ -523,7 +525,7 @@ fn publish_asks_no_changelog_of_a_package_at_0_0_0() {
         .current_dir(root.path())
         .env_remove("GITHUB_TOKEN")
         .env_remove("GH_TOKEN")
-        .args(["publish", "--color", "never"])
+        .args(["release", "--color", "never"])
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -578,7 +580,7 @@ fn publish_without_token(root: &std::path::Path, env: &[(&str, &str)]) -> String
         .env_remove("GITHUB_TOKEN")
         .env_remove("GH_TOKEN")
         .envs(env.iter().copied())
-        .args(["publish", "--color", "never"])
+        .args(["release", "--color", "never"])
         .output()
         .unwrap_or_else(|error| panic!("spawn verctl: {error}"));
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();

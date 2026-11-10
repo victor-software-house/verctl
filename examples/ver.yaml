@@ -91,7 +91,7 @@ runners:
 assets:
   bin: verctl
   # A tarball holds the one `binary`. When a release holds more, list it
-  # instead, and drop `binary`: `--build` packs these from `dir`.
+  # instead, and drop `binary`: `release asset` packs these from `dir`.
   # dir: target/{triple}/release
   # files: [verctl, verctld, "verctld@.service", LICENSE]
 
@@ -114,9 +114,9 @@ assets:
 
 # Release assets built from someone else's source, at that source's version,
 # so mise can install them as a `github:` tool. Fragments never bump
-# `version`; edit it here. `verctl assets --vendored libexample` plans the set,
-# `--build <id>` runs `build` and packs `files` from `dir`, and `--upload`
-# creates the Release (never marked latest) when it is missing and attaches
+# `version`; edit it here. `verctl status --vendored libexample` plans the
+# set, and `verctl release asset <id> --vendored libexample` runs `build`,
+# packs `files` from `dir`, and unless `--dry-run` creates the Release (never marked latest) when it is missing and attaches
 # the archive and its `.sha256`. `tag` and `archive` show their defaults.
 vendored:
   libexample:

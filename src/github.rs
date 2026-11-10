@@ -540,7 +540,7 @@ impl std::fmt::Display for ReleaseRefused {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "GitHub refused to create {tag} at {sha}. When that commit's .github/workflows differ from the default branch, the Releases API also needs workflows: write, which GITHUB_TOKEN cannot hold; rerun verctl publish at that commit with a token that has it",
+            "GitHub refused to create {tag} at {sha}. When that commit's .github/workflows differ from the default branch, the Releases API also needs workflows: write, which GITHUB_TOKEN cannot hold; rerun verctl release at that commit with a token that has it",
             tag = self.tag,
             sha = self.sha
         )

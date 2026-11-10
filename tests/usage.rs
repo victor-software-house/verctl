@@ -131,7 +131,7 @@ fn usage_spec_marks_the_removed_verbs_hidden() {
     let output = verctl(&["--usage-spec=ver"]);
     assert!(output.status.success(), "{}", stderr(&output));
     let spec = stdout(&output);
-    for removed in ["prepare", "pin"] {
+    for removed in ["prepare", "pin", "publish", "assets"] {
         let line = spec
             .lines()
             .find(|line| line.trim_start().starts_with(&format!("cmd {removed} ")))

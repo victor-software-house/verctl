@@ -15,7 +15,7 @@ mise run ver status
 mise run ver check
 mise run ver version
 mise run ver version --pr
-mise run ver publish
+mise run ver release
 ```
 
 ## Setup
@@ -36,7 +36,7 @@ includes = [
 ```sh
 mise run ver status
 mise run ver check
-mise run ver publish --dry-run
+mise run ver release --dry-run
 ```
 
 Until a GitHub Release exists, build from this repo:
@@ -79,7 +79,7 @@ first release is `0.0.1`. Moving to `0.1.0` or `1.0.0` is a separate operator
 decision. `version` and `check` refuse a `minor` or `major` fragment on a
 package at `0.0.0`, including its pre-releases and builds; to open at
 `0.1.0` on purpose, set `first_minor: true` on the package in `.ctl/ver.yaml`.
-`publish` and `publish --plan` leave a package at `0.0.0` out, so a repo can
+`release` and `status` leave a package at `0.0.0` out, so a repo can
 adopt the release workflow before its first release.
 
 ## Changelog
@@ -196,7 +196,7 @@ assets:
 |:--|:--|:--|:--|
 | `runners` | one machine | how jobs refer to it | — |
 | `ci` | a PR / push validation job | the check name | `ubuntu-latest` |
-| `assets` | a release build job and its tarball | the check name, the `--build` argument, part of the filename | the built-in record for that name |
+| `assets` | a release build job and its tarball | the check name, the `release asset` argument, part of the filename | the built-in record for that name |
 
 Two sections take runners and no others, because of what config is for here:
 
@@ -255,9 +255,9 @@ public repository. Keep `allows_public_repositories=false` there and keep
 fork-PR approval on, and read declared labels as untrusted input in a repo
 where that is not true.
 
-`verctl ci` and `verctl assets` print what resolved, so a default is visible
-output rather than an assumption. Both also write a matrix for
-`$GITHUB_OUTPUT`: GitHub needs `runs-on` before a job exists, so a small
+`verctl ci` and `verctl status` print what resolved, so a default is visible
+output rather than an assumption. With `--github-output`, both also write a
+matrix: GitHub needs `runs-on` before a job exists, so a small
 `plan` job emits the labels and the real jobs consume them
 ([`examples/workflows/ci.yml`](examples/workflows/ci.yml)).
 
@@ -275,7 +275,7 @@ assets:
   linux-x64: {}
 ```
 
-`verctl assets --build <id>` runs the build, checks that each listed path
+`verctl release asset <id>` runs the build, checks that each listed path
 exists under `dir`, then packs `tar czf <asset> -C <dir> <files>`. `dir` and
 `files` take the placeholders `binary` takes, come together, and replace
 `binary`, which may not be set beside them. A file the build does not write,
@@ -286,7 +286,7 @@ such as a licence, is copied into `dir` by the build command.
 A repository that builds someone else's library from a pinned upstream
 release can publish the result as Release assets, so mise installs it as a
 `github:` tool. The set carries the upstream version; fragments never bump it
-and `publish` never reads it. A config that vendors may declare no packages.
+and `release` never reads it. A config that vendors may declare no packages.
 
 ```yaml
 vendored:
@@ -314,24 +314,24 @@ vendored:
 | `notes` | a file whose text is the Release body | an empty body |
 | `targets` | one entry per platform, `{id}`, each naming one `runner` | required |
 
-`verctl assets --vendored libexample` plans the set and writes the same
-`has_assets`, `tag`, and `matrix` outputs as `assets`. In the build job:
+`verctl status --vendored libexample --github-output "$GITHUB_OUTPUT"`
+plans the set and writes the same `has_assets`, `tag`, and `matrix` outputs
+as the packages' assets. In the build job:
 
 ```yaml
       - env:
           GITHUB_TOKEN: ${{ github.token }}
           VERCTL_VENDORED: libexample
-          VERCTL_BUILD: ${{ matrix.id }}
-          VERCTL_UPLOAD: "true"
-        run: mise run ver assets
+          VERCTL_TARGET: ${{ matrix.id }}
+        run: mise run ver release asset
 ```
 
-`--upload` creates the Release at `HEAD` when it is missing, never marked
+`release asset` builds the archive, then creates the Release at `HEAD` when it is missing, never marked
 latest, and attaches the archive and `<archive>.sha256`. The digest in that file is the
 one GitHub reports for the stored archive, so a rerun whose build differs
 byte for byte still publishes a checksum that matches. An asset the Release
 already holds is reported as `already`. To replace an archive, delete it and
-its `.sha256` together.
+its `.sha256` together. `--dry-run` builds the archive and uploads nothing.
 
 ## Release workflow
 
@@ -340,9 +340,10 @@ A repository releases through one thin caller of verctl's reusable workflow
 triggers on push to the default branch and on `workflow_dispatch`, and runs
 one flow:
 
-1. `plan` lists every version commit whose release is incomplete.
-2. `publish` releases each, oldest first, at its own commit.
-3. `assets` builds the tarballs each Release lacks.
+1. `plan` runs `verctl status --github-output`, which lists every version
+   commit whose release is incomplete.
+2. `publish` runs `verctl release` at each, oldest first.
+3. `assets` runs `verctl release asset` for the tarballs each Release lacks.
 4. `docs` waits for docs.rs to build each released crate.
 5. `propose` opens or updates the Version PR.
 
@@ -354,7 +355,7 @@ caller serves the `ver` task and pins verctl in its mise config.
 A registry token stored in a GitHub environment that admits only the default
 branch is out of reach of every other branch. Pass `environment: <name>`, and
 map the token by its stored name:
-`registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}`. Only `publish` runs in
+`registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}`. Only the `publish` job runs in
 the environment, and it receives the environment's value.
 
 The workflow reads no secret by a computed name, so a caller never passes
@@ -409,8 +410,8 @@ when a person merges the Version PR.
 Mise owns tools. Publish uses the registry's token secret (for crates.io,
 `CARGO_REGISTRY_TOKEN`) and the workflow's `GITHUB_TOKEN`; no PAT.
 
-A package with `publisher: none` is released on GitHub only: `publish`
-creates its tag and Release, and `assets` its tarballs, with no registry
+A package with `publisher: none` is released on GitHub only: `release`
+creates its tag and Release, and `release asset` its tarballs, with no registry
 upload. Use it for private binaries, such as a Cargo package with
 `publish = false`.
 

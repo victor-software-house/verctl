@@ -1,6 +1,6 @@
 //! Whether a registry already lists a package version.
 //!
-//! `publish` asks before it runs a publisher, so a rerun after a partial
+//! `release` asks before it runs a publisher, so a rerun after a partial
 //! failure skips the upload, and asks again afterwards, so a publisher that
 //! exits zero without publishing fails the run. A stock cargo package bound for
 //! crates.io is read from the crates.io sparse index; any other package asks
@@ -47,7 +47,7 @@ pub const LISTING_DELAYS: [Duration; 6] = [
     Duration::from_secs(60),
 ];
 
-/// How `publish` decides whether a package version is already published.
+/// How `release` decides whether a package version is already published.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RegistryCheck {

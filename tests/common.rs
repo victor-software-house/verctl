@@ -28,7 +28,8 @@ pub(crate) fn demo_root() -> TempDir {
     root
 }
 
-pub(crate) fn write_demo(root: &Path) {
+/// The demo package's config and manifest, with no fragment.
+pub(crate) fn write_demo_package(root: &Path) {
     write_config(
         root,
         indoc! {"
@@ -46,6 +47,10 @@ pub(crate) fn write_demo(root: &Path) {
         "#},
     )
     .expect("cargo");
+}
+
+pub(crate) fn write_demo(root: &Path) {
+    write_demo_package(root);
     let changes = root.join(".changeset");
     fs::create_dir_all(&changes).expect("dir");
     fs::write(
@@ -69,13 +74,18 @@ const COLOUR: [&str; 5] = [
     "COLORTERM",
 ];
 
+/// The tokens `status` reaches GitHub with when one is set.
+const TOKENS: [&str; 2] = ["GITHUB_TOKEN", "GH_TOKEN"];
+
 /// Whether no child verctl may inherit `key`: an agent-shell colour variable,
-/// or any `VERCTL_*` flag binding. Stripping them lets the suite pass in any
-/// shell, with every flag coming from argv unless a test sets its variable
-/// back on top. A key that is not UTF-8 is none of these.
+/// a GitHub token, or any `VERCTL_*` flag binding. Stripping them lets the
+/// suite pass in any shell or CI job, with every flag and token coming from
+/// argv or the test unless a test sets its variable back on top. A key that
+/// is not UTF-8 is none of these.
 pub(crate) fn is_cleared(key: &OsStr) -> bool {
-    key.to_str()
-        .is_some_and(|key| key.starts_with("VERCTL_") || COLOUR.contains(&key))
+    key.to_str().is_some_and(|key| {
+        key.starts_with("VERCTL_") || COLOUR.contains(&key) || TOKENS.contains(&key)
+    })
 }
 
 /// The verctl binary under test, without any variable [`is_cleared`] names.
