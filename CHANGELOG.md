@@ -1,5 +1,337 @@
 # Changelog
 
+## verctl 0.8.0
+
+### Added
+
+- An `assets` target may list its own `files`, which replace `assets.files` for that target alone.  
+  A release whose platforms ship different files, such as a tool built only on Linux, packs each list from the shared `assets.dir`.  
+  A target without `files` packs the shared list, as before.  
+  The load names the target when its `files` comes without `assets.dir`, is empty, or sits beside `assets.binary` ([#313](https://github.com/victor-software-house/verctl/pull/313)).
+- A package whose `path` is `go.mod` needs no driver.  
+  Its version is a `// vX.Y.Z` comment at the end of the `module` line.  
+  A module with no such comment starts at `0.0.0` ([#259](https://github.com/victor-software-house/verctl/pull/259)).
+
+  `version` refuses a bump to v2 or later until the module path ends in `/v<major>`, because Go reads such a module only there.  
+  A dry run refuses too.
+
+  With no publisher, a Go module releases on GitHub only, as `publisher: none` does, since Go fetches a module from its tag.
+- Each release carries a `linux_arm64` tarball for `aarch64-unknown-linux-gnu`.  
+  GitHub's arm64 Linux runner builds it natively ([#273](https://github.com/victor-software-house/verctl/pull/273)).
+- `marker: true` on a package makes any file a package, such as one reusable workflow.  
+  Its version is the file's one marker line: `# version: 1.2.0`, `// version: 1.2.0`, or `<!-- version: 1.2.0 -->`.  
+  `version` rewrites only that version.  
+  A file with no marker line, or two, fails and names the line numbers.  
+  A marker package takes no driver, and with no publisher it releases on GitHub only ([#261](https://github.com/victor-software-house/verctl/pull/261)).
+- A package whose `path` is `pyproject.toml` needs no driver.  
+  `version` rewrites `project.version` and keeps every other byte.  
+  When the repository holds a `uv.lock`, `version` names `uv lock` as the follow-up.  
+  A `pyproject.toml` that lists `version` in `project.dynamic` fails with the fixes, because its build backend sets the version.  
+  verctl has no stock Python publisher, so such a package names its `publisher`, or `none` to release on GitHub only ([#257](https://github.com/victor-software-house/verctl/pull/257)).
+
+  A `pyproject.toml` package fails when `.ctl/ver.yaml` loads unless it names a `publisher`, a `publish` command, or a `publishers` entry of its own.  
+  That holds for a package with its own driver too.
+- A package whose `path` is `VERSION` needs no driver: the file holds one version and a newline, and anything else in it fails.  
+  A missing `VERSION` file reads as `0.0.0`, so a new package needs no file before its first release.  
+  `check` leaves the file missing, and `version` writes it ([#260](https://github.com/victor-software-house/verctl/pull/260)).
+
+  A `VERSION` path whose directory is missing fails the plan before `version` writes anything.  
+  With no publisher, a `VERSION` package releases on GitHub only, as `publisher: none` does.
+
+### Changed
+
+- Upgrading from 0.7 takes these steps, each described in its own entry below: ([#314](https://github.com/victor-software-house/verctl/pull/314)).
+
+  1. Finish every pending release, then move the verctl pin and the `release.yml` ref to 0.8.0 together.
+  2. Call the renamed verbs: `prepare` is `version`, `pin` is `render`, `publish` is `release`, and `assets` is `release asset <target>`, with no `--build` or `--upload`.
+  3. Move the Version PR title and commit message from `VERCTL_PR_TITLE`, `VERCTL_COMMIT_MESSAGE`, and the `title` and `commit-message` inputs to `proposal.title` and `proposal.commit_message`, and remove those inputs from the caller.
+  4. Delete `prepare.version_label`, and match a rule that read the `verctl:version` label on the head branch `verctl/release/<base>`.
+  5. Replace `secrets: inherit` with a `secrets:` map that passes `registry-token`.
+  6. Close each `patterns.match` with an open side of `{version}`.
+  7. Read `after` where the `version` report held `next`.
+  8. Name a publisher for each `pyproject.toml` package.
+  9. Fix any misspelled key under `packages`, `pins`, or `patterns`, which now fails the load.
+- A publisher or query argument with a `{placeholder}` that has no value fails and names the placeholder.  
+  Before, verctl left that argument off the command line.  
+  A typo such as `{registr}` fails this way, and so does `{registry}` on a package with no registry.  
+  Braces that are not a placeholder name, such as a JSON argument, pass through ([#274](https://github.com/victor-software-house/verctl/pull/274)).
+- `verctl prepare` is now `verctl version`, with the same flags, variables, and behaviour.  
+  `verctl pin` is now `verctl render`, which also renders the served-file templates.  
+  `render` takes `--config` and `--dry-run` only: `pin` shared `--plan` and `--skip-assets` with `publish` and ignored both.  
+  Its human rows are `file` and `files` where `pin` printed `pin` and `pins`.  
+  The old verbs are hidden and exit 2 with an error that names the new one, so `mise run ver prepare --pr` becomes `mise run ver version --pr`.  
+  The reusable `release.yml` and `actions/version-pr` call the new verbs ([#275](https://github.com/victor-software-house/verctl/pull/275)).
+
+  The JSON and the human view of `version` list follow-up commands under `after`, a key that was `next`.
+
+  In the library, `verctl::cli::Command::Prepare` is `Command::Version`, `PrepareArgs` is `VersionArgs`, and `Command::Pin` is `Command::Render`.  
+  The `prepare` and `pins` keys in `.ctl/ver.yaml` keep their names.
+- verctl builds on ctl-core 0.7.0, which renders through its own terminal engine.  
+  It reads `.ctl/ver.yaml` and fragment frontmatter through vsh-serde-saphyr 0.0.3 and yamled 0.0.12.  
+  The help of `--color` and its values, `--no-color`, and the `pretty` format takes the colour wording of ctl-core ([#267](https://github.com/victor-software-house/verctl/pull/267)).
+- `verctl instructions` and the bundled skill are split into headed sections, each sized to read on its own.  
+  Both open with the release workflow in four steps and a table that maps each `.ctl/ver.yaml` key to its section ([#314](https://github.com/victor-software-house/verctl/pull/314)).
+
+  The instructions, the skill, and the README now say that the release workflow's `plan`, `publish`, `docs`, and `propose` jobs run on its `runner` input.  
+  Before, they named jobs the workflow does not have.
+- Loading `.ctl/ver.yaml` now refuses a pattern whose `match` leaves either side of `{version}` open, naming the pattern and the side.  
+  Before, `version: {version}` against `version: 0.1.1-rc1` rewrote the numeric head and kept `-rc1` ([#281](https://github.com/victor-software-house/verctl/pull/281)).
+
+  A side's literal is the text between `{version}` and the pattern's edge, on that side.  
+  A side is bounded when its literal holds at least one character that is not a digit, `.`, `-`, or `+`.  
+  Under `whole_line: true`, the line start or end bounds the side, unless the literal on that side is made only of those four characters.
+
+  The character next to `{version}` must not be a digit, or a `.` with a digit beyond it.  
+  `name-{version}.tar.gz` loads; `verctl@{version}.`, `v{version}-`, and `v{version}.5x` do not.
+
+  To fix a refused pattern, add the text that follows the version to `match`, such as a closing quote.  
+  For a line the pattern owns, set `whole_line: true`.
+
+  A `tool` pin now fails, and writes nothing, on an include of its own repository whose ref starts with a version and goes on.  
+  Before, `?ref=v1.2.3-rc1` became `?ref=v<new>-rc1`.  
+  A ref that is not a version, such as a branch, stays put as before.
+
+  A `tool` pin rewrites only the version of its `[tools]` entry.  
+  An inline table such as `{ version = "1.2.3", os = ["linux"] }`, a `[tools.<name>]` table, and the comments and spacing around the value keep every other byte.  
+  Before, the whole entry became a bare version string, which dropped its options and comments, so `check` then failed the file on every run.
+- `verctl check --versions` fails a pull request that is not the Version PR in two more cases ([#288](https://github.com/victor-software-house/verctl/pull/288)).
+
+  Each case is a change the pull request makes:
+
+  - It adds a CHANGELOG section for a version.  
+    A heading names its version last, as in `## demo 1.2.0` or `## 1.2.0`.  
+    A version the CHANGELOG held at the merge-base is not added.  
+    Nor is one the release branch held at its merge-base with HEAD.  
+    Fixing the name in a heading therefore passes, and so does merging the release branch.
+  - It changes whether a package publishes and adds no fragment that bumps that package above `none`.  
+    Whether a package publishes comes from its `publisher`, the members a workspace package uploads, a Cargo `publish` key (inherited from the workspace root with `publish.workspace`), and `private` in `package.json`.  
+    A setting the release branch already holds at its merge-base with HEAD passes, as a released version does.
+
+  For a pull request with either problem, `check` looks up on GitHub whether it is the Version PR, as for one that changes a version.  
+  A merge queue run skips both rules.
+
+  `members::members` reads the workspace with `cargo metadata --offline`, so it never reaches a registry.  
+  In the library, `pull_request::problems` is new.  
+  It returns `pull_request::Findings`: the problems, and a notice for each rule skipped because the config at the merge-base does not load.
+- The reusable `release.yml` reads the registry token only from the `registry-token` secret.  
+  It ignores the secret that `registry-token-env` names, so a caller never passes `secrets: inherit`.  
+  `registry-token-env` names only the variable the publisher reads the token from ([#272](https://github.com/victor-software-house/verctl/pull/272)).
+
+  A caller that kept its token in an environment called the workflow with `environment: release` and `secrets: inherit`.  
+  It replaces `secrets: inherit` with its `secrets:` map plus `registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}`.  
+  The publish job runs in that environment and receives the environment's value.  
+  The App secrets in the same map reach the Version PR job as well.
+- `verctl publish` is now `verctl release`, with the same flags and variables, except `--plan`, which moved to `status --github-output`.  
+  Its JSON report drops `pending`, which `status` holds as `unreleased`, and gains `allowed`.  
+  `verctl assets` is now `verctl release asset <target>`.  
+  It reads the target from `VERCTL_TARGET`, builds the tarball, and uploads it.  
+  `--dry-run` builds the tarball and uploads nothing, written before or after `asset`, and `--vendored <name>` builds and uploads a vendored set ([#279](https://github.com/victor-software-house/verctl/pull/279)).
+
+  The old verbs are hidden and exit 2 with an error that names the new one.  
+  `--build`, `--upload`, and their variables are gone.
+
+  `verctl status` now holds the release plan.  
+  Its report shows the asset plan and lists each version commit with an incomplete release under `unreleased`.  
+  It reads `.ctl/ver.yaml`, so it fails with no config or an invalid one, and it takes `--config` and `--skip-assets`.  
+  With a token it reads GitHub and runs each package's registry `query`.
+
+  Without `GITHUB_TOKEN` or `GH_TOKEN` it does not ask GitHub: JSON holds `"unreleased": null` and `unreleased_unchecked` holds the reason.
+
+  Some lookups cannot run: in a shallow clone, with no GitHub `origin`, or with no answer from GitHub or a registry.  
+  No answer means a failed connection, a timeout, a 5xx, or a spent rate limit.  
+  `status` reports these the same way.  
+  Any other error, such as a release tag on the wrong commit or a 401 from a bad token, fails `status`.
+
+  `status --github-output <file>` fetches the history the plan needs.  
+  It writes `has_assets`, `tag`, `matrix`, `commits`, `pending`, and `assets`, the outputs `assets --github-output` and `publish --plan` wrote.  
+
+  `status --vendored <name>` plans a vendored set and nothing else.  
+  With `--github-output` it writes only `has_assets`, `tag`, and `matrix`, and it fetches no history, reads no token, and looks up no release.  
+  A config with no packages, such as one that only vendors, has no package assets to plan, so `status` works there.
+
+  `verctl release --plan`, or `VERCTL_PLAN` set for it, exits 2 and names `verctl status --github-output`.  
+  Without `--github-output`, `status` never fetches.
+
+  The reusable `release.yml`, `actions/publish`, and `actions/asset` call the new verbs; their job ids, inputs, and the `actions/publish` path keep their names.  
+  In the library, `Command::Publish` and `Command::Assets` are `Command::Release`, with `ReleaseArgs`, `ReleaseStep::Asset`, and `AssetArgs`, and `pin`'s arguments are `RenderArgs`.
+- `verctl release` now refuses a run whose `.github/workflows/` tree differs from the default branch's tip, before any upload, tag, or Release.  
+  Actions takes the workflows from `GITHUB_SHA`.  
+  The tree compared is the one at that commit when the variable names a commit in the repository, and the one at HEAD otherwise ([#277](https://github.com/victor-software-house/verctl/pull/277)).
+
+  In the reusable workflow HEAD is the version commit, so a workflow change merged after a Version PR does not block its release.
+
+  A run from an old commit executes the workflows as they were then, and could publish to the registry and then fail to tag.  
+  `--allow-workflow-change` (`VERCTL_ALLOW_WORKFLOW_CHANGE`) lets the run go on.
+
+  `--allow-off-default-branch` (`VERCTL_ALLOW_OFF_DEFAULT_BRANCH`) lets `verctl release` run from a commit the default branch does not contain.  
+  A check that cannot run still refuses.
+
+  Before, `release` skipped the default-branch proof when it could not run.  
+  The error names the cause: no git repository, no HEAD commit, or no `origin` remote.  
+  A run that uses either flag lists what it went past under `allowed`, as a row in the human view and as `allowed: [{check, reason}]` in JSON.
+
+  `verctl release` now refuses a package with a skipped version, because publishing past it would skip that release for good.  
+  No flag allows it.
+
+  A version v is skipped when three things hold in the first-parent range from HEAD:
+
+  - some commit in the range has v;
+  - v is below HEAD's version;
+  - no newer commit in the range has a version strictly below v.
+
+  The range ends before a released version, `0.0.0`, a revision with no version, or a version that is not semver, and otherwise at the root.  
+
+  A version is released when the registry lists it for every checked upload of the package.  
+  A package with an unchecked upload, or with none, has it released once its tag exists, because `release` creates that tag after the upload.
+
+  For a workspace, only these members count at an earlier version:
+
+  - a member on the package's version;
+  - a member that crates.io lists at or below that version.
+
+  The other members joined later or move on their own.  
+  With no member left, the tag decides.
+
+  An abandoned version, one that a later downward change superseded, is not listed.  
+  `verctl status --github-output` lists each skipped version once, at its oldest commit in the range, oldest first.  
+  The workflow then releases it before the newer one.
+
+  The reusable `release.yml` takes two boolean inputs, `allow-workflow-change` and `allow-off-default-branch`, default `false`, and passes them to verctl through `env:`.
+
+  In the library, `publish::run_pending` takes an `Allow` argument, and the report it returns lists `allowed`.
+- `verctl release` reads the registry token from `VERCTL_REGISTRY_TOKEN` or `VERCTL_TRUSTED_PUBLISHING_TOKEN`, and fails when both are set.  
+  It gives the token to each publisher and its registry `query` under `--registry-token-env` (`VERCTL_REGISTRY_TOKEN_ENV`, default `CARGO_REGISTRY_TOKEN`).  
+  The queries that decide whether a release is complete or a version was skipped get it too.  
+  No other command it starts gets either variable, and no flag takes the token ([#306](https://github.com/victor-software-house/verctl/pull/306)).
+
+  In the library, `publish::run_pending` takes an `Option<&RegistryToken>`, and `pending::pending` takes one for those queries.
+
+  No command verctl starts inherits `GITHUB_TOKEN` or `GH_TOKEN` either: not a publisher, not a build script it runs, not `assets.prepare` or `assets.build`, and not `prepare.after`.  
+  Before, each ran with the job's token, which can write contents.  
+  verctl keeps the token for its own GitHub calls, and its own `git push` takes it through a private variable.  
+
+  A publisher that reads `GITHUB_TOKEN` gets the registry token there when `registry-token-env` is `GITHUB_TOKEN`.  
+  A bunfig for GitHub Packages with `token = "$GITHUB_TOKEN"` is one.
+
+  The reusable `release.yml` sets these in its publish step and runs `mise run ver release`.  
+  Its registry-token inputs and secrets keep their names.  
+  Only its `plan` job checks that the pinned verctl is 0.8.0 or later.
+
+  A pending version commit that pins an older verctl fails on the `release` verb.  
+  A merged commit's pin cannot move, so finish every pending release before moving the workflow ref to 0.8.0.
+
+  To release such a commit later, check it out and run `verctl release` from a 0.8.0 install there.
+
+  Every job of `release.yml` now sets up mise with `victor-software-house/actions/mise`, which downloads tools through the organization's release mirror.  
+  Callers already grant `id-token: write` for the publish job, and that grant now serves the mirror too.  
+  A job without it downloads from GitHub and logs a notice.
+
+  Every job of `release.yml` has a `timeout-minutes`: 10 for `plan` and `propose`, 30 for `publish`, 45 for `assets`, and 75 for `docs`.  
+  A publish that runs longer than 30 minutes is cancelled.
+- The library's `Driver` enum gains a `Text` variant, which reads `go.mod`, `VERSION`, and marker-line files.  
+  Every public enum that can grow is now `#[non_exhaustive]`, so adding a variant later is not an API break.  
+  The exceptions are `Bump`, the command list (`cli::Command`, `cli::ReleaseStep`, and `cli::Removed`), and the report states the binary prints: `semver_check::Decision`, `publish::Outcome`, and `docsrs::DocsStatus`.  
+  The command line does not change ([#262](https://github.com/victor-software-house/verctl/pull/262)).
+- `verctl check` now renders every template and rewrites every `pins` entry in memory, at the versions the manifests hold, with or without pending fragments.  
+  It fails on each served file that differs from its template.  
+  It also fails on each pin that names another version, or whose pattern matches nothing.  
+  One run names every such file ([#276](https://github.com/victor-software-house/verctl/pull/276)).
+
+  A pull request that edits a served file by hand, or changes a template without rendering it, fails.
+
+  `verctl render` renders every template after it rewrites the pins.  
+  So it writes exactly what `check` compares, and it is the fix for a failed check.  
+  `check` also reads `.ctl/ver.yaml` when no fragment is pending.
+
+  A file that a template renders and a `pins` entry also names has two owners.  
+  `verctl version`, `check`, and `render` refuse it before writing anything, naming the file, the template, and the `pins` entry.
+
+  In the library, `templates::plan` and `templates::write` take the `pins` as an argument, so they can name that conflict.
+- An unknown key under a `packages` entry, a `pins` entry, or a `patterns` entry now fails the load.  
+  Before, verctl dropped it: `publsher: none` on a Cargo package published it to crates.io.  
+  The error names the key and, for a package, the package.  
+  The driver fields a package may carry inline, such as `format` and `keys`, count as its keys ([#315](https://github.com/victor-software-house/verctl/pull/315)).
+
+  Fix a misspelled key before moving to 0.8.0, since a config that loaded before can fail now.
+- `verctl check --versions` on a Version PR replays the version step on the merge-base and fails each change the replay does not make ([#286](https://github.com/victor-software-house/verctl/pull/286)).
+
+  The error lists every difference.  
+  Each one is of these kinds:
+
+  - a path the version step does not write, such as a source file;
+  - a changed symlink, compared by its target, and a submodule whose commit changed;
+  - a manifest key that differs from the planned version and its pins, such as an added dependency;
+  - a CHANGELOG without the new version's section, or with older text rewritten;
+  - a fragment the version step consumes that is still present;
+  - a served file that differs from its template's render;
+  - a lockfile entry other than a workspace version the plan moves, and a lockfile that does not record each moved version.
+
+  A changed `yarn.lock` or `bun.lockb` fails, since verctl does not read them, and so does a changed `pnpm-lock.yaml`, `poetry.lock`, or `pdm.lock`.  
+  A path that `prepare.stage` names at the merge-base may change, so a staged `yarn.lock` or `bun.lockb` passes.  
+  A lockfile verctl parses, such as `Cargo.lock`, stays checked even when staged.
+
+  The plan, the pins, and `prepare.stage` come from `.ctl/ver.yaml` at the merge-base, so a Version PR cannot widen what it may change.
+
+  The replay runs no lockfile owner and no `prepare.after` command, and makes no network call.  
+  For a Cargo workspace it reads members with `cargo metadata --no-deps --offline`.
+
+  When the config at the merge-base does not load, `check --versions` skips the rules that need it and does not fail.  
+  That happens in the pull request that removes a key this verctl refuses, such as `prepare.version_label`.  
+  The report then carries one notice per skipped rule, naming the rule and the load error.  
+  JSON holds the notices under `notices`.
+
+  The config on HEAD must still load.
+
+  Earlier releases exempted the Version PR branch whatever it changed.
+
+  In the library, `versions::report` and `versions::require` take a `content::Inputs` naming the config file and the fragment directory.  
+  `content::check` and `content::removes_fragment` are new, with `git::MergeBase`, `git::read_optional`, and `members::versions`.  
+  `content::check` returns the notices of the rules it skipped, and `versions::VersionReport` gains a `notices` field.
+- The Version PR title and commit message move into `.ctl/ver.yaml`.  
+  `proposal.title` replaces `VERCTL_PR_TITLE` and the `title` input of the reusable `release.yml` and `actions/version-pr`.  
+  `proposal.commit_message` replaces `VERCTL_COMMIT_MESSAGE` and their `commit-message` input.  
+  verctl ignores both variables, and both inputs are gone, so a caller that still passes `title` or `commit-message` fails until it removes them.  
+  Unset or empty, the title is `chore(release): version packages` and the commit message is the title, as before ([#274](https://github.com/victor-software-house/verctl/pull/274)).
+
+  `prepare.version_label` is removed, and the Version PR gets no `verctl:version` label.  
+  A rule that matched that label matches the head branch `verctl/release/<base>` instead.  
+  A config that still sets the key fails to load, and the error names the key to delete.  
+  Any other unknown key under `prepare` fails too.
+
+  The reusable `release.yml` runs the verctl the caller pins.  
+  Its `plan` job fails first when that verctl is older than 0.8.0.  
+  Move the verctl pin and the workflow ref together.
+
+  In the library, `VersionPr::from_env` is `VersionPr::new`, which takes the `Proposal` and the root.  
+  `release::open_or_update_pr` takes no label argument.
+- `verctl version` runs the command that owns each bumped manifest's lockfile and commits that lockfile without a `prepare.stage` entry ([#282](https://github.com/victor-software-house/verctl/pull/282)).
+
+  These commands own the lockfiles:
+
+  - `cargo update --workspace` beside `Cargo.lock`;
+  - `uv lock` beside `uv.lock`;
+  - the package manager's install beside a JavaScript lockfile.
+
+  A package's own `after` runs as well; earlier releases only listed these commands.  
+  `prepare.after` runs after them, and a `prepare.after` that repeats an owner's command in the same directory runs once.  
+  The report's `after` lists each command that ran.
+
+  The next Version PR consumes a fragment that bumps nothing, such as one holding only `demo: none`.  
+  Earlier releases left it pending.
+
+  In the library, `prepare::apply_plan` returns no follow-up commands.  
+  `prepare::steps` and `prepare::run_steps` list and run them, and `detect::owner` names a manifest's lockfile owner, its directory, and its lockfile.
+
+### Fixed
+
+- Every GitHub API call goes to `GITHUB_API_URL` when it is set, as GitHub Actions sets it, and to api.github.com otherwise.  
+  Before, only `check --versions` read it, to check who opened the Version PR.  
+  So a run on GitHub Enterprise Server sent its other calls to api.github.com.  
+  History fetches still use `https://github.com/` ([#294](https://github.com/victor-software-house/verctl/pull/294)).
+- `release`, `render`, `release asset`, and `check --versions` read a package's version the way `version` does.  
+  On a failed read, the error names the package and its file.  
+  `check --versions` fails on a declared package whose file is missing, where it left the package out of the report ([#262](https://github.com/victor-software-house/verctl/pull/262)).
+
 ## verctl 0.7.4
 
 ### Fixed

@@ -6,7 +6,7 @@ description: >-
   .changeset fragments, or stack-agnostic changelog templates. Not
   @changesets/cli and not a forkctl verb.
 license: MIT
-version: 0.7.4
+version: 0.8.0
 ---
 
 # verctl
