@@ -502,6 +502,9 @@ When a release holds more, such as a second executable, a service unit, or a lic
 `release asset` checks that each listed path exists, then packs `tar czf <asset> -C <dir> <files>`.  
 It replaces `{bin}`, `{version}`, `{id}`, `{os}`, `{arch}`, and `{triple}` in them.
 
+A target that ships other files, such as a tool built only on Linux, lists its own `files` under `assets.<target>`.  
+They replace `assets.files` for that target, and `release asset` checks and packs exactly that list.
+
 `release` pushes nothing but the tag.  
 `version` rewrites `pins` on the Version PR commit the tag will name, so the released tree carries its own pins.  
 A pin that must name an already-published tarball, such as a repo's own bootstrap tool, is not a `pins` entry.  

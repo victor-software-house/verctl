@@ -319,7 +319,8 @@ pub struct Job {
 ///
 /// A tarball holds the one `binary`, or the `files` packed from `dir`. Use
 /// `files` when a release needs more than its binary, such as a second
-/// executable, a service unit, or a licence.
+/// executable, a service unit, or a licence. A target that ships other files
+/// lists its own `files`, which replace the shared list for that target.
 #[derive(Debug, Clone, Deserialize, Default, Validate)]
 #[garde(context(Config))]
 #[garde(allow_unvalidated)]
@@ -342,22 +343,28 @@ pub struct Assets {
     #[serde(default)]
     #[garde(custom(dir_comes_with_files), inner(custom(inside_the_repo)))]
     pub dir: Option<PathBuf>,
-    /// Paths under `dir` packed into every target's tarball, with the same
-    /// placeholders. Each keeps its place under `dir`. A directory is packed
-    /// whole. Omit, with `dir`, to pack the one `binary`.
+    /// Paths under `dir` packed into the tarball of every target that lists
+    /// none of its own, with the same placeholders. Each keeps its place under
+    /// `dir`. A directory is packed whole. Omit, with `dir`, to pack the one
+    /// `binary`, or when every target lists its own.
     #[serde(default)]
     #[garde(custom(files_come_with_dir), inner(custom(inside_the_repo)))]
     pub files: Vec<PathBuf>,
     /// Every remaining sub-mapping: `assets.linux-x64` and friends. A typo'd
-    /// recipe key lands here and fails as an unknown target, loudly.
+    /// recipe key lands here and fails as an unknown target, loudly. The
+    /// map is flattened, so garde names a target's field
+    /// `assets.targets.<id>`, though the file has no `targets` key.
     #[serde(flatten)]
+    #[garde(dive)]
     pub targets: BTreeMap<String, AssetTarget>,
 }
 
 /// One build target: the platform it produces and the single machine that
 /// builds it. One tarball, one machine, so `runner` is not a list.
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default, Validate)]
 #[serde(deny_unknown_fields)]
+#[garde(context(Config))]
+#[garde(allow_unvalidated)]
 #[non_exhaustive]
 pub struct AssetTarget {
     /// Name from `runners` of the machine that builds this target.
@@ -368,6 +375,16 @@ pub struct AssetTarget {
     pub arch: Option<String>,
     /// Target triple. Defaults from a known target id.
     pub triple: Option<String>,
+    /// The paths this target's tarball holds under `assets.dir`, in place of
+    /// `assets.files`, with the same placeholders. Use it when a platform
+    /// ships other files, such as a tool that builds only on Linux. Unset,
+    /// the target packs `assets.files`; an empty list would pack nothing.
+    #[serde(default)]
+    #[garde(
+        custom(target_files_come_with_dir),
+        inner(custom(at_least_one("file")), inner(custom(inside_the_repo)))
+    )]
+    pub files: Option<Vec<PathBuf>>,
 }
 
 /// Release assets built from someone else's source, at that source's version,
@@ -509,19 +526,39 @@ fn at_least_one_target(targets: &BTreeMap<String, VendoredTarget>, _: &Config) -
     Ok(())
 }
 
-/// `dir` without `files` would pack nothing, so the two come together.
+/// `dir` without `files` would pack nothing for a target that lists none of
+/// its own, so `dir` comes with the shared `files` or a list on every target.
 #[expect(
     clippy::ref_option,
     reason = "garde passes the field as it is declared"
 )]
 fn dir_comes_with_files(dir: &Option<PathBuf>, config: &Config) -> garde::Result {
-    let packs_files = config
-        .assets
-        .as_ref()
-        .is_some_and(|assets| !assets.files.is_empty());
+    let packs_files = config.assets.as_ref().is_some_and(|assets| {
+        !assets.files.is_empty()
+            || (!assets.targets.is_empty()
+                && assets.targets.values().all(|target| target.files.is_some()))
+    });
     if dir.is_some() && !packs_files {
         return Err(garde::Error::new(
-            "must come with files, the paths packed from it",
+            "must come with files, the paths packed from it, or a files list on every target",
+        ));
+    }
+    Ok(())
+}
+
+/// A target's `files` are packed from `assets.dir`, so they need it.
+#[expect(
+    clippy::ref_option,
+    reason = "garde passes the field as it is declared"
+)]
+fn target_files_come_with_dir(files: &Option<Vec<PathBuf>>, config: &Config) -> garde::Result {
+    let has_dir = config
+        .assets
+        .as_ref()
+        .is_some_and(|assets| assets.dir.is_some());
+    if files.is_some() && !has_dir {
+        return Err(garde::Error::new(
+            "must come with assets.dir, the directory they are packed from",
         ));
     }
     Ok(())
@@ -541,17 +578,18 @@ fn files_come_with_dir(files: &[PathBuf], config: &Config) -> garde::Result {
     Ok(())
 }
 
-/// A `binary` beside `dir` and `files` would never be read, and a reader
-/// would take it for what the tarball holds.
+/// A `binary` beside `dir` and `files`, shared or on a target, would never
+/// be read, and a reader would take it for what the tarball holds.
 #[expect(
     clippy::ref_option,
     reason = "garde passes the field as it is declared"
 )]
 fn binary_is_not_beside_files(binary: &Option<String>, config: &Config) -> garde::Result {
-    let packs_files = config
-        .assets
-        .as_ref()
-        .is_some_and(|assets| assets.dir.is_some() || !assets.files.is_empty());
+    let packs_files = config.assets.as_ref().is_some_and(|assets| {
+        assets.dir.is_some()
+            || !assets.files.is_empty()
+            || assets.targets.values().any(|target| target.files.is_some())
+    });
     if binary.is_some() && packs_files {
         return Err(garde::Error::new(
             "must be omitted when dir and files say what the tarball holds; list the binary in files",
@@ -2224,6 +2262,29 @@ mod tests {
     }
 
     #[test]
+    fn a_target_lists_its_own_files() {
+        let config = load(&assets(indoc! {"
+            assets:
+              dir: out/{triple}
+              darwin-arm64:
+                files: [proof]
+              linux-x64:
+                files: [bench, proof]
+        "}))
+        .unwrap();
+        let recipe = config.assets.unwrap();
+        assert_eq!(recipe.files, Vec::<PathBuf>::new());
+        assert_eq!(
+            recipe.targets["darwin-arm64"].files,
+            Some(vec![PathBuf::from("proof")])
+        );
+        assert_eq!(
+            recipe.targets["linux-x64"].files,
+            Some(vec![PathBuf::from("bench"), PathBuf::from("proof")])
+        );
+    }
+
+    #[test]
     fn asset_files_reject_what_they_cannot_pack() {
         let cases = [
             (
@@ -2284,6 +2345,70 @@ mod tests {
                       linux-x64: {}
                 "},
                 "must stay inside the repository",
+            ),
+        ];
+        for (scenario, section, expected) in cases {
+            let error = load(&assets(section)).expect_err(scenario);
+            assert!(
+                format!("{error:#}").contains(expected),
+                "{scenario}: {error:#}"
+            );
+        }
+    }
+
+    #[test]
+    fn asset_target_files_reject_what_they_cannot_pack() {
+        let cases = [
+            (
+                "target files without dir",
+                indoc! {"
+                    assets:
+                      linux-x64:
+                        files: [demo]
+                "},
+                "assets.targets.linux-x64.files: must come with assets.dir",
+            ),
+            (
+                "an empty target list",
+                indoc! {"
+                    assets:
+                      dir: out
+                      files: [demo]
+                      linux-x64:
+                        files: []
+                "},
+                "assets.targets.linux-x64.files: must declare at least one file",
+            ),
+            (
+                "binary beside target files",
+                indoc! {"
+                    assets:
+                      binary: out/{bin}
+                      linux-x64:
+                        files: [demo]
+                "},
+                "assets.binary: must be omitted when dir and files say what the tarball holds",
+            ),
+            (
+                "a target file outside the repo",
+                indoc! {"
+                    assets:
+                      dir: out
+                      linux-x64:
+                        files: [../secret]
+                "},
+                "assets.targets.linux-x64.files[0]: must stay inside the repository",
+            ),
+            (
+                "dir with a target that lists no files",
+                indoc! {"
+                    assets:
+                      dir: out
+                      darwin-arm64: {}
+                      linux-x64:
+                        files: [demo]
+                "},
+                "must come with files",
             ),
         ];
         for (scenario, section, expected) in cases {

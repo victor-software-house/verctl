@@ -238,6 +238,64 @@ fn a_package_file_missing_after_the_build_is_named() {
     assert!(stderr.contains("demod@.service is missing"), "{stderr}");
 }
 
+/// [`files_root`], with `linux-x64` listing its own files in place of the
+/// shared list.
+fn target_files_root() -> TempDir {
+    let root = files_root();
+    common::write_config(
+        root.path(),
+        indoc! {r#"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publisher: none
+            assets:
+              build: ["true"]
+              dir: out/{triple}
+              files: [demo, demod, "demod@.service", LICENSE]
+              linux-x64:
+                files: [demo, LICENSE]
+        "#},
+    );
+    root
+}
+
+#[test]
+fn a_target_packs_its_own_files() {
+    let root = target_files_root();
+    json(&run(
+        root.path(),
+        &[
+            "release",
+            "asset",
+            "linux-x64",
+            "--dry-run",
+            "--format",
+            "json",
+        ],
+    ));
+    assert_eq!(
+        entries(&root.path().join("demo_1.2.3_linux_x64.tar.gz")),
+        ["demo", "LICENSE"]
+    );
+}
+
+#[test]
+fn a_target_file_missing_after_the_build_names_its_list() {
+    let root = target_files_root();
+    fs::remove_file(root.path().join("out/x86_64-unknown-linux-gnu/LICENSE")).expect("remove");
+    let output = run(root.path(), &["release", "asset", "linux-x64", "--dry-run"]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        stderr.contains("assets.linux-x64.files: ") && stderr.contains("LICENSE is missing"),
+        "{stderr}"
+    );
+}
+
 const VENDORED: &str = indoc! {r"
     runners:
       linux:
