@@ -162,15 +162,25 @@ pins:
   goes. Exactly one placeholder. `.`, `?`, `//`, and `$` mean themselves, so a
   pattern is readable by whoever maintains the file it describes.
 - A **version** is dotted numerics (`0.0.2`, `1.2.3`, `0.0.10`). Nothing else.
-- **Give the version a right-hand boundary.** A match ending in literal text has
-  one, so `verctl@{version} today` reads `verctl@1.0.0-rc.1 today` as no match
-  at all and the arity stops the release. A match ending *at* the placeholder
-  has none, and will rewrite the numeric head of a longer version, leaving the
-  tail. `whole_line` is the boundary for a line the match owns; otherwise put
-  the text that follows into `match`. Nothing can be inferred for you here:
-  `download/v{version}` against `download/v1.2.3-linux-x64.tar.gz` is correct
-  and pins 1.2.3, so a rule that refused every trailing `-` would stop real
-  releases.
+- **Each side of the version needs a boundary.** `{version}` matches digits
+  and dots, so an open side lets a longer version match by its numeric head.
+  `version: {version}` would rewrite `version: 0.1.1-rc1` to `0.1.2-rc1`. A
+  side has a boundary in one of three ways:
+  - a character next to `{version}` other than a digit, `.`, `-`, or `+`;
+  - after the version, a `-` or `+` with more text after it, since a lone
+    one opens a prerelease or a build: `v{version}-` reads `v1.2.3-rc1` as
+    `1.2.3-`;
+  - under `whole_line`, the line start or the line end.
+
+  Every verb that reads `.ctl/ver.yaml` refuses a pattern with an open side,
+  naming the pattern and the side. With both boundaries, a longer version
+  fails to match, and the arity stops the release.
+- **The file cannot decide the boundary for you.** `download/v{version}-linux`
+  against `download/v1.2.3-linux-x64.tar.gz` is correct and pins 1.2.3. A rule
+  that refused every `-` in the file would stop real releases. One case
+  stays open, and only the author can close it: a prerelease that starts with
+  the pattern's own text. `download/v{version}-linux` against
+  `download/v1.2.3-linux.1-linux.tar.gz` pins 1.2.3 and keeps `-linux.1`.
 - `whole_line` says the match **owns its line** rather than sitting inside one.
   Unsaid, a pattern matches anywhere, which is what an inline spelling wants —
   `github:org/tool@1.2.3` is part of a longer line. A frontmatter key or a
@@ -199,6 +209,9 @@ pins:
 - `tool` is the one structural form: a mise `[tools]` entry in a file that
   parses as TOML, plus every `?ref=v…` include in that file whose URL path
   names the tool's own repository. A sibling repo's include is not ours to move.
+- A `tool` include whose ref starts with a version and goes on, such as
+  `?ref=v1.2.3-rc1`, fails the release and leaves the file as it was. A ref
+  that is not a version, such as a branch, is not a pin and stays put.
 
 ## 5. Failure is loud, and skipping is narrow
 

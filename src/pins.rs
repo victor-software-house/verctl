@@ -152,11 +152,15 @@ fn rewrite_tool(body: &str, tool: &str, version: &str, path: &Path) -> Result<St
     }
     tools.insert(tool, value(version));
     rewrite_own_refs(&doc.to_string(), tool, version)
+        .with_context(|| format!("pin {}", path.display()))
 }
 
 /// The version in every occurrence of `pattern.match`, where `{version}`
 /// marks it. The rest is literal, so a bash header, a README sentence, and a
 /// YAML value all rewrite the same way with nothing assumed about the file.
+/// `Config::load` refuses a pattern with nothing marking where the version
+/// starts and ends, so a longer version here fails to match rather than
+/// matching by its numeric head.
 ///
 /// How often the file must say it is declared, never inferred, and both
 /// directions are release-stopping: fewer than declared means the pin no
@@ -198,12 +202,28 @@ fn rewrite_pattern(body: &str, pattern: &PinPattern, version: &str) -> Result<St
 /// Every `?ref=v…` include that names this tool's own repository. A sibling
 /// repo's include sitting in the same file is not ours to move, so the URL
 /// path must carry the tool's own name.
+///
+/// The ref runs to the end of the URL, so a ref that starts with a version
+/// and goes on, such as `v1.2.3-rc1`, fails rather than having its numeric
+/// head moved and its tail kept. A ref that is not a version at all, such as
+/// a branch, is not a pin and stays put.
 fn rewrite_own_refs(body: &str, tool: &str, version: &str) -> Result<String> {
     let name = escape(tool.rsplit(['/', ':']).next().unwrap_or(tool));
     let finder = Regex::new(&format!(
-        r#"(?<include>/{name}(?:\.git)?//[^\s"',\]]*\?ref=v){VERSION}"#
+        r#"(?<include>/{name}(?:\.git)?//[^\s"',\]]*\?ref=v)(?<reference>[0-9][^\s"',\]]*)"#
     ))
     .with_context(|| format!("tool {tool:?}"))?;
+    let whole = Regex::new(&format!("^{VERSION}$")).context("the version pattern")?;
+    if let Some(found) = finder
+        .captures_iter(body)
+        .find(|found| !whole.is_match(&found["reference"]))
+    {
+        bail!(
+            "{:?} pins v{}, which is not a version this rewrites",
+            &found[0],
+            &found["reference"]
+        );
+    }
     Ok(finder
         .replace_all(body, format!("${{include}}{version}"))
         .into_owned())
@@ -724,6 +744,34 @@ mod tests {
                 ]
             "#}
         );
+    }
+
+    /// An include whose ref is a prerelease is not a version this rewrites.
+    /// Moving its numeric head would leave the tail on a tag that names
+    /// another release, so the pin fails and the file stays as it was.
+    #[test]
+    fn an_include_with_a_prerelease_ref_fails_instead_of_half_rewriting() {
+        let root = TempDir::new().unwrap();
+        let before = indoc! {r#"
+            [tools]
+            "github:victor-software-house/verctl" = "0.0.1"
+
+            [task_config]
+            includes = [
+              "git::https://github.com/victor-software-house/verctl.git//tasks/ver?ref=v1.2.3-rc1",
+            ]
+        "#};
+        let path = write_file(&root, "mise.toml", before);
+        let err = write(
+            root.path(),
+            &[tool_pin("mise.toml", "verctl")],
+            &versions("0.0.2"),
+        )
+        .unwrap_err();
+        let report = format!("{err:#}");
+        assert!(report.contains("v1.2.3-rc1"), "{report}");
+        assert!(report.contains("mise.toml"), "{report}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), before);
     }
 
     /// A TOML array with no space after the comma: only the quote and comma

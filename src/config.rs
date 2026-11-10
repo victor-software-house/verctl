@@ -656,6 +656,7 @@ pub struct Config {
     /// so a spelling three files share is written once.
     #[serde(default)]
     #[garde(custom(every_pattern_says_where_the_version_goes))]
+    #[garde(custom(every_pattern_bounds_the_version))]
     #[garde(custom(every_pattern_is_listed))]
     pub patterns: BTreeMap<String, PinPattern>,
     /// Collocated tool pins rewritten when `package` is bumped.
@@ -679,6 +680,69 @@ fn every_pattern_says_where_the_version_goes(
         }
     }
     Ok(())
+}
+
+/// Where the version starts and ends, said by the pattern. `{version}` is
+/// digits and dots, so without text beside it that a version cannot hold,
+/// a longer version matches by its numeric head: `version: {version}` reads
+/// `version: 0.1.1-rc1` as 0.1.1 and keeps `-rc1` after the new version. The
+/// file cannot settle it, because `download/v{version}-linux` against
+/// `download/v1.2.3-linux-x64.tar.gz` is a correct pin of 1.2.3.
+fn every_pattern_bounds_the_version(
+    patterns: &BTreeMap<String, PinPattern>,
+    _: &Config,
+) -> garde::Result {
+    for (id, pattern) in patterns {
+        let Some((before, after)) = pattern.r#match.split_once(PLACEHOLDER) else {
+            continue;
+        };
+        if after.contains(PLACEHOLDER) {
+            continue;
+        }
+        if let Some(problem) = unbounded(before, after, pattern.whole_line) {
+            return Err(garde::Error::new(format!("{id}: {problem}")));
+        }
+    }
+    Ok(())
+}
+
+/// What leaves one side of the placeholder open, if anything does. A digit
+/// or `.` beside it can be part of the version, and a lone `-` or `+` after
+/// it opens a prerelease or build that the rest of the file can continue.
+/// Under `whole_line` the line itself starts and ends the match.
+fn unbounded(before: &str, after: &str, whole_line: bool) -> Option<String> {
+    let continues = |next: &char| next.is_ascii_digit() || *next == '.';
+    let fixes = "add the text beside it to match, or set whole_line: true";
+    if before.is_empty() && !whole_line {
+        return Some(format!(
+            "nothing before {PLACEHOLDER} marks where the version starts: {fixes}"
+        ));
+    }
+    if let Some(next) = before.chars().next_back().filter(continues) {
+        return Some(format!(
+            "{next:?} before {PLACEHOLDER} can be part of the version: end the text before it with another character"
+        ));
+    }
+    if after.is_empty() && !whole_line {
+        return Some(format!(
+            "nothing after {PLACEHOLDER} marks where the version ends: {fixes}"
+        ));
+    }
+    let mut rest = after.chars();
+    let first = rest.next();
+    if let Some(next) = first.filter(continues) {
+        return Some(format!(
+            "{next:?} after {PLACEHOLDER} can be part of the version: start the text after it with another character"
+        ));
+    }
+    if let Some(next) = first.filter(|next| matches!(next, '-' | '+'))
+        && rest.next().is_none()
+    {
+        return Some(format!(
+            "{next:?} after {PLACEHOLDER} opens a prerelease or build: add the text that follows it to match"
+        ));
+    }
+    None
 }
 
 /// A declared pattern nothing lists is dead configuration, not a spare: it
@@ -1028,6 +1092,11 @@ pub struct PinPattern {
     /// The text around a version, `{version}` where the version is. Literal,
     /// not a regex, so nothing about the file's format is assumed. Exactly one
     /// placeholder, checked over `patterns` so the complaint names the id.
+    ///
+    /// Each side of the placeholder needs a character a version cannot hold:
+    /// not a digit or `.`, and after it a `-` or `+` only with more text
+    /// after that, since alone it opens a prerelease. Under `whole_line` the
+    /// line start and end count too. The load refuses a pattern without.
     pub r#match: String,
     /// How often the file must say it. A pin that lost its only mention, or
     /// drifted to one nobody declared, fails the release rather than serving
@@ -1499,21 +1568,21 @@ mod tests {
             {PACKAGE}
             patterns:
               omitted:
-                match: "a@{{version}}"
+                match: "a@{{version}} --"
               once:
-                match: "b@{{version}}"
+                match: "b@{{version}} --"
                 occurrences: once
               many:
-                match: "c@{{version}}"
+                match: "c@{{version}} --"
                 occurrences: many
               never:
-                match: "d@{{version}}"
+                match: "d@{{version}} --"
                 occurrences: never
               twice:
-                match: "e@{{version}}"
+                match: "e@{{version}} --"
                 occurrences: {{exactly: 2}}
               floor:
-                match: "f@{{version}}"
+                match: "f@{{version}} --"
                 occurrences: {{at_least: 2}}
 
             pins:
@@ -1548,7 +1617,7 @@ mod tests {
             {PACKAGE}
             pattern:
               install:
-                match: "demo@{{version}}"
+                match: "demo@{{version}} --"
         "#})
         .expect_err("pattern is not a section");
         assert!(format!("{error:#}").contains("pattern"), "{error:#}");
@@ -1563,7 +1632,7 @@ mod tests {
             {PACKAGE}
             patterns:
               wrong:
-                match: "a@{{version}}"
+                match: "a@{{version}} --"
                 occurrences: {{exactly: 2, at_leats: 3}}
 
             pins:
@@ -1584,7 +1653,7 @@ mod tests {
                 {PACKAGE}
                 patterns:
                   wrong:
-                    match: "a@{{version}}"
+                    match: "a@{{version}} --"
                     occurrences: {{exactly: {count}}}
 
                 pins:
@@ -1603,7 +1672,7 @@ mod tests {
             {PACKAGE}
             patterns:
               wrong:
-                match: "a@{{version}}"
+                match: "a@{{version}} --"
                 occurrences: sometimes
 
             pins:
@@ -1621,9 +1690,9 @@ mod tests {
             {PACKAGE}
             patterns:
               install:
-                match: "demo@{{version}}"
+                match: "demo@{{version}} --"
               mention:
-                match: "v{{version}}"
+                match: "v{{version}} --"
                 occurrences: many
 
             pins:
@@ -1647,9 +1716,79 @@ mod tests {
             .collect();
         assert_eq!(
             carried,
-            [vec!["demo@{version}", "v{version}"], vec!["demo@{version}"]],
+            [
+                vec!["demo@{version} --", "v{version} --"],
+                vec!["demo@{version} --"]
+            ],
             "each file carries the patterns it lists, in the order it lists them"
         );
+    }
+
+    /// Each side of `{version}` needs text a version cannot hold, or the line
+    /// under `whole_line`. Every refusal names the pattern and the side.
+    #[test]
+    fn a_pattern_marks_where_the_version_starts_and_ends() {
+        let cases = [
+            (
+                "version: {version}",
+                false,
+                Some("skill: nothing after {version}"),
+            ),
+            (
+                "{version} today",
+                false,
+                Some("skill: nothing before {version}"),
+            ),
+            ("demo@{version}.", false, Some("'.' after {version}")),
+            ("demo@{version}1", false, Some("'1' after {version}")),
+            (
+                "release.{version} today",
+                false,
+                Some("'.' before {version}"),
+            ),
+            (
+                "v{version}-",
+                false,
+                Some("'-' after {version} opens a prerelease"),
+            ),
+            (
+                "v{version}+",
+                false,
+                Some("'+' after {version} opens a prerelease"),
+            ),
+            (
+                "v{version}-",
+                true,
+                Some("'-' after {version} opens a prerelease"),
+            ),
+            ("download/v{version}-linux", false, None),
+            ("demo@{version} --", false, None),
+            ("`demo@{version}`", false, None),
+            ("version: {version}", true, None),
+            ("{version}", true, None),
+        ];
+        for (text, whole_line, refusal) in cases {
+            let loaded = load(&formatdoc! {"
+                {PACKAGE}
+                patterns:
+                  skill:
+                    match: '{text}'
+                    whole_line: {whole_line}
+
+                pins:
+                  - file: README.md
+                    package: demo
+                    patterns: [skill]
+            "});
+            match (loaded, refusal) {
+                (Ok(_), None) => {}
+                (Err(error), Some(needle)) => {
+                    let report = format!("{error:#}");
+                    assert!(report.contains(needle), "{text}: {report}");
+                }
+                (outcome, _) => panic!("{text} (whole_line: {whole_line}): {outcome:?}"),
+            }
+        }
     }
 
     /// Every rule the schema declares, each naming what a repo has to fix.
@@ -1666,7 +1805,7 @@ mod tests {
                     {PACKAGE}
                     patterns:
                       install:
-                        match: "demo@{{version}}"
+                        match: "demo@{{version}} --"
 
                     pins:
                       - file: README.md
@@ -1681,7 +1820,7 @@ mod tests {
                     {PACKAGE}
                     patterns:
                       install:
-                        match: "demo@{{version}}"
+                        match: "demo@{{version}} --"
 
                     pins:
                       - file: README.md
@@ -1696,9 +1835,9 @@ mod tests {
                     {PACKAGE}
                     patterns:
                       install:
-                        match: "demo@{{version}}"
+                        match: "demo@{{version}} --"
                       orphan:
-                        match: "old@{{version}}"
+                        match: "old@{{version}} --"
 
                     pins:
                       - file: README.md
@@ -1738,7 +1877,7 @@ mod tests {
                     {PACKAGE}
                     patterns:
                       install:
-                        match: "demo@{{version}}"
+                        match: "demo@{{version}} --"
 
                     pins:
                       - file: ../elsewhere/README.md

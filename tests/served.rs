@@ -34,6 +34,7 @@ fn repo() -> TempDir {
               tool:
                 match: "demo@{version}"
                 occurrences: once
+                whole_line: true
 
             pins:
               - file: tools.toml
@@ -198,4 +199,33 @@ fn a_file_with_two_owners_is_refused_before_any_write() {
     }
     assert!(read(&root, "Cargo.toml").contains("version = \"0.1.0\""));
     assert_eq!(read(&root, "tools.toml"), "demo@0.1.0\n");
+}
+
+/// A prerelease where a pin's version goes is not a version `version`
+/// rewrites. It stops before any manifest moves, naming the file and the
+/// pattern, and the pinned file keeps its bytes.
+#[test]
+fn a_prerelease_pin_stops_version_before_any_write() {
+    let root = repo();
+    write(root.path(), "tools.toml", "demo@0.1.0-rc1\n");
+    common::git(root.path(), &["commit", "-qam", "prerelease"]);
+    write(
+        root.path(),
+        ".changeset/fix.md",
+        indoc! {"
+            ---
+            demo: patch
+            ---
+
+            Fix.
+        "},
+    );
+    let output = verctl(&root, &["version"]);
+    assert!(!output.status.success());
+    let message = stderr(&output);
+    assert!(message.contains("tools.toml"), "{message}");
+    assert!(message.contains("demo@{version}"), "{message}");
+    assert!(message.contains("matches 0 times"), "{message}");
+    assert_eq!(read(&root, "tools.toml"), "demo@0.1.0-rc1\n");
+    assert!(read(&root, "Cargo.toml").contains("version = \"0.1.0\""));
 }
