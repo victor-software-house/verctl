@@ -7,6 +7,6 @@ verctl:group: changed
 
 `--allow-off-default-branch` (`VERCTL_ALLOW_OFF_DEFAULT_BRANCH`) lets `verctl publish` run from a commit the default branch does not contain. A check that cannot run still refuses. A run that uses either flag lists what it went past under `allowed`, as a row in the human view and as `allowed: [{check, reason}]` in JSON.
 
-`verctl publish` now refuses a package whose first-parent history since its last release tag holds an earlier version commit, because publishing would skip that version. No flag allows it. `verctl publish --plan` now lists each such version at the commit that set it, oldest first, so the workflow releases it before the newer one.
+`verctl publish` now refuses a package with a skipped version, because publishing past it would skip that release for good. No flag allows it. A version v is skipped when some commit in the first-parent range from HEAD has v, v is below HEAD's version, and no newer commit in the range has a version strictly below v. The range ends before a released version, `0.0.0`, a revision with no version, or a version that is not semver, and otherwise at the root. An abandoned version, one that a later downward change superseded, is not listed. `verctl publish --plan` lists each skipped version once, at its oldest commit in the range, oldest first, so the workflow releases it before the newer one.
 
 The reusable `release.yml` takes two boolean inputs, `allow-workflow-change` and `allow-off-default-branch`, default `false`, and passes them to verctl through `env:`.
