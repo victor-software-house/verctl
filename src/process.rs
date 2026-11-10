@@ -26,7 +26,7 @@ pub fn filter(argv: &[String], stdin: &str, env: &[(&str, &str)]) -> Result<Stri
     filter_limited(argv, stdin, env, DEFAULT_TIMEOUT, DEFAULT_OUTPUT_LIMIT)
 }
 
-/// Run an argv with no stdin. Used by `publish`.
+/// Run an argv with no stdin. Used by `release`.
 ///
 /// # Errors
 ///
@@ -42,7 +42,7 @@ const STDERR_TAIL: usize = 64 * 1024;
 /// Stream the command's stdout and stderr to this process's stderr, so
 /// Actions show cargo/bun as they run while stdout holds only verctl's own
 /// report, which `--format json` keeps parseable. The last 64 KiB of that
-/// output also go into the error, so a caller such as `publish` can tell an
+/// output also go into the error, so a caller such as `release` can tell an
 /// already-published version apart.
 ///
 /// # Errors

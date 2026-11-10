@@ -12,6 +12,7 @@ use tempfile::TempDir;
 #[test]
 fn status_lists_mixed_packages() {
     let root = TempDir::new().expect("tempdir");
+    common::write_demo_package(root.path());
     let dir = root.path().join(".changeset");
     fs::create_dir_all(&dir).expect("dir");
     fs::write(
@@ -27,6 +28,7 @@ fn status_lists_mixed_packages() {
     )
     .expect("write");
     let output = common::verctl()
+        .current_dir(root.path())
         .args(["status", "--color", "never", "-d"])
         .arg(&dir)
         .output()
@@ -47,6 +49,7 @@ fn status_lists_mixed_packages() {
 #[test]
 fn status_json_uses_the_same_report_without_ansi() {
     let root = TempDir::new().expect("tempdir");
+    common::write_demo_package(root.path());
     let dir = root.path().join(".changeset");
     fs::create_dir_all(&dir).expect("dir");
     fs::write(
@@ -61,6 +64,7 @@ fn status_json_uses_the_same_report_without_ansi() {
     )
     .expect("write");
     let output = common::verctl()
+        .current_dir(root.path())
         .args(["status", "--format", "json", "--color", "always", "-d"])
         .arg(&dir)
         .output()
@@ -72,12 +76,16 @@ fn status_json_uses_the_same_report_without_ansi() {
     assert_eq!(value["pending"], 1);
     assert_eq!(value["max"], "patch");
     assert_eq!(value["fragments"][0]["packages"][0]["name"], "demo");
+    assert!(value["unreleased"].is_null(), "{value}");
+    assert_eq!(value["unreleased_unchecked"], "no GITHUB_TOKEN or GH_TOKEN");
 }
 
 #[test]
 fn quiet_suppresses_only_successful_pretty_status() {
     let root = TempDir::new().expect("tempdir");
+    common::write_demo_package(root.path());
     let output = common::verctl()
+        .current_dir(root.path())
         .args(["status", "--quiet", "-d"])
         .arg(root.path().join("missing"))
         .output()
@@ -111,6 +119,7 @@ fn json_errors_use_stdout_and_one_envelope() {
 #[test]
 fn json_output_holds_no_escape_byte_under_forced_colour() {
     let root = TempDir::new().expect("tempdir");
+    common::write_demo_package(root.path());
     let good = root.path().join("good");
     let bad = root.path().join("bad");
     fs::create_dir_all(&good).expect("dir");

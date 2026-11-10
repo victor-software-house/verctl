@@ -86,7 +86,7 @@ struct Wanted {
 ///
 /// A crate is checked only when its publish target is crates.io, it has a
 /// library target, the tag `tags.template` names for its version names HEAD
-/// on GitHub, and the crates.io index lists the version. `publish` creates a
+/// on GitHub, and the crates.io index lists the version. `release` creates a
 /// crates.io package's tag before the upload, so the tag says which commit
 /// released the version and the index says the upload happened. The tag
 /// lookup goes to GitHub, never to local refs, because a CI checkout fetches

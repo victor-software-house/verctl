@@ -666,7 +666,7 @@ fn refuse_skipped_versions(
     for package in &here.packages {
         if let Some(skipped) = waiting.iter().find(|left| left.name == package.name) {
             bail!(
-                "{name} {version} was never released: {sha} set it, and publishing {name} {current} at {head} would skip it; run `verctl publish --plan`, which lists {sha} first, and publish that commit before this one",
+                "{name} {version} was never released: {sha} set it, and publishing {name} {current} at {head} would skip it; run `verctl status --github-output`, which lists {sha} first, and release that commit before this one",
                 name = package.name,
                 version = skipped.version,
                 sha = skipped.commit,
@@ -847,7 +847,10 @@ mod tests {
                 "{message}"
             );
             assert!(message.contains("aaa1111 set it"), "{message}");
-            assert!(message.contains("verctl publish --plan"), "{message}");
+            assert!(
+                message.contains("verctl status --github-output"),
+                "{message}"
+            );
         }
     }
 

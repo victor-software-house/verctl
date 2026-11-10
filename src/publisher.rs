@@ -289,7 +289,7 @@ const BUN_QUERY: [&str; 5] = ["bun", "pm", "view", "{name}@{version}", "version"
 
 /// The publisher name for a package released only on GitHub: a tag and a
 /// Release, with assets when declared, and no registry step. Its argv is
-/// empty, which `publish` reads as "nothing to upload"; every other publisher
+/// empty, which `release` reads as "nothing to upload"; every other publisher
 /// must render a command, so an empty one never passes for this mode.
 pub const RELEASE_ONLY: &str = "none";
 
@@ -381,7 +381,7 @@ fn releases_on_github_only(file_name: &str) -> bool {
     matches!(file_name, "go.mod" | "VERSION")
 }
 
-/// How `publish` decides whether `version` of a package is already on its
+/// How `release` decides whether `version` of a package is already on its
 /// registry.
 ///
 /// A package's own `query` wins, then its `publishers` entry's, and an empty
@@ -464,7 +464,7 @@ pub fn registry_check(
     }
 }
 
-/// One upload `publish` runs: a package, or one member of a workspace package.
+/// One upload `release` runs: a package, or one member of a workspace package.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Upload {
@@ -476,7 +476,7 @@ pub struct Upload {
     pub manifest: PathBuf,
     /// The upload command.
     pub argv: Vec<String>,
-    /// How `publish` asks whether the version is already published.
+    /// How `release` asks whether the version is already published.
     pub check: RegistryCheck,
 }
 

@@ -52,13 +52,13 @@ on:
         description: >-
           Publish a version commit whose .github/workflows/ differs from the
           default branch's tip, as when retrying an old release after a
-          workflow changed. The publish report lists it under allowed.
+          workflow changed. The release report lists it under allowed.
         type: boolean
         default: false
       allow-off-default-branch:
         description: >-
           Publish a version commit the default branch does not contain. The
-          publish report lists it under allowed.
+          release report lists it under allowed.
         type: boolean
         default: false
       config:
@@ -228,9 +228,8 @@ jobs:
         id: plan
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          VERCTL_PLAN: "true"
           VERCTL_SKIP_ASSETS: ${{ !inputs.assets }}
-        run: mise run ver publish
+        run: mise run ver status --github-output "$GITHUB_OUTPUT"
 
   publish:
     name: Publish ${{ matrix.commit }}
@@ -370,7 +369,7 @@ jobs:
             export "${REGISTRY_TOKEN_ENV}=${REGISTRY_TOKEN}"
           fi
           unset REGISTRY_TOKEN
-          exec mise run ver publish
+          exec mise run ver release
 
   assets:
     name: ${{ matrix.id }} at ${{ matrix.commit }}
@@ -468,10 +467,9 @@ jobs:
       - name: Build and upload
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          VERCTL_BUILD: ${{ matrix.id }}
-          VERCTL_UPLOAD: "true"
+          VERCTL_TARGET: ${{ matrix.id }}
           VERCTL_TAG: ${{ matrix.tag }}
-        run: mise run ver assets
+        run: mise run ver release asset
 
   docs:
     name: docs.rs at ${{ matrix.commit }}

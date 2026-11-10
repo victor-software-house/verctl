@@ -30,12 +30,11 @@ completion bootstrap.
 | Command | Aliases | Purpose |
 |:--|:--|:--|
 | `instructions` | — | Print the installed-version operator contract |
-| `status` | — | List pending .changeset fragments |
+| `status` | — | List pending fragments, the asset plan, and the incomplete version commits. `--github-output` writes the release workflow's plan |
 | `check` | — | Validate fragments, or `--versions` against the default branch |
 | `version` | — | Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews |
-| `publish` | — | Publish the versions on HEAD (cargo / bun + GitHub Release) |
+| `release` | — | Release the versions on HEAD (cargo / bun + GitHub Release). `release asset <target>` builds and uploads one asset |
 | `render` | — | Rewrite pins and render served templates at the versions on HEAD |
-| `assets` | — | Plan or build native GitHub Release tarballs declared under `assets` |
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
 | `docs` | — | Wait for docs.rs to build each crates.io crate released at HEAD |
 | `semver` | — | Check the API of each crates.io crate whose next release is a patch |
@@ -78,7 +77,7 @@ first release is `0.0.1`. Moving to `0.1.0` or `1.0.0` is a separate operator
 decision, never the first fragment's bump. `version` and `check` refuse a
 `minor` or `major` fragment on a `0.0.0` package; `first_minor: true` on the
 package in `.ctl/ver.yaml` opens it at `0.1.0`, and only the operator sets it.
-`publish` and `publish --plan` leave a package at `0.0.0` out, so a repo can
+`release` and `status` leave a package at `0.0.0` out, so a repo can
 adopt the release workflow before its first release.
 
 A repo declares everything in `.ctl/ver.yaml`, the one file verctl reads;
@@ -133,27 +132,32 @@ one `# version: X.Y.Z` line, and also releases on GitHub only.
 
 An `assets` tarball holds the one `binary`. Set `assets.dir` and
 `assets.files` instead when it holds more (a second executable, a service
-unit, a licence); `--build` packs `tar czf <asset> -C <dir> <files>` with
+unit, a licence); `release asset` packs `tar czf <asset> -C <dir> <files>` with
 `{triple}` and the other placeholders replaced.
 
 `vendored.<name>` declares release assets built from someone else's source
-at its own `version`, outside fragments and `publish`, for a mise `github:`
-tool. `assets --vendored <name>` (`VERCTL_VENDORED`) plans it, `--build <id>`
-runs its `build` and packs `files` from `dir` into `archive` (default
-`{name}-{version}-{id}.tar.gz`), and `--upload` creates the `tag` Release
-(default `{name}-{version}`, never marked latest) when it is missing and
-attaches the archive and its `.sha256`. A config that vendors may declare no
+at its own `version`, outside fragments and `release`, for a mise `github:`
+tool. `status --vendored <name>` (`VERCTL_VENDORED`) plans it, and
+`release asset <id> --vendored <name>` runs its `build`, packs `files` from
+`dir` into `archive` (default `{name}-{version}-{id}.tar.gz`), and unless
+`--dry-run` creates the `tag` Release (default `{name}-{version}`, never
+marked latest) when it is missing and attaches the archive and its
+`.sha256`. A config that vendors may declare no
 packages.
 
-`publish` acts on version commits: the commit that set each package's
-version. `publish --plan` lists every one whose release is incomplete
-(registry, tag, Release, assets unless `--skip-assets`), oldest first, and
-`publish` releases only the packages whose version commit is HEAD. Both
-report `nothing to release` when every release is complete. A release tag
+`release` acts on version commits: the commit that set each package's
+version. `status` lists every one whose release is incomplete (registry,
+tag, Release, assets unless `--skip-assets`), oldest first, under
+`unreleased`; it needs `GITHUB_TOKEN` or `GH_TOKEN`, and without one it
+reports `unreleased` as not checked. `status --github-output <file>` fetches
+the history and writes the `commits`, `pending`, `assets`, `has_assets`,
+`tag`, and `matrix` outputs. `release --plan` fails and names it. `release`
+releases only the packages whose version commit is HEAD, and reports
+`nothing to release` when every release is complete. A release tag
 on a commit HEAD holds only through a merge passes when the version there
 matches HEAD's.
 
-Before any upload, tag, or Release, `publish` proves the release commit:
+Before any upload, tag, or Release, `release` proves the release commit:
 the default branch contains it, and its `.github/workflows/` is the same tree
 as at the default branch's tip. `--allow-off-default-branch` and
 `--allow-workflow-change` (`VERCTL_ALLOW_OFF_DEFAULT_BRANCH`,
@@ -161,7 +165,7 @@ as at the default branch's tip. `--allow-off-default-branch` and
 and `allow-workflow-change`) go past one, and the report lists it under
 `allowed`. A check that cannot run refuses anyway. A package with an earlier
 unreleased version commit since its last tag is refused with no flag:
-`publish --plan` lists that commit first, so release it before the newer one.
+`status` lists that commit first, so release it before the newer one.
 
 `docs` waits for docs.rs to build each crates.io library crate released at
 HEAD and fails on a build that failed or never arrived (`--timeout`, minutes,
@@ -183,7 +187,7 @@ off.
 one tag and one Release per package; without it, differing versions refuse.
 Each Release body is that package's CHANGELOG section. The tag is created
 at HEAD and re-read; a tag that names another commit fails.
-`verctl publish` fetches the default branch (that one ref, with history)
+`verctl release` fetches the default branch (that one ref, with history)
 only when `origin/<default>` is missing. It rewrites `origin/HEAD` only
 from `VERCTL_DEFAULT_BRANCH`. GitHub git HTTPS uses `x-access-token`,
 never Bearer, and never puts the token in the URL.

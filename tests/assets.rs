@@ -1,5 +1,6 @@
-//! The `assets` command as run through the binary: package tarballs as they
-//! have always been built, and vendored sets beside them.
+//! The `release asset` command as run through the binary: package tarballs as
+//! they have always been built, and vendored sets beside them. `--dry-run`
+//! builds and uploads nothing.
 
 #![expect(
     clippy::expect_used,
@@ -78,7 +79,14 @@ fn a_package_target_plans_and_packs_as_before() {
     fs::write(root.path().join("out/demo"), "binary").expect("binary");
     let report = json(&run(
         root.path(),
-        &["assets", "--build", "linux-x64", "--format", "json"],
+        &[
+            "release",
+            "asset",
+            "linux-x64",
+            "--dry-run",
+            "--format",
+            "json",
+        ],
     ));
     assert_eq!(
         report,
@@ -148,7 +156,14 @@ fn a_package_target_packs_the_listed_files() {
     let root = files_root();
     let report = json(&run(
         root.path(),
-        &["assets", "--build", "linux-x64", "--format", "json"],
+        &[
+            "release",
+            "asset",
+            "linux-x64",
+            "--dry-run",
+            "--format",
+            "json",
+        ],
     ));
     assert_eq!(report["tarball"], "./demo_1.2.3_linux_x64.tar.gz");
     assert_eq!(
@@ -165,7 +180,7 @@ fn a_package_file_missing_after_the_build_is_named() {
             .join("out/x86_64-unknown-linux-gnu/demod@.service"),
     )
     .expect("remove");
-    let output = run(root.path(), &["assets", "--build", "linux-x64"]);
+    let output = run(root.path(), &["release", "asset", "linux-x64", "--dry-run"]);
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("demod@.service is missing"), "{stderr}");
@@ -208,7 +223,14 @@ fn a_vendored_target_packs_the_listed_files() {
     let root = vendored_root();
     let output = common::verctl()
         .current_dir(root.path())
-        .args(["assets", "--build", "linux-x64", "--format", "json"])
+        .args([
+            "release",
+            "asset",
+            "linux-x64",
+            "--dry-run",
+            "--format",
+            "json",
+        ])
         .env("VERCTL_VENDORED", "libexample")
         .output()
         .expect("spawn");
@@ -241,7 +263,14 @@ fn a_vendored_file_missing_after_the_build_is_named() {
     fs::remove_file(root.path().join("out/linux-x64/LICENSE")).expect("remove");
     let output = run(
         root.path(),
-        &["assets", "--vendored", "libexample", "--build", "linux-x64"],
+        &[
+            "release",
+            "asset",
+            "linux-x64",
+            "--dry-run",
+            "--vendored",
+            "libexample",
+        ],
     );
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -251,20 +280,29 @@ fn a_vendored_file_missing_after_the_build_is_named() {
     );
 }
 
+/// `status --vendored` writes the set's asset outputs in the packages' shape,
+/// then the release outputs, which list nothing for a config with no
+/// packages. The GitHub API address is closed, so a lookup would fail.
 #[test]
 fn a_vendored_set_writes_the_same_step_outputs() {
     let root = vendored_root();
+    common::init(root.path());
+    common::commit_all(root.path(), "chore: vendor");
     let out = root.path().join("github-output");
-    let output = run(
-        root.path(),
-        &[
-            "assets",
+    let output = common::verctl()
+        .current_dir(root.path())
+        .env("GITHUB_TOKEN", "test")
+        .env("GITHUB_REPOSITORY", "acme/demo")
+        .env("GITHUB_API_URL", "http://127.0.0.1:9")
+        .args([
+            "status",
             "--vendored",
             "libexample",
             "--github-output",
             out.to_str().expect("utf-8"),
-        ],
-    );
+        ])
+        .output()
+        .expect("spawn");
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         fs::read_to_string(&out).expect("output"),
@@ -272,6 +310,9 @@ fn a_vendored_set_writes_the_same_step_outputs() {
             has_assets=true
             tag=libexample-1.4.0
             matrix={"include":[{"id":"linux-x64","labels":["ubuntu-24.04"]},{"id":"macos-arm64","labels":["macos-15"]}]}
+            commits=[]
+            pending=false
+            assets={"include":[]}
         "#}
     );
 }
@@ -281,7 +322,15 @@ fn a_vendored_set_declares_its_own_tag() {
     let root = vendored_root();
     let output = run(
         root.path(),
-        &["assets", "--vendored", "libexample", "--tag", "v1.0.0"],
+        &[
+            "release",
+            "asset",
+            "linux-x64",
+            "--vendored",
+            "libexample",
+            "--tag",
+            "v1.0.0",
+        ],
     );
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -291,7 +340,10 @@ fn a_vendored_set_declares_its_own_tag() {
 #[test]
 fn an_undeclared_vendored_set_lists_the_declared_ones() {
     let root = vendored_root();
-    let output = run(root.path(), &["assets", "--vendored", "nope"]);
+    let output = run(
+        root.path(),
+        &["release", "asset", "linux-x64", "--vendored", "nope"],
+    );
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("declared: libexample"), "{stderr}");

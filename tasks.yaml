@@ -560,19 +560,21 @@ queue:
       - 2026-11-09, the operator placed this in the 0.8.0 minor.
 
   - id: VER-091
-    title: prepare becomes version and pin becomes render
+    title: Rename prepare, pin, publish, and assets
     scope: verctl
     outcome: >-
-      Callers name the version step and the pin rewrite by the names the release plan
-      uses.
+      Callers name the version step, the pin rewrite, the release step, and the asset build by the names the release plan uses.
     blocked_by: []
     acceptance:
       - '`verctl version` and `verctl render` do what `prepare` and `pin` did, and the report field `next` is `after`.'
       - '`verctl prepare` and `verctl pin` exit 2 and name the new verb, each proved by a test.'
       - No file outside `CHANGELOG.md` and archived changes calls `ver prepare`, `verctl prepare`, `ver pin`, or `verctl pin`.
+      - '`verctl release` and `verctl release asset <target>` replace `publish` and `assets`, and hidden `publish`, `assets`, and `release --plan` exit 2 naming the replacement.'
+      - '`verctl status` lists unreleased version commits and the asset plan, and `status --github-output` writes the outputs `assets --github-output` and `publish --plan` wrote.'
     plan: openspec/changes/command-renames/proposal.md
     notes:
       - 2026-11-09, the operator placed this in the 0.8.0 minor; the pin rename changes only the name.
+      - 2026-11-10, the operator added the publish and assets renames to 0.8.0 and moved the release plan into status.
 
   - id: VER-104
     title: release.yml takes the registry token only as the registry-token secret

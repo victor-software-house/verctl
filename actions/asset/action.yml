@@ -31,6 +31,6 @@ runs:
       env:
         GITHUB_TOKEN: ${{ inputs.token }}
         VERCTL_CONFIG: ${{ inputs.config }}
-        VERCTL_BUILD: ${{ inputs.target }}
+        VERCTL_TARGET: ${{ inputs.target }}
         VERCTL_TAG: ${{ inputs.tag }}
-      run: exec verctl assets --upload
+      run: exec verctl release asset

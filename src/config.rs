@@ -371,8 +371,8 @@ pub struct AssetTarget {
 /// Release assets built from someone else's source, at that source's version:
 /// a library built from a pinned upstream release, so mise can install it as a
 /// `github:` tool. The key is the set's `{name}`. Fragments never bump it, and
-/// `publish` never reads it; `assets --vendored <name>` plans, builds, and
-/// uploads it.
+/// `release` never reads it; `status --vendored <name>` plans it, and
+/// `release asset <target> --vendored <name>` builds and uploads it.
 #[derive(Debug, Clone, Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
 #[garde(context(Config))]

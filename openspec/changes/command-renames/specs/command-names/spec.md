@@ -27,12 +27,59 @@ pins rewrite took in verctl 0.7.
 - **WHEN** `.ctl/templates/ver.jinja` renders `tasks/ver/ver` and `verctl render` runs
 - **THEN** `tasks/ver/ver` holds the template's output at the versions on HEAD
 
+### Requirement: The release command releases HEAD
+
+`verctl release` SHALL release the versions on HEAD and take every flag and
+variable the release step took in verctl 0.7, except `--plan`.
+
+#### Scenario: A dry run
+
+- **WHEN** `.ctl/ver.yaml` declares `demo` at `Cargo.toml` with `publisher: none` and `verctl release --dry-run` runs
+- **THEN** it lists `demo` via `release only` and would create `v1.0.0`
+
+### Requirement: The release asset command builds one tarball
+
+`verctl release asset <target>` SHALL build the tarball of one `assets`
+target, read the target from `VERCTL_TARGET` when it is not given, and
+upload the tarball unless `--dry-run` is set. With `--vendored <name>` it
+SHALL build and upload that set's archive instead.
+
+#### Scenario: A dry run
+
+- **WHEN** `.ctl/ver.yaml` declares the `linux-x64` target and `VERCTL_TARGET=linux-x64 verctl release asset --dry-run` runs
+- **THEN** it builds the tarball and uploads nothing
+
+### Requirement: status lists unreleased version commits
+
+`verctl status` SHALL list each version commit whose release is incomplete
+under `unreleased`, oldest first, with the asset plan beside the
+fragments. Without `GITHUB_TOKEN` or `GH_TOKEN`, it SHALL report
+`unreleased` as `null` in JSON with the reason in `unreleased_unchecked`.
+
+#### Scenario: No token
+
+- **WHEN** neither `GITHUB_TOKEN` nor `GH_TOKEN` is set and `verctl status --format json` runs
+- **THEN** it exits zero, `unreleased` is `null`, and `unreleased_unchecked` is `no GITHUB_TOKEN or GH_TOKEN`
+
+### Requirement: status writes the release plan
+
+`verctl status --github-output <file>` SHALL fetch the history the plan
+needs and write `has_assets`, `tag`, `matrix`, `commits`, `pending`, and
+`assets` to the file. Without `--github-output`, `status` SHALL NOT fetch
+or unshallow the clone.
+
+#### Scenario: A package at 0.0.0
+
+- **WHEN** `.ctl/ver.yaml` declares only `demo` at `0.0.0` and `verctl status --github-output out` runs with a token
+- **THEN** `out` holds `pending=false` and `commits=[]`
+
 ### Requirement: A removed verb names its replacement
 
-`verctl prepare` and `verctl pin` SHALL exit 2 without reading the config,
-and their error SHALL name the command that replaced them. Neither SHALL
-appear in `--help`. The usage spec SHALL mark both `hide`, which keeps
-them out of mise help and completion.
+`verctl prepare`, `pin`, `publish`, and `assets` SHALL exit 2 without
+reading the config, and their error SHALL name the command that replaced
+them. None SHALL appear in `--help`. The usage spec SHALL mark each
+`hide`, which keeps them out of mise help and completion. `verctl release
+--plan` SHALL fail the parse and name `verctl status --github-output`.
 
 #### Scenario: The old version verb
 
@@ -44,7 +91,17 @@ them out of mise help and completion.
 - **WHEN** a user runs `verctl --format json pin --dry-run`
 - **THEN** it exits 2 and the JSON error on stdout says `pin is now render: run verctl render`
 
+#### Scenario: The old assets verb
+
+- **WHEN** a user runs `verctl assets --build linux-x64 --upload`
+- **THEN** it exits 2 and stderr says `assets is now release asset: run verctl release asset`
+
+#### Scenario: The old plan flag
+
+- **WHEN** a user runs `verctl release --plan`
+- **THEN** it exits 2 and stderr names `verctl status --github-output`
+
 #### Scenario: The usage spec
 
 - **WHEN** mise runs `verctl --usage-spec=ver` to read the task grammar
-- **THEN** the `cmd prepare` and `cmd pin` nodes carry `hide=#true`
+- **THEN** the `cmd prepare`, `cmd pin`, `cmd publish`, and `cmd assets` nodes carry `hide=#true`
