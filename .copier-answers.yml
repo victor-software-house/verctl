@@ -6,11 +6,7 @@ clippy_disallowed_methods: []
 clippy_disallowed_types: []
 default_branch: main
 deny_bans: []
-deny_ignore:
--   id: RUSTSEC-2023-0071
-    reason: 'rsa code is linked but never run: verctl signs no JWT. octocrab requires
-        a JWT backend, and the other one builds aws-lc with C and cmake. Remove when
-        rsa ships a fix or octocrab no longer requires it.'
+deny_ignore: []
 deny_licenses:
 -   license: BSD-3-Clause
     reason: subtle, curve25519-dalek, ed25519-dalek (octocrab's JWT signing), encoding_rs,
@@ -21,7 +17,24 @@ deny_licenses:
     reason: foldhash, through gix's object cache
 -   license: CDLA-Permissive-2.0
     reason: webpki-root-certs, the CA roots gix's HTTPS transport verifies against
-deny_skip: []
+deny_skip:
+-   crate: base64@0.22
+    reason: octocrab 0.54.9, the latest release, requires base64 0.22, and reqwest
+        0.13.5 requires 0.23
+-   crate: getrandom@0.2
+    reason: ring 0.17.14 and octocrab 0.54.9, their latest releases, require getrandom
+        0.2
+-   crate: hashbrown@0.14
+    reason: dashmap 6.2.1, the latest release, which gix-tempfile takes, requires
+        hashbrown 0.14
+-   crate: hashbrown@0.16
+    reason: clru 0.6.3 and gix-status 0.37.0, the latest releases, require hashbrown
+        0.16
+-   crate: syn@2
+    reason: garde_derive 0.23.0, the latest release, and other derive crates require
+        syn 2
+-   crate: windows-sys@0.52
+    reason: ring 0.17.14, the latest release, requires windows-sys 0.52
 feature_sets: []
 generated_paths: []
 github_owner: victor-software-house
