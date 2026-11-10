@@ -5,10 +5,12 @@ use std::error::Error;
 use std::fmt;
 
 /// A lookup that could not run: the walk reached a shallow clone's boundary,
-/// the repository names no GitHub repository, or GitHub or a registry did not
-/// answer. It says nothing about the release itself, so `status` reports the
-/// check as not run. Any other error, such as a release tag on the wrong
-/// commit or a config that does not resolve, stays an error.
+/// the repository names no GitHub repository, or GitHub or a registry gave no
+/// answer (a failed connection, a timeout, or a 5xx). It says nothing about
+/// the release itself, so `status` reports the check as not run. Any other
+/// error, such as a release tag on the wrong commit, a 401 from a bad token,
+/// or a config that does not resolve, stays an error. The module that makes
+/// the request marks it, never its caller.
 ///
 /// It displays as the error it wraps and continues that error's chain, so
 /// marking an error changes no message.

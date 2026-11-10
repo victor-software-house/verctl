@@ -193,11 +193,14 @@ fn a_depth_1_clone_leaves_unreleased_unchecked() {
     );
 }
 
-/// A release tag GitHub reports on a commit HEAD does not hold at that
-/// version is a wrong answer, not a lookup that could not run, so `status`
-/// fails on it even without `--github-output`.
-#[tokio::test]
-async fn a_misplaced_release_tag_fails_status() {
+/// `verctl status --format json` with a token, in a repository at
+/// `demo@1.0.0` whose `origin` is GitHub, where GitHub answers the lookup of
+/// tag `v1.0.0` with `answer`.
+#[expect(
+    clippy::expect_used,
+    reason = "fixture setup fails the test outright; the status run is the result"
+)]
+async fn status_with_tag_lookup(answer: ResponseTemplate) -> std::process::Output {
     let root = TempDir::new().expect("tempdir");
     common::write_config(
         root.path(),
@@ -228,33 +231,85 @@ async fn a_misplaced_release_tag_fails_status() {
             "https://github.com/acme/demo.git",
         ],
     );
-    let elsewhere = "1111111111111111111111111111111111111111";
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/repos/acme/demo/git/ref/tags/v1.0.0"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "ref": "refs/tags/v1.0.0",
-            "node_id": "R",
-            "url": "https://api.github.com/repos/acme/demo/git/refs/tags/v1.0.0",
-            "object": {
-                "type": "commit",
-                "sha": elsewhere,
-                "url": format!("https://api.github.com/repos/acme/demo/git/commits/{elsewhere}")
-            }
-        })))
+        .respond_with(answer)
         .mount(&server)
         .await;
-    let output = common::verctl()
+    common::verctl()
         .current_dir(root.path())
         .env("GITHUB_REPOSITORY", "acme/demo")
         .env("GITHUB_TOKEN", "test")
         .env("GITHUB_API_URL", server.uri())
         .args(["status", "--format", "json"])
         .output()
-        .expect("spawn");
+        .expect("spawn")
+}
+
+/// A tag ref GitHub would return for `v1.0.0` naming `object`.
+fn tag_ref(kind: &str, sha: &str) -> ResponseTemplate {
+    ResponseTemplate::new(200).set_body_json(serde_json::json!({
+        "ref": "refs/tags/v1.0.0",
+        "node_id": "R",
+        "url": "https://api.github.com/repos/acme/demo/git/refs/tags/v1.0.0",
+        "object": {
+            "type": kind,
+            "sha": sha,
+            "url": format!("https://api.github.com/repos/acme/demo/git/{kind}s/{sha}")
+        }
+    }))
+}
+
+/// A release tag GitHub reports on a commit HEAD does not hold at that
+/// version is a wrong answer, not a lookup that could not run, so `status`
+/// fails on it even without `--github-output`.
+#[tokio::test]
+async fn a_misplaced_release_tag_fails_status() {
+    let output = status_with_tag_lookup(tag_ref(
+        "commit",
+        "1111111111111111111111111111111111111111",
+    ))
+    .await;
     assert!(!output.status.success(), "{output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("tag v1.0.0 names"), "{stdout}");
+}
+
+/// A release tag on a tree is a wrong answer too.
+#[tokio::test]
+async fn a_release_tag_on_a_tree_fails_status() {
+    let output =
+        status_with_tag_lookup(tag_ref("tree", "2222222222222222222222222222222222222222")).await;
+    assert!(!output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("tag v1.0.0 names Tree"), "{stdout}");
+}
+
+/// A 401 is GitHub's answer to a bad token, which the operator has to fix, so
+/// `status` fails on it rather than reporting the check as not run.
+#[tokio::test]
+async fn a_rejected_token_fails_status() {
+    let output =
+        status_with_tag_lookup(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+            "message": "Bad credentials",
+            "documentation_url": "https://docs.github.com/rest"
+        })))
+        .await;
+    assert!(!output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("read tag v1.0.0"), "{stdout}");
+}
+
+/// A 5xx is no answer, so `status` reports the check as not run.
+#[tokio::test]
+async fn a_github_5xx_leaves_unreleased_unchecked() {
+    let output = status_with_tag_lookup(ResponseTemplate::new(503)).await;
+    assert!(output.status.success(), "{output:?}");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("json");
+    assert_eq!(report["unreleased"], serde_json::Value::Null, "{report}");
+    let reason = report["unreleased_unchecked"].as_str().expect("reason");
+    assert!(reason.starts_with("read tag v1.0.0"), "{reason}");
 }
 
 #[test]

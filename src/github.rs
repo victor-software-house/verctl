@@ -5,6 +5,8 @@ use anyhow::{Context, Result, bail, ensure};
 use octocrab::Octocrab;
 use octocrab::params::State;
 
+use crate::lookup;
+
 /// Append to `$GITHUB_OUTPUT`. That file belongs to the whole step, so a
 /// writer that truncates would drop assignments another step already made.
 /// GitHub takes the last value for a repeated key.
@@ -56,15 +58,18 @@ pub struct Repo {
 ///
 /// Returns an error when `GITHUB_REPOSITORY` is set but is not `owner/name`,
 /// or, without it, when the `origin` URL cannot be read or is not a GitHub
-/// remote.
+/// remote. Without `GITHUB_REPOSITORY`, the error is a
+/// [`lookup::Unavailable`]: the repository names no GitHub repository to ask.
+/// A malformed `GITHUB_REPOSITORY` is a setting to fix, so it stays unmarked.
 pub fn repo(root: &Path) -> Result<Repo> {
     if let Ok(slug) = env::var("GITHUB_REPOSITORY")
         && !slug.is_empty()
     {
         return parse_slug(&slug);
     }
-    let url = crate::git::origin_url(root)?;
-    parse_remote(url.trim())
+    crate::git::origin_url(root)
+        .and_then(|url| parse_remote(url.trim()))
+        .map_err(lookup::unavailable)
 }
 
 /// Parses an `owner/name` slug.
@@ -565,7 +570,7 @@ async fn tag_commit_sha(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<Strin
         .repos(&repo.owner, &repo.name)
         .get_ref(&octocrab::params::repos::Reference::Tag(tag.to_owned()))
         .await
-        .with_context(|| format!("read tag {tag}"))?;
+        .map_err(|error| lookup_failed(error, format!("read tag {tag}")))?;
     match git_ref.object {
         octocrab::models::repos::Object::Commit { sha, .. } => Ok(sha),
         octocrab::models::repos::Object::Tag { sha: tag_sha, .. } => {
@@ -596,7 +601,7 @@ async fn peel_tag(crab: &Octocrab, repo: &Repo, tag: &str, tag_sha: &str) -> Res
             None::<&()>,
         )
         .await
-        .with_context(|| format!("peel tag {tag}"))?;
+        .map_err(|error| lookup_failed(error, format!("peel tag {tag}")))?;
     Ok(peeled.object.sha)
 }
 
@@ -618,8 +623,11 @@ pub struct ReleaseState {
 ///
 /// # Errors
 ///
-/// Returns an error when the GitHub client cannot be built, or when GitHub
-/// answers a tag or Release lookup with an error other than 404.
+/// Returns an error when the GitHub client cannot be built, when GitHub
+/// answers a tag or Release lookup with an error other than 404, or when the
+/// tag names a tree or a blob. Only a lookup GitHub gave no answer to, a
+/// transport failure or a 5xx, is a [`lookup::Unavailable`]. A 401 from a bad
+/// token, a tag on a tree, and a malformed `GITHUB_API_URL` stay unmarked.
 pub fn release_state(token: &str, repo: &Repo, tag: &str) -> Result<ReleaseState> {
     block(async {
         let crab = client(token)?;
@@ -635,7 +643,7 @@ async fn release_state_with(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<R
     {
         Ok(_) => Some(tag_commit_sha(crab, repo, tag).await?),
         Err(error) if is_not_found(&error) => None,
-        Err(error) => return Err(error).with_context(|| format!("read tag {tag}")),
+        Err(error) => return Err(lookup_failed(error, format!("read tag {tag}"))),
     };
     let release: Result<ReleaseAssets, _> = crab
         .get(
@@ -653,13 +661,38 @@ async fn release_state_with(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<R
             found.assets.into_iter().map(|asset| asset.name).collect(),
         ),
         Err(error) if is_not_found(&error) => (false, Vec::new()),
-        Err(error) => return Err(error).with_context(|| format!("get release {tag}")),
+        Err(error) => return Err(lookup_failed(error, format!("get release {tag}"))),
     };
     Ok(ReleaseState {
         tag: tag_sha,
         release,
         assets,
     })
+}
+
+/// `error` under `context`, marked as a [`lookup::Unavailable`] when GitHub
+/// gave no answer: the request failed in transport (DNS, connect, a timeout, a
+/// dropped connection), or GitHub answered with a 5xx after octocrab's
+/// retries. Any other answer, such as a 401 or 403, stays an error.
+///
+/// A transport failure reaches octocrab as `Service` from the HTTP client, or
+/// as `Hyper` while it reads a body. `Service` also carries a request the
+/// client refuses to send, so it counts only when an I/O error caused it.
+fn lookup_failed(error: octocrab::Error, context: String) -> anyhow::Error {
+    let server = matches!(&error, octocrab::Error::GitHub { source, .. } if source.status_code.is_server_error());
+    let body = matches!(&error, octocrab::Error::Hyper { .. });
+    let service = matches!(&error, octocrab::Error::Service { .. });
+    let error = anyhow::Error::new(error);
+    let transport = service
+        && error
+            .chain()
+            .any(<dyn std::error::Error>::is::<std::io::Error>);
+    let error = error.context(context);
+    if server || body || transport {
+        lookup::unavailable(error)
+    } else {
+        error
+    }
 }
 
 fn is_not_found(error: &octocrab::Error) -> bool {
