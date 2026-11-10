@@ -16,6 +16,7 @@ use gix::remote::fetch::Shallow;
 use gix::sec::identity::Account;
 use gix::sec::trust::{DefaultForLevel, Mapping};
 use gix::sec::{Permission, Trust};
+use semver::Version;
 
 use crate::github::Repo;
 use crate::{bump, process};
@@ -521,15 +522,19 @@ pub struct Unreleased {
 /// The versions earlier commits set on HEAD's first-parent line since the last
 /// release, newest first, leaving out the one HEAD carries.
 ///
-/// The walk goes back from HEAD one version at a time and stops at a version
-/// `released` accepts, at `0.0.0`, at a revision with no version, or at the
-/// root. It also stops, listing nothing more, at a commit whose version is not
-/// strictly above its parent's as semver. A revert or a version set again is
-/// not a skipped release. Listing it would plan the same tag at a second
-/// commit. A version that is not semver stops the walk the same way. Empty
-/// means the version commit of HEAD's version is the only one
-/// since the last release. `read` reads one revision of `path`, as in
-/// [`version_commit`].
+/// The walk goes back from HEAD one version change at a time, with a floor
+/// that starts at HEAD's version. A change is a step up when its version is
+/// strictly above its parent's as semver. A step up whose version is strictly
+/// below the floor is listed at that commit, and its version becomes the
+/// floor. A revert, a version set again, and a step up that is not below the
+/// floor are walked past. So each version is listed at most once, at its
+/// original version commit, and never at a revert.
+///
+/// The walk stops at a version `released` accepts, at `0.0.0`, at a revision
+/// with no version, at a version that is not semver, or at the root. The root,
+/// and a commit whose parent has no version, count as steps up. Empty means
+/// the version commit of HEAD's version is the only one since the last
+/// release. `read` reads one revision of `path`, as in [`version_commit`].
 ///
 /// # Errors
 ///
@@ -558,8 +563,11 @@ pub fn unreleased_below(
         .shallow_commits()?
         .map(|commits| commits.iter().copied().collect())
         .unwrap_or_default();
+    if Version::parse(&version).is_err() {
+        return Ok(Vec::new());
+    }
+    let mut floor = version.clone();
     let mut found = Vec::new();
-    let mut below_head = false;
     let mut depth = 0;
     loop {
         ensure!(
@@ -569,7 +577,7 @@ pub fn unreleased_below(
             shallow_hint()
         );
         let Some(parent) = commit.parent_ids().next() else {
-            if below_head {
+            if bump::lower(&version, &floor) {
                 found.push(Unreleased {
                     version,
                     sha: commit.id().to_string(),
@@ -585,13 +593,11 @@ pub fn unreleased_below(
             depth += 1;
             continue;
         }
-        if earlier
+        let step_up = earlier
             .as_deref()
-            .is_some_and(|earlier| !bump::lower(earlier, &version))
-        {
-            break;
-        }
-        if below_head {
+            .is_none_or(|earlier| bump::lower(earlier, &version));
+        if step_up && bump::lower(&version, &floor) {
+            floor.clone_from(&version);
             found.push(Unreleased {
                 version,
                 sha: commit.id().to_string(),
@@ -599,10 +605,9 @@ pub fn unreleased_below(
             });
         }
         let Some(earlier) = earlier else { break };
-        if bump::unreleased(&earlier) || released(&earlier)? {
+        if Version::parse(&earlier).is_err() || bump::unreleased(&earlier) || released(&earlier)? {
             break;
         }
-        below_head = true;
         version = earlier;
         commit = parent;
         depth += 1;
@@ -1693,15 +1698,17 @@ mod tests {
         );
     }
 
-    /// A revert to 0.7.5 between two commits that set 0.7.6, with neither
-    /// tagged, skipped nothing. HEAD's 0.7.6 is the release. Listing the first
-    /// 0.7.6 would plan the same tag at a second commit.
+    /// A revert to 0.7.5 between two commits that set 0.7.6 skipped nothing.
+    /// HEAD's 0.7.6 is the release, and the first 0.7.6 is not below it, so
+    /// listing it would plan the same tag at a second commit. With 0.7.4
+    /// untagged, the walk reaches the root, which counts as the commit that
+    /// set its version, so 0.7.4 is listed there, three steps from HEAD.
     #[test]
-    fn a_reverted_version_set_again_skips_nothing() {
+    fn a_reverted_version_set_again_is_not_listed() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
         write_version(dir.path(), "0.7.4");
-        commit_all(dir.path(), "chore: start");
+        let start = commit_all(dir.path(), "chore: start");
         write_version(dir.path(), "0.7.6");
         commit_all(dir.path(), "chore(release): version packages (#7)");
         write_version(dir.path(), "0.7.5");
@@ -1709,7 +1716,42 @@ mod tests {
         write_version(dir.path(), "0.7.6");
         commit_all(dir.path(), "chore(release): version packages (#9)");
         assert_eq!(unreleased(dir.path(), &["0.7.4"]), Vec::new());
-        assert_eq!(unreleased(dir.path(), &[]), Vec::new());
+        assert_eq!(
+            unreleased(dir.path(), &[]),
+            [Unreleased {
+                version: "0.7.4".to_owned(),
+                sha: start,
+                depth: 3,
+            }]
+        );
+    }
+
+    /// A version skipped before a revert stays listed. 0.7.5 was never
+    /// released, then 0.7.6 was set, reverted to 0.7.5, and set again. The
+    /// walk passes the revert and lists 0.7.5 at the commit that first set
+    /// it, not at the revert.
+    #[test]
+    fn a_version_skipped_before_a_revert_is_still_listed() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        write_version(dir.path(), "0.7.4");
+        commit_all(dir.path(), "chore: start");
+        write_version(dir.path(), "0.7.5");
+        let skipped = commit_all(dir.path(), "chore(release): version packages (#5)");
+        write_version(dir.path(), "0.7.6");
+        commit_all(dir.path(), "chore(release): version packages (#7)");
+        write_version(dir.path(), "0.7.5");
+        commit_all(dir.path(), "revert: version packages (#7)");
+        write_version(dir.path(), "0.7.6");
+        commit_all(dir.path(), "chore(release): version packages (#9)");
+        assert_eq!(
+            unreleased(dir.path(), &["0.7.4"]),
+            [Unreleased {
+                version: "0.7.5".to_owned(),
+                sha: skipped,
+                depth: 3,
+            }]
+        );
     }
 
     /// With no release at all, the walk counts from the root, and stops at
