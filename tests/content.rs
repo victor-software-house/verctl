@@ -19,7 +19,7 @@ use std::path::Path;
 use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
 use verctl::config::{self, Config};
-use verctl::{content, fragment, pins, prepare, release, templates, versions};
+use verctl::{content, fragment, git, pins, prepare, pull_request, release, templates, versions};
 
 const ORIGIN: &str = "https://github.com/victor-software-house/demo.git";
 
@@ -97,7 +97,7 @@ impl Repo {
         Config::load(&self.root().join(config::FILE)).expect("config")
     }
 
-    fn check(&self) -> anyhow::Result<()> {
+    fn check(&self) -> anyhow::Result<Vec<String>> {
         let inputs = content::Inputs::new(
             self.root().join(config::FILE),
             self.root().join(".changeset"),
@@ -277,6 +277,66 @@ fn a_version_pr_that_widens_its_own_write_set_fails() {
     repo.write("src/lib.rs", "pub fn added() {}");
     repo.commit();
     repo.fails_naming(&["src/lib.rs", ".ctl/ver.yaml"]);
+}
+
+/// The pull request that removes `prepare.version_label` has a merge-base
+/// config the running verctl refuses. The check is skipped with a notice that
+/// names it and the load error, and the config on HEAD still loads.
+#[test]
+fn a_merge_base_config_that_does_not_load_skips_the_check_with_a_notice() {
+    let repo = Repo::new(indoc! {"
+        prepare:
+          version_label: true
+        packages:
+          - name: demo
+            path: Cargo.toml
+    "});
+    repo.write(
+        "Cargo.toml",
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.0.0"
+        "#},
+    );
+    repo.write(".changeset/fix.md", &fragment("demo: patch"));
+    repo.branch();
+    common::write_config(
+        repo.root(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    repo.commit();
+    let notices = repo.check().expect("the check is skipped");
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert!(
+        notices[0].contains("content check is skipped"),
+        "{notices:?}"
+    );
+    assert!(
+        notices[0].contains("prepare.version_label is removed"),
+        "{notices:?}"
+    );
+
+    let inputs = content::Inputs::new(
+        repo.root().join(config::FILE),
+        repo.root().join(".changeset"),
+    );
+    let candidates = versions::stock_candidates();
+    let base = git::MergeBase::read(repo.root(), &candidates)
+        .expect("merge-base")
+        .expect("a merge-base");
+    let found = pull_request::problems(repo.root(), &repo.config(), &inputs, &base, &candidates)
+        .expect("the rule is skipped");
+    assert!(found.problems.is_empty(), "{found:?}");
+    assert_eq!(found.notices.len(), 1, "{found:?}");
+    assert!(
+        found.notices[0].contains("publish-setting rule is skipped"),
+        "{found:?}"
+    );
 }
 
 #[test]

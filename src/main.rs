@@ -134,6 +134,7 @@ fn versions_report(args: &CheckArgs) -> Result<VersionCheckReport> {
     Ok(VersionCheckReport {
         skip: report.skip,
         rows: report.rows,
+        notices: report.notices,
     })
 }
 

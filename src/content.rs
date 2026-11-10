@@ -35,6 +35,17 @@ use crate::lockfile::{self, Change, Format, Kind, Lockfile};
 use crate::prepare::{self, PlanEntry};
 use crate::{detect, fragment, members, pins, release, templates};
 
+/// The marker of an error that came from loading the config at the
+/// merge-base, which a caller may skip a rule over instead of failing.
+#[derive(Debug)]
+pub struct BaseConfigFailed;
+
+impl std::fmt::Display for BaseConfigFailed {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("the config at the merge-base does not load")
+    }
+}
+
 /// The most keys a manifest difference names.
 const KEYS_NAMED: usize = 8;
 
@@ -66,6 +77,10 @@ impl Inputs {
 /// change. Nothing is checked when there is no repository, or no `origin` and
 /// none of `candidates`.
 ///
+/// When the config at the merge-base does not load, as when this pull request
+/// removes a key the running verctl refuses, the replay has no plan to run.
+/// The check is then skipped, and the notice names it and the load error.
+///
 /// # Errors
 ///
 /// Returns an error listing every difference found:
@@ -76,16 +91,29 @@ impl Inputs {
 /// - a lockfile change other than a planned workspace version.
 ///
 /// It also returns one when the merge-base cannot be read (see
-/// [`MergeBase::read`]), or when the config or fragments there cannot be read
-/// or planned. The same holds when the replay cannot be written, or when
+/// [`MergeBase::read`]), or when the fragments there cannot be read or
+/// planned. The same holds when the replay cannot be written, or when
 /// `cargo metadata` fails on a planned cargo manifest.
-pub fn check(root: &Path, config: &Config, inputs: &Inputs, candidates: &[String]) -> Result<()> {
+pub fn check(
+    root: &Path,
+    config: &Config,
+    inputs: &Inputs,
+    candidates: &[String],
+) -> Result<Vec<String>> {
     let Some(base) = MergeBase::read(root, candidates)? else {
-        return Ok(());
+        return Ok(Vec::new());
     };
-    let problems = problems(root, config, inputs, &base)?;
+    let problems = match problems(root, config, inputs, &base) {
+        Ok(problems) => problems,
+        Err(error) if error.downcast_ref::<BaseConfigFailed>().is_some() => {
+            return Ok(vec![format!(
+                "the Version PR content check is skipped: {error:#}"
+            )]);
+        }
+        Err(error) => return Err(error),
+    };
     if problems.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
     bail!(
         "the Version PR differs from what the version step writes at the merge-base in {count} place(s); run `verctl version --pr` to rewrite it:\n{list}",
@@ -222,7 +250,7 @@ impl Replay {
     fn run(scratch: &Path, workdir: &Path, root: &Path, inputs: &Inputs) -> Result<Self> {
         let replay_root = scratch.join(inside(workdir, root)?);
         let config = Config::load(&scratch.join(inside(workdir, &inputs.config)?))
-            .context("the config at the merge-base")?;
+            .context(BaseConfigFailed)?;
         let fragments = fragment::load_dir(&scratch.join(inside(workdir, &inputs.dir)?))?;
         let plan = prepare::plan(&config, &fragments, &replay_root)
             .context("the plan of the fragments at the merge-base")?;
