@@ -26,20 +26,26 @@ Before this change the plan found one version commit per package, the one
 that set HEAD's version, so a skipped version never appeared.
 
 The plan now walks back from each incomplete package's version along the
-first-parent line, one version at a time. It lists each version with no tag
-at the commit that set it, and that version's assets upload to its own tag.
-A version is abandoned when a later commit takes the package strictly below
-it, and the walk never lists it. A version that is only set again, as a
-revert does to its target, stays live. The walk keeps `floor`, HEAD's
-version and then each version listed, and `low`, the lowest version of any
-commit newer than the one it looks at, HEAD included. It lists a commit's
-version when the commit is a step up, the version is strictly below `floor`,
-and it is not above `low`. A step up is a commit whose version is strictly
-above its parent's as semver, the root, or a commit whose parent has no
-version. After listing, `floor` becomes that version, so each version is
-listed once, at the commit that first set it. The walk stops at a tagged
-version, at `0.0.0`, at a revision with no version, at a version that is not
-semver, or at the root.
+first-parent line and lists each skipped version, whose assets upload to its
+own tag. A skipped version has a definition, not a walk heuristic:
+
+In the first-parent range from HEAD back to the stop point, version v is
+skipped when all of these hold:
+
+1. Some commit in the range has version v.
+2. v is below HEAD's version.
+3. No commit newer than v's oldest commit in the range has a version
+   strictly below v, so v was not abandoned.
+
+List each skipped v once, at the oldest commit in the range whose version
+is v. A revert is then simply a later commit that sets an older v again,
+and the listing stays at the original version commit.
+
+The range stops below a tagged version, below `0.0.0`, below a revision with
+no version, below a version that is not semver, or at the root, which it
+includes. The code collects the version changes in the range and applies the
+definition to them.
+
 `publish` refuses a package that still has an older entry in the
 plan, so the proof reads what the plan found and asks GitHub nothing more.
 

@@ -522,24 +522,24 @@ pub struct Unreleased {
 /// The versions earlier commits set on HEAD's first-parent line since the last
 /// release, newest first, leaving out the one HEAD carries.
 ///
-/// A version is abandoned when a later commit takes the package strictly
-/// below it, and is never listed. A version that is only set again, as a
-/// revert does to its target, stays live.
+/// In the first-parent range from HEAD back to the stop point, version v is
+/// skipped when all of these hold:
 ///
-/// The walk goes back from HEAD along the first parent. It keeps `floor`,
-/// HEAD's version and then each version listed, and `low`, the lowest version
-/// of any commit newer than the one it looks at, HEAD included. It lists a
-/// commit's version when three things hold: the commit is a step up, the
-/// version is strictly below `floor`, and it is not above `low`. A step up is
-/// a commit whose version is strictly above its parent's as semver, the root,
-/// or a commit whose parent has no version. After listing, `floor` becomes
-/// that version. So each version is listed at most once, at its original
-/// version commit, and never at a revert or after it was abandoned.
+/// 1. Some commit in the range has version v.
+/// 2. v is below HEAD's version.
+/// 3. No commit newer than v's oldest commit in the range has a version
+///    strictly below v, so v was not abandoned.
 ///
-/// The walk stops at a version `released` accepts, at `0.0.0`, at a revision
-/// with no version, at a version that is not semver, or at the root. Empty
-/// means the version commit of HEAD's version is the only one since the last
-/// release. `read` reads one revision of `path`, as in [`version_commit`].
+/// List each skipped v once, at the oldest commit in the range whose version
+/// is v. A revert is then simply a later commit that sets an older v again,
+/// and the listing stays at the original version commit.
+///
+/// The range stops below a version `released` accepts, below `0.0.0`, below a
+/// revision with no version, below a version that is not semver, or at the
+/// root, which it includes. Each version change in it is collected, newest
+/// first, and the definition applied to them. Empty means the version commit
+/// of HEAD's version is the only one since the last release. `read` reads one
+/// revision of `path`, as in [`version_commit`].
 ///
 /// # Errors
 ///
@@ -571,9 +571,8 @@ pub fn unreleased_below(
     if Version::parse(&version).is_err() {
         return Ok(Vec::new());
     }
-    let mut floor = version.clone();
-    let mut low = version.clone();
-    let mut found = Vec::new();
+    let head = version.clone();
+    let mut changes = Vec::new();
     let mut depth = 0;
     loop {
         ensure!(
@@ -583,13 +582,11 @@ pub fn unreleased_below(
             shallow_hint()
         );
         let Some(parent) = commit.parent_ids().next() else {
-            if bump::lower(&version, &floor) && !bump::lower(&low, &version) {
-                found.push(Unreleased {
-                    version,
-                    sha: commit.id().to_string(),
-                    depth,
-                });
-            }
+            changes.push(Unreleased {
+                version,
+                sha: commit.id().to_string(),
+                depth,
+            });
             break;
         };
         let parent = repo.find_commit(parent.detach())?;
@@ -599,21 +596,11 @@ pub fn unreleased_below(
             depth += 1;
             continue;
         }
-        let step_up = earlier
-            .as_deref()
-            .is_none_or(|earlier| bump::lower(earlier, &version));
-        let listed = step_up && bump::lower(&version, &floor) && !bump::lower(&low, &version);
-        if bump::lower(&version, &low) {
-            low.clone_from(&version);
-        }
-        if listed {
-            floor.clone_from(&version);
-            found.push(Unreleased {
-                version,
-                sha: commit.id().to_string(),
-                depth,
-            });
-        }
+        changes.push(Unreleased {
+            version,
+            sha: commit.id().to_string(),
+            depth,
+        });
         let Some(earlier) = earlier else { break };
         if Version::parse(&earlier).is_err() || bump::unreleased(&earlier) || released(&earlier)? {
             break;
@@ -622,7 +609,20 @@ pub fn unreleased_below(
         commit = parent;
         depth += 1;
     }
-    Ok(found)
+    Ok(changes
+        .iter()
+        .enumerate()
+        .filter(|&(at, change)| {
+            bump::lower(&change.version, &head)
+                && !changes[at + 1..]
+                    .iter()
+                    .any(|older| older.version == change.version)
+                && !changes[..at]
+                    .iter()
+                    .any(|newer| bump::lower(&newer.version, &change.version))
+        })
+        .map(|(_, change)| change.clone())
+        .collect())
 }
 
 /// How to fetch `origin/<branch>` when that ref is missing.
@@ -1696,11 +1696,11 @@ mod tests {
         listed: &'static [usize],
     }
 
-    /// The rule over each history the review raised. A skipped version is
-    /// listed at the commit that first set it, even below a revert. A revert
-    /// target set again is not listed. An abandoned version, one a later
-    /// commit took strictly below, is not listed. The untagged history reaches
-    /// the root, which counts as a step up, so its version is listed there.
+    /// The definition over each history the review raised. A skipped version
+    /// is listed at its oldest commit in the range, even below a revert. An
+    /// abandoned version, one a later commit took strictly below, is not
+    /// listed. A version first set by a downward change is listed. The
+    /// untagged history reaches the root, which is in the range.
     #[test]
     fn the_walk_lists_each_live_skipped_version_once() {
         let walks = [
@@ -1712,7 +1712,7 @@ mod tests {
             Walk {
                 tagged: &["0.7.4"],
                 history: &["0.7.4", "0.7.6", "0.7.5", "0.7.6"],
-                listed: &[],
+                listed: &[2],
             },
             Walk {
                 tagged: &["0.7.4"],
@@ -1732,7 +1732,12 @@ mod tests {
             Walk {
                 tagged: &[],
                 history: &["0.7.4", "0.7.6", "0.7.5", "0.7.6"],
-                listed: &[0],
+                listed: &[2, 0],
+            },
+            Walk {
+                tagged: &["0.7.4"],
+                history: &["0.7.4", "0.7.5", "0.7.7", "0.7.6", "0.7.8"],
+                listed: &[3, 1],
             },
         ];
         for walk in walks {
