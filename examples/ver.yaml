@@ -94,6 +94,8 @@ assets:
   # instead, and drop `binary`: `release asset` packs these from `dir`.
   # dir: target/{triple}/release
   # files: [verctl, verctld, "verctld@.service", LICENSE]
+  # A target that ships other files lists its own `files`, which replace
+  # these for that target alone.
 
   # darwin-arm64 and linux-x64 are built in, so naming one is enough — and it
   # keeps free hosted minutes.

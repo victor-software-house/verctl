@@ -7,8 +7,8 @@
 //!
 //! Omit `assets` when there is no host binary. Override `prepare`, `build`,
 //! and `binary` when the stock rust recipe is the wrong stack, and set `dir`
-//! and `files` when a tarball holds more than the binary. PR CI never reads
-//! this list.
+//! and `files` when a tarball holds more than the binary. A target that ships
+//! other files lists its own `files`. PR CI never reads this list.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -18,7 +18,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
-use crate::config::Config;
+use crate::config::{AssetTarget, Assets, Config};
 use crate::{github, process, runners};
 
 /// Time limit for each build step of one target.
@@ -68,8 +68,9 @@ pub struct AssetsPlan {
     prepare: Vec<String>,
     #[serde(skip)]
     build: Vec<String>,
+    /// What each target's tarball holds, by target id.
     #[serde(skip)]
-    pack: Pack,
+    packs: BTreeMap<String, Pack>,
 }
 
 /// What a target's tarball holds, with placeholders still in it.
@@ -78,7 +79,13 @@ enum Pack {
     /// The one built binary at this path, packed as `bin`.
     Binary(String),
     /// These paths under `dir`, each kept at its place under `dir`.
-    Files { dir: String, files: Vec<String> },
+    Files {
+        dir: String,
+        files: Vec<String>,
+        /// The key the list came from, such as `assets.linux-x64.files`,
+        /// which a missing path names.
+        list: String,
+    },
 }
 
 /// A platform built into verctl. A repo that wants the usual values writes
@@ -161,8 +168,10 @@ pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
     let assets = config.assets.clone().unwrap_or_default();
     let custom_build = assets.build.is_some();
     let mut include = Vec::new();
+    let mut packs = BTreeMap::new();
     for (id, spec) in &assets.targets {
         include.push(resolve_target(config, id, spec, &bin, &version)?);
+        packs.insert(id.clone(), pack(&assets, id, spec));
     }
     Ok(AssetsPlan {
         bin,
@@ -178,18 +187,33 @@ pub fn plan(config: &Config, root: &Path) -> Result<AssetsPlan> {
             }
         }),
         build: assets.build.unwrap_or_else(|| strings(STOCK_BUILD)),
-        pack: match assets.dir {
-            Some(dir) => Pack::Files {
-                dir: dir.display().to_string(),
-                files: assets
-                    .files
-                    .iter()
-                    .map(|file| file.display().to_string())
-                    .collect(),
-            },
-            None => Pack::Binary(assets.binary.unwrap_or_else(|| STOCK_BINARY.to_owned())),
-        },
+        packs,
     })
+}
+
+/// What target `id` packs: its own `files` under `dir`, else the shared
+/// `files`, else the one `binary`.
+fn pack(assets: &Assets, id: &str, spec: &AssetTarget) -> Pack {
+    let Some(dir) = &assets.dir else {
+        return Pack::Binary(
+            assets
+                .binary
+                .clone()
+                .unwrap_or_else(|| STOCK_BINARY.to_owned()),
+        );
+    };
+    let (files, list) = match &spec.files {
+        Some(files) => (files, format!("assets.{id}.files")),
+        None => (&assets.files, "assets.files".to_owned()),
+    };
+    Pack::Files {
+        dir: dir.display().to_string(),
+        files: files
+            .iter()
+            .map(|file| file.display().to_string())
+            .collect(),
+        list,
+    }
 }
 
 /// The matrix GitHub sees: the job name and the machine's labels, nothing else.
@@ -244,7 +268,7 @@ fn write_matrix_output(
 }
 
 /// Builds the target `id` and writes a tarball to `root`. The tarball holds
-/// its binary, or the `files` under `dir`.
+/// its binary, or the target's `files` under `dir`, or the shared ones.
 ///
 /// # Errors
 ///
@@ -253,7 +277,8 @@ fn write_matrix_output(
 /// - `id` is not a target in `plan`;
 /// - the prepare, build, or `tar` command cannot run, times out, or exits
 ///   unsuccessfully;
-/// - the release binary, or a path `files` lists, is missing after the build;
+/// - the release binary, or a path the target's `files` list holds, is missing
+///   after the build;
 /// - a path is not valid UTF-8.
 pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
     let target = plan
@@ -262,6 +287,10 @@ pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
         .iter()
         .find(|row| row.id == id)
         .with_context(|| format!("target {id:?} is not in assets"))?;
+    let pack = plan
+        .packs
+        .get(id)
+        .with_context(|| format!("target {id:?} is not in assets"))?;
     let ctx = target_ctx(plan, target);
     if !plan.prepare.is_empty() {
         let prepare = expand(&plan.prepare, &ctx);
@@ -269,7 +298,7 @@ pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
     }
     let build = expand(&plan.build, &ctx);
     process::run_inherit(&build, BUILD_TIMEOUT).context("assets.build")?;
-    let (dir, files) = match &plan.pack {
+    let (dir, files) = match pack {
         Pack::Binary(binary) => {
             let binary = root.join(expand_one(binary, &ctx));
             anyhow::ensure!(
@@ -280,14 +309,14 @@ pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
             let dir = binary.parent().context("binary parent")?.to_path_buf();
             (dir, vec![plan.bin.clone()])
         }
-        Pack::Files { dir, files } => {
+        Pack::Files { dir, files, list } => {
             let dir = root.join(expand_one(dir, &ctx));
             let files = expand(files, &ctx);
             for file in &files {
                 let packed = dir.join(file);
                 anyhow::ensure!(
                     packed.exists(),
-                    "assets.files: {} is missing after the build",
+                    "{list}: {} is missing after the build",
                     packed.display()
                 );
             }
@@ -538,7 +567,7 @@ fn checksum_line(digest: &str, name: &str) -> String {
 fn resolve_target(
     config: &Config,
     id: &str,
-    spec: &crate::config::AssetTarget,
+    spec: &AssetTarget,
     bin: &str,
     version: &str,
 ) -> Result<MatrixTarget> {
@@ -846,6 +875,39 @@ mod tests {
             "verctl_0.0.1_macos_arm64.tar.gz"
         );
         assert_eq!(plan.matrix.include[0].labels, ["macos-latest"]);
+    }
+
+    /// A target's own `files` replace the shared list for that target alone.
+    #[test]
+    fn a_target_packs_its_own_files() {
+        let config = with(indoc::indoc! {"
+            assets:
+              dir: out/{triple}
+              files: [bench, proof]
+              darwin-arm64:
+                files: [proof]
+              linux-x64: {}
+        "})
+        .unwrap();
+        let plan = planned(&config, "0.0.1").unwrap();
+        let files = |dir: &str, files: &[&str], list: &str| super::Pack::Files {
+            dir: dir.to_owned(),
+            files: super::strings(files),
+            list: list.to_owned(),
+        };
+        assert_eq!(
+            plan.packs,
+            std::collections::BTreeMap::from([
+                (
+                    "darwin-arm64".to_owned(),
+                    files("out/{triple}", &["proof"], "assets.darwin-arm64.files"),
+                ),
+                (
+                    "linux-x64".to_owned(),
+                    files("out/{triple}", &["bench", "proof"], "assets.files"),
+                ),
+            ])
+        );
     }
 
     #[test]

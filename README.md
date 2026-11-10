@@ -271,6 +271,22 @@ assets:
 `dir` and `files` take the placeholders `binary` takes, come together, and replace `binary`, which may not be set beside them.  
 A file the build does not write, such as a licence, is copied into `dir` by the build command.
 
+A target that ships other files, such as a tool built only on Linux, lists its own `files`.  
+They replace the shared list for that target alone:
+
+```yaml
+assets:
+  dir: target/{triple}/release
+  files: [demo, demo-bench]
+  darwin-arm64:
+    files: [demo]
+  linux-x64: {}
+```
+
+A target without `files` packs the shared list.  
+A target's `files` needs `dir`, may not be empty, and may not be set beside `binary`.  
+When every target lists its own, the shared `files` may be left out.
+
 ## Vendored assets
 
 A repository can build someone else's library from a pinned upstream release.  

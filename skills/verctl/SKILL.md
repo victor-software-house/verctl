@@ -151,7 +151,8 @@ With no publisher it releases on GitHub only.
 
 An `assets` tarball holds the one `binary`.  
 Set `assets.dir` and `assets.files` instead when it holds more (a second executable, a service unit, a licence).  
-`release asset` packs `tar czf <asset> -C <dir> <files>` with `{triple}` and the other placeholders replaced.
+`release asset` packs `tar czf <asset> -C <dir> <files>` with `{triple}` and the other placeholders replaced.  
+A target that ships other files, such as a tool built only on Linux, lists its own `files`, which replace `assets.files` for that target.
 
 `vendored.<name>` declares release assets built from someone else's source at its own `version`, for a mise `github:` tool.  
 Fragments and `release` leave it alone.  
