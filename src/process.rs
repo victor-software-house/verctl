@@ -73,8 +73,9 @@ pub fn run_inherit_in(argv: &[String], dir: Option<&Path>, timeout: Duration) ->
     inherit(argv, dir, &[], timeout)
 }
 
-/// [`run_inherit`] with `env` set on the command, for the one command that
-/// gets a secret, such as a publisher and its registry token.
+/// [`run_inherit`], plus `env` set on the command.
+/// Only a command that needs a secret takes this path, such as a publisher
+/// that reads its registry token.
 ///
 /// # Errors
 ///

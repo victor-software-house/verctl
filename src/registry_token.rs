@@ -1,12 +1,17 @@
 //! The registry token `release` hands to each publisher.
 //!
 //! The release workflow sets the token in one of two variables and runs the
-//! bare verb. verctl reads it once, here, and gives it to each publisher under
-//! the variable `--registry-token-env` names, and to the publisher's registry
-//! `query`, which needs the same credential for a private registry. No other
-//! child process sees it: [`crate::process`] removes both source variables
-//! from every command it starts, and only those two get the token back under
-//! its own name.
+//! bare verb.
+//! verctl reads it once, here.
+//! It gives the token to each publisher under the variable
+//! `--registry-token-env` names.
+//! The publisher's registry `query` gets it too, because a private registry
+//! needs the same credential for that query.
+//!
+//! No other child process sees it.
+//! [`crate::process`] removes both source variables from every command it
+//! starts, and only the publisher and its query get the token back under the
+//! named variable.
 
 use std::{env, fmt};
 
