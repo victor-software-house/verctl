@@ -19,7 +19,7 @@ these:
 
 #### Scenario: A break on a 0.0.z crate
 
-- **WHEN** `demo` is at 0.0.2 on crates.io and in its manifest, `.changeset/` holds only `demo: patch`, and a public function was removed
+- **WHEN** `demo` is at 0.0.2 on crates.io and in its manifest, `.changeset/` holds only `demo: patch`, and the change removes a public function
 - **THEN** `verctl semver` runs `cargo semver-checks --manifest-path Cargo.toml --package demo --baseline-version 0.0.2 --release-type minor`
 - **AND** it exits non-zero and names `demo@0.0.2`
 

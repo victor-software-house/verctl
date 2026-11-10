@@ -2,7 +2,8 @@
 
 ## Purpose
 
-When a release run publishes: only at a version commit, only the packages released there, and nothing once that release is complete, so a rerun is safe.
+When a release run publishes: only at a version commit, and only the packages released there.
+A complete release publishes nothing, so a rerun is safe.
 
 ## Requirements
 

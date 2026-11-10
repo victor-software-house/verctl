@@ -2,7 +2,8 @@
 
 ## Purpose
 
-The checks a release run makes on its commit before any upload, tag or Release: the commit is on the default branch, its workflows match that branch, and no earlier version was skipped.
+The checks a release run makes on its commit before any upload, tag or Release.
+The commit is on the default branch, its workflows match that branch, and no earlier version is skipped.
 
 ## Requirements
 

@@ -2,7 +2,8 @@
 
 ## Purpose
 
-How a repository releases archives of a tool it builds from another source, with their own version and asset names, a Release created when missing, and a checksum per archive.
+How a repository releases archives of a tool it builds from another source, with their own version and asset names.
+verctl creates a missing Release and ships a checksum per archive.
 
 ## Requirements
 

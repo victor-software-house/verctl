@@ -2,7 +2,8 @@
 
 ## Purpose
 
-How verctl publishes a Cargo workspace member by member in dependency order, decides from the index which members are published, and stops on a rate limit before tagging.
+How verctl publishes a Cargo workspace member by member, in dependency order.
+The index decides which members are published, and a rate limit stops the release before tagging.
 
 ## Requirements
 

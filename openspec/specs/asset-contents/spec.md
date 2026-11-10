@@ -2,7 +2,8 @@
 
 ## Purpose
 
-Which files a release asset tarball packs: the one binary by default, or the listed files from a build directory, shared by every target or listed per target, checked when the config loads.
+Which files a release asset tarball packs: the one binary by default, or listed files from a build directory.
+The list is shared by every target or set per target, and the config load checks it.
 
 ## Requirements
 

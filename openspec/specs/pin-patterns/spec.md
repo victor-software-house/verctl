@@ -2,7 +2,8 @@
 
 ## Purpose
 
-How a pin pattern marks where a version starts and ends, so a version step never rewrites part of a longer version, and how a prerelease stops a release.
+How a pin pattern marks where a version starts and ends, so a version step never rewrites part of a longer version.
+It also covers how a prerelease stops a release.
 
 ## Requirements
 
