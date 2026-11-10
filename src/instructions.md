@@ -343,12 +343,13 @@ incomplete release, oldest first, under `unreleased`. With
 `GITHUB_TOKEN` or `GH_TOKEN`, and writes `commits` (a JSON list),
 `pending`, and `assets` (a job matrix of commit, target, and labels),
 beside the asset plan's `has_assets`, `tag`, and `matrix`. Without it,
-`status` fetches nothing. With no token, or when a lookup cannot run (a
-shallow clone, no GitHub `origin`, or no answer from GitHub or a
-registry), it reports `unreleased` as not checked: `null` in JSON, with
-the reason in `unreleased_unchecked`. Under `--github-output` that
-failure fails the run. Any other error, such as a release tag on the
-wrong commit, fails `status` in both modes.
+`status` fetches nothing. With no token, or when a lookup cannot run, it
+reports `unreleased` as not checked: `null` in JSON, with the reason in
+`unreleased_unchecked`. A lookup cannot run in a shallow clone, with no
+GitHub `origin`, or with no answer from GitHub or a registry: a failed
+connection, a timeout, or a 5xx. Under `--github-output` that failure
+fails the run. Any other error, such as a release tag on the wrong commit
+or a 401 from a bad token, fails `status` in both modes.
 `release --plan` fails and names `status --github-output`. `release`
 releases only the packages whose version commit is HEAD, names the
 others, and fails before any side effect on a commit that releases

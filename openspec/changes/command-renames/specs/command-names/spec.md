@@ -69,6 +69,21 @@ SHALL fail `status`.
 - **THEN** it exits zero, `unreleased` is `null`, and `unreleased_unchecked` holds the error
 - **AND** `verctl status --github-output out` in the same clone exits non-zero
 
+#### Scenario: No answer from GitHub
+
+- **WHEN** `GITHUB_TOKEN` is set, GitHub answers the release tag lookup with a 503, and `verctl status --format json` runs
+- **THEN** it exits zero, `unreleased` is `null`, and `unreleased_unchecked` holds the error
+
+#### Scenario: A rejected token
+
+- **WHEN** `GITHUB_TOKEN` is set, GitHub answers the release tag lookup with a 401, and `verctl status` runs
+- **THEN** it exits non-zero and the error names the tag
+
+#### Scenario: A release tag on a tree
+
+- **WHEN** `GITHUB_TOKEN` is set, GitHub reports that tag `v1.0.0` names a tree, and `verctl status` runs
+- **THEN** it exits non-zero and the error names the tag
+
 #### Scenario: A release tag on the wrong commit
 
 - **WHEN** `GITHUB_TOKEN` is set and GitHub reports that tag `v1.0.0` names a commit HEAD does not hold at `demo@1.0.0`, and `verctl status` runs

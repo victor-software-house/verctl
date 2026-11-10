@@ -168,7 +168,7 @@ pub fn filter_limited(
 /// runs longer than `timeout`, its output passes [`DEFAULT_OUTPUT_LIMIT`], or
 /// its stdout is not UTF-8. A command that exits unsuccessfully returns an
 /// [`ExitFailure`], which a caller can downcast to tell an answer apart from a
-/// failure to run.
+/// failure to run, and one that runs too long returns a [`TimedOut`].
 pub fn run_in(argv: &[String], dir: &Path, timeout: Duration) -> Result<String> {
     capture(argv, "", &[], Some(dir), timeout, DEFAULT_OUTPUT_LIMIT)
 }
@@ -200,6 +200,21 @@ impl std::fmt::Display for ExitFailure {
 }
 
 impl std::error::Error for ExitFailure {}
+
+/// A command that ran longer than its timeout and was killed.
+#[derive(Debug)]
+pub struct TimedOut {
+    /// How long it was allowed to run.
+    pub timeout: Duration,
+}
+
+impl std::fmt::Display for TimedOut {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "driver command timed out after {:?}", self.timeout)
+    }
+}
+
+impl std::error::Error for TimedOut {}
 
 fn capture(
     argv: &[String],
@@ -262,7 +277,7 @@ fn capture(
         let _ = take_capped(stdout_h);
         let _ = take_capped(stderr_h);
         guard.reaped = true;
-        bail!("driver command timed out after {timeout:?}");
+        return Err(TimedOut { timeout }.into());
     }
 
     let stdout = take_capped(stdout_h)?;

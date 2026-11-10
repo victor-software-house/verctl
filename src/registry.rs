@@ -13,7 +13,7 @@ use anyhow::{Context, Result, bail, ensure};
 use semver::Version;
 use toml_edit::{DocumentMut, Item};
 
-use crate::process;
+use crate::{lookup, process};
 
 /// The crates.io sparse index root.
 ///
@@ -79,6 +79,11 @@ impl RegistryCheck {
     /// than 200 or 404, or with a line that is not a JSON version record, or
     /// when a `query` cannot be started or times out. A `query` that exits
     /// non-zero is an answer, not an error: the version is not listed.
+    ///
+    /// Only a registry that gave no answer is a [`lookup::Unavailable`]: an
+    /// index request that could not connect or timed out, an index 5xx, or a
+    /// `query` that timed out. A line that does not parse and a `query` that
+    /// cannot be started stay errors.
     pub fn lists(&self, version: &str) -> Result<bool> {
         match self {
             Self::CratesIo { name } => crates_io_lists(CRATES_IO_INDEX, name, version),
@@ -386,16 +391,32 @@ async fn fetch_index(url: &str) -> Result<Option<String>> {
         .get(url)
         .send()
         .await
-        .with_context(|| format!("GET {url}"))?;
+        .map_err(|error| unanswered(error, url))?;
     match response.status() {
         reqwest::StatusCode::OK => Ok(Some(
             response
                 .text()
                 .await
-                .with_context(|| format!("GET {url}"))?,
+                .map_err(|error| unanswered(error, url))?,
         )),
         reqwest::StatusCode::NOT_FOUND => Ok(None),
+        status if status.is_server_error() => {
+            Err(lookup::unavailable(anyhow::anyhow!("GET {url}: {status}")))
+        }
         status => bail!("GET {url}: {status}"),
+    }
+}
+
+/// `error` from a request to `url`, marked as a [`lookup::Unavailable`] when
+/// the index gave no answer: the request could not connect, which covers DNS,
+/// or it timed out.
+fn unanswered(error: reqwest::Error, url: &str) -> anyhow::Error {
+    let no_answer = error.is_connect() || error.is_timeout();
+    let error = anyhow::Error::new(error).context(format!("GET {url}"));
+    if no_answer {
+        lookup::unavailable(error)
+    } else {
+        error
     }
 }
 
@@ -419,6 +440,7 @@ fn query_lists(argv: &[String], dir: &Path, version: &str) -> Result<bool> {
             .lines()
             .any(|line| line.trim().trim_matches(['"', '\'']) == version)),
         Err(error) if is_exit_failure(&error) => Ok(false),
+        Err(error) if error.is::<process::TimedOut>() => Err(lookup::unavailable(error)),
         Err(error) => Err(error),
     }
 }
