@@ -161,10 +161,10 @@ fn on_version_branch(root: &Path) -> bool {
 /// # Errors
 ///
 /// Returns an error when that fetch fails, under the conditions of
-/// [`report_with`], [`pull_request::problems`], and
-/// [`content::removes_fragment`], when [`Skip::from_env`] cannot read the pull
-/// request, when the Version PR fails [`content::check`], or when another pull
-/// request has a problem.
+/// [`report_with`], [`git::MergeBase::read`], [`pull_request::problems`],
+/// and [`content::removes_fragment`], when [`Skip::from_env`] cannot read the
+/// pull request, when the Version PR fails [`content::check`], or when another
+/// pull request has a problem.
 pub fn report(root: &Path, config: &Config, inputs: &content::Inputs) -> Result<VersionReport> {
     let fetch = git::FetchDefault::from_env();
     for branch in git::comparison_branches() {
@@ -177,10 +177,13 @@ pub fn report(root: &Path, config: &Config, inputs: &content::Inputs) -> Result<
     }
     let release_candidates = git::release_branch_candidates();
     let report = report_with(root, config, Skip::None, &candidates, &release_candidates)?;
-    let problems = pull_request::problems(root, config, inputs, &candidates, &release_candidates)?;
+    let Some(base) = git::MergeBase::read(root, &candidates)? else {
+        return Ok(report);
+    };
+    let problems = pull_request::problems(root, config, inputs, &base, &release_candidates)?;
     if problems.is_empty()
         && report.drifted().is_empty()
-        && !content::removes_fragment(root, inputs, &candidates)?
+        && !content::removes_fragment(&base, inputs)?
     {
         return Ok(report);
     }

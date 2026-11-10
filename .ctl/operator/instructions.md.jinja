@@ -210,8 +210,10 @@ pass. Such a pull request also fails when it changes whether a package
 publishes and adds no fragment that bumps it above `none`, since only a
 release publishes it under the new setting. Whether it publishes comes
 from its `publisher`, the members a workspace package uploads, a Cargo
-`publish` key, and `private` in `package.json`. A merge queue run skips
-both rules.
+`publish` key (inherited from the workspace root with
+`publish.workspace`), and `private` in `package.json`. A setting the
+release branch already holds at its merge-base with HEAD passes too. A
+merge queue run skips both rules.
 
 verctl never merges the Version PR and never enables auto-merge on it. A
 release starts only when a person merges the Version PR. Open it with a

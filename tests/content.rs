@@ -209,6 +209,23 @@ fn a_version_pr_that_retargets_a_symlink_fails() {
     repo.fails_naming(&["link", "does not write"]);
 }
 
+/// An uncommitted retarget counts too: the local version branch checks the
+/// working tree.
+#[test]
+fn an_uncommitted_symlink_retarget_fails() {
+    let repo = crate_repo(Some("demo: patch"));
+    std::os::unix::fs::symlink("Cargo.toml", repo.root().join("link")).expect("symlink");
+    common::commit_all(repo.root(), "link");
+    common::git(
+        repo.root(),
+        &["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
+    repo.version_step();
+    fs::remove_file(repo.root().join("link")).expect("remove");
+    std::os::unix::fs::symlink("CHANGELOG.md", repo.root().join("link")).expect("symlink");
+    repo.fails_naming(&["link", "does not write"]);
+}
+
 /// A submodule moved to another commit is a change the version step does not
 /// make.
 #[test]

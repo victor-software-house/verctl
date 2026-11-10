@@ -93,7 +93,8 @@ request's base.
 
 A pull request that is not a Version PR SHALL fail when it changes whether a
 package publishes, unless it adds a fragment that bumps that package above
-`none`.
+`none`. A publish setting equal to the package's setting at the merge-base of
+HEAD and the release branch SHALL NOT count as changed.
 
 #### Scenario: Publishing turned on without a fragment
 
@@ -104,3 +105,8 @@ package publishes, unless it adds a fragment that bumps that package above
 
 - **WHEN** a pull request removes `publish = false` from crate `xtask` and adds a fragment `xtask: none`
 - **THEN** `verctl check` exits non-zero and names `xtask` and the missing fragment
+
+#### Scenario: A released publish change merged into next
+
+- **WHEN** a pull request into `next` merges `main`, whose Version PR released `xtask` after a pull request removed `publish = false`
+- **THEN** `verctl check` exits zero
