@@ -1,15 +1,17 @@
 # Research: versioning any stack, in one repository or a monorepo
 
-Queue row: VER-083.
+Queue row: [VER-083][ver-083].
 Read on 2026-11-09 from source at the commits linked below, not from blog posts.
 The five changes that follow from it are listed at the end.
 
-## 1. What we version today, and what we cannot
+## 1. Version sources today and their gaps
 
-1. verctl reads a version from a manifest it knows by file name (`Cargo.toml`, `package.json`), or from a declared `toml`, `json`, or command driver ([`src/config.rs`][config]).
+1. verctl reads a version from a manifest with a known file name (`Cargo.toml`, `package.json`), or from a declared `toml`, `json`, or command driver ([`src/config.rs`][config]).
 2. A repository with no manifest cannot be a package.
-   The templates repository has 75 tags, `v0.0.1` to `v0.0.75`, each made by hand, two of them lightweight, and no Release.
-   The actions repository has no tag at all: its consumers pin a commit with a `# main, <date>` comment, and five consumers sampled on 2026-11-09 pinned four different commits.
+   The templates repository has 75 tags, `v0.0.1` to `v0.0.75`, each made by hand.
+   Two of them are lightweight, and none has a Release.
+   The actions repository has no tag at all: its consumers pin a commit with a `# main, <date>` comment.
+   Five consumers sampled on 2026-11-09 pinned four different commits.
 3. A package is listed by hand in `.ctl/ver.yaml`.
    A Cargo workspace is read through `cargo metadata` ([`src/members.rs`][members]); a Bun or pnpm workspace is not read at all.
 
@@ -25,10 +27,28 @@ The five changes that follow from it are listed at the end.
 | [monochange][monochange] | each ecosystem's native manifest; tags only for Go, Swift, and GitHub Actions | scans every supported ecosystem | `[group.<id>]` | configurable | `go.mod` discovered, versions in tags |
 | [Bumpy][bumpy] | `package.json` | package-manager workspaces | `fixed`, `linked` | `name@version` | none |
 
-monochange is the closest tool to verctl, and it is new. Its name dates from 2023, but its code is from 2026: about 1,060 commits by one author, up to v0.21.0 on 2026-10-23. On 2026-11-09 it had 3 stars and about 2,200 crate downloads. It is written in Rust, Changesets-format fragments, ten ecosystems (Cargo; npm, pnpm, Yarn, and Bun as one npm family; Deno; Dart; Python; Go; GitHub Actions; Swift; CocoaPods; Gradle), groups, and post-merge tags.
-It rewrites lockfiles directly by default, which verctl does not do: the package manager stays the only writer of its lockfile.
+monochange is the closest tool to verctl, and it is new.
+Its name dates from 2023, but its code is from 2026.
+It has about 1,060 commits by one author, up to v0.21.0 on 2026-10-23.
+On 2026-11-09 it had 3 stars and about 2,200 crate downloads.
+
+It is written in Rust and offers:
+
+1. Changesets-format fragments.
+2. Ten ecosystems: Cargo; npm, pnpm, Yarn, and Bun as one npm family; Deno; Dart; Python; Go; GitHub Actions; Swift; CocoaPods; Gradle.
+3. Groups.
+4. Post-merge tags.
+
+monochange rewrites lockfiles directly by default.
+verctl does not: the package manager stays the only writer of its lockfile.
+
 Changesets v3 (2026-08-11) added topological publish order and `workspace:` resolution through the package manager ([Bumpy, differences from Changesets][bumpy]).
-Bumpy adds a local `check --strict` that maps changed files to packages and requires a fragment for each, branch-based prerelease channels instead of a committed pre mode, and `init`, which converts `.changeset/config.json`.
+
+Bumpy adds three things:
+
+1. A local `check --strict` that maps changed files to packages and requires a fragment for each.
+2. Branch-based prerelease channels instead of a committed pre mode.
+3. `init`, which converts `.changeset/config.json`.
 
 Two models exist.
 Knope, Nx, release-plz, and Changesets keep each version in the package's own file.
@@ -48,9 +68,11 @@ On a bump to v2 or later it rewrites the module path, and it tags `v{version}` o
    It refuses absolute paths, `..`, `**`, and any match outside the root, and it has deprecated its old walk of every directory in favour of that declaration.
 4. [Bun][bun-ws] reads `workspaces` as an array or as an object with `packages`, with `!` negation.
    [pnpm][pnpm-find] reads `packages` from `pnpm-workspace.yaml`, ignores `node_modules`, and sorts by path.
-5. [manypkg][manypkg-tool], which Changesets uses, detects the tool (Yarn, pnpm, npm, Bun, Lerna, Rush, or a single root package) and lists its packages; a package with no `name` fails the listing.
+5. [manypkg][manypkg-tool], which Changesets uses, detects the tool (Yarn, pnpm, npm, Bun, Lerna, Rush, or a single root package) and lists its packages.
+   A package with no `name` fails the listing.
 
-The common rule: discovery is declared once at the root, as the stack's own declaration or as globs, never a scan of every manifest on disk.
+The common rule: discovery is declared once at the root, as the stack's own declaration or as globs.
+No tool scans every manifest on disk.
 A package is named by its manifest, and a directory that holds a manifest is the unit.
 
 ## 4. Internal dependency ranges and publish order
@@ -76,7 +98,8 @@ A package is named by its manifest, and a directory that holds a manifest is the
 
 ## 6. The model these changes build
 
-The operator ruled on 2026-11-09 that versioning is fine-grained, with defaults that keep a simple repository simple, so that complexity is opt-in.
+The operator ruled on 2026-11-09 that versioning is fine-grained.
+Defaults keep a simple repository simple, so that complexity is opt-in.
 A consumer moves a pin only when the thing it pins changed.
 The model is five small primitives that compose:
 
@@ -88,13 +111,19 @@ The model is five small primitives that compose:
 | Group | packages that share one version | none: each package moves on its own |
 | Tag | the tag name of a package or group | `v{version}` for one package, `{name}/v{version}` for several |
 
-A package that changed gets a fragment and a new version; a package that did not keeps its version and its tag, so its pins stay where they are.
+A package that changed gets a fragment and a new version.
+A package that did not keeps its version and its tag, so its pins stay where they are.
 
 The operator also ruled that verctl fits any workflow as if it were native to it:
 
-1. Each stack keeps its own files and idioms: the version sits where the stack's own tools look for it, and the stack's own command refreshes its lockfile.
-2. A repository needs no configuration until it wants something the defaults do not give.
-3. A repository leaving Changesets keeps working unchanged unless its config uses `linked`: verctl already reads `.changeset/*.md`, and it reads `.changeset/config.json` (`fixed`, `ignore`) as its groups until `.ctl/ver.yaml` says otherwise, and a `linked` entry fails the load and names the group to write.
+1. Each stack keeps its own files and idioms.
+   The version sits where the stack's own tools look for it.
+   The stack's own command refreshes its lockfile.
+2. A repository needs no configuration until its owner needs something the defaults do not give.
+3. A repository leaving Changesets keeps working unchanged unless its config uses `linked`.
+   verctl already reads `.changeset/*.md`.
+   It reads `.changeset/config.json` (`fixed`, `ignore`) as its groups until `.ctl/ver.yaml` sets groups instead.
+   A `linked` entry fails the load and names the group to write.
 4. Nothing verctl does needs a bot, an App, or a separate action; the reusable workflow runs the same CLI a developer runs locally.
 
 ## 7. How the best tools infer packages
@@ -111,7 +140,10 @@ Read from source on 2026-11-09:
 
 ## 8. Rivals and references
 
-A broad search on 2026-11-09 found many tools built on the Changesets model for several stacks: [monochange][monochange], [Bumpy][bumpy], [changesetter][changesetter], [callisto][callisto], [semifold][semifold], [changepacks][changepacks], [cursus][cursus], [dv][dv], [stamp][stamp], [intentional][intentional], and [releasekit][releasekit]. Commit-driven tools, release-please, semantic-release, [tallyrelease][tallyrelease], and [release-cli][release-cli], stand beside them.
+A broad search on 2026-11-09 found many tools built on the Changesets model for several stacks.
+They include [monochange][monochange], [Bumpy][bumpy], [changesetter][changesetter], [callisto][callisto], [semifold][semifold], [changepacks][changepacks], [cursus][cursus], [dv][dv], [stamp][stamp], [intentional][intentional], and [releasekit][releasekit].
+Commit-driven tools stand beside them: release-please, semantic-release, [tallyrelease][tallyrelease], and [release-cli][release-cli].
+
 What each adds that verctl must match or beat:
 
 1. [FlowFuse][flowfuse] versions each reusable workflow and composite action of one repository on its own, keyed by a file or directory path. It tags an immutable `{name}/vX.Y.Z` and moves floating `{name}/vX.Y` and `{name}/vX` tags. Workflows and actions share one tag namespace, so names must be unique across both.
@@ -124,7 +156,16 @@ Adoption without retagging, existing tag shapes kept, and a migration from Chang
 
 ## 9. The changes
 
-They ship in slices, each useful on its own: `version-files` first, starting with `VERSION` and `path: .` so the templates and actions repositories can release as one package each, then its marker line, `go.mod`, and `pyproject.toml`; then `release-immutability`, `package-discovery`, `release-groups`, and `dependent-ranges`, in that order (operator, 2026-11-09).
+They ship in slices, each useful on its own (operator, 2026-11-09).
+The order is:
+
+1. `version-files` first, in two steps:
+   1. `VERSION` and `path: .`, so the templates and actions repositories can release as one package each.
+   2. Then the marker line, `go.mod`, and `pyproject.toml`.
+2. `release-immutability`.
+3. `package-discovery`.
+4. `release-groups`.
+5. `dependent-ranges`.
 
 | Change | Decides |
 |:--|:--|
@@ -181,3 +222,4 @@ They ship in slices, each useful on its own: `version-files` first, starting wit
 [flowfuse]: https://github.com/flowfuse/github-actions-workflows
 [wire]: https://github.com/albertodeago/wire
 [govuk-tf]: https://github.com/alphagov/gds-tech-and-security-github-actions/blob/main/docs/terraform-module-release.md
+[ver-083]: ../../../tasks.yaml

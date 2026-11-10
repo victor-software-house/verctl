@@ -11,8 +11,8 @@ One measured example: the stack is guessed from the manifest file name in
 four places. The tag shape is set in three, and the default branch comes from
 five inputs. Each part below names its own.
 
-Queue row: VER-011. This change replaces the plan held on
-`feat/011-refresh-lockfile` and folds in its two approved intents: the version
+Queue row: [VER-011][ver-011]. This change replaces the plan held on
+`feat/011-refresh-lockfile` and folds in its two approved intents. The version
 step refreshes lockfiles itself, and the report field `next` becomes `after`.
 
 ## What Changes
@@ -25,13 +25,15 @@ change with its own proposal. The parts are [derived-release-state][drs],
 [built-in-ecosystems][bie].
 
 1. **BREAKING:** `.ctl/ver.yaml` keeps one place per concern and refuses
-   unknown keys at every level. `drivers`, `publishers`, `prepare`, `pins`,
-   `patterns`, and the per-package driver and publisher keys go; `branch`,
-   `registries`, `ecosystems`, `steps`, `at`, `proposal`, `tags`, and
-   `packages[].assets` replace them. Partly shipped: unknown keys are refused;
-   every removed key is still read ([audit](audit.md)).
+   unknown keys at every level.
+   1. These keys go: `drivers`, `publishers`, `prepare`, `pins`, `patterns`,
+      and the per-package driver and publisher keys.
+   2. These keys replace them: `branch`, `registries`, `ecosystems`, `steps`,
+      `at`, `proposal`, `tags`, and `packages[].assets`.
+   3. Partly shipped: unknown keys are refused, and every removed key is
+      still read ([audit](audit.md)).
 2. All breaking changes ship in one minor, 0.8.0, held with the rest of the
-   minor backlog; later work ships as patches that add without breaking.
+   minor backlog. Later work ships as patches that add without breaking.
    0.4.0 to 0.7.4 shipped before this change, and the parts of it they
    carried are listed in [audit.md](audit.md).
 
@@ -52,11 +54,11 @@ rule.
 Agreed already: templates only (design decision 14) and command renames
 (design decision 15). Each decision has a recommendation; the design gives
 the alternatives and trade-offs. The operator approved all eight as
-recommended on 2026-10-12 (VER-011 note) and confirms the 0.8.0 scope after
+recommended on 2026-10-12 (note on [VER-011][ver-011]) and confirms the 0.8.0 scope after
 the [audit](audit.md).
 
-Decisions 1 to 7 are stated in the part each belongs to. The note after each
-decision says what shipped code settled.
+Decisions 1 to 7 are stated in the part each belongs to. Each decision carries a note on
+what shipped code settled.
 
 8. Ship 0.4.0 from an integration branch `next`, then patches (design 4).
    Contradicted: 0.4.0 to 0.7.4 shipped from `main`, no `next` exists, and
@@ -65,7 +67,7 @@ decision says what shipped code settled.
 ## Impact
 
 1. Code: most of `src/`. `templates.rs` moves onto `ctl_core::served`, agreed
-   with the session that owns CTC-008.
+   with the session that owns [CTC-008][ctc-008].
 2. Consumers: qctl, forkctl, ctl-core, unixd, and yamled change config and
    workflows once, in the 0.8.0 window. bun-release retires once the bun
    ecosystem publishes it.
@@ -78,3 +80,5 @@ decision says what shipped code settled.
 [vpc]: ../version-pr-content/proposal.md
 [bb]: ../building-blocks/proposal.md
 [bie]: ../built-in-ecosystems/proposal.md
+[ver-011]: ../../../tasks.yaml
+[ctc-008]: https://github.com/victor-software-house/ctl-core/blob/main/tasks.yaml

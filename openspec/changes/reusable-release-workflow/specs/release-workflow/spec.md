@@ -97,7 +97,8 @@ job SHALL read the pull request event, its head branch, or its labels.
 
 #### Scenario: A dispatch after a lost run
 
-- **WHEN** the run for version commit `A` was replaced in its concurrency group before it started, and a person dispatches the workflow on `main` at a later commit `B`
+- **WHEN** the run for version commit `A` never started, because a newer run took its concurrency group
+- **AND** a person dispatches the workflow on `main` at a later commit `B`
 - **THEN** `plan` reports `A`, and `publish` checks out `A` and releases it
 
 ### Requirement: The workflow runs only on the default branch
@@ -125,8 +126,8 @@ caller SHALL grant `contents: write` and `pull-requests: write`.
 Every workflow step that runs verctl SHALL set its settings in `env:` and run
 `mise run ver <verb>` with no argument built in the shell. The served `ver`
 task execs the verctl version pinned in it. No job SHALL build verctl from
-source, except that verctl's own release run builds it once per platform and
-every job of that run reuses the build through `verctl-artifact`.
+source, except verctl's own release run, which builds it once per platform.
+Every job of that run reuses the build through `verctl-artifact`.
 
 #### Scenario: verctl's own release
 
@@ -141,10 +142,10 @@ every job of that run reuses the build through `verctl-artifact`.
 ### Requirement: A repository migrates in one pull request
 
 A repository SHALL be able to replace `version-pr.yml` and `publish.yml` with
-one caller in one pull request. The migration guide SHALL say to close an open
-`version-packages` pull request and delete that branch.
+one caller in one pull request. The migration guide SHALL list closing an open
+`version-packages` pull request and deleting that branch as steps.
 
 #### Scenario: Migrating with an open Version PR
 
-- **WHEN** a repository merges its caller while a `version-packages` pull request is open, and closes it as the guide says
+- **WHEN** a repository merges its caller while a `version-packages` pull request is open, and closes it by following the guide
 - **THEN** the next push to `main` opens a Version PR from `verctl/release/main` with the same pending fragments

@@ -7,21 +7,24 @@ Every repository that releases with verctl carries two workflows of its own,
 and then edited. The copies drift, and each fix lands once per repository:
 
 1. [VER-062][ver-062] and [VER-063][ver-063] changed the same concurrency group
-   and the same zizmor findings in this repository and in the examples, and the
-   same fix then had to reach every consumer by hand.
+   and the same zizmor findings in this repository and in the examples.
+   The same fix then had to reach every consumer by hand.
 2. The publish workflow decides a release from the event: a merged pull request
    whose head is `version-packages`. A merge that GitHub reports late, a
    rerun, or a manual dispatch on the wrong branch each needed its own clause
    ([#153][pr-153]).
 
-The operator ruled on 2026-10-15: verctl owns the release workflows, as one
-reusable workflow called from a thin per-repository caller, with every piece
-optional and overridable, and its defaults owned by verctl. The minimal slice
-B of [release-state-machine][rsm] is unpaused for it: an idempotent publish,
-one flow on push to the default branch plus dispatch, and the derived branch.
+The operator ruled on 2026-10-15 that verctl owns the release workflows.
+They are one reusable workflow called from a thin per-repository caller, with
+every piece optional and overridable.
+verctl owns the defaults.
+
+The minimal slice B of [release-state-machine][rsm] is unpaused for it.
+That slice is an idempotent publish, one flow on push to the default branch
+plus dispatch, and the derived branch.
 The rest of that change stays paused.
 
-Queue rows: VER-066 and VER-074. This change holds the workflow and its
+Queue rows: [VER-066][queue] and [VER-074][queue]. This change holds the workflow and its
 callers. The rest of slice B is split into four changes, each with its own
 proposal. They are [registry-publish-check][rpc],
 [release-at-version-commit][ravc], [docs-build-check][docs], and
@@ -59,9 +62,9 @@ None.
 2. Consumers: each replaces two workflows with one caller in one pull request,
    closes the open `version-packages` pull request, and deletes that branch.
 3. Every step runs `mise run ver <verb>`, on the verctl pinned in the task,
-   with settings in `env:` only, which needs
-   ctl-core's environment-bound flags (CTC-022) in the verctl release that
-   ships this.
+   with settings in `env:` only.
+   That needs ctl-core's environment-bound flags (queue row
+   [CTC-022][ctc-022]) in the verctl release that ships this.
 
 [examples]: ../../../examples/workflows/
 [rsm]: ../release-state-machine/proposal.md
@@ -69,6 +72,8 @@ None.
 [ravc]: ../release-at-version-commit/proposal.md
 [docs]: ../docs-build-check/proposal.md
 [dvpb]: ../derived-version-pr-branch/proposal.md
+[queue]: ../../../tasks.yaml
+[ctc-022]: https://github.com/victor-software-house/ctl-core/blob/main/tasks.yaml
 [ver-062]: https://github.com/victor-software-house/verctl/pull/153
 [ver-063]: https://github.com/victor-software-house/verctl/pull/154
 [pr-153]: https://github.com/victor-software-house/verctl/pull/153
