@@ -22,7 +22,7 @@ use crate::git::{self, VersionCommit};
 use crate::github::{self, ReleaseState};
 use crate::publish::{self, PublishEntry};
 use crate::registry::RegistryCheck;
-use crate::{bump, publisher};
+use crate::{bump, lookup, publisher};
 
 /// Every version commit with an incomplete release, and the assets missing at
 /// each.
@@ -118,16 +118,20 @@ struct PackageState {
 /// Returns an error when a package's version, driver, or publisher cannot be
 /// resolved, its version commit cannot be found (see
 /// [`git::version_commit`]), the repository has no GitHub `origin`, or a
-/// registry or GitHub lookup fails. It also returns one when a package's tag
-/// names a commit that is neither its version commit nor another commit HEAD
-/// contains at the same version (see [`git::tagged_commit`]). That release was
-/// tagged in the wrong place, and counting it complete would hide it.
+/// registry or GitHub lookup fails. A lookup that cannot run is a
+/// [`lookup::Unavailable`]: no GitHub repository, no answer from GitHub or a
+/// registry, or a walk that reaches a shallow clone's boundary.
+///
+/// It also returns one when a package's tag names a commit that is neither
+/// its version commit nor another commit HEAD contains at the same version
+/// (see [`git::tagged_commit`]). That release was tagged in the wrong place,
+/// and counting it complete would hide it.
 pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> Result<Pending> {
     if config.packages.is_empty() {
         return Ok(Pending::default());
     }
     let planned = publish::plan(config, root)?;
-    let repo = github::repo(root)?;
+    let repo = github::repo(root).map_err(lookup::unavailable)?;
     let (targets, assets_tag) = if skip_assets || config.assets.is_none() {
         (Vec::new(), String::new())
     } else {
@@ -158,7 +162,8 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
         let release = match releases.entry(tag.clone()) {
             Entry::Occupied(held) => held.into_mut(),
             Entry::Vacant(slot) => {
-                let state = github::release_state(token, &repo, slot.key())?;
+                let state =
+                    github::release_state(token, &repo, slot.key()).map_err(lookup::unavailable)?;
                 slot.insert(state)
             }
         };
@@ -187,7 +192,10 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
             let earlier =
                 git::unreleased_below(root, &root.join(&spec.path), &read, &mut |version| {
                     let tag = config.tags.render(version, name)?;
-                    Ok(github::release_state(token, &repo, &tag)?.tag.is_some())
+                    Ok(github::release_state(token, &repo, &tag)
+                        .map_err(lookup::unavailable)?
+                        .tag
+                        .is_some())
                 })?;
             for skipped in earlier {
                 states.push(PackageState {
@@ -267,7 +275,7 @@ fn registry_lists(
         let listed = match &upload.check {
             RegistryCheck::Unchecked => release.tag.is_some(),
             check @ (RegistryCheck::CratesIo { .. } | RegistryCheck::Query { .. }) => {
-                check.lists(&upload.version)?
+                check.lists(&upload.version).map_err(lookup::unavailable)?
             }
         };
         if !listed {

@@ -11,8 +11,8 @@ use verctl::cli::{
 use verctl::config::{self, Config};
 use verctl::fragment::{self, Bump};
 use verctl::{
-    assets, ci, docsrs, git, github, pending, pins, prepare, publish, release, semver_check,
-    templates, versions,
+    assets, ci, docsrs, git, github, lookup, pending, pins, prepare, publish, release,
+    semver_check, templates, versions,
 };
 
 mod presentation;
@@ -465,9 +465,11 @@ fn ci_report(args: &verctl::cli::CiArgs) -> Result<CiReport> {
 /// outputs (`has_assets`, `tag`, `matrix`) and the release outputs
 /// (`commits`, `pending`, `assets`). Without it, `status` changes nothing in
 /// the clone: it reads the history already there, and with no token, or
-/// when the check fails, it reports the version commits as not checked,
-/// with the reason, rather than as none. Under `--github-output` a failed
-/// check fails the run, since the workflow must not plan from a guess.
+/// when a lookup cannot run ([`lookup::Unavailable`]), it reports the
+/// version commits as not checked, with the reason, rather than as none.
+/// Any other error, such as a release tag on the wrong commit, fails
+/// `status` in both modes, and under `--github-output` a lookup that cannot
+/// run fails it too, since the workflow must not plan from a guess.
 fn status_report(args: &StatusArgs) -> Result<StatusReport> {
     let fragments = fragment::load_dir(&args.dir)?;
     let config = Config::load(&args.config)?;
@@ -502,7 +504,9 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
                 }
                 (Some(unreleased_rows(&planned)), None)
             }
-            Err(error) if args.github_output.is_none() => (None, Some(Unchecked::failed(&error))),
+            Err(error) if args.github_output.is_none() && lookup::is_unavailable(&error) => {
+                (None, Some(Unchecked::failed(&error)))
+            }
             Err(error) => return Err(error),
         },
         None => (None, Some(Unchecked::missing_token())),

@@ -78,6 +78,8 @@ pub mod github;
 /// A Go module's version on its `go.mod` module line.
 pub(crate) mod gomod;
 pub mod lockfile;
+/// Lookups outside the commit, and the error for one that could not run.
+pub mod lookup;
 /// A package's version on one marker line of any file.
 pub(crate) mod marker;
 pub mod members;

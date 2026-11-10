@@ -4,7 +4,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use gix::bstr::ByteSlice;
 use gix::credentials::helper::Action;
 use gix::credentials::protocol::Outcome;
@@ -19,7 +19,7 @@ use gix::sec::{Permission, Trust};
 use semver::Version;
 
 use crate::github::Repo;
-use crate::{bump, process};
+use crate::{bump, lookup, process};
 
 /// The checked-out branch, or `None` for a detached HEAD or no repository.
 #[must_use]
@@ -464,7 +464,7 @@ pub struct VersionCommit {
 /// HEAD has no version in `path`, or a commit or tree cannot be read. It also
 /// returns one when the walk reaches a shallow clone's boundary before the
 /// version changes: the commit that set it is not in the clone, so a full fetch
-/// is needed.
+/// is needed. That error is a [`lookup::Unavailable`].
 pub fn version_commit(
     root: &Path,
     path: &Path,
@@ -487,12 +487,13 @@ pub fn version_commit(
         .unwrap_or_default();
     let mut depth = 0;
     loop {
-        ensure!(
-            !boundary.contains(&commit.id().detach()),
-            "cannot find the commit that set {} to {wanted}: the clone is shallow; fetch the full history{}",
-            rel.display(),
-            shallow_hint()
-        );
+        if boundary.contains(&commit.id().detach()) {
+            return Err(lookup::unavailable(anyhow!(
+                "cannot find the commit that set {} to {wanted}: the clone is shallow; fetch the full history{}",
+                rel.display(),
+                shallow_hint()
+            )));
+        }
         let Some(parent) = commit.parent_ids().next() else {
             break;
         };
@@ -533,8 +534,8 @@ pub fn version_commit(
 /// Returns an error when `root` is in no repository, `path` is outside it,
 /// HEAD has no version in `path`, or a commit or tree cannot be read. It also
 /// returns one when the walk reaches a shallow clone's boundary before finding
-/// `sha`, or when no merge-base can be computed between a first-parent commit
-/// and `sha`.
+/// `sha`, a [`lookup::Unavailable`], or when no merge-base can be computed
+/// between a first-parent commit and `sha`.
 pub fn tagged_commit(
     root: &Path,
     path: &Path,
@@ -566,11 +567,12 @@ pub fn tagged_commit(
                 }),
             );
         }
-        ensure!(
-            !boundary.contains(&commit.id().detach()),
-            "cannot find tagged commit {sha}: the clone is shallow; fetch the full history{}",
-            shallow_hint()
-        );
+        if boundary.contains(&commit.id().detach()) {
+            return Err(lookup::unavailable(anyhow!(
+                "cannot find tagged commit {sha}: the clone is shallow; fetch the full history{}",
+                shallow_hint()
+            )));
+        }
         line.push(commit.id().detach());
         let Some(parent) = commit.parent_ids().next() else {
             break;
@@ -774,7 +776,7 @@ pub struct Unreleased {
 /// Returns an error when `root` is in no repository, `path` is outside it,
 /// HEAD has no version in `path`, a commit or tree cannot be read, or
 /// `released` fails. It also returns one when the walk reaches a shallow
-/// clone's boundary before it stops.
+/// clone's boundary before it stops, a [`lookup::Unavailable`].
 pub fn unreleased_below(
     root: &Path,
     path: &Path,
@@ -803,12 +805,13 @@ pub fn unreleased_below(
     let mut changes = Vec::new();
     let mut depth = 0;
     loop {
-        ensure!(
-            !boundary.contains(&commit.id().detach()),
-            "cannot find the versions set before {version} in {}: the clone is shallow; fetch the full history{}",
-            rel.display(),
-            shallow_hint()
-        );
+        if boundary.contains(&commit.id().detach()) {
+            return Err(lookup::unavailable(anyhow!(
+                "cannot find the versions set before {version} in {}: the clone is shallow; fetch the full history{}",
+                rel.display(),
+                shallow_hint()
+            )));
+        }
         let Some(parent) = commit.parent_ids().next() else {
             changes.push(Unreleased {
                 version,
