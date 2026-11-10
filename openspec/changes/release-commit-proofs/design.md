@@ -28,8 +28,10 @@ that set HEAD's version, so a skipped version never appeared.
 The plan now walks back from each incomplete package's version along the
 first-parent line, one version at a time. It lists each version with no tag
 at the commit that set it, and that version's assets upload to its own tag.
-The walk stops at a tagged version, at `0.0.0`, or at a revision with no
-version. `publish` refuses a package that still has an older entry in the
+The walk stops at a tagged version, at `0.0.0`, at a revision with no
+version, or at a commit whose version is not strictly above its parent's as
+semver. A revert or a version set again is not a skipped release, and listing
+it would plan the same tag at a second commit. `publish` refuses a package that still has an older entry in the
 plan, so the proof reads what the plan found and asks GitHub nothing more.
 
 ## 2. Flags named for what they allow

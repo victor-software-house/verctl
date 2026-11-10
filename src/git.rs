@@ -523,7 +523,11 @@ pub struct Unreleased {
 ///
 /// The walk goes back from HEAD one version at a time and stops at a version
 /// `released` accepts, at `0.0.0`, at a revision with no version, or at the
-/// root. Empty means the version commit of HEAD's version is the only one
+/// root. It also stops, listing nothing more, at a commit whose version is not
+/// strictly above its parent's as semver. A revert or a version set again is
+/// not a skipped release. Listing it would plan the same tag at a second
+/// commit. A version that is not semver stops the walk the same way. Empty
+/// means the version commit of HEAD's version is the only one
 /// since the last release. `read` reads one revision of `path`, as in
 /// [`version_commit`].
 ///
@@ -580,6 +584,12 @@ pub fn unreleased_below(
             commit = parent;
             depth += 1;
             continue;
+        }
+        if earlier
+            .as_deref()
+            .is_some_and(|earlier| !bump::lower(earlier, &version))
+        {
+            break;
         }
         if below_head {
             found.push(Unreleased {
@@ -1681,6 +1691,25 @@ mod tests {
                 depth: 1,
             }]
         );
+    }
+
+    /// A revert to 0.7.5 between two commits that set 0.7.6, with neither
+    /// tagged, skipped nothing. HEAD's 0.7.6 is the release. Listing the first
+    /// 0.7.6 would plan the same tag at a second commit.
+    #[test]
+    fn a_reverted_version_set_again_skips_nothing() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        write_version(dir.path(), "0.7.4");
+        commit_all(dir.path(), "chore: start");
+        write_version(dir.path(), "0.7.6");
+        commit_all(dir.path(), "chore(release): version packages (#7)");
+        write_version(dir.path(), "0.7.5");
+        commit_all(dir.path(), "revert: version packages (#7)");
+        write_version(dir.path(), "0.7.6");
+        commit_all(dir.path(), "chore(release): version packages (#9)");
+        assert_eq!(unreleased(dir.path(), &["0.7.4"]), Vec::new());
+        assert_eq!(unreleased(dir.path(), &[]), Vec::new());
     }
 
     /// With no release at all, the walk counts from the root, and stops at
