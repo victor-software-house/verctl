@@ -208,7 +208,7 @@ jobs:
           echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
           echo "paths=${IGNORED}" >> "${GITHUB_OUTPUT}"
       - name: Set up mise
-        uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
+        uses: victor-software-house/actions/mise@83044282a4cb70dc14016a1178941fd28de38156 # main, 2026-11-10
         with:
           version: ${{ inputs.mise-version }}
           cache: true
@@ -297,7 +297,7 @@ jobs:
           IGNORED: ${{ needs.plan.outputs.mise-ignored-config-paths }}
         run: echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
       - name: Set up mise
-        uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
+        uses: victor-software-house/actions/mise@83044282a4cb70dc14016a1178941fd28de38156 # main, 2026-11-10
         with:
           version: ${{ inputs.mise-version }}
           cache: true
@@ -386,7 +386,7 @@ jobs:
           IGNORED: ${{ needs.plan.outputs.mise-ignored-config-paths }}
         run: echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
       - name: Set up mise
-        uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
+        uses: victor-software-house/actions/mise@83044282a4cb70dc14016a1178941fd28de38156 # main, 2026-11-10
         with:
           version: ${{ inputs.mise-version }}
           cache: true
@@ -450,7 +450,7 @@ jobs:
           IGNORED: ${{ needs.plan.outputs.mise-ignored-config-paths }}
         run: echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
       - name: Set up mise
-        uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
+        uses: victor-software-house/actions/mise@83044282a4cb70dc14016a1178941fd28de38156 # main, 2026-11-10
         with:
           version: ${{ inputs.mise-version }}
           cache: true
@@ -507,7 +507,7 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
       - name: Set up mise
-        uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
+        uses: victor-software-house/actions/mise@83044282a4cb70dc14016a1178941fd28de38156 # main, 2026-11-10
         with:
           version: ${{ inputs.mise-version }}
           cache: true

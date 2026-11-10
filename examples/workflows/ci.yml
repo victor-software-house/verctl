@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
+      - uses: victor-software-house/actions/mise@83044282a4cb70dc14016a1178941fd28de38156 # main, 2026-11-10
         with:
           version: 2026.8.2
           cache: true
@@ -58,7 +58,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: victor-software-house/actions/mise@03c96fcff8a4e2ec5bd4802feb811cea2dfaeb40 # main, 2026-11-10
+      - uses: victor-software-house/actions/mise@83044282a4cb70dc14016a1178941fd28de38156 # main, 2026-11-10
         with:
           version: 2026.8.2
           cache: true
