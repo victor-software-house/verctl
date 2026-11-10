@@ -331,7 +331,9 @@ fn denies(publish: &Item) -> bool {
 }
 
 /// The workspace root manifest of the package at `manifest`, parsed, when
-/// one exists inside `tree`.
+/// one exists inside `tree`. A symlinked candidate is skipped: the merge-base
+/// copy holds no symlinks, so reading through one would let the two trees
+/// resolve different roots, or read a file outside the repository.
 fn workspace_root(
     manifest: &Path,
     document: &DocumentMut,
@@ -360,7 +362,7 @@ fn workspace_root(
         .filter(|dir| dir.starts_with(&tree))
         .map(|dir| dir.join("Cargo.toml"));
     for candidate in candidates {
-        let Some(bytes) = git::read_optional(&candidate)? else {
+        let Some(bytes) = regular_file(&candidate)? else {
             continue;
         };
         let text = String::from_utf8(bytes).with_context(|| candidate.display().to_string())?;
@@ -372,6 +374,16 @@ fn workspace_root(
         }
     }
     Ok(None)
+}
+
+/// A regular file's bytes, or `None` when `path` is missing or is a symlink.
+fn regular_file(path: &Path) -> Result<Option<Vec<u8>>> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Ok(None),
+        Ok(_) => git::read_optional(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).with_context(|| path.display().to_string()),
+    }
 }
 
 #[cfg(test)]
@@ -486,6 +498,36 @@ mod tests {
         .expect("write");
         assert!(!cargo_opts_out(&member, text, &tree).expect("toml"));
         fs::write(&above, "[workspace").expect("write");
+        assert!(!cargo_opts_out(&member, text, &tree).expect("toml"));
+    }
+
+    /// A symlinked `Cargo.toml` above the package is never followed, so a
+    /// workspace outside the tree does not count, as in the merge-base copy.
+    #[test]
+    fn a_symlinked_workspace_manifest_is_skipped() {
+        let dir = TempDir::new().expect("tempdir");
+        let tree = dir.path().join("repo");
+        let member = tree.join("crates/a/Cargo.toml");
+        fs::create_dir_all(member.parent().expect("parent")).expect("dir");
+        let outside = dir.path().join("outside.toml");
+        fs::write(
+            &outside,
+            indoc! {"
+                [workspace]
+
+                [workspace.package]
+                publish = false
+            "},
+        )
+        .expect("write");
+        std::os::unix::fs::symlink(&outside, tree.join("Cargo.toml")).expect("symlink");
+        let text = indoc! {r#"
+            [package]
+            name = "a"
+            publish.workspace = true
+        "#};
+        assert!(!cargo_opts_out(&member, text, &tree).expect("toml"));
+        fs::write(&outside, "[workspace").expect("write");
         assert!(!cargo_opts_out(&member, text, &tree).expect("toml"));
     }
 }
