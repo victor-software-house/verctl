@@ -579,18 +579,27 @@ fn files_come_with_dir(files: &[PathBuf], config: &Config) -> garde::Result {
 }
 
 /// A `binary` beside `dir` and `files`, shared or on a target, would never
-/// be read, and a reader would take it for what the tarball holds.
+/// be read, and a reader would take it for what the tarball holds. The
+/// message names the first target whose own `files` conflict, so a config
+/// with several targets points at one list.
 #[expect(
     clippy::ref_option,
     reason = "garde passes the field as it is declared"
 )]
 fn binary_is_not_beside_files(binary: &Option<String>, config: &Config) -> garde::Result {
-    let packs_files = config.assets.as_ref().is_some_and(|assets| {
-        assets.dir.is_some()
-            || !assets.files.is_empty()
-            || assets.targets.values().any(|target| target.files.is_some())
-    });
-    if binary.is_some() && packs_files {
+    let (Some(_), Some(assets)) = (binary, config.assets.as_ref()) else {
+        return Ok(());
+    };
+    if let Some(id) = assets
+        .targets
+        .iter()
+        .find_map(|(id, target)| target.files.is_some().then_some(id))
+    {
+        return Err(garde::Error::new(format!(
+            "must be omitted when assets.{id}.files says what the tarball holds; list the binary in files",
+        )));
+    }
+    if assets.dir.is_some() || !assets.files.is_empty() {
         return Err(garde::Error::new(
             "must be omitted when dir and files say what the tarball holds; list the binary in files",
         ));
@@ -2384,10 +2393,11 @@ mod tests {
                 indoc! {"
                     assets:
                       binary: out/{bin}
+                      darwin-arm64: {}
                       linux-x64:
                         files: [demo]
                 "},
-                "assets.binary: must be omitted when dir and files say what the tarball holds",
+                "assets.binary: must be omitted when assets.linux-x64.files says what the tarball holds",
             ),
             (
                 "a target file outside the repo",
