@@ -69,6 +69,8 @@ pub mod fragment;
 pub mod git;
 /// GitHub outputs, repositories, and pull requests.
 pub mod github;
+/// A Go module's version on its `go.mod` module line.
+pub(crate) mod gomod;
 pub mod members;
 pub mod pending;
 pub mod pins;

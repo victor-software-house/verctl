@@ -14,9 +14,24 @@ pub enum Format {
     Json,
 }
 
+/// A file whose version sits in its text, with a rule of its own that a key
+/// path cannot state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Text {
+    /// A `go.mod` whose `module` line ends in `// vX.Y.Z`.
+    GoMod,
+}
+
 /// How a package's version is read and written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Driver {
+    /// The version is in the file's text, in a place its format fixes.
+    Text {
+        /// Which format.
+        text: Text,
+        /// Follow-up command to run after the bump, such as a lockfile refresh.
+        after: Option<String>,
+    },
     /// The version is a string at a key path in a TOML or JSON file.
     Path {
         /// The file format.
@@ -72,7 +87,25 @@ impl Driver {
     #[must_use]
     pub fn after(&self) -> Option<&str> {
         match self {
-            Self::Path { after, .. } | Self::Command { after, .. } => after.as_deref(),
+            Self::Text { after, .. } | Self::Path { after, .. } | Self::Command { after, .. } => {
+                after.as_deref()
+            }
+        }
+    }
+
+    /// Refuse `new_version` when the file's own format forbids it, before
+    /// anything is written, so `prepare --dry-run` refuses it too.
+    ///
+    /// # Errors
+    ///
+    /// For a `go.mod`, returns an error when the new major version and the
+    /// module path's `/vN` suffix conflict. Other drivers accept any version.
+    pub fn accepts(&self, raw: &str, new_version: &str) -> Result<()> {
+        match self {
+            Self::Text {
+                text: Text::GoMod, ..
+            } => crate::gomod::accepts(raw, new_version),
+            Self::Path { .. } | Self::Command { .. } => Ok(()),
         }
     }
 
@@ -86,6 +119,9 @@ impl Driver {
     /// exits unsuccessfully, or prints non-UTF-8 or oversized output.
     pub fn read(&self, raw: &str) -> Result<String> {
         match self {
+            Self::Text {
+                text: Text::GoMod, ..
+            } => crate::gomod::read(raw),
             Self::Path { format, keys, .. } => match format {
                 Format::Toml => read_toml(raw, keys),
                 Format::Json => read_json(raw, keys),
@@ -102,6 +138,9 @@ impl Driver {
     /// configured key holding a string, or a command filter that fails.
     pub fn write(&self, raw: &str, new_version: &str) -> Result<String> {
         match self {
+            Self::Text {
+                text: Text::GoMod, ..
+            } => crate::gomod::write(raw, new_version),
             Self::Path { format, keys, .. } => match format {
                 Format::Toml => write_toml(raw, keys, new_version),
                 Format::Json => write_json(raw, keys, new_version),

@@ -5,7 +5,7 @@ mod common;
 
 use std::fs;
 
-use indoc::indoc;
+use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
 use verctl::bump::apply;
 use verctl::config::Config;
@@ -656,4 +656,84 @@ fn a_dynamic_python_version_fails_the_plan() {
     for word in ["demo", "project.dynamic", "VERSION"] {
         assert!(message.contains(word), "{word}: {message}");
     }
+}
+
+/// Plan and apply one `bump` fragment for `demo`, whose version lives in
+/// `module`, a `go.mod`; returns the plan and the file afterwards.
+fn bump_go_module(module: &str, bump: &str) -> anyhow::Result<(Vec<prepare::PlanEntry>, String)> {
+    let root = TempDir::new().expect("tmp");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: go.mod
+        "},
+    );
+    fs::write(root.path().join("go.mod"), module).expect("go.mod");
+    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let fragment = formatdoc! {"
+        ---
+        demo: {bump}
+        ---
+
+        Change.
+    "};
+    let fragment = parse_str(&fragment, "a.md").expect("frag");
+    let plan = prepare::plan(&config, &[fragment], root.path())?;
+    prepare::apply_plan(&plan)?;
+    let after = fs::read_to_string(root.path().join("go.mod")).expect("read");
+    Ok((plan, after))
+}
+
+#[test]
+fn a_go_module_bumps_its_module_line() {
+    let module = indoc! {"
+        module example.com/demo // v0.4.0
+
+        go 1.25
+    "};
+    let (plan, after) = bump_go_module(module, "patch").expect("plan");
+    assert_eq!(
+        (plan[0].from.as_str(), plan[0].to.as_str()),
+        ("0.4.0", "0.4.1")
+    );
+    assert_eq!(plan[0].driver.after(), None);
+    assert_eq!(after, module.replace("// v0.4.0", "// v0.4.1"));
+}
+
+#[test]
+fn a_go_module_with_no_comment_starts_at_0_0_0() {
+    let (plan, after) = bump_go_module(
+        indoc! {"
+            module example.com/demo
+
+            go 1.25
+        "},
+        "patch",
+    )
+    .expect("plan");
+    assert_eq!(plan[0].to, "0.0.1");
+    assert_eq!(
+        after,
+        indoc! {"
+            module example.com/demo // v0.0.1
+
+            go 1.25
+        "}
+    );
+}
+
+/// The plan refuses before anything is written, so `prepare --dry-run`
+/// refuses too.
+#[test]
+fn a_go_major_needs_the_module_path() {
+    let error = bump_go_module("module example.com/demo // v1.4.0\n", "major").expect_err("v2");
+    assert!(
+        format!("{error:#}").contains("example.com/demo/v2"),
+        "{error:#}"
+    );
+    let (plan, _) =
+        bump_go_module("module example.com/demo/v2 // v2.1.0\n", "patch").expect("plan");
+    assert_eq!(plan[0].to, "2.1.1");
 }

@@ -219,7 +219,13 @@ A package's `path` names the file that holds its version. `Cargo.toml`,
 whose `project.dynamic` lists `version` fails, because its build backend
 sets the version; write a static one, keep it in a `VERSION` file, or
 declare a driver. verctl has no stock Python publisher, so a
-`pyproject.toml` package names its `publisher`, or `none`. A lockfile
+`pyproject.toml` package names its `publisher`, or `none`. A `go.mod`
+keeps its version as a `// vX.Y.Z` comment at the end of its `module`
+line, and reads as `0.0.0` without one. A `Deprecated:` notice that ends the
+comments directly above that line fails the bump, because Go reads it together with the
+version comment. A bump to v2 or later fails until
+the module path ends in `/v<major>`, and a Go module with no publisher
+releases on GitHub only. A lockfile
 beside the manifest or above it in the repository adds its refresh to the
 next steps: `cargo update --workspace` for `Cargo.lock`, the package
 manager's install for a JavaScript lockfile, and `uv lock` for `uv.lock`.

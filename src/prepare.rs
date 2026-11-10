@@ -59,6 +59,9 @@ pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<
             .to_owned();
         let to = bump::apply(&from, bump, spec.first_minor)
             .with_context(|| format!("package {name}"))?;
+        driver
+            .accepts(&raw, &to)
+            .with_context(|| format!("package {name}: {}", path.display()))?;
         plan.push(PlanEntry {
             name: name.to_owned(),
             from,
