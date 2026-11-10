@@ -203,14 +203,15 @@ fn rewrite_pattern(body: &str, pattern: &PinPattern, version: &str) -> Result<St
 /// repo's include sitting in the same file is not ours to move, so the URL
 /// path must carry the tool's own name.
 ///
-/// The ref runs to the end of the URL, so a ref that starts with a version
+/// The ref runs to the end of the URL or to the next query separator (`&`,
+/// `#`, `;`), so a ref that starts with a version
 /// and goes on, such as `v1.2.3-rc1`, fails rather than having its numeric
 /// head moved and its tail kept. A ref that is not a version at all, such as
 /// a branch, is not a pin and stays put.
 fn rewrite_own_refs(body: &str, tool: &str, version: &str) -> Result<String> {
     let name = escape(tool.rsplit(['/', ':']).next().unwrap_or(tool));
     let finder = Regex::new(&format!(
-        r#"(?<include>/{name}(?:\.git)?//[^\s"',\]]*\?ref=v)(?<reference>[0-9][^\s"',\]]*)"#
+        r#"(?<include>/{name}(?:\.git)?//[^\s"',\]]*\?ref=v)(?<reference>[0-9][^\s"',\]&#;]*)"#
     ))
     .with_context(|| format!("tool {tool:?}"))?;
     let whole = Regex::new(&format!("^{VERSION}$")).context("the version pattern")?;
@@ -772,6 +773,48 @@ mod tests {
         assert!(report.contains("v1.2.3-rc1"), "{report}");
         assert!(report.contains("mise.toml"), "{report}");
         assert_eq!(fs::read_to_string(&path).unwrap(), before);
+    }
+
+    /// The ref ends at the next query separator: a parameter after it is
+    /// not part of the version and stays as it was.
+    #[test]
+    fn a_ref_ends_at_the_next_query_separator() {
+        let root = TempDir::new().unwrap();
+        let path = write_file(
+            &root,
+            "mise.toml",
+            indoc! {r#"
+                [tools]
+                "github:victor-software-house/verctl" = "0.0.1"
+
+                [task_config]
+                includes = [
+                  "git::https://github.com/victor-software-house/verctl.git//a?ref=v0.0.1&depth=1",
+                  "git::https://github.com/victor-software-house/verctl.git//b?ref=v0.0.1#x",
+                  "git::https://github.com/victor-software-house/verctl.git//c?ref=v0.0.1;y",
+                ]
+            "#},
+        );
+        write(
+            root.path(),
+            &[tool_pin("mise.toml", "verctl")],
+            &versions("0.0.2"),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            indoc! {r#"
+                [tools]
+                "github:victor-software-house/verctl" = "0.0.2"
+
+                [task_config]
+                includes = [
+                  "git::https://github.com/victor-software-house/verctl.git//a?ref=v0.0.2&depth=1",
+                  "git::https://github.com/victor-software-house/verctl.git//b?ref=v0.0.2#x",
+                  "git::https://github.com/victor-software-house/verctl.git//c?ref=v0.0.2;y",
+                ]
+            "#}
+        );
     }
 
     /// A TOML array with no space after the comma: only the quote and comma

@@ -160,10 +160,12 @@ templates:
 # "many" is for a document whose examples come and go, where only "still
 # tracked" is worth asserting. "never" guards a spelling that was retired,
 # `{exactly: 2}` and `{at_least: 2}` name counts.
-# Each side of `{version}` needs text a version cannot hold, so a longer
-# version such as `1.0.0-rc1` fails to match rather than have its numeric head
-# rewritten: a character other than a digit or `.`, and after the version a
-# `-` or `+` only with more text after it. The load refuses a pattern without.
+# Each side of `{version}` must be bounded, so a longer version such as
+# `1.0.0-rc1` fails to match rather than have its numeric head rewritten. A
+# side is bounded when the literal text between `{version}` and the pattern's
+# edge, on that side, holds at least one character that is not a digit, `.`,
+# `-`, or `+`. Under `whole_line`, the line start or end bounds the side,
+# unless the literal on that side is made only of those four characters.
 # `whole_line` says the match owns its line instead of sitting inside one, for a
 # frontmatter key or a shell assignment, and the line then marks both ends. It
 # beats naming the neighbouring text, which breaks when the neighbour moves.

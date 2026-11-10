@@ -164,15 +164,24 @@ pins:
 - A **version** is dotted numerics (`0.0.2`, `1.2.3`, `0.0.10`). Nothing else.
 - **Each side of the version needs a boundary.** `{version}` matches digits
   and dots, so an open side lets a longer version match by its numeric head.
-  `version: {version}` would rewrite `version: 0.1.1-rc1` to `0.1.2-rc1`. A
-  side has a boundary in one of three ways:
-  - a character next to `{version}` other than a digit, `.`, `-`, or `+`;
-  - after the version, a `-` or `+` with more text after it, since a lone
-    one opens a prerelease or a build: `v{version}-` reads `v1.2.3-rc1` as
-    `1.2.3-`;
-  - under `whole_line`, the line start or the line end.
+  `version: {version}` would rewrite `version: 0.1.1-rc1` to `0.1.2-rc1`.
+  - A side's literal is the text between `{version}` and the pattern's edge,
+    on that side.
+  - A side is bounded when its literal holds at least one character that is
+    not a digit, `.`, `-`, or `+`. A version and its prerelease or build hold
+    only those four.
+  - Under `whole_line`, the line start or end bounds the side, unless the
+    literal on that side is made only of those four characters.
 
-  Every verb that reads `.ctl/ver.yaml` refuses a pattern with an open side,
+  | Pattern | Result |
+  |:--|:--|
+  | `name-{version}.tar.gz`, `v{version}.tar`, `download/v{version}-linux` | accepted |
+  | `version: {version}` with `whole_line` | accepted |
+  | `{version}`, `verctl-{version}`, `verctl@{version}.` | refused |
+  | `v{version}-`, `-{version}`, `{version}.1` | refused |
+  | `version: {version}-` with `whole_line` | refused |
+
+- Every verb that reads `.ctl/ver.yaml` refuses a pattern with an open side,
   naming the pattern and the side. With both boundaries, a longer version
   fails to match, and the arity stops the release.
 - **The file cannot decide the boundary for you.** `download/v{version}-linux`
