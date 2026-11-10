@@ -137,6 +137,16 @@ report `nothing to release` when every release is complete. A release tag
 on a commit HEAD holds only through a merge passes when the version there
 matches HEAD's.
 
+Before any upload, tag, or Release, `publish` proves the release commit:
+the default branch contains it, and its `.github/workflows/` is the same tree
+as at the default branch's tip. `--allow-off-default-branch` and
+`--allow-workflow-change` (`VERCTL_ALLOW_OFF_DEFAULT_BRANCH`,
+`VERCTL_ALLOW_WORKFLOW_CHANGE`; `release.yml` inputs `allow-off-default-branch`
+and `allow-workflow-change`) go past one, and the report lists it under
+`allowed`. A check that cannot run refuses anyway. A package with an earlier
+unreleased version commit since its last tag is refused with no flag:
+`publish --plan` lists that commit first, so release it before the newer one.
+
 `docs` waits for docs.rs to build each crates.io library crate released at
 HEAD and fails on a build that failed or never arrived (`--timeout`, minutes,
 default 60).

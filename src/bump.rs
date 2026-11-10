@@ -12,6 +12,17 @@ pub fn unreleased(version: &str) -> bool {
         .is_ok_and(|version| (version.major, version.minor, version.patch) == (0, 0, 0))
 }
 
+/// Whether `earlier` is strictly lower than `later`, both as semver. A version
+/// that is not semver compares as not lower, so a caller that walks history
+/// stops at it rather than guess an order.
+#[must_use]
+pub fn lower(earlier: &str, later: &str) -> bool {
+    matches!(
+        (Version::parse(earlier), Version::parse(later)),
+        (Ok(earlier), Ok(later)) if earlier < later
+    )
+}
+
 /// The version `bump` moves `current` to.
 ///
 /// Two bumps are refused. A `major` on any 0.x package, because 1.0 is a

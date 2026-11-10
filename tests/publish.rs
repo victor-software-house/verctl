@@ -531,3 +531,103 @@ fn publish_asks_no_changelog_of_a_package_at_0_0_0() {
     assert!(stderr.contains("GITHUB_TOKEN"), "{stderr}");
     assert!(!stderr.contains("changelog section"), "{stderr}");
 }
+
+/// A crate at 0.0.1 with its changelog section, committed as the tip of
+/// `main` with an `origin` whose `main` is that commit.
+fn released_crate(root: &std::path::Path) {
+    common::write_config(
+        root,
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    fs::write(
+        root.join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "0.0.1"
+        "#},
+    )
+    .unwrap_or_else(|error| panic!("write fixture: {error}"));
+    fs::write(
+        root.join("CHANGELOG.md"),
+        indoc! {"
+            # Changelog
+
+            ## demo 0.0.1
+
+            - First.
+        "},
+    )
+    .unwrap_or_else(|error| panic!("write fixture: {error}"));
+    fs::create_dir_all(root.join(".github/workflows"))
+        .unwrap_or_else(|error| panic!("create .github/workflows: {error}"));
+    fs::write(root.join(".github/workflows/ci.yml"), "on: push\n")
+        .unwrap_or_else(|error| panic!("write fixture: {error}"));
+    common::on_default_branch(root);
+}
+
+/// `publish` with no token, so a run that gets past every proof stops at the
+/// token check, before any publisher, tag, or Release call.
+fn publish_without_token(root: &std::path::Path, env: &[(&str, &str)]) -> String {
+    let output = common::verctl()
+        .current_dir(root)
+        .env_remove("GITHUB_TOKEN")
+        .env_remove("GH_TOKEN")
+        .envs(env.iter().copied())
+        .args(["publish", "--color", "never"])
+        .output()
+        .unwrap_or_else(|error| panic!("spawn verctl: {error}"));
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    assert!(!output.status.success(), "{stderr}");
+    stderr
+}
+
+/// A retry of a release commit after a workflow changed on `main` refuses
+/// before it asks for a token, and the variable lets it go on.
+#[test]
+fn a_changed_workflow_refuses_before_any_publish() {
+    let root = TempDir::new().unwrap();
+    released_crate(root.path());
+    let release = common::git(root.path(), &["rev-parse", "HEAD"]);
+    fs::write(
+        root.path().join(".github/workflows/ci.yml"),
+        "on: [push, pull_request]\n",
+    )
+    .unwrap();
+    let tip = common::commit_all(root.path(), "ci: run on pull requests");
+    common::git(
+        root.path(),
+        &["update-ref", "refs/remotes/origin/main", &tip],
+    );
+    common::git(root.path(), &["checkout", "-q", "--detach", &release]);
+
+    let stderr = publish_without_token(root.path(), &[]);
+    assert!(stderr.contains(".github/workflows/"), "{stderr}");
+    assert!(stderr.contains("--allow-workflow-change"), "{stderr}");
+    assert!(!stderr.contains("GITHUB_TOKEN"), "{stderr}");
+
+    let stderr = publish_without_token(root.path(), &[("VERCTL_ALLOW_WORKFLOW_CHANGE", "true")]);
+    assert!(stderr.contains("GITHUB_TOKEN"), "{stderr}");
+}
+
+/// A commit `main` does not contain refuses before it asks for a token, and
+/// the variable lets it go on.
+#[test]
+fn a_commit_off_the_default_branch_refuses_before_any_publish() {
+    let root = TempDir::new().unwrap();
+    released_crate(root.path());
+    fs::write(root.path().join("README"), "ahead\n").unwrap();
+    common::commit_all(root.path(), "docs: ahead of main");
+
+    let stderr = publish_without_token(root.path(), &[]);
+    assert!(stderr.contains("not an ancestor"), "{stderr}");
+    assert!(stderr.contains("--allow-off-default-branch"), "{stderr}");
+    assert!(!stderr.contains("GITHUB_TOKEN"), "{stderr}");
+
+    let stderr = publish_without_token(root.path(), &[("VERCTL_ALLOW_OFF_DEFAULT_BRANCH", "true")]);
+    assert!(stderr.contains("GITHUB_TOKEN"), "{stderr}");
+}

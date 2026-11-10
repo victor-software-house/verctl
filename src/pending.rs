@@ -4,7 +4,9 @@
 //! its tag, its Release, and every declared asset exist. `publish --plan` lists
 //! every version commit with an incomplete release, oldest first, so the
 //! workflow can release each at its own commit; `publish` releases only the
-//! packages whose version commit is HEAD.
+//! packages whose version commit is HEAD. A version an earlier commit set and
+//! no release has, skipped when a later Version PR merged first, is listed at
+//! the commit that set it.
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
@@ -65,7 +67,8 @@ pub struct PendingCommit {
 pub struct PendingPackage {
     /// Package name.
     pub name: String,
-    /// Version at HEAD.
+    /// The version its version commit sets: the one at HEAD, or an earlier
+    /// one that was never released.
     pub version: String,
 }
 
@@ -90,6 +93,8 @@ struct PackageState {
     commit: VersionCommit,
     complete: bool,
     missing_assets: Vec<MatrixTarget>,
+    /// The tag the missing assets upload to.
+    assets_tag: String,
 }
 
 /// Find every version commit with an incomplete release.
@@ -97,6 +102,10 @@ struct PackageState {
 /// A package at `0.0.0` is left out before any lookup: it has never been
 /// released, and its first release is the `0.0.1` a Version PR prepares (see
 /// [`bump::unreleased`]).
+///
+/// For a package whose release is incomplete, each earlier version on HEAD's
+/// first-parent line since its last tag is listed too, at the commit that set
+/// it (see [`git::unreleased_below`]), with every declared asset missing.
 ///
 /// With `skip_assets`, declared assets do not count toward completeness, so a
 /// repository that turns assets off still reaches nothing to release.
@@ -164,9 +173,34 @@ pub fn pending(config: &Config, root: &Path, token: &str, skip_assets: bool) -> 
         };
         let listed = registry_lists(config, root, spec, entry, release)?;
         let declared: &[MatrixTarget] = if *index == 0 { &targets } else { &[] };
-        states.push(state_of(entry, commit, listed, release, declared));
+        let state = state_of(entry, commit, listed, release, declared, &assets_tag);
+        let incomplete = !state.complete;
+        states.push(state);
+        if incomplete {
+            let name = config.tags.uses_name().then_some(entry.name.as_str());
+            let earlier =
+                git::unreleased_below(root, &root.join(&spec.path), &read, &mut |version| {
+                    let tag = config.tags.render(version, name)?;
+                    Ok(github::release_state(token, &repo, &tag)?.tag.is_some())
+                })?;
+            for skipped in earlier {
+                states.push(PackageState {
+                    assets_tag: config.tags.render(&skipped.version, name)?,
+                    package: PendingPackage {
+                        name: entry.name.clone(),
+                        version: skipped.version,
+                    },
+                    commit: VersionCommit {
+                        sha: skipped.sha,
+                        depth: skipped.depth,
+                    },
+                    complete: false,
+                    missing_assets: declared.to_vec(),
+                });
+            }
+        }
     }
-    Ok(group(states, &assets_tag))
+    Ok(group(states))
 }
 
 /// The version `driver` reads from one revision of a manifest, or `None` when
@@ -243,6 +277,7 @@ fn state_of(
     listed: bool,
     release: &ReleaseState,
     declared: &[MatrixTarget],
+    assets_tag: &str,
 ) -> PackageState {
     let missing_assets: Vec<MatrixTarget> = declared
         .iter()
@@ -257,6 +292,7 @@ fn state_of(
         commit,
         complete: listed && release.tag.is_some() && release.release && missing_assets.is_empty(),
         missing_assets,
+        assets_tag: assets_tag.to_owned(),
     }
 }
 
@@ -264,12 +300,13 @@ fn state_of(
 struct AtCommit {
     depth: usize,
     packages: Vec<PendingPackage>,
-    missing: Vec<MatrixTarget>,
+    missing: Vec<(MatrixTarget, String)>,
 }
 
 /// Group incomplete packages by version commit, oldest commit first. Assets
-/// belong to the first package, so every asset job uploads to `assets_tag`.
-fn group(states: Vec<PackageState>, assets_tag: &str) -> Pending {
+/// belong to the first package, so each asset job uploads to the tag of that
+/// package's version at its commit.
+fn group(states: Vec<PackageState>) -> Pending {
     let mut by_commit: BTreeMap<String, AtCommit> = BTreeMap::new();
     for state in states.into_iter().filter(|state| !state.complete) {
         let slot = by_commit
@@ -280,7 +317,13 @@ fn group(states: Vec<PackageState>, assets_tag: &str) -> Pending {
                 missing: Vec::new(),
             });
         slot.packages.push(state.package);
-        slot.missing.extend(state.missing_assets);
+        let tag = state.assets_tag;
+        slot.missing.extend(
+            state
+                .missing_assets
+                .into_iter()
+                .map(|target| (target, tag.clone())),
+        );
     }
     let mut ordered: Vec<(String, AtCommit)> = by_commit.into_iter().collect();
     ordered.sort_by_key(|(_, at)| std::cmp::Reverse(at.depth));
@@ -288,11 +331,11 @@ fn group(states: Vec<PackageState>, assets_tag: &str) -> Pending {
     for (sha, at) in ordered {
         pending
             .assets
-            .extend(at.missing.into_iter().map(|target| PendingAsset {
+            .extend(at.missing.into_iter().map(|(target, tag)| PendingAsset {
                 commit: sha.clone(),
                 id: target.id,
                 labels: target.labels,
-                tag: assets_tag.to_owned(),
+                tag,
             }));
         pending.commits.push(PendingCommit {
             sha,
@@ -392,6 +435,7 @@ mod tests {
             false,
             &ReleaseState::default(),
             &[],
+            "v0.4.6",
         )
     }
 
@@ -409,13 +453,10 @@ mod tests {
 
     #[test]
     fn every_incomplete_commit_oldest_first() {
-        let pending = group(
-            vec![
-                incomplete("app", "0.2.1", at("ccc", 0)),
-                incomplete("core", "0.3.1", at("aaa", 2)),
-            ],
-            "v0.4.6",
-        );
+        let pending = group(vec![
+            incomplete("app", "0.2.1", at("ccc", 0)),
+            incomplete("core", "0.3.1", at("aaa", 2)),
+        ]);
         let shas: Vec<&str> = pending.commits.iter().map(|c| c.sha.as_str()).collect();
         assert_eq!(shas, ["aaa", "ccc"]);
         assert_eq!(
@@ -427,6 +468,38 @@ mod tests {
         );
     }
 
+    /// A version an earlier commit set and no release has is planned at that
+    /// commit, before HEAD's, and its assets upload to its own tag.
+    #[test]
+    fn a_skipped_version_is_planned_first_with_its_own_tag() {
+        let declared = [target("linux-x64")];
+        let head = state_of(
+            &entry("demo", "0.4.7"),
+            at("bbb", 0),
+            false,
+            &ReleaseState::default(),
+            &declared,
+            "v0.4.7",
+        );
+        let skipped = state_of(
+            &entry("demo", "0.4.6"),
+            at("aaa", 1),
+            false,
+            &ReleaseState::default(),
+            &declared,
+            "v0.4.6",
+        );
+        let pending = group(vec![head, skipped]);
+        let shas: Vec<&str> = pending.commits.iter().map(|c| c.sha.as_str()).collect();
+        assert_eq!(shas, ["aaa", "bbb"]);
+        let tags: Vec<(&str, &str)> = pending
+            .assets
+            .iter()
+            .map(|asset| (asset.commit.as_str(), asset.tag.as_str()))
+            .collect();
+        assert_eq!(tags, [("aaa", "v0.4.6"), ("bbb", "v0.4.7")]);
+    }
+
     #[test]
     fn a_push_after_a_finished_release_is_nothing_to_release() {
         let declared = [target("darwin-arm64"), target("linux-x64")];
@@ -436,8 +509,9 @@ mod tests {
             true,
             &finished(&["demo-darwin-arm64.tar.gz", "demo-linux-x64.tar.gz"]),
             &declared,
+            "v0.4.6",
         );
-        assert!(group(vec![state], "v0.4.6").is_empty());
+        assert!(group(vec![state]).is_empty());
     }
 
     #[test]
@@ -448,8 +522,9 @@ mod tests {
             true,
             &finished(&[]),
             &[],
+            "v0.4.6",
         );
-        assert!(group(vec![state], "v0.4.6").is_empty());
+        assert!(group(vec![state]).is_empty());
     }
 
     #[test]
@@ -461,8 +536,9 @@ mod tests {
             true,
             &finished(&["demo-linux-x64.tar.gz"]),
             &declared,
+            "v0.4.6",
         );
-        let pending = group(vec![state], "v0.4.6");
+        let pending = group(vec![state]);
         assert_eq!(pending.commits.len(), 1);
         assert_eq!(
             pending.assets,
@@ -483,15 +559,16 @@ mod tests {
             false,
             &finished(&[]),
             &[],
+            "v0.4.6",
         );
-        assert!(!group(vec![state], "v0.4.6").is_empty());
+        assert!(!group(vec![state]).is_empty());
     }
 
     #[test]
     fn the_plan_writes_commits_pending_and_assets() {
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("output");
-        let pending = group(vec![incomplete("demo", "0.4.6", at("aaa", 1))], "v0.4.6");
+        let pending = group(vec![incomplete("demo", "0.4.6", at("aaa", 1))]);
         write_github_output(&pending, &path).unwrap();
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),

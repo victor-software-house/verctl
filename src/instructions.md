@@ -294,9 +294,24 @@ effect on a commit that releases nothing. When every release is complete,
 both report `nothing to release` and exit zero; the JSON report's
 `outcome` is `nothing-to-release` or `released`.
 It refuses unless each package version has a matching CHANGELOG
-heading (the Version PR writes those) and, when `origin` exists,
-HEAD is an ancestor of the default branch (`origin/HEAD`, then
-`GITHUB_BASE_REF`, then `main`/`master`). It does not sniff the
+heading (the Version PR writes those), HEAD is an ancestor of the
+default branch (`origin/HEAD`, then `GITHUB_BASE_REF`, then
+`main`/`master`), and `.github/workflows/` at HEAD is the same tree as
+at the default branch's tip. A retry of an old version commit runs its
+workflows as they were at that commit, and changed steps or permissions
+can publish to the registry and then fail to tag.
+`--allow-off-default-branch` (`VERCTL_ALLOW_OFF_DEFAULT_BRANCH`) and
+`--allow-workflow-change` (`VERCTL_ALLOW_WORKFLOW_CHANGE`) let a run go
+past either one, and the report lists each under `allowed`: a row in the
+human view, and `allowed: [{check, reason}]` in JSON. A check that cannot
+run, as with no `origin` or no default-branch ref, refuses even with a
+flag set. `publish` also refuses a package whose first-parent history
+since its last release tag holds an earlier version commit, because
+publishing would skip that version; no flag allows it. `publish --plan`
+lists such a version at the commit that set it, oldest first, so the
+workflow releases it before the newer one. The reusable `release.yml`
+takes the `allow-workflow-change` and `allow-off-default-branch` boolean
+inputs, default `false`, and passes them through `env:`. It does not sniff the
 commit subject and does not treat `GITHUB_REF_NAME` as the default
 (that is the branch being pushed). `verctl publish` points `origin/HEAD`
 at `origin/<default>` only when `VERCTL_DEFAULT_BRANCH` is set. It

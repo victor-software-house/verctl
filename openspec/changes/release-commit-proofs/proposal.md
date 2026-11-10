@@ -28,19 +28,23 @@ Queue row: VER-035.
 2. `--allow-off-default-branch` (`VERCTL_ALLOW_OFF_DEFAULT_BRANCH`) lets a
    release run from a commit the default branch does not contain. VER-036,
    which ships first, makes the ancestry check refuse when it cannot run.
-3. **BREAKING:** `verctl publish` refuses a package that has more than one
-   version commit on the first-parent line since its last release tag. No
+3. **BREAKING:** `verctl publish` refuses a package with a skipped version:
+   an earlier version set on the first-parent line since its last release
+   tag, with no tag, that no later commit abandoned by going below it. No
    flag allows it.
-4. A run that uses either flag prints which check it skipped and why, and
-   the JSON report lists it under `allowed`.
-5. The reusable `release.yml` gains two boolean inputs,
+4. A run that uses either flag reports which check it went past and why:
+   an `allowed` row in the human view, and `allowed` in the JSON report.
+5. `verctl publish --plan` lists a version an earlier commit set and no
+   release has, at the commit that set it, so the workflow releases it
+   before the newer one.
+6. The reusable `release.yml` gains two boolean inputs,
    `allow-workflow-change` and `allow-off-default-branch`, default `false`,
    passed to verctl through step `env:` only.
 
 ## Impact
 
 1. Code: `src/publish.rs`, `src/git.rs`, `src/pending.rs`, `src/cli.rs`,
-   `src/presentation.rs`.
+   `src/presentation.rs`, `src/main.rs`.
 2. Workflow: `.github/workflows/release.yml`.
 3. Docs: `src/instructions.md`, `skills/verctl/SKILL.md`, `AGENTS.md`, and
-   the `release-preconditions` spec.
+   this change's `release-commit-proofs` spec.

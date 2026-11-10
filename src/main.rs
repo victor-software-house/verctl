@@ -342,13 +342,18 @@ fn publish_report(args: &verctl::cli::PublishArgs) -> Result<PublishReport> {
     if args.plan {
         return publish_plan_report(args, &config, root);
     }
-    let run = publish::run_pending(&config, root, args.dry_run(), args.skip_assets)?;
+    let allow = publish::Allow {
+        workflow_change: args.allow.allow_workflow_change,
+        off_default_branch: args.allow.allow_off_default_branch,
+    };
+    let run = publish::run_pending(&config, root, args.dry_run(), args.skip_assets, allow)?;
     Ok(PublishReport {
         outcome: run.outcome,
         packages: run.published.packages,
         releases: run.published.releases,
         waiting: run.waiting.iter().map(ReleaseRow::from).collect(),
         pending: Vec::new(),
+        allowed: run.allowed,
         dry_run: args.dry_run(),
     })
 }
@@ -386,6 +391,7 @@ fn publish_plan_report(
                 })
             })
             .collect(),
+        allowed: Vec::new(),
         dry_run: false,
     })
 }
