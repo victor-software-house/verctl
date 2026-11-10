@@ -161,6 +161,16 @@ fn a_bun_package_that_moves_is_a_change() {
     assert_eq!(changes, [Change::Changed("is-number".to_owned())]);
 }
 
+/// A member renamed in the lock is a change, even at the same path.
+#[test]
+fn a_renamed_bun_member_is_a_change() {
+    let before = read("workspace.before.bun.lock");
+    let after = before.replace(r#""name": "a","#, r#""name": "renamed","#);
+    assert_ne!(before, after);
+    let changes = parse(Format::Bun, &before).compare(&parse(Format::Bun, &after));
+    assert_eq!(changes, [Change::Changed("packages/a".to_owned())]);
+}
+
 #[test]
 fn npm_records_a_member_by_its_folder() {
     let before = parse(Format::Npm, &read("workspace.before.package-lock.json"));

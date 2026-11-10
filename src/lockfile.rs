@@ -183,7 +183,9 @@ impl Lockfile {
                     removed.insert(old.label.clone());
                 }
                 Some(new) if new == old => {}
-                Some(new) if new.member && old.member && new.rest == old.rest => {
+                Some(new)
+                    if new.member && old.member && new.name == old.name && new.rest == old.rest =>
+                {
                     changes.push(Change::Member {
                         label: new.label.clone(),
                         name: new.name.clone(),
@@ -216,7 +218,10 @@ impl Lockfile {
     }
 }
 
-/// `Cargo.lock`: `[[package]]` tables. A member has no `source`. A
+/// `Cargo.lock`: `[[package]]` tables. A member has no `source`, and neither
+/// has a path dependency outside the workspace, so both read as members here.
+/// The content check explains a member's move only by a version the plan
+/// moves, so a path dependency that moves still fails there. A
 /// dependency reference is `name`, `name version`, or `name version
 /// (source)`; a reference to a member drops its version.
 fn parse_cargo(text: &str) -> Result<Lockfile> {
