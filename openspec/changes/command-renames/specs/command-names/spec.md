@@ -11,15 +11,21 @@ follow-up commands under `after`.
 - **WHEN** `.changeset/fix.md` names `demo: patch` and `verctl version --dry-run --format json` runs
 - **THEN** the report has an `after` array and no `next` field
 
-### Requirement: The pins rewrite is the render command
+### Requirement: The render command writes pins and served files
 
-`verctl render` SHALL rewrite each `pins` entry to the versions on HEAD and
-take every flag the pins rewrite took in verctl 0.7.
+`verctl render` SHALL rewrite each `pins` entry, then render every template
+in `.ctl/templates/`, at the versions on HEAD. It SHALL take every flag the
+pins rewrite took in verctl 0.7.
 
 #### Scenario: A dry run
 
 - **WHEN** `.ctl/ver.yaml` declares a `pins` entry for `mise.release.toml` and `verctl render --dry-run` runs
 - **THEN** it lists `mise.release.toml` and writes nothing
+
+#### Scenario: A served file
+
+- **WHEN** `.ctl/templates/ver.jinja` renders `tasks/ver/ver` and `verctl render` runs
+- **THEN** `tasks/ver/ver` holds the template's output at the versions on HEAD
 
 ### Requirement: A removed verb names its replacement
 

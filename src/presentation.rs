@@ -427,10 +427,10 @@ pub(super) struct RenderReport {
 impl Present for RenderReport {
     fn present(&self) -> Document {
         if self.files.is_empty() {
-            return Document::new().fields(Fields::new().row("pins", "none"));
+            return Document::new().fields(Fields::new().row("files", "none"));
         }
         let fields = self.files.iter().fold(Fields::new(), |fields, file| {
-            fields.row("pin", file.clone())
+            fields.row("file", file.clone())
         });
         Document::new().fields(fields)
     }

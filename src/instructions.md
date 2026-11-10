@@ -22,7 +22,7 @@ completion bootstrap.
 | `check` | — | Validate fragments, or `--versions` against the default branch |
 | `version` | — | Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews |
 | `publish` | — | Publish the versions on HEAD (cargo / bun + GitHub Release) |
-| `render` | — | Rewrite collocated tool pins to the versions on HEAD |
+| `render` | — | Rewrite pins and render served templates at the versions on HEAD |
 | `assets` | — | Plan or build native GitHub Release tarballs declared under `assets` |
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
 | `docs` | — | Wait for docs.rs to build each crates.io crate released at HEAD |
@@ -74,6 +74,15 @@ the key does nothing once the package has released. `check` plans the
 pending fragments against `.ctl/ver.yaml` the way `version` does, so a
 repo that runs it in its verify task fails the pull request that adds
 such a fragment.
+
+`check` also renders every template and rewrites every `pins` entry in
+memory, at the versions the manifests hold, with or without fragments.
+It fails on each served file whose bytes differ, naming the file and
+its template, and on each pin that names another version or whose
+pattern no longer matches. `verctl render` writes what `check`
+compares, so it fixes a hand edit and a template change alike. A file
+that a template renders and a `pins` entry also names has two owners:
+`version`, `check`, and `render` refuse it before writing anything.
 
 Write the fragment on the same PR that ships the behavior. Do not
 save them up for a release dump.
@@ -210,8 +219,9 @@ tarball could only ever run the previous release, which is exactly
 when new behaviour is needed. Consumers run their pin, because the
 verctl they install is independent of the version they release.
 `verctl render` rewrites collocated `github:…/verctl` entries (and
-`?ref=v…` includes) to the versions on HEAD; `version` calls it, so
-the Version PR commit carries them.
+`?ref=v…` includes) and renders every template, at the versions on
+HEAD. `version` does the same at the versions it writes, so the
+Version PR commit carries them.
 
 A package's `path` names the file that holds its version. `Cargo.toml`,
 `package.json`, and `pyproject.toml` need no driver: `version` rewrites

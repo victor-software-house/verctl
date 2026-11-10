@@ -31,12 +31,28 @@ manifest holds.
 
 ### Requirement: A served file has one owner
 
-Loading `.ctl/ver.yaml` SHALL fail when a template's target is also the file
-of a `pins` entry. The message SHALL name the file, the template, and the
-`pins` entry.
+`verctl version`, `verctl check`, and `verctl render` SHALL fail before
+writing anything when a template's target is also the file of a `pins`
+entry. The message SHALL name the file, the template, and the `pins` entry.
 
 #### Scenario: A template and a pins entry claim one file
 
-- **WHEN** `.ctl/templates/tools.toml.jinja` renders `tools.toml` and a `pins` entry names `tools.toml`
-- **THEN** `verctl status` exits non-zero before writing anything
+- **WHEN** `.ctl/templates/tools.toml.jinja` renders `tools.toml`, a `pins` entry names `tools.toml`, a fragment bumps its package, and `verctl version` runs
+- **THEN** it exits non-zero before writing anything
 - **AND** the message names `tools.toml`, the template, and the `pins` entry
+
+### Requirement: render fixes what check refuses
+
+`verctl render` SHALL rewrite every `pins` entry and render every template
+at the versions the manifests hold, and the message of a failed `check`
+SHALL name `verctl render`.
+
+#### Scenario: A hand edit reverted
+
+- **WHEN** `tasks/ver/ver` was edited by hand, `verctl check` fails, and `verctl render` runs
+- **THEN** `tasks/ver/ver` holds its template's output again and `verctl check` exits zero
+
+#### Scenario: A template changed with no fragment pending
+
+- **WHEN** `.ctl/templates/ver.jinja` is edited, `.changeset/` is empty, and `verctl render` runs
+- **THEN** `tasks/ver/ver` holds the new output and `verctl check` exits zero

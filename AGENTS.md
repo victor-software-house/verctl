@@ -69,6 +69,11 @@ not followed, and outside the source tree was never ours to render. A served
 mise task execs its tool from PATH: `mise where` reads the surrounding config,
 so it ignores the task's own `#MISE tools` pin.
 
+`check` renders every template and rewrites every pin in memory at the versions
+the manifests hold, and fails on each file that differs. `render` writes the
+same bytes, so it is the one fix. A file that a template and a `pins` entry both
+claim is refused wherever templates render, before any write.
+
 Anything a repo or a template declares is **one struct**, parsed once at the
 boundary and validated there, never a series of lookups with conversions at use
 sites.

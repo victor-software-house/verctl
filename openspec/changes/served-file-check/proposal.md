@@ -10,7 +10,7 @@ by hand passes every pull request and is overwritten at the next release,
 or ships wrong when no release touches it.
 
 A file that a template renders and a `pins` entry also names has two owners.
-`prepare` rewrites pins first and renders templates second, so the template
+`version` rewrites pins first and renders templates second, so the template
 overwrites the pin's edit without a word.
 
 The operator placed this check in the 0.8.0 minor on 2026-11-09, because it
@@ -25,15 +25,19 @@ Queue row: VER-020.
    its template. It does so with or without fragments.
 2. **BREAKING:** `verctl check` fails when a `pins` entry no longer matches
    at its declared count, or holds a version other than the one on HEAD.
-3. **BREAKING:** loading `.ctl/ver.yaml` fails when a template's target is
-   also a `pins` file. The message names the file and both declarations.
-4. `check --versions` is unchanged.
+3. **BREAKING:** `version`, `check`, and `render` fail before writing
+   anything when a template's target is also a `pins` file. The message
+   names the file and both declarations.
+4. **BREAKING:** `verctl render` rewrites the `pins` entries, then renders
+   every template, at the versions on HEAD. It writes what `check`
+   compares, so it is the one command that fixes a failed check.
+5. `check --versions` is unchanged.
 
 ## Impact
 
-1. Code: `src/main.rs` (`check_report`), `src/templates.rs`, `src/pins.rs`,
-   `src/config.rs`.
+1. Code: `src/main.rs` (`check_report`, `render_report`),
+   `src/templates.rs`, `src/pins.rs`.
 2. Docs: `docs/served-files.md` section 6 becomes true; `src/instructions.md`,
    `skills/verctl/SKILL.md`, and `AGENTS.md` say what `check` verifies.
 3. A repository with a hand-edited served file fails `check` on its next pull
-   request. The fix is to edit the template and run `verctl version`.
+   request. The fix is `verctl render`.

@@ -24,7 +24,8 @@ Queue row: VER-091.
    human view.
 3. **BREAKING:** `verctl pin` becomes `verctl render`, with the same flags
    and behaviour: it rewrites the `pins` entries to the versions on HEAD.
-   Rendering templates through `ctl_core::served` stays out of this change.
+   [served-file-check](../served-file-check/proposal.md) adds template
+   rendering to it. Rendering through `ctl_core::served` stays out.
 4. **BREAKING:** `verctl prepare` and `verctl pin` stay as hidden commands
    that exit 2 and name the new verb. They are not aliases and run nothing.
 5. **BREAKING (library):** `verctl::cli::Command::Prepare` becomes

@@ -24,12 +24,13 @@ none, since both exist only to fail.
 The report is untagged JSON, so only the field name changes. The human view
 labels the same rows `after`. No other report field is renamed.
 
-## 3. `render` keeps `pin`'s behaviour
+## 3. `render` writes every served file
 
-`render` rewrites the `pins` entries, as `pin` does today. It does not render
-`.ctl/templates/`, which `version` already does. Moving templates onto
-`ctl_core::served`, and making `render` the one verb that writes every served
-file, is a later change. The rename comes first so that callers move once.
+`render` rewrites the `pins` entries, as `pin` did, then renders
+`.ctl/templates/` at the versions on HEAD. The rendering half ships in
+[served-file-check](../served-file-check/design.md), which makes `check`
+fail on a served file that differs and needs one command that fixes it.
+Moving templates onto `ctl_core::served` is still a later change.
 
 ## 4. Config keys stay
 

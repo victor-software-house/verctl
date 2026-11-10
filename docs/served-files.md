@@ -229,10 +229,18 @@ written until every rewrite in it succeeds.
   never lists rendered outputs in `prepare.stage`.
 - **`version --dry-run` / `--preview`**: runs the same validation and writes
   nothing.
-- **`check`** (every PR and push): patterns still match at their declared
-  arity, and every served file still equals what its template renders at the
-  versions on HEAD. This is the gate that catches a served file edited by hand
-  instead of through its template.
+- **`check`** (every PR and push, with or without fragments): patterns
+  still match at their declared arity, every pin names the version on HEAD,
+  and every served file still equals what its template renders at the
+  versions on HEAD. This is the gate that catches a served file edited by
+  hand instead of through its template. One run names every file that
+  differs.
+- **`render`**: rewrites the pins, then renders the templates, at the
+  versions on HEAD. It writes exactly what `check` compares, so it is the
+  fix for every file `check` names.
+- **One owner**: a file that a template renders and a `pins` entry also
+  names fails `version`, `check`, and `render` before anything is written,
+  because `version` would render over the pin's edit.
 
 ## 7. Adding, changing, and retiring a site
 
@@ -244,5 +252,5 @@ written until every rewrite in it succeeds.
 | retire | delete the template | drop the id from the file, and the pattern once nothing lists it |
 | carry in a second file | a second template | list the same id on the second `pins` entry |
 
-A hand edit to a rendered file is a mistake `check` reports, not a supported
-workflow: the template is the source.
+A hand edit to a rendered file is a mistake `check` reports and `render`
+reverts, not a supported workflow: the template is the source.
