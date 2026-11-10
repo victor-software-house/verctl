@@ -633,7 +633,12 @@ pub struct Config {
     pub ci: BTreeMap<String, Job>,
     /// Work done after the version bumps.
     #[serde(default)]
+    #[garde(custom(no_version_label))]
     pub prepare: Prepare,
+    /// The Version PR's title and commit message. Omit for
+    /// `chore(release): version packages` as both.
+    #[serde(default)]
+    pub proposal: Proposal,
     /// Whose names changelog entries never credit. Omit to list no one.
     #[serde(default)]
     pub changelog: Changelog,
@@ -1168,7 +1173,10 @@ impl Changelog {
 }
 
 /// Extra work after version bumps, committed on the Version PR.
+///
+/// Unknown keys fail the load, as in every other block.
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct Prepare {
     /// argv after all bumps (e.g. `["mise", "run", "version-sync"]`).
@@ -1179,24 +1187,64 @@ pub struct Prepare {
     /// Collect gitignored paths that match `stage`. Off by default.
     #[serde(default)]
     pub stage_ignored: bool,
-    /// Label `prepare --pr` applies, for readers of the pull request list.
-    /// `check --versions` never reads it: a Version PR is known by its head
-    /// repository, head branch, and base.
-    pub version_label: Option<String>,
+    /// Removed: the Version PR is no longer labeled, since nothing reads the
+    /// label. Kept only so a file that still sets it fails the load with a
+    /// message that says to delete it, instead of serde's bare unknown-field
+    /// error. Unset means the file is current.
+    #[serde(default)]
+    version_label: Option<serde::de::IgnoredAny>,
 }
 
-impl Prepare {
-    /// The label used when `version_label` is unset or empty.
-    pub const DEFAULT_VERSION_LABEL: &'static str = "verctl:version";
+/// The Version PR's title and commit message.
+///
+/// Both default to what verctl wrote before the block existed, so a
+/// repository that sets neither sees the same pull request.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[non_exhaustive]
+pub struct Proposal {
+    /// The pull request title. Unset or empty means
+    /// [`Proposal::DEFAULT_TITLE`].
+    #[serde(default)]
+    pub title: Option<String>,
+    /// The commit message on the Version PR branch. Unset or empty means the
+    /// resolved title.
+    #[serde(default)]
+    pub commit_message: Option<String>,
+}
 
-    /// The Version PR label: the configured one, or the default.
+impl Proposal {
+    /// The title used when `title` is unset or empty.
+    pub const DEFAULT_TITLE: &'static str = "chore(release): version packages";
+
+    /// The resolved title: the configured one, or [`Proposal::DEFAULT_TITLE`].
     #[must_use]
-    pub fn version_label(&self) -> &str {
-        self.version_label
+    pub fn title(&self) -> &str {
+        self.title
             .as_deref()
-            .filter(|label| !label.is_empty())
-            .unwrap_or(Self::DEFAULT_VERSION_LABEL)
+            .filter(|title| !title.is_empty())
+            .unwrap_or(Self::DEFAULT_TITLE)
     }
+
+    /// The resolved commit message: the configured one, or the title.
+    #[must_use]
+    pub fn commit_message(&self) -> &str {
+        self.commit_message
+            .as_deref()
+            .filter(|message| !message.is_empty())
+            .unwrap_or_else(|| self.title())
+    }
+}
+
+/// `prepare.version_label` labeled the Version PR until nothing read the
+/// label; a file that still sets it is told to delete it.
+fn no_version_label(prepare: &Prepare, _: &Config) -> garde::Result {
+    if prepare.version_label.is_some() {
+        return Err(garde::Error::new(
+            "prepare.version_label is removed: the Version PR is no longer labeled; delete this key",
+        ));
+    }
+    Ok(())
 }
 
 impl Config {
@@ -2008,5 +2056,95 @@ mod tests {
                 "{scenario}: {error:#}"
             );
         }
+    }
+
+    const ONE_PACKAGE: &str = indoc! {"
+        packages:
+          - name: demo
+            path: Cargo.toml
+    "};
+
+    #[test]
+    fn a_proposal_left_out_is_todays_title_and_message() {
+        let config = load(ONE_PACKAGE).unwrap();
+        assert_eq!(config.proposal.title(), "chore(release): version packages");
+        assert_eq!(
+            config.proposal.commit_message(),
+            "chore(release): version packages"
+        );
+    }
+
+    #[test]
+    fn a_title_alone_is_also_the_commit_message() {
+        let config = load(&formatdoc! {"
+            {ONE_PACKAGE}proposal:
+              title: 'chore: release'
+        "})
+        .unwrap();
+        assert_eq!(config.proposal.title(), "chore: release");
+        assert_eq!(config.proposal.commit_message(), "chore: release");
+    }
+
+    #[test]
+    fn an_empty_title_and_message_are_unset() {
+        let config = load(&formatdoc! {"
+            {ONE_PACKAGE}proposal:
+              title: ''
+              commit_message: ''
+        "})
+        .unwrap();
+        assert_eq!(config.proposal.title(), "chore(release): version packages");
+        assert_eq!(
+            config.proposal.commit_message(),
+            "chore(release): version packages"
+        );
+    }
+
+    #[test]
+    fn a_commit_message_differs_from_the_title() {
+        let config = load(&formatdoc! {"
+            {ONE_PACKAGE}proposal:
+              title: 'chore: release'
+              commit_message: 'chore: release [skip ci]'
+        "})
+        .unwrap();
+        assert_eq!(config.proposal.title(), "chore: release");
+        assert_eq!(config.proposal.commit_message(), "chore: release [skip ci]");
+    }
+
+    #[test]
+    fn a_version_label_is_refused_with_what_to_do() {
+        let error = load(&formatdoc! {"
+            {ONE_PACKAGE}prepare:
+              version_label: release
+        "})
+        .unwrap_err();
+        let error = format!("{error:#}");
+        assert!(
+            error.contains("prepare.version_label is removed"),
+            "{error}"
+        );
+        assert!(error.contains("no longer labeled"), "{error}");
+        assert!(error.contains("delete this key"), "{error}");
+    }
+
+    #[test]
+    fn an_unknown_key_under_prepare_fails() {
+        let error = load(&formatdoc! {"
+            {ONE_PACKAGE}prepare:
+              stages: [docs]
+        "})
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("stages"), "{error:#}");
+    }
+
+    #[test]
+    fn an_unknown_key_under_proposal_fails() {
+        let error = load(&formatdoc! {"
+            {ONE_PACKAGE}proposal:
+              label: release
+        "})
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("label"), "{error:#}");
     }
 }

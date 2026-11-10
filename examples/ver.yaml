@@ -67,6 +67,12 @@ prepare:
   after: [mise, run, version-sync]
   stage: ["packages/*/src/version.rs"]
 
+# The Version PR's title and commit message. Omit both for
+# `chore(release): version packages`; an unset message is the title.
+proposal:
+  title: "chore(release): version packages"
+  # commit_message: "chore(release): version packages [skip ci]"
+
 # Machines are declared once. The key names one, `labels` is how GitHub finds
 # it — every label at once, so `big` is a single machine carrying three labels,
 # not three machines. verctl ships no built-in machine names: this section is

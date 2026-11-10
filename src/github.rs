@@ -341,40 +341,6 @@ pub fn default_branch_of(raw: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Create the label if needed, then apply it to the Version PR.
-///
-/// An empty `label` does nothing. A label that already exists is not an
-/// error.
-///
-/// # Errors
-///
-/// Returns an error when the GitHub client cannot be built, creating the label
-/// fails for a reason other than it already existing, or applying it to
-/// pull request `number` fails.
-pub fn ensure_version_label(token: &str, repo: &Repo, number: u64, label: &str) -> Result<()> {
-    if label.is_empty() {
-        return Ok(());
-    }
-    let label = label.to_owned();
-    block(async {
-        let crab = client(token)?;
-        let issues = crab.issues(&repo.owner, &repo.name);
-        match issues
-            .create_label(&label, "6B6B92", "verctl Version PR")
-            .await
-        {
-            Ok(_) => {}
-            Err(octocrab::Error::GitHub { source, .. }) if source.status_code.as_u16() == 422 => {}
-            Err(error) => return Err(error).context("create version label"),
-        }
-        issues
-            .add_labels(number, &[label])
-            .await
-            .context("label Version PR")?;
-        Ok(())
-    })
-}
-
 /// Create `tag` at `sha` if it is missing. Returns the release HTML URL.
 ///
 /// An existing release is not trusted: GitHub's `target_commitish` on the

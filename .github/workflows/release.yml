@@ -83,14 +83,6 @@ on:
           Empty uses the verctl the caller's ver task pins.
         type: string
         default: ""
-      title:
-        description: Version PR title. Empty means verctl's default.
-        type: string
-        default: ""
-      commit-message:
-        description: Version PR commit message. Empty means the title.
-        type: string
-        default: ""
       registry-token-env:
         description: >-
           The variable the publisher reads the registry token from, such as
@@ -205,6 +197,20 @@ jobs:
         run: |
           chmod +x "${BUILD_DIR}/verctl"
           echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
+      - name: Require verctl 0.8.0 or later
+        # The caller's pin chooses verctl, apart from this workflow's ref.
+        # A build from this run already matches the workflow, so it skips.
+        if: inputs.verctl-artifact == ''
+        env:
+          MINIMUM: 0.8.0
+        run: |
+          installed="$(mise run --quiet ver --version)"
+          installed="${installed##* }"
+          lowest="$(printf '%s\n' "${MINIMUM}" "${installed}" | sort -V | head -n 1)"
+          if [ "${lowest}" != "${MINIMUM}" ]; then
+            echo "::error::verctl ${installed} is older than ${MINIMUM}, the minimum this release workflow needs. Move the verctl pin and the workflow ref together."
+            exit 1
+          fi
       - name: Plan
         id: plan
         env:
@@ -295,6 +301,20 @@ jobs:
         run: |
           chmod +x "${BUILD_DIR}/verctl"
           echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
+      - name: Require verctl 0.8.0 or later
+        # The caller's pin chooses verctl, apart from this workflow's ref.
+        # A build from this run already matches the workflow, so it skips.
+        if: inputs.verctl-artifact == ''
+        env:
+          MINIMUM: 0.8.0
+        run: |
+          installed="$(mise run --quiet ver --version)"
+          installed="${installed##* }"
+          lowest="$(printf '%s\n' "${MINIMUM}" "${installed}" | sort -V | head -n 1)"
+          if [ "${lowest}" != "${MINIMUM}" ]; then
+            echo "::error::verctl ${installed} is older than ${MINIMUM}, the minimum this release workflow needs. Move the verctl pin and the workflow ref together."
+            exit 1
+          fi
       # crates.io matches the token's repository and the caller's workflow
       # file against the crate's trusted publishers, and the action's post
       # step revokes the token when the job ends.
@@ -416,6 +436,20 @@ jobs:
         run: |
           chmod +x "${BUILD_DIR}/verctl"
           echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
+      - name: Require verctl 0.8.0 or later
+        # The caller's pin chooses verctl, apart from this workflow's ref.
+        # A build from this run already matches the workflow, so it skips.
+        if: inputs.verctl-artifact == ''
+        env:
+          MINIMUM: 0.8.0
+        run: |
+          installed="$(mise run --quiet ver --version)"
+          installed="${installed##* }"
+          lowest="$(printf '%s\n' "${MINIMUM}" "${installed}" | sort -V | head -n 1)"
+          if [ "${lowest}" != "${MINIMUM}" ]; then
+            echo "::error::verctl ${installed} is older than ${MINIMUM}, the minimum this release workflow needs. Move the verctl pin and the workflow ref together."
+            exit 1
+          fi
       - name: Build and upload
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -496,6 +530,20 @@ jobs:
         run: |
           chmod +x "${BUILD_DIR}/verctl"
           echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
+      - name: Require verctl 0.8.0 or later
+        # The caller's pin chooses verctl, apart from this workflow's ref.
+        # A build from this run already matches the workflow, so it skips.
+        if: inputs.verctl-artifact == ''
+        env:
+          MINIMUM: 0.8.0
+        run: |
+          installed="$(mise run --quiet ver --version)"
+          installed="${installed##* }"
+          lowest="$(printf '%s\n' "${MINIMUM}" "${installed}" | sort -V | head -n 1)"
+          if [ "${lowest}" != "${MINIMUM}" ]; then
+            echo "::error::verctl ${installed} is older than ${MINIMUM}, the minimum this release workflow needs. Move the verctl pin and the workflow ref together."
+            exit 1
+          fi
       - name: Wait for docs.rs
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -549,6 +597,20 @@ jobs:
         run: |
           chmod +x "${BUILD_DIR}/verctl"
           echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
+      - name: Require verctl 0.8.0 or later
+        # The caller's pin chooses verctl, apart from this workflow's ref.
+        # A build from this run already matches the workflow, so it skips.
+        if: inputs.verctl-artifact == ''
+        env:
+          MINIMUM: 0.8.0
+        run: |
+          installed="$(mise run --quiet ver --version)"
+          installed="${installed##* }"
+          lowest="$(printf '%s\n' "${MINIMUM}" "${installed}" | sort -V | head -n 1)"
+          if [ "${lowest}" != "${MINIMUM}" ]; then
+            echo "::error::verctl ${installed} is older than ${MINIMUM}, the minimum this release workflow needs. Move the verctl pin and the workflow ref together."
+            exit 1
+          fi
       - name: Mint the Version PR token
         id: app-token
         if: env.HAS_APP == 'true'
@@ -563,6 +625,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
           VERCTL_PR: "true"
-          VERCTL_PR_TITLE: ${{ inputs.title }}
-          VERCTL_COMMIT_MESSAGE: ${{ inputs.commit-message }}
         run: mise run ver prepare

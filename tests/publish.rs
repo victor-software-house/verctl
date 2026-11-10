@@ -439,6 +439,7 @@ fn publish_with_matching_changelog_asks_for_token() {
         "},
     )
     .unwrap();
+    common::on_default_branch(root.path());
     let output = common::verctl()
         .current_dir(root.path())
         .env_remove("GITHUB_TOKEN")
@@ -517,6 +518,7 @@ fn publish_asks_no_changelog_of_a_package_at_0_0_0() {
         "#},
     )
     .unwrap();
+    common::on_default_branch(root.path());
     let output = common::verctl()
         .current_dir(root.path())
         .env_remove("GITHUB_TOKEN")
