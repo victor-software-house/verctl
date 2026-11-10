@@ -12,8 +12,8 @@ indirect signals:
    stderr.
 
 The prior art in [research.md][research] shows the same failure in the most
-used tools: each marks a release done from one signal (a label, a tag, a
-registry entry) and loses a step after a partial failure.
+used tools. Each marks a release done from one signal, such as a label, a
+tag, or a registry entry. Each then loses a step after a partial failure.
 
 Queue row: VER-011. This change is one part of
 [release-state-machine][rsm], which holds the shared goals, decisions, and

@@ -30,7 +30,7 @@ change with its own proposal:
    commands, and the workflows.
 2. [release-completion][rc]: a release that does not publish, drafts, and a
    first publication.
-3. [version-pr-identity][vpi]: what identifies a Version PR, and the proposal
+3. [`version-pr-identity`][vpi]: what identifies a Version PR, and the proposal
    branch.
 4. [version-pr-content][vpc]: what a Version PR may change.
 5. [building-blocks][bb]: the blocks, providers, steps, and the dependency
@@ -100,7 +100,7 @@ Removed, each with what replaces it:
 | `publishers`, `packages[].publisher`, `noun`, `publish` argv | the Registry block; `packages[].publish` naming a step |
 | `packages[].registry` as alias or URL, `config_name` | `registries` named once |
 | `prepare.after`, `prepare.stage`, `prepare.stage_ignored` | `version` steps with `writes` |
-| `prepare.version_label` | Version PR identity ([version-pr-identity][vpi]) |
+| `prepare.version_label` | Version PR identity ([`version-pr-identity`][vpi]) |
 | `pins`, `patterns` | templates |
 | `tags.template` | `tags` |
 | top-level `assets` | `packages[].assets` |
@@ -158,8 +158,8 @@ Each decision names the alternatives and why they lost.
    another commit lands. A merge-commit trailer lost because squash, merge, and
    rebase merges treat trailers differently.
 3. **Version PR identity is head repository, head branch, and base; content
-   is verified too.** See [version-pr-identity][vpi] for the four alternatives.
-4. **One Version PR per base, on `verctl/release/<base>`.** See [version-pr-identity][vpi].
+   is verified too.** See [`version-pr-identity`][vpi] for the four alternatives.
+4. **One Version PR per base, on `verctl/release/<base>`.** See [`version-pr-identity`][vpi].
 5. **Push to the release branch triggers release, then propose.** Alternative:
    publish on `pull_request: closed` from the proposal branch. Lost: that event
    happens once, so a failed run needs a manual dispatch on the right commit.
@@ -201,7 +201,7 @@ Each decision names the alternatives and why they lost.
 | W2 | driver and package `after`, printed in a `next` row | removed; the Lockfile block runs and is reported under `after` |
 | W3 | dead `drivers.toml` | deleted |
 | W4 | `prepare.stage_ignored` | a step's `writes` names exactly what it may change ([building-blocks][bb]) |
-| W5 | the label race and the `labeled`/`unlabeled` CI trigger (VER-029) | Version PR identity ([version-pr-identity][vpi]); the trigger types go |
+| W5 | the label race and the `labeled`/`unlabeled` CI trigger (VER-029) | Version PR identity ([`version-pr-identity`][vpi]); the trigger types go |
 | W6 | the guard exemption on the `version-packages` branch | identity plus content ([version-pr-content][vpc]) |
 | W7 | `head.ref == 'version-packages'` in every publish workflow | push-to-branch release ([derived-release-state][drs]) |
 | W8 | a Version PR never closes; a fragment stays on disk when no pending fragment gives any of its packages a real bump | `propose` closes; the version step consumes every pending fragment, whatever its bumps |

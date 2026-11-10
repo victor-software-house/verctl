@@ -9,7 +9,7 @@ second checkout of verctl.
 
 The operator ruled on 2026-10-15 that the minimal slice B of
 [release-state-machine][rsm] is unpaused. This part is its proposal branch
-`verctl/release/<base>`, which [version-pr-identity][vpi] states. Queue row: VER-066. This change was
+`verctl/release/<base>`, which [`version-pr-identity`][vpi] states. Queue row: VER-066. This change was
 split from [reusable-release-workflow][rrw] at its capability boundaries; it ships
 as a patch.
 

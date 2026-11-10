@@ -3,7 +3,7 @@
 ## Why
 
 A package whose files changed with no fragment naming it is released without the change, and nothing reports it.
-[`package-discovery`](../package-discovery/proposal.md) finds the packages; this change says which files each one owns, so `check` can tell a changed package from an unchanged one.
+[`package-discovery`](../package-discovery/proposal.md) finds the packages; this change records which files each one owns, so `check` can tell a changed package from an unchanged one.
 
 Queue row: VER-083. This change was split from `package-discovery` at one boundary of its work: that change finds and names the packages, and this one maps files to them.
 

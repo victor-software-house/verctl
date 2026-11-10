@@ -3,12 +3,12 @@
 ## Why
 
 Identity alone trusts whoever pushes to the proposal branch, and a label or a
-branch name says nothing about what a Version PR changes. A hand edit can ride
+branch name shows nothing about what a Version PR changes. A hand edit can ride
 a release.
 
 Queue row: VER-011. This change is one part of
 [release-state-machine][rsm]; who may open a Version PR is
-[version-pr-identity][vpi]. It folds in an approved intent of the plan once
+[`version-pr-identity`][vpi]. It folds in an approved intent of the plan once
 held on `feat/011-refresh-lockfile`: the version step refreshes lockfiles
 itself.
 

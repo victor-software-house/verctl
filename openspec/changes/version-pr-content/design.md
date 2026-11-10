@@ -6,13 +6,13 @@ A Version PR's diff is checked today only by a label and a branch name, so a
 hand edit can ride a release. This change requires every Version PR's diff to
 be the version step applied to its base, and nothing else. It is one part of
 [release-state-machine][rsm]; who may open a Version PR is
-[version-pr-identity][vpi].
+[`version-pr-identity`][vpi].
 
 ## 1. Identity and content are both required
 
 `check` applies two independent rules to every pull request:
 
-1. **Identity.** Only a pull request that is a Version PR by [version-pr-identity][vpi] may change a
+1. **Identity.** Only a pull request that is a Version PR by [`version-pr-identity`][vpi] may change a
    manifest version or add a CHANGELOG section. Any pull request may add or
    remove a fragment. A pull request that changes whether a package publishes
    must also add a fragment for that package, so the next Version PR moves it,

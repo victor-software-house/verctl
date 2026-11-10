@@ -4,10 +4,13 @@
 
 A repository with no manifest cannot release through verctl at all.
 The templates repository has been tagged by hand 75 times, `v0.0.1` to `v0.0.75`, two of the tags lightweight, with no Release.
+
 [`version-files`](../version-files/proposal.md) gives such a repository a version source, a `VERSION` file or a marker line.
 A package still has to name that file, needs a publisher where nothing uploads, and single-file packages in one directory would share a changelog.
 
-Queue row: VER-083. This change was split from `version-files` at one boundary of its work: that change reads and writes each version source, and this one resolves which package uses which file.
+Queue row: VER-083. This change was split from `version-files` at one boundary of its work.
+That change reads and writes each version source.
+This one resolves which package uses which file.
 
 ## What Changes
 

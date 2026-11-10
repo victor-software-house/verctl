@@ -3,8 +3,10 @@
 The pull request's CI verifies every compile, format, lint, and test task.
 On 2026-11-09 the operator limited 0.8.0 to the breaks that can be built soon; the larger rewrites ship later in increments (operator, 2026-11-09).
 The 0.8.0 slices are the changes [version-pr-proposal](../version-pr-proposal/proposal.md), [command-renames](../command-renames/proposal.md), [served-file-check](../served-file-check/proposal.md), and [release-commit-proofs](../release-commit-proofs/proposal.md), plus VER-036.
-Section 5 releases 0.8.0. Sections 1 to 3 and 6 moved to the parts, which keep the task numbers: [derived-release-state](../derived-release-state/tasks.md), [release-completion](../release-completion/tasks.md), [version-pr-identity](../version-pr-identity/tasks.md), [version-pr-content](../version-pr-content/tasks.md), [building-blocks](../building-blocks/tasks.md), and [built-in-ecosystems](../built-in-ecosystems/tasks.md).
+Section 5 releases 0.8.0. Sections 1 to 3 and 6 moved to six parts, which keep the task numbers.
+The parts are [derived-release-state](../derived-release-state/tasks.md), [release-completion](../release-completion/tasks.md), [`version-pr-identity`](../version-pr-identity/tasks.md), [version-pr-content](../version-pr-content/tasks.md), [building-blocks](../building-blocks/tasks.md), and [built-in-ecosystems](../built-in-ecosystems/tasks.md).
 0.4.0 to 0.7.4 shipped from `main` before this change; the parts of it they carried are checked in each part with their evidence, and [audit.md](audit.md) lists the state of every breaking item.
+
 State notes are from the code on `main` at [cb1be28][main], read on 2026-11-09 (UTC).
 
 ## 0. Decide

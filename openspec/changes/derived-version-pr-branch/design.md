@@ -14,11 +14,11 @@ branch and moves auto-merge into Rust. It is one of the parts
 branch the Version PR targets. `check --versions` exempts any branch named
 `verctl/release/<base>` locally, and in CI a pull request with that head
 branch, this repository as its head repository, and `<base>` as its current
-base ([version-pr-identity][vpi] section 1). The branch is derived, not
+base ([`version-pr-identity`][vpi] section 1). The branch is derived, not
 configured.
 
 Alternative: a configurable branch name. Lost: the name identifies the Version
-PR, and [version-pr-identity][vpi] section 3 already chose the derived
+PR, and [`version-pr-identity`][vpi] section 3 already chose the derived
 form.
 
 ## 2. Auto-merge in Rust

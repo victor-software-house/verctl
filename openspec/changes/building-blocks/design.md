@@ -5,9 +5,10 @@
 The stack is guessed from the manifest file name in four places, the lockfile
 refresh is decided in three, and the only extension point is
 `prepare.after`, whose effect is unknown. This change builds a release from
-blocks with one contract each, and makes steps the extension unit. It is one
-part of [release-state-machine][rsm]; the cargo and bun providers are
-[built-in-ecosystems][bie].
+blocks with one contract each, and makes steps the extension unit.
+
+This change is one part of [release-state-machine][rsm]. The cargo and bun
+providers are [built-in-ecosystems][bie].
 
 ## 1. Building blocks
 

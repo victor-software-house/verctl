@@ -23,9 +23,10 @@ The rest of that change stays paused.
 
 Queue rows: VER-066 and VER-074. This change holds the workflow and its
 callers. The rest of slice B is split into four changes, each with its own
-proposal: [registry-publish-check][rpc], [release-at-version-commit][ravc],
-[docs-build-check][docs], and [derived-version-pr-branch][dvpb]. None renames
-a command or changes `.ctl/ver.yaml`.
+proposal. They are [registry-publish-check][rpc],
+[release-at-version-commit][ravc], [docs-build-check][docs], and
+[derived-version-pr-branch][dvpb]. None renames a command or changes
+`.ctl/ver.yaml`.
 
 ## What Changes
 

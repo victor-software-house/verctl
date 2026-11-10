@@ -3,7 +3,7 @@
 ## Context
 
 A release that publishes nothing, a release with assets, and a package's first
-publication each end differently, and verctl must not wait on a fact that
+publication each end differently. verctl must not wait on a fact that
 cannot arrive. This change states how each completes. It is one part of
 [release-state-machine][rsm]; the stages and transitions it refers to are in
 [derived-release-state][drs].

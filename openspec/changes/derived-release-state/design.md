@@ -6,10 +6,11 @@ verctl keeps no model of a release. `publish` decides "this commit is a
 release" from a CHANGELOG heading and default-branch ancestry. Both stay true
 for every later commit, so a rerun can tag a commit that was never published.
 This change derives each release's state from facts on every run and makes
-each transition guarded and repeatable. It is one part of
-[release-state-machine][rsm], which holds the goals, the decisions, and the
-migration every part shares; how a release completes is
-[release-completion][rc].
+each transition guarded and repeatable.
+
+This change is one part of [release-state-machine][rsm], which holds the
+goals, the decisions, and the migration every part shares. How a release
+completes is [release-completion][rc].
 
 ## 1. Facts
 

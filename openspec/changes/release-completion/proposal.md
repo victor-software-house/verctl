@@ -37,7 +37,7 @@ None.
 
 1. Code: `src/release.rs` and `src/github.rs`.
 2. Ledger: PR 228 built a draft-and-finalize slice on the 0.7 schema and is
-   closed unmerged; the VER-011 notes list what to reuse from it.
+   closed unmerged. The VER-011 notes list what to reuse from it.
 
 [rsm]: ../release-state-machine/proposal.md
 [drs]: ../derived-release-state/proposal.md

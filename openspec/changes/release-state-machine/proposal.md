@@ -5,9 +5,11 @@
 verctl has no model of a release. Each command rebuilds the state it needs
 from indirect signals, and each gap has grown a workaround. An inventory of
 this repository and its five consumers found 27 of them, and 13 ledger rows
-that propose more of the same. One measured example: the stack is guessed
-from the manifest file name in four places, the tag shape is set in three,
-and the default branch comes from five inputs. Each part below names its own.
+that propose more of the same.
+
+One measured example: the stack is guessed from the manifest file name in
+four places. The tag shape is set in three, and the default branch comes from
+five inputs. Each part below names its own.
 
 Queue row: VER-011. This change replaces the plan held on
 `feat/011-refresh-lockfile` and folds in its two approved intents: the version
@@ -17,8 +19,8 @@ step refreshes lockfiles itself, and the report field `next` becomes `after`.
 
 This change holds what every part shares: the goals, `.ctl/ver.yaml`, the
 decisions, the workaround inventory, and the migration. Each part is its own
-change with its own proposal: [derived-release-state][drs],
-[release-completion][rc], [version-pr-identity][vpi],
+change with its own proposal. The parts are [derived-release-state][drs],
+[release-completion][rc], [`version-pr-identity`][vpi],
 [version-pr-content][vpc], [building-blocks][bb], and
 [built-in-ecosystems][bie].
 
@@ -51,8 +53,10 @@ Agreed already: templates only (design decision 14) and command renames
 (design decision 15). Each decision has a recommendation; the design gives
 the alternatives and trade-offs. The operator approved all eight as
 recommended on 2026-10-12 (VER-011 note) and confirms the 0.8.0 scope after
-the [audit](audit.md). Decisions 1 to 7 are stated in the part each belongs
-to. The note after each decision says what shipped code settled.
+the [audit](audit.md).
+
+Decisions 1 to 7 are stated in the part each belongs to. The note after each
+decision says what shipped code settled.
 
 8. Ship 0.4.0 from an integration branch `next`, then patches (design 4).
    Contradicted: 0.4.0 to 0.7.4 shipped from `main`, no `next` exists, and

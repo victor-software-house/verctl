@@ -13,7 +13,9 @@ for "already published", and creates the tag and the Release at HEAD.
 is paused. This change takes the part that needs no breaking change.
 
 This change holds the reusable workflow and its callers. The rest of the
-same slice is split into four changes of its own. The registry check is
+same slice is split into four changes of its own.
+
+The registry check is
 [registry-publish-check][rpc], and the release at a version commit is
 [release-at-version-commit][ravc]. The docs.rs check is
 [docs-build-check][docs], and the Version PR branch and auto-merge are

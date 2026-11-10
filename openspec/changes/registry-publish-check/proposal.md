@@ -7,7 +7,7 @@ published" from six substrings of its stderr. A rerun after a partial
 failure works only when the registry's wording matches.
 
 The operator ruled on 2026-10-15 that the minimal slice B of
-[release-state-machine][rsm] is unpaused, and this is its decision 9: the
+[release-state-machine][rsm] is unpaused. This part is its decision 9: the
 registry decides "published". Queue row: VER-066. This change was split from
 [reusable-release-workflow][rrw] at its capability boundaries; it ships as a patch.
 

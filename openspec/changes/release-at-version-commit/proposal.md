@@ -4,8 +4,8 @@
 
 `verctl publish` decides a release from the commit it runs on and creates the
 tag and the Release at HEAD. A rerun after later commits land can tag a commit
-that was never published, and a run that finds nothing to do has no way to
-say so.
+that was never published. A run that finds nothing to do has no way to
+report that.
 
 The operator ruled on 2026-10-15 that the minimal slice B of
 [release-state-machine][rsm] is unpaused. This part is its release commit from

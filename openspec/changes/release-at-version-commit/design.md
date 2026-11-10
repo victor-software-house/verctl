@@ -5,9 +5,10 @@
 `verctl publish` decides "this commit is a release" from a CHANGELOG heading
 and default-branch ancestry, and creates the tag and the Release at HEAD. Both
 stay true for every later commit, so a rerun can tag a commit that was never
-published. This change publishes at the commit that set each version. It is
-one of the parts [reusable-release-workflow][rrw] was split into; the registry
-check it relies on is [registry-publish-check][rpc].
+published. This change publishes at the commit that set each version.
+
+It is one of the parts [reusable-release-workflow][rrw] was split into. The
+registry check it relies on is [registry-publish-check][rpc].
 
 ## 1. The version commit
 
