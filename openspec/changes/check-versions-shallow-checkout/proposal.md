@@ -3,13 +3,20 @@
 ## Why
 
 `verctl check --versions` compares each manifest to the merge-base of HEAD and the default branch, but it never fetches.
-The pull request checkout of `actions/checkout` is a depth-1 fetch of `refs/pull/<n>/merge`: there is no `origin/<base>`, and HEAD has no parents.
-The check fails there on every pull request with "cannot resolve the default branch (origin exists but origin/HEAD, origin/main, and origin/master are missing; fetch the default branch)".
+The pull request checkout of `actions/checkout` is a depth-1 fetch of `refs/pull/<n>/merge`.
+It holds no `origin/<base>`, and HEAD has no parents.
+
+The check fails there on every pull request with this error:
+
+> cannot resolve the default branch (origin exists but origin/HEAD, origin/main, and origin/master are missing; fetch the default branch)
+
 A repository whose shared `verify` adds the check, as ctl-core's `tasks/rust.toml` is about to, fails its Verify job on every pull request.
 verctl's own CI passed only because its verify job checks out with `fetch-depth: 0`.
-`verctl publish` already fetches the default branch history it needs; the check does not.
 
-Queue row: VER-076.
+`verctl publish` already fetches the default branch history it needs.
+The check does not.
+
+Queue row: [VER-076][ver-076].
 A patch: it changes behaviour only for runs that fail today, and adds no configuration key.
 
 ## What changes
@@ -24,3 +31,5 @@ A patch: it changes behaviour only for runs that fail today, and adds no configu
 
 1. `src/git.rs`, `src/github.rs`, and `src/versions.rs`.
 2. `src/instructions.md`, `.ctl/operator/instructions.md.jinja`, and `AGENTS.md`.
+
+[ver-076]: ../../../tasks.yaml

@@ -6,7 +6,7 @@ Loading `.ctl/ver.yaml` SHALL fail on a pattern whose `match` has no boundary on
 A side's literal is the text between `{version}` and the pattern's edge, on that side.
 A side SHALL be bounded when its literal holds at least one character that is not an ASCII digit, `.`, `-`, or `+`.
 
-The message SHALL name the pattern id and the side, and SHALL say what to change in `match` on that side.
+The message SHALL name the pattern id and the side, and SHALL show what to change in `match` on that side.
 
 #### Scenario: A match that ends at the placeholder
 
@@ -36,7 +36,8 @@ The message SHALL name the pattern id and the side, and SHALL say what to change
 
 ### Requirement: A digit next to the placeholder leaves a side open
 
-A side SHALL be open, whatever the rest of its literal holds, when its character next to `{version}` is an ASCII digit, or a `.` followed outward by an ASCII digit.
+A side SHALL be open when its character next to `{version}` is an ASCII digit, or a `.` followed outward by an ASCII digit.
+The rest of its literal does not change that.
 
 #### Scenario: A digit next to the placeholder
 

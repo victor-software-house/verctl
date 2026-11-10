@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: A vendored set declares its own version and names
+### Requirement: A vendored set declares a version and asset names
 
 `.ctl/ver.yaml` SHALL accept a `vendored` mapping whose keys name asset sets.
 Each set SHALL declare `version`, `dir`, `files`, and `targets`, and MAY declare `tag`, `archive`, `build`, and `notes`.
@@ -13,7 +13,13 @@ Each set SHALL declare `version`, `dir`, `files`, and `targets`, and MAY declare
 
 ### Requirement: A vendored set is validated at load
 
-The load SHALL fail when an `archive` template lacks `{id}` or does not end in `.tar.gz`, when `files` or `targets` is empty, or when `dir`, a `files` entry, or `notes` leaves the repository. The load SHALL also fail when a target's `runner` is not declared in `runners`, or when a set name, a target key, or `version` is empty, `.`, `..`, or holds `/` or `\`.
+The load SHALL fail in any of these cases:
+
+- an `archive` template lacks `{id}` or does not end in `.tar.gz`
+- `files` or `targets` is empty
+- `dir`, a `files` entry, or `notes` leaves the repository
+- a target's `runner` is not declared in `runners`
+- a set name, a target key, or `version` is empty, `.`, `..`, or holds `/` or `\`
 
 #### Scenario: Archive without the target
 
@@ -44,9 +50,10 @@ It SHALL fail naming the path when a listed file is missing after the build.
 - **WHEN** a set declares `dir: out/{id}` and `files: [lib/libexample.a, include, LICENSE]`, and those paths exist under `out/linux-x64`
 - **THEN** `verctl assets --vendored libexample --build linux-x64` writes `libexample-1.4.0-linux-x64.tar.gz` whose entries start with `lib/libexample.a`, `include/`, and `LICENSE`
 
-### Requirement: Uploading creates the Release when it is missing
+### Requirement: Uploading creates a missing Release
 
-`--upload` with `--vendored` SHALL create the set's Release at `HEAD` when the tag has none, named after the tag, with the `notes` file as its body, and with `make_latest` set to `false`.
+`--upload` with `--vendored` SHALL create the set's Release at `HEAD` when the tag has none.
+The Release SHALL be named after the tag, with the `notes` file as its body, and with `make_latest` set to `false`.
 It SHALL use an existing Release unchanged, including one another job created after verctl found none.
 
 #### Scenario: First target
@@ -70,7 +77,8 @@ After uploading an archive, verctl SHALL upload `<archive>.sha256` holding `<hex
 
 ### Requirement: Existing assets are not uploaded again
 
-When the Release already holds a complete asset of the archive's name or the checksum's name, the upload of that asset SHALL report `already` and SHALL NOT fail.
+When the Release already holds a complete asset named like the archive or the checksum, the upload of that asset SHALL report `already`.
+The upload SHALL NOT fail.
 
 #### Scenario: Rerun after success
 

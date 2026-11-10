@@ -3,10 +3,12 @@
 ### Requirement: verctl publishes only at a version commit
 
 `verctl publish` SHALL run only when HEAD is the version commit of at least one
-package whose release is incomplete: the newest commit on the default
-branch's first-parent history where that package's version became its version
-at HEAD. On any other commit with an incomplete release it SHALL exit non-zero
-before any side effect and name the version commit.
+package whose release is incomplete.
+
+The version commit is the newest commit on the default branch's first-parent
+history where that package's version became its version at HEAD.
+On any other commit with an incomplete release it SHALL exit non-zero before
+any side effect and name the version commit.
 
 #### Scenario: HEAD has moved past the release
 
@@ -38,9 +40,11 @@ untouched and name it in the report.
 
 With assets on, the declared assets count toward completeness; with
 `--skip-assets` (`VERCTL_SKIP_ASSETS=true`) they do not.
-When every package's registry entry, tag, Release, and counted assets exist
-for its version at HEAD, `verctl publish` and `verctl publish --plan` SHALL
-report `nothing to release`, run no publisher, create nothing, and exit zero.
+A package's release is complete when its registry entry, tag, Release, and
+counted assets exist for its version at HEAD.
+When every package's release is complete, `verctl publish` and
+`verctl publish --plan` SHALL report `nothing to release`, run no publisher,
+create nothing, and exit zero.
 The JSON report SHALL carry `"outcome": "nothing-to-release"`.
 
 #### Scenario: A push after a finished release

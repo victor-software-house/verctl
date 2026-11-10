@@ -1,11 +1,12 @@
 ## MODIFIED Requirements
 
-### Requirement: Each changelog entry links its pull request or commit
+### Requirement: Each changelog entry links a pull request or commit
 
 verctl SHALL link each
-changelog entry to the pull request named by a trailing `(#N)` in the
-subject of the first-parent commit that added its fragment, and SHALL link
-that commit when the subject names no pull request.
+changelog entry to a pull request.
+A trailing `(#N)` in the subject of the first-parent commit that added its
+fragment names that pull request.
+verctl SHALL link that commit when the subject names no pull request.
 
 #### Scenario: Squash-merged fragment
 
@@ -24,5 +25,5 @@ outside contributor follows the `changelog-credit` capability.
 
 #### Scenario: Maintainer pull request read as a contributor
 
-- **WHEN** pull request #12 was opened from a branch in `acme/demo` by a member the App token reads as `CONTRIBUTOR`, and `verctl version --pr` runs
+- **WHEN** pull request 12 was opened from a branch in `acme/demo` by a member the App token reads as `CONTRIBUTOR`, and `verctl version --pr` runs
 - **THEN** the entry reads `([#12](https://github.com/acme/demo/pull/12))` with no byline

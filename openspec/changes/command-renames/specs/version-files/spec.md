@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: A package's file name picks its stock driver
+### Requirement: A package's file name picks the stock driver
 
 verctl SHALL pick a stock driver from the file name a package's `path` names, with no `driver` key: `Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, and `VERSION`.
 A `driver` key or inline driver fields SHALL still override the stock driver.
@@ -19,7 +19,8 @@ A `driver` key or inline driver fields SHALL still override the stock driver.
 ### Requirement: pyproject.toml holds the version in project.version
 
 The stock `pyproject.toml` driver SHALL read and write `project.version`, and SHALL keep every other byte of the file.
-When `project.dynamic` lists `version`, every command that reads the version SHALL fail, name the package, and say that the version comes from a build backend and that a `VERSION` file or a driver fixes it.
+When `project.dynamic` lists `version`, every command that reads the version SHALL fail and name the package.
+The error SHALL show that the version comes from a build backend and that a `VERSION` file or a driver fixes it.
 
 #### Scenario: A Python package bumps
 
@@ -33,7 +34,9 @@ When `project.dynamic` lists `version`, every command that reads the version SHA
 
 ### Requirement: The bump names the uv.lock refresh
 
-When a `uv.lock` sits beside a `pyproject.toml` package or above it in the repository, `version` SHALL name `uv lock` as the bump's follow-up, as it names `cargo update --workspace` for `Cargo.lock`, because the lockfile records the project's own version.
+When a `uv.lock` sits beside a `pyproject.toml` package or above it in the repository, `version` SHALL name `uv lock` as the bump's follow-up.
+It names `cargo update --workspace` for `Cargo.lock` the same way.
+The lockfile records the project's own version.
 
 #### Scenario: A uv project bumps
 
@@ -42,9 +45,13 @@ When a `uv.lock` sits beside a `pyproject.toml` package or above it in the repos
 
 ### Requirement: go.mod holds the version in a comment on the module line
 
-The stock `go.mod` driver SHALL read and write the version as a `// vX.Y.Z` comment at the end of the `module` line, and SHALL keep the rest of the file.
+The stock `go.mod` driver SHALL read and write the version as a `// vX.Y.Z` comment at the end of the `module` line.
+It SHALL keep the rest of the file.
+
 A `module` line with no such comment SHALL read as `0.0.0`.
-verctl SHALL refuse to write that comment when the comment block directly above the `module` line ends with its first paragraph that starts with `Deprecated:`, because Go then reads both as one deprecation notice.
+
+verctl SHALL refuse to write that comment when the comment block directly above the `module` line ends with its first paragraph that starts with `Deprecated:`.
+Go then reads both as one deprecation notice.
 
 #### Scenario: A Go module bumps
 
@@ -61,24 +68,26 @@ verctl SHALL refuse to write that comment when the comment block directly above 
 - **WHEN** `go.mod` holds `// Deprecated: use example.com/next.` directly above `module example.com/demo`, and `.changeset/fix.md` holds `demo: patch`
 - **THEN** `verctl version --dry-run` exits non-zero and its error names `Deprecated:`
 
-### Requirement: A Go module's major version matches its module path
+### Requirement: A Go module's major version matches the module path
 
 From major version 2, the Go toolchain reads a module only when its path ends in `/v<major>`.
-verctl SHALL refuse a bump whose new major version is 2 or more and differs from the `/vN` suffix of the module path, and the refusal SHALL name the module path the release needs.
+verctl SHALL refuse a bump whose new major version is 2 or more and differs from the `/vN` suffix of the module path.
+The refusal SHALL name the module path the release needs.
 
 #### Scenario: A major bump to v2 without the path change
 
 - **WHEN** `go.mod` holds `module example.com/demo // v1.4.0` and `.changeset/break.md` holds `demo: major`
 - **THEN** `verctl version --dry-run` exits non-zero and its error names `example.com/demo/v2`
 
-#### Scenario: A v2 module bumps within its major
+#### Scenario: A v2 module bumps within major 2
 
 - **WHEN** `go.mod` holds `module example.com/demo/v2 // v2.1.0` and `.changeset/fix.md` holds `demo: patch`
 - **THEN** `verctl version --dry-run` plans `demo` from `2.1.0` to `2.1.1`
 
 ### Requirement: A VERSION file holds only the version
 
-The stock `VERSION` driver SHALL read a file that holds one version and an optional final newline, and SHALL write the new version followed by one newline.
+The stock `VERSION` driver SHALL read a file that holds one version and an optional final newline.
+It SHALL write the new version followed by one newline.
 A `VERSION` file holding anything else SHALL fail the load with the file's path.
 A missing `VERSION` file SHALL read as `0.0.0`, `check` SHALL not create it, and `version` SHALL create it with the new version.
 
@@ -100,7 +109,8 @@ A missing `VERSION` file SHALL read as `0.0.0`, `check` SHALL not create it, and
 
 ### Requirement: A marker line holds the version of a single-file package
 
-A package that declares `marker: true` SHALL keep its version on one line of its file: a comment opener (`#`, `//`, or `<!--`), then `version:`, a space, and the version, with an optional `-->` after it.
+A package that declares `marker: true` SHALL keep its version on one line of its file.
+The line holds a comment opener (`#`, `//`, or `<!--`), then `version:`, a space, and the version, with an optional `-->` after it.
 verctl SHALL rewrite only the version on that line, and SHALL fail the load when the file holds no such line or more than one.
 
 #### Scenario: A reusable workflow bumps

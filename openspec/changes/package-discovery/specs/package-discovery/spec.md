@@ -60,7 +60,7 @@ A leading `!` SHALL exclude, `node_modules`, `.git`, and `target` SHALL always b
 - **WHEN** `.ctl/ver.yaml` holds `discover: [actions/*, "!actions/internal"]` and `actions/setup/VERSION` and `actions/internal/VERSION` exist
 - **THEN** verctl releases `setup` and not `internal`
 
-### Requirement: A package is named by its manifest
+### Requirement: A package is named by the manifest
 
 verctl SHALL name a package by its manifest: `package.name`, `name`, or the Go module path, and by its directory for a `VERSION` package.
 Two packages with one name, or one manifest claimed twice, SHALL fail the load and name both files.

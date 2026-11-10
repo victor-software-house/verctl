@@ -928,11 +928,6 @@ mod tests {
         );
     }
 
-    /// A tree with no repository cannot serve a file by tag, so it has no
-    /// templates. `version` still works there, as it did before templates
-    /// existed. A repository whose index cannot be read is a different case,
-    /// and `git::tracked` reports that as an error.
-    ///
     /// One repository may hold several projects. The index lists paths from
     /// the working tree. A project in a subdirectory has to be found by the
     /// path it uses itself, and a sibling project's templates are not its.
@@ -1021,7 +1016,9 @@ mod tests {
 
     /// A template here is not untracked: there is no index to not carry it.
     /// Such a tree cannot serve a file by tag at all. It renders nothing and
-    /// reports nothing, instead of failing the way a repository would.
+    /// reports nothing, instead of failing the way a repository would, and
+    /// `version` still works there. A repository whose index cannot be read
+    /// is a different case, and `git::tracked` reports that as an error.
     #[test]
     fn a_tree_with_no_repository_has_no_templates() {
         let root = TempDir::new().unwrap();

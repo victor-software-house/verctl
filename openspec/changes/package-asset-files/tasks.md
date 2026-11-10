@@ -3,7 +3,8 @@
 ## 1. Code
 
 - [ ] 1.1 Add `assets.dir` and `assets.files` and their load rules to `src/config.rs`, with parse tests; proof: the tests pass in the PR's CI
-- [ ] 1.2 Pack the listed files in `src/assets.rs`, with integration tests for the four-file tarball and a missing file; proof: the tests pass in the PR's CI, and `a_package_target_plans_and_packs_as_before` still passes
+- [ ] 1.2 Pack the listed files in `src/assets.rs`, with integration tests for the four-file tarball and a missing file.
+  Proof: the tests pass in the PR's CI, and `a_package_target_plans_and_packs_as_before` still passes.
 
 ## 2. Docs
 

@@ -21,11 +21,12 @@ The pull request's CI runs compile, format, lint, and test tasks with `mise run 
   - Evidence: the three `operator_docs` tests passed in [verify run 39726352572][run-2].
 - [x] 2.2 A `patch` changeset ships it; proof: `verctl status` lists it
   - Evidence: [Version PR #205][pr-205] consumed it, and [verctl 0.5.4][v0.5.4] carries its entry.
-- [x] 2.3 Close VER-077 when the pull request merges; proof: `mise run q check` passes
-  - Evidence: [#204][pr-204] merged; VER-077 is archived in the pull request that archives this change.
+- [x] 2.3 Close [VER-077][ver-077] when the pull request merges; proof: `mise run q check` passes
+  - Evidence: [#204][pr-204] merged; [VER-077][ver-077] is archived in the pull request that archives this change.
 
 [run-2]: https://github.com/victor-software-house/verctl/actions/runs/39726352572
 [run-3]: https://github.com/victor-software-house/verctl/actions/runs/39727472324
 [pr-204]: https://github.com/victor-software-house/verctl/pull/204
 [pr-205]: https://github.com/victor-software-house/verctl/pull/205
 [v0.5.4]: https://github.com/victor-software-house/verctl/releases/tag/v0.5.4
+[ver-077]: ../../../../tasks.yaml

@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: A directory path resolves to the version source it holds
+### Requirement: A directory path resolves to the version source inside
 
 When a package's `path` names a directory, verctl SHALL use the one manifest in it from `Cargo.toml`, `package.json`, `pyproject.toml`, and `go.mod`, and `<dir>/VERSION` when it holds none.
 A directory that holds more than one of those manifests SHALL fail the load, naming each one and asking for a file path.
@@ -17,7 +17,10 @@ A directory that holds more than one of those manifests SHALL fail the load, nam
 
 ### Requirement: Packages with no registry release on GitHub only
 
-A package whose version source is a `VERSION` file, a marker line, or `go.mod`, and that declares no `publisher`, `publish`, or `publishers` entry under its name, SHALL release as `publisher: none` does: a tag and a Release, with no registry upload.
+A package SHALL release as `publisher: none` does, with a tag and a Release and no registry upload, when both of these hold:
+
+- its version source is a `VERSION` file, a marker line, or `go.mod`;
+- it declares no `publisher`, `publish`, or `publishers` entry under its name.
 A `pyproject.toml` package with no `publisher`, `publish`, or `publishers` entry under its name SHALL fail the load and name the `publisher` key, because verctl has no stock Python publisher yet.
 
 #### Scenario: A VERSION package releases on GitHub
@@ -25,7 +28,7 @@ A `pyproject.toml` package with no `publisher`, `publish`, or `publishers` entry
 - **WHEN** package `templates` has `path: VERSION`, no `publisher`, and its Version PR has merged
 - **THEN** `verctl publish --plan` lists the tag and the Release for `templates` and no upload
 
-#### Scenario: A Python package must name its publisher
+#### Scenario: A Python package must name a publisher
 
 - **WHEN** a package has `path: pyproject.toml`, no `publisher`, no `publish`, and no `publishers` entry under its name
 - **THEN** every command that loads `.ctl/ver.yaml` exits non-zero and its error names `publisher`

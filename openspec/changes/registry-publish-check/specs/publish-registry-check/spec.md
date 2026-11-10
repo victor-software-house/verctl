@@ -2,12 +2,15 @@
 
 ### Requirement: The registry decides whether a version is published
 
-For a package with a registry check, `verctl publish` SHALL ask the registry
-before the publisher runs, and report `already` without running it when the
-registry has the version. After the publisher runs it SHALL ask again with a
-bounded backoff, and fail unless the registry lists the version. A package
-with no registry check SHALL succeed on a zero exit or on stderr saying the
-version already exists.
+For a package with a registry check, `verctl publish` SHALL query the registry
+before the publisher runs.
+It SHALL report `already` without running the publisher when the registry has
+the version.
+After the publisher runs it SHALL query again with a bounded backoff,
+and fail unless the registry lists the version.
+
+A package with no registry check SHALL succeed on a zero exit or on stderr
+that shows the version already exists.
 
 #### Scenario: A rerun after the tag push failed
 
@@ -26,11 +29,17 @@ version already exists.
 
 ### Requirement: How verctl asks the registry
 
-A cargo package on the stock publisher whose publish target is crates.io and
-that declares no `query` SHALL be checked by reading its crates.io sparse
-index file, at the path built from the lowercased name. The check SHALL look
-in that file for a `vers` equal to the version. Any other package with a `query` SHALL be checked by running
-it in the package's directory.
+A cargo package SHALL be checked by reading its crates.io sparse index file
+when all of these hold:
+
+- it uses the stock publisher
+- its publish target is crates.io
+- it declares no `query`
+
+The path is built from the lowercased name.
+The check SHALL look in that file for a `vers` equal to the version.
+Any other package with a `query` SHALL be checked by running it in the
+package's directory.
 
 #### Scenario: A workspace member is not the registry
 
@@ -50,13 +59,17 @@ it in the package's directory.
 #### Scenario: A scoped npm registry
 
 - **WHEN** `.npmrc` in a bun package's directory maps its scope to a private registry
-- **THEN** the bun `query` runs in that directory and asks the private registry, not the public one
+- **THEN** the bun `query` runs in that directory and queries only the private registry
 
 ### Requirement: Packages without a registry check
 
-A package with `query: []`, a package of any publisher whose upload command
-is overridden and that declares no `query`, or a cargo package with no `query`
-whose target is another registry or unknown, SHALL have no registry check.
+A package SHALL have no registry check in any of these cases:
+
+- it has `query: []`
+- its upload command is overridden, whatever its publisher, and it declares no
+  `query`
+- it is a cargo package with no `query` whose target is another registry or
+  unknown
 
 #### Scenario: A manifest that publishes elsewhere
 

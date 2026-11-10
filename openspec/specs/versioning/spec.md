@@ -9,8 +9,9 @@ Which bumps verctl applies to a package's version: what a fragment may move, wha
 ### Requirement: A new package releases 0.0.1 first
 
 verctl SHALL refuse a `minor` or `major` bump on a package whose current version
-is `0.0.0`, with or without a pre-release or build suffix, unless the package declares `first_minor: true`, and the
-refusal SHALL name the package and the `first_minor` key.
+is `0.0.0`, with or without a pre-release or build suffix.
+A package that declares `first_minor: true` is the one exception.
+The refusal SHALL name the package and the `first_minor` key.
 
 #### Scenario: A patch fragment on a new package
 

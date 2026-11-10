@@ -25,7 +25,7 @@
 
 ### Requirement: Auto-merge needs a required check on the base branch
 
-**Reason**: verctl no longer enables auto-merge, so there is nothing for the check to gate.
+**Reason**: verctl no longer enables auto-merge, so there is nothing for the check to require.
 
 **Migration**: None. Keep the base branch's required checks for the Version PR's own CI.
 

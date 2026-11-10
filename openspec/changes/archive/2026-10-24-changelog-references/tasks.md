@@ -5,6 +5,10 @@
 - [x] 1.3 `changelog_sections_with` passes `pull_request` and `commit`; proof: an integration test renders `([#12](…))` and the commit fallback, on the build host
 - [x] 1.4 Operator instructions describe the rule; proof: `cargo test operator_docs` on the build host
 
-2026-10-12 (UTC): on the build host at fbee308, `cargo clippy --keep-going --all-targets --all-features -- -D warnings` reported nothing and `mise run verify` passed: `a_squash_subject_names_its_pull_request`, `credits_only_outside_people`, `pull_author_reads_login_and_association`, `prepare_links_the_pull_request_or_commit_that_added_each_fragment`, and `operator_docs`. PR CI on #117 passed Plan, verify (with `semver`), and Template.
+2026-10-12 (UTC): on the build host at fbee308, `cargo clippy --keep-going --all-targets --all-features -- -D warnings` reported nothing and `mise run verify` passed: `a_squash_subject_names_its_pull_request`, `credits_only_outside_people`, `pull_author_reads_login_and_association`, `prepare_links_the_pull_request_or_commit_that_added_each_fragment`, and `operator_docs`. PR CI on [PR 117][verctl#117] passed Plan, verify (with `semver`), and Template.
 
-2026-10-12 (UTC): verctl 0.3.15's Version PR #118 credited the repository owner: the App token read a private member as `CONTRIBUTOR`. The author lookup is removed, so no entry carries a byline; VER-054 adds `changelog.internal_authors` on `next`.
+2026-10-12 (UTC): verctl 0.3.15's Version [PR 118][verctl#118] credited the repository owner: the App token read a private member as `CONTRIBUTOR`. The author lookup is removed, so no entry carries a byline; [VER-054][ver-054] adds `changelog.internal_authors` on `next`.
+
+[verctl#117]: https://github.com/victor-software-house/verctl/pull/117
+[verctl#118]: https://github.com/victor-software-house/verctl/pull/118
+[ver-054]: ../../../../tasks.yaml

@@ -8,7 +8,7 @@ Release before the `assets` job uploads to it. GitHub immutable Releases
 (GA 2025-10-28) refuse an asset once a Release is published, so a repository
 with assets cannot turn them on.
 
-Queue row: VER-011. This change is one part of
+Queue row: [VER-011][ver-011]. This change is one part of
 [release-state-machine][rsm]; the stages and transitions it completes are in
 [derived-release-state][drs].
 
@@ -37,7 +37,8 @@ None.
 
 1. Code: `src/release.rs` and `src/github.rs`.
 2. Ledger: PR 228 built a draft-and-finalize slice on the 0.7 schema and is
-   closed unmerged. The VER-011 notes list what to reuse from it.
+   closed unmerged. The notes on queue row [VER-011][ver-011] list what to reuse from it.
 
 [rsm]: ../release-state-machine/proposal.md
 [drs]: ../derived-release-state/proposal.md
+[ver-011]: ../../../tasks.yaml

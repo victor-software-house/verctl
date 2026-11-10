@@ -13,7 +13,7 @@ Compile, format, lint, and test tasks run in pull request CI with
 
 ## 2. Bundle
 
-- [x] 2.1 The instructions and their template, `README.md`, and `examples/workflows/release.yml` show the mapping. None tells a caller to pass `secrets: inherit`. Proof: `rg -n 'secrets: inherit' README.md src/instructions.md .ctl/operator examples` prints only lines that say never to pass it
+- [x] 2.1 The instructions and their template, `README.md`, and `examples/workflows/release.yml` show the mapping. They contain no instruction to pass `secrets: inherit`. Proof: `rg -n 'secrets: inherit' README.md src/instructions.md .ctl/operator examples` prints only lines that say never to pass it
 - [x] 2.2 A `minor` fragment names the old call and the new one; proof: the fragment in the pull request
 - [ ] 2.3 CI passes on the pull request: `operator_docs`, `lint:workflows`, and the workflow policy; proof: the verify run on the pushed commit
 

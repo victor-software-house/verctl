@@ -3,11 +3,13 @@
 ## Why
 
 A package asset tarball holds exactly one file.
-`assets --build` runs `tar czf <asset> -C <parent of binary> <bin>` ([`src/assets.rs`][assets]), so a package whose release is a daemon, its client, a systemd unit, and a licence ships a tarball with only the first of the four.
+`assets --build` runs `tar czf <asset> -C <parent of binary> <bin>` ([`src/assets.rs`][assets]).
+A package whose release is a daemon, its client, a systemd unit, and a licence ships a tarball with only the first of the four.
+
 Probed on verctl 0.7.2 with a `publisher: none` package and a `linux-x64` target: the tarball listed one entry.
 Vendored sets already pack several files from a directory (`vendored.<name>.dir` and `files`); package assets cannot.
 
-Queue row: VER-081.
+Queue row: [VER-081][ver-081].
 
 ## What Changes
 
@@ -38,3 +40,4 @@ None.
 [skill]: ../../../skills/verctl/SKILL.md
 [readme]: ../../../README.md
 [example]: ../../../examples/ver.yaml
+[ver-081]: ../../../tasks.yaml

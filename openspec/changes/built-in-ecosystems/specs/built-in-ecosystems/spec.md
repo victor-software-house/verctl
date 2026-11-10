@@ -2,12 +2,16 @@
 
 ### Requirement: Cargo is a built-in
 
-For a `cargo` package, verctl SHALL write `package.version` or
-`workspace.package.version`, find dependents through `cargo metadata --no-deps`,
-refresh a tracked `Cargo.lock` with `cargo update --workspace`, order publishes
-over the dependencies that count above, decide "published" from the registry's
-sparse index, and publish with `cargo publish --locked -p <name>` one package at
-a time. A package with `publish = false` SHALL never be published.
+For a `cargo` package, verctl SHALL do all of these:
+
+- write `package.version` or `workspace.package.version`;
+- find dependents through `cargo metadata --no-deps`;
+- refresh a tracked `Cargo.lock` with `cargo update --workspace`;
+- order publishes over the dependencies that count above;
+- decide "published" from the registry's sparse index;
+- publish with `cargo publish --locked -p <name>` one package at a time.
+
+A package with `publish = false` SHALL never be published.
 
 #### Scenario: Publish order in a workspace
 
@@ -43,16 +47,19 @@ with `"private": true` SHALL never be published.
 - **WHEN** `bun --version` prints `1.4.0`
 - **THEN** `verctl version` exits non-zero before writing any file and names `1.4.1`
 
-### Requirement: A repository's own locked tool version moves after its release exists
+### Requirement: A repository's own locked tool version moves after the release exists
 
-The built-in `mise-pin` step SHALL run only after `finalize`, SHALL move the locked version
-with `mise lock <tool>@<version>` under `MISE_LOCKFILE_MODE=generate`, and
-SHALL then read `mise.lock` and fail unless every platform the lock lists has a
-URL and a checksum for the new version.
+The built-in `mise-pin` step SHALL run only after `finalize`.
+
+It SHALL move the locked version with `mise lock <tool>@<version>` under
+`MISE_LOCKFILE_MODE=generate`.
+
+It SHALL then read `mise.lock` and fail unless every platform the lock lists
+has a URL and a checksum for the new version.
 
 #### Scenario: The locked version moves after finalize
 
-- **WHEN** `at.released` lists `mise-pin` for tool `github:victor-software-house/verctl` and `v0.4.1` has just been finalized
+- **WHEN** `at.released` lists `mise-pin` for tool `github:victor-software-house/verctl` and `v0.4.1` has been finalized
 - **THEN** `verctl release` runs `mise lock github:victor-software-house/verctl@0.4.1` with `MISE_LOCKFILE_MODE=generate` after the Release is published
 
 #### Scenario: A platform has no asset
@@ -63,8 +70,8 @@ URL and a checksum for the new version.
 ### Requirement: verctl performs the OIDC exchange when asked
 
 When a registry's `auth` is `oidc`, verctl SHALL exchange the GitHub Actions
-OIDC token for a registry token itself: once per run for crates.io, and once
-per package for npm. When `auth` is `token`, it SHALL read the token from the
+OIDC token for a registry token itself. The exchange happens once per run
+for crates.io, and once per package for npm. When `auth` is `token`, it SHALL read the token from the
 registry's documented environment variable.
 
 #### Scenario: Two npm packages

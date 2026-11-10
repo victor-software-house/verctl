@@ -1,6 +1,6 @@
 # Design
 
-## 1. Remove the feature, do not default it off
+## 1. Remove the feature outright
 
 The input already defaulted to `false`.
 Keeping the flag with a default of off would leave a path that arms a release from CI, which the operator ruled out.
@@ -9,7 +9,7 @@ Removing it makes a caller that still passes `auto-merge: true` fail loudly when
 Alternative: keep `auto-merge` as a deprecated input that does nothing.
 It lost because a silent no-op hides the caller's stale setting, and the operator asked for removal.
 
-## 2. Drop the release hold with it
+## 2. Drop the release hold as well
 
 verctl's own `self-release.yml` had a `hold` job and a `VERCTL_RELEASE_HOLD` variable that turned auto-merge off on the open Version PR.
 Without auto-merge, every Version PR already waits for a person, so the job has nothing to do.

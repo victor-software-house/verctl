@@ -7,7 +7,7 @@ A release starts only when a person merges the Version PR.
 verctl can still arm GitHub auto-merge on the Version PR from CI.
 Ten caller workflows pass `auto-merge: true` to the reusable release workflow, so each of them publishes as soon as its Version PR's checks pass.
 
-Queue row: VER-079.
+Queue row: [VER-079][ver-079].
 
 ## What Changes
 
@@ -49,3 +49,4 @@ The open change `reusable-release-workflow` drops `auto-merge` from its declared
 [skill]: ../../../../skills/verctl/SKILL.md
 [readme]: ../../../../README.md
 [agents]: ../../../../AGENTS.md
+[ver-079]: ../../../../tasks.yaml

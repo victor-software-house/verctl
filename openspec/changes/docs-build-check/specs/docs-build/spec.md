@@ -3,11 +3,14 @@
 ### Requirement: verctl checks the docs.rs build of a released crate
 
 `verctl docs` SHALL poll docs.rs, with a bounded backoff, for each package
-released at HEAD whose publish target is crates.io and that has a library target
-as Cargo resolves it. It SHALL poll only a package whose own release tag for
-that version exists on `origin` and names HEAD, until docs.rs reports
-`doc_status` true. It SHALL exit non-zero, naming the crate, when the
-timeout runs out while docs.rs still reports `doc_status` false or answers 404.
+released at HEAD that meets two conditions.
+Its publish target is crates.io, and it has a library target as Cargo resolves
+it.
+
+It SHALL poll only a package whose own release tag for that version exists on
+`origin` and names HEAD, until docs.rs reports `doc_status` true.
+It SHALL exit non-zero, naming the crate, when the timeout runs out while
+docs.rs still reports `doc_status` false or answers 404.
 
 #### Scenario: A build that failed
 
@@ -32,7 +35,7 @@ timeout runs out while docs.rs still reports `doc_status` false or answers 404.
 #### Scenario: A binary-only crate
 
 - **WHEN** the only package released at HEAD is a crates.io crate whose `cargo metadata` lists no library target
-- **THEN** `verctl docs` asks docs.rs nothing and exits zero
+- **THEN** `verctl docs` makes no docs.rs request and exits zero
 
 #### Scenario: A library found by auto-discovery
 
@@ -42,7 +45,7 @@ timeout runs out while docs.rs still reports `doc_status` false or answers 404.
 #### Scenario: Per-package tags with one publish failed
 
 - **WHEN** `tags.template` is `{name}@{version}`, `core@0.3.1` reached crates.io, the publish of `app@0.2.1` failed, and neither tag exists
-- **THEN** `verctl docs` asks docs.rs nothing, and after a rerun creates both tags it polls docs.rs for `core@0.3.1` and `app@0.2.1`
+- **THEN** `verctl docs` makes no docs.rs request, and after a rerun creates both tags it polls docs.rs for `core@0.3.1` and `app@0.2.1`
 
 #### Scenario: A tag only the remote has
 
@@ -57,12 +60,12 @@ timeout runs out while docs.rs still reports `doc_status` false or answers 404.
 #### Scenario: A release whose publish failed
 
 - **WHEN** `demo@0.4.6` is the version at HEAD and tag `v0.4.6` does not exist
-- **THEN** `verctl docs` asks docs.rs nothing and exits zero
+- **THEN** `verctl docs` makes no docs.rs request and exits zero
 
 #### Scenario: A crate on another registry
 
 - **WHEN** the only package released at HEAD publishes to a registry other than crates.io
-- **THEN** `verctl docs` asks docs.rs nothing and exits zero
+- **THEN** `verctl docs` makes no docs.rs request and exits zero
 
 ### Requirement: The docs.rs build is not part of a complete release
 

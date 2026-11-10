@@ -1,8 +1,15 @@
 # Prior art
 
-Retrieved 2026-10-11 (UTC). Every claim below was read in code at the pinned
-commit, in official documentation, in the issue itself, in registry data, or in
-a run of an official release binary. Nothing here is inferred.
+Retrieved 2026-10-11 (UTC).
+Every claim below was read in one of these places:
+
+1. Code at the pinned commit.
+2. Official documentation.
+3. The issue itself.
+4. Registry data.
+5. A run of an official release binary.
+
+Nothing here is inferred.
 
 ## 1. Sources and real usage
 
@@ -23,22 +30,79 @@ a run of an official release binary. Nothing here is inferred.
 
 ## 2. How each tool models a release
 
-| Tool | Where state lives | Lockfile | Tag timing | "Already published" | Resume after a partial failure |
-|:--|:--|:--|:--|:--|:--|
-| Changesets | fragments, then the Version PR, then the npm versions list | not touched | after publish, only for tags it created in that run | registry versions list | a crash after tagging never creates the GitHub Release ([run.ts][cs-run]) |
-| release-please | PR label `autorelease: pending` / `tagged` plus a versions manifest file ([manifest.ts][rp-labels]) | text edit of Cargo.lock and package-lock.json | creates the GitHub Release; does not publish | not checked | `release_created` is true only on the run that created the release, so a failed publish is never retried ([index.ts][rpa-out], [#1163][rpa-1163]) |
-| semantic-release | tags plus git notes | `npm version` updates package-lock.json | tag pushed before publish ([index.js][sr-tag]) | not checked | a re-run after a failed publish exits green and publishes nothing ([#3178][sr-3178]) |
-| release-plz | the registry, tags, the release PR branch | `cargo update --workspace` ([update/mod.rs][rplz-lock]) | after publish | registry pre-check, then stderr match | publish succeeded but tag failed: a re-run skips the package and never tags it ([release.rs][rplz-skip], [#2578][rplz-2578]) |
-| cargo-release | none; a local run, dry-run by default | `cargo metadata` ([cargo.rs][crel-lock]) | after publish | full `release` aborts; the `publish` step skips | run the step commands by hand |
-| cargo-workspaces | tags and the index | `cargo update -w` | before publish | skips | n/a, tags come first |
-| knope | manifest version against the latest tag ([releases/mod.rs][knope-pending]) | text edit of Cargo.lock ([cargo_lock.rs][knope-lock]) | the forge release creates it | no publish step | a failed draft upload: the re-run creates another release and uploads every asset again ([create_release.rs][knope-draft]) |
-| goreleaser | HEAD must sit exactly on an existing tag | none | never creates tags | updates an existing release found by tag | an existing asset fails unless replacement is configured |
-| bun-release | fragments, packument, remote tag, GitHub Release | `bun update --lockfile-only` in the version script | after publish, checked by peeled SHA | packument | skips without error when HEAD's parent has the same version, so a later commit cancels a pending release ([git.ts][br-gate]) |
+- **Changesets**
+  - Where state lives: fragments, then the Version PR, then the npm versions
+    list.
+  - Lockfile: not touched.
+  - Tag timing: after publish, only for tags it created in that run.
+  - "Already published": registry versions list.
+  - Resume after a partial failure: a crash after tagging never creates the
+    GitHub Release ([run.ts][cs-run]).
+- **release-please**
+  - Where state lives: PR label `autorelease: pending` / `tagged` plus a
+    versions manifest file ([manifest.ts][rp-labels]).
+  - Lockfile: text edit of Cargo.lock and package-lock.json.
+  - Tag timing: creates the GitHub Release; does not publish.
+  - "Already published": not checked.
+  - Resume after a partial failure: `release_created` is true only on the run
+    that created the release, so a failed publish is never retried
+    ([index.ts][rpa-out], [#1163][rpa-1163]).
+- **semantic-release**
+  - Where state lives: tags plus git notes.
+  - Lockfile: `npm version` updates package-lock.json.
+  - Tag timing: tag pushed before publish ([index.js][sr-tag]).
+  - "Already published": not checked.
+  - Resume after a partial failure: a re-run after a failed publish exits green
+    and publishes nothing ([#3178][sr-3178]).
+- **release-plz**
+  - Where state lives: the registry, tags, the release PR branch.
+  - Lockfile: `cargo update --workspace` ([update/mod.rs][rplz-lock]).
+  - Tag timing: after publish.
+  - "Already published": registry pre-check, then stderr match.
+  - Resume after a partial failure: publish succeeded but tag failed: a re-run
+    skips the package and never tags it ([release.rs][rplz-skip],
+    [#2578][rplz-2578]).
+- **cargo-release**
+  - Where state lives: none; a local run, dry-run by default.
+  - Lockfile: `cargo metadata` ([cargo.rs][crel-lock]).
+  - Tag timing: after publish.
+  - "Already published": full `release` aborts; the `publish` step skips.
+  - Resume after a partial failure: run the step commands by hand.
+- **cargo-workspaces**
+  - Where state lives: tags and the index.
+  - Lockfile: `cargo update -w`.
+  - Tag timing: before publish.
+  - "Already published": skips.
+  - Resume after a partial failure: n/a, tags come first.
+- **knope**
+  - Where state lives: manifest version against the latest tag
+    ([releases/mod.rs][knope-pending]).
+  - Lockfile: text edit of Cargo.lock ([cargo_lock.rs][knope-lock]).
+  - Tag timing: the forge release creates it.
+  - "Already published": no publish step.
+  - Resume after a partial failure: a failed draft upload: the re-run creates
+    another release and uploads every asset again
+    ([create_release.rs][knope-draft]).
+- **goreleaser**
+  - Where state lives: HEAD must sit exactly on an existing tag.
+  - Lockfile: none.
+  - Tag timing: never creates tags.
+  - "Already published": updates an existing release found by tag.
+  - Resume after a partial failure: an existing asset fails unless replacement
+    is configured.
+- **bun-release**
+  - Where state lives: fragments, packument, remote tag, GitHub Release.
+  - Lockfile: `bun update --lockfile-only` in the version script.
+  - Tag timing: after publish, checked by peeled SHA.
+  - "Already published": packument.
+  - Resume after a partial failure: skips without error when HEAD's parent has
+    the same version.
+    A later commit therefore cancels a pending release ([git.ts][br-gate]).
 
 ## 3. Platform facts the design depends on
 
 1. **Cargo multi-package publish is not resumable.** Cargo 1.90 stabilized
-   `cargo publish --workspace`, and the changelog says it is non-atomic. It
+   `cargo publish --workspace`, and the changelog calls it non-atomic. It
    checks every selected package first and fails if any version already exists
    ([cargo_publish.rs][cargo-verify]). An idempotent mode is still an open
    request ([cargo#13397][cargo-13397]).
@@ -47,15 +111,18 @@ a run of an official release binary. Nothing here is inferred.
    dependent can resolve it yet ([release-plz#2946][rplz-2946]).
 3. **`cargo update --workspace` is the documented lockfile refresh** after
    version edits. Editing Cargo.lock as text is exact when the bumped crate name
-   appears once in the graph, and wrong when two versions of that name are in
-   the graph. References written as `"name version"` go stale and `--locked`
+   appears once in the graph.
+   It is wrong when two versions of that name are in the graph.
+   References written as `"name version"` go stale and `--locked`
    then refuses ([encode.rs][cargo-encode], [lockfile.rs][cargo-lockfile]).
-4. **bun.lock decides published dependency versions.** It records a `version`
-   for every non-root workspace package ([bun.lock.rs][bun-lock]), and `bun pm
-   pack` and `bun publish` replace `workspace:` with the version from the
-   lockfile, not from package.json ([pack_command.rs][bun-pack]). A run with
-   Bun 1.4.0, 1.4.2, and 1.4.3 confirmed it: after a version bump, a pack
-   without a lockfile refresh shipped the old dependency version.
+4. **bun.lock decides published dependency versions.**
+   - It records a `version` for every non-root workspace package
+     ([bun.lock.rs][bun-lock]).
+   - `bun pm pack` and `bun publish` replace `workspace:` with the version from
+     the lockfile and ignore package.json ([pack_command.rs][bun-pack]).
+   - A run with Bun 1.4.0, 1.4.2, and 1.4.3 confirmed it.
+   - After a version bump, a pack without a lockfile refresh shipped the old
+     dependency version.
 5. **`bun install --frozen-lockfile` does not catch a stale workspace version.**
    It exited 0 on all three versions after the bump.
 6. **`bun install --lockfile-only` refreshes workspace versions from Bun 1.4.1**
@@ -101,14 +168,14 @@ a run of an official release binary. Nothing here is inferred.
 pnpm 12 is written in Rust. Read at [v12.12.1][pn], with its official binary
 run in a scratch workspace.
 
-1. **Native Changesets-compatible versioning.** `pnpm change` and
-   `pnpm version -r` read `.changeset/*.md`, plan direct bumps, dependents,
-   fixed groups, and per-package release lanes, and record consumed intents in
-   `.changeset/ledger.yaml` keyed by `package@version`
-   ([lib.rs][pn-versioning], [pnpm/rfcs#18][pn-rfc]). When changelogs are kept
-   in the registry instead of the repository, an intent file is deleted only
-   once the registry confirms the published version carries its section
-   ([apply.rs][pn-apply]).
+1. **Native Changesets-compatible versioning.**
+   - `pnpm change` and `pnpm version -r` read `.changeset/*.md`, plan direct
+     bumps, dependents, fixed groups, and per-package release lanes, and record
+     consumed intents in `.changeset/ledger.yaml` keyed by `package@version`
+     ([lib.rs][pn-versioning], [pnpm/rfcs#18][pn-rfc]).
+   - Changelogs can be kept in the registry instead of the repository.
+   - In that case an intent file is deleted only once the registry shows the
+     published version with its section ([apply.rs][pn-apply]).
 2. **Lockfile.** `pnpm-lock.yaml` records a workspace dependency as
    `specifier: workspace:*` with `version: link:../a` and does not store a
    workspace package's own version, so a `workspace:*` bump leaves the file
@@ -116,33 +183,42 @@ run in a scratch workspace.
    `pnpm install --frozen-lockfile` then fails with "dependency is mismatched",
    and `pnpm install --lockfile-only` rewrites that line. Every write goes
    through the lockfile crate's serializer ([save_lockfile.rs][pn-lock]).
-3. **Publish.** pnpm resolves `workspace:` from the dependency's current
-   `package.json` and `catalog:` from `pnpm-workspace.yaml`, never from the
-   lockfile. It sends `PUT /<name>` with the version manifest and the tarball
-   under `_attachments` and performs the npm OIDC exchange per package. It
-   signs provenance with sigstore when the repository and package are public, skips
-   versions the packument already lists, and waits until the registry serves
-   the new version.
+3. **Publish.**
+   - pnpm resolves `workspace:` from the dependency's current `package.json`
+     and `catalog:` from `pnpm-workspace.yaml`, and takes nothing from the
+     lockfile.
+   - It sends `PUT /<name>` with the version manifest and the tarball under
+     `_attachments`.
+   - It performs the npm OIDC exchange per package.
+   - It signs provenance with sigstore when the repository and package are
+     public.
+   - It skips versions the packument already lists, and waits until the
+     registry serves the new version.
 4. **Reuse.** The packing, publish, lockfile, and versioning crates are MIT but
    declare `publish = false` ([publish/Cargo.toml][pn-publish-toml]); none is on
    crates.io.
 
 ## 6. npm registry publishing
 
-1. **Bun** packs with its own file rules, always includes a root CHANGELOG,
-   takes `workspace:` and `catalog:` versions from `bun.lock`, and sends
-   `PUT /<name>` with Bearer or Basic auth and an OTP retry. It has no OIDC, no
-   provenance, and text-only output ([publish_command.rs][bun-publish]).
+1. **Bun** packs with its own file rules and always includes a root CHANGELOG.
+   It takes `workspace:` and `catalog:` versions from `bun.lock`.
+   It sends
+   `PUT /<name>` with Bearer or Basic auth and an OTP retry.
+   It has no OIDC, no provenance, and text-only output
+   ([publish_command.rs][bun-publish]).
 2. **npm** sends the same `PUT`, or `POST /-/stage/package/<name>` for a staged
-   publish; attaches a sigstore bundle as `<name>-<version>.sigstore` for
-   provenance, using Fulcio and Rekor; and exchanges a GitHub OIDC token at
+   publish.
+   It attaches a sigstore bundle as `<name>-<version>.sigstore` for provenance,
+   using Fulcio and Rekor.
+   It exchanges a GitHub OIDC token at
    `POST /-/npm/v1/oidc/token/exchange/package/<name>`
    ([publish.js][npm-publish], [oidc.js][npm-oidc]).
-3. **aube**, an MIT Rust package manager on crates.io (2.7.0, 2026-10-07),
-   implements publish, the OIDC exchange, and provenance inside a CLI command
-   with private helpers ([publish.rs][aube-publish]). Its `aube-registry` crate
-   reads packuments and writes dist-tags and access, with no publish. Only its
-   provenance generator is a public function.
+3. **aube** is an MIT Rust package manager on crates.io (2.7.0, 2026-10-07).
+   It implements publish, the OIDC exchange, and provenance inside a CLI
+   command with private helpers ([publish.rs][aube-publish]).
+   Its `aube-registry` crate reads packuments and writes dist-tags and access,
+   with no publish.
+   Only its provenance generator is a public function.
 4. **Rust crates** that are maintained: `sigstore-sign` 0.14.0, `tar`, `flate2`,
    `ignore`, `reqwest`. No crate reproduces npm's file-selection rules.
 
@@ -158,30 +234,34 @@ environment.
    structured `run` entries build the task graph.
 3. `mise.lock` records, per platform, the asset URL and checksum, and
    `provenance = "github-attestations"` when the release has attestations.
-   `mise lock <tool>@<version>` rewrites the pin and the lock without
-   installing. For a version that has no release yet it exits 1, but in the
-   default mode it has already rewritten `mise.toml`; with
-   `MISE_LOCKFILE_MODE=generate`, documented as a trial, it changes neither
-   file. On a tool with no earlier entry, and for a platform with no asset, it
-   exits 0 with that entry incomplete, and `mise install --locked` checks only
-   the current platform. Confirmed on 2026.10.3, the version these
-   repositories pin.
+   - `mise lock <tool>@<version>` rewrites the pin and the lock without
+     installing.
+   - For a version that has no release yet it exits 1, but in the default mode
+     it has already rewritten `mise.toml`.
+   - With `MISE_LOCKFILE_MODE=generate`, documented as a trial, it changes
+     neither file.
+   - On a tool with no earlier entry, and for a platform with no asset, it
+     exits 0 with that entry incomplete.
+   - `mise install --locked` checks only the current platform.
+   - Confirmed on 2026.10.3, the version these repositories pin.
 4. `[deps.*]` providers are experimental and have no cargo provider.
-5. The `github:` backend picks an asset by os and arch tokens in its name,
-   verifies the GitHub asset digest or a checksum file, and checks GitHub
-   artifact attestations by default on public GitHub. An attestation that
-   fails to verify is a hard error (read in source; no public release with a
-   mismatching attestation was found to run it). Once `mise.lock` records
-   `provenance = "github-attestations"`, an install with attestation checks
-   turned off is refused as a downgrade. By default the recorded provenance is
-   trusted and not verified again: a line added by hand to a lock for a
-   release with no attestations installed with exit 0, and failed only with
-   `MISE_LOCKED_VERIFY_PROVENANCE=1`. A lock with a checksum and no provenance
-   skips the check. Run on 2026.10.3 and 2026.10.7.
+5. The `github:` backend picks an asset by os and arch tokens in its name.
+   - It verifies the GitHub asset digest or a checksum file.
+   - It checks GitHub artifact attestations by default on public GitHub.
+   - An attestation that fails to verify is a hard error (read in source; no
+     public release with a mismatching attestation was found to run it).
+   - Once `mise.lock` records `provenance = "github-attestations"`, an install
+     with attestation checks turned off is refused as a downgrade.
+   - By default the recorded provenance is trusted and not verified again.
+   - A line added by hand to a lock for a release with no attestations
+     installed with exit 0.
+   - That install failed only with `MISE_LOCKED_VERIFY_PROVENANCE=1`.
+   - A lock with a checksum and no provenance skips the check.
+   - Run on 2026.10.3 and 2026.10.7.
 6. Entry order in `mise.lock` depends on the mise version. With the same two
-   `rust` entries in config, 2026.10.3 writes the nightly entry first and
-   2026.10.7 the stable entry first; the content is identical. Run locally on
-   both official binaries.
+   `rust` entries in config, 2026.10.3 writes the nightly entry first.
+   2026.10.7 writes the stable entry first, and the content is identical.
+   Run locally on both official binaries.
 7. mise has no versioning, changelog, or release pull request model.
 
 ## 8. What verctl adopts
@@ -197,8 +277,8 @@ environment.
 4. Tag after publish, at the exact release commit, checked by peeled SHA; a tag
    on another commit is a conflict (bun-release, goreleaser).
 5. A release with assets starts as a draft and is published once every asset is
-   present (goreleaser, knope), and an existing release is found by tag and
-   updated, never duplicated.
+   present (goreleaser, knope).
+   An existing release is found by tag and updated, and no duplicate is made.
 6. Publish order from the dependency graph over normal and build dependencies
    (cargo-release, release-plz, which exclude dev dependencies). verctl also
    orders versioned dev dependencies, which `cargo publish` keeps, and refuses
@@ -215,12 +295,14 @@ environment.
     `publish-plan`).
 12. "Do not open a new Version PR while a merged one is unreleased"
     (release-please).
-13. A Version PR identified by its head repository, head branch, and base,
-    the facts a pull request cannot change, with one Version PR per base
+13. A Version PR identified by its head repository, head branch, and base
     (Changesets).
-14. A registry client that sends the documented npm message format: the `PUT`
-    with `_attachments`, staged publish, the per-package OIDC exchange, and a
-    sigstore provenance bundle (npm, pnpm 12, aube).
+    These are the facts a pull request cannot change, and there is one Version
+    PR per base.
+14. A registry client that sends the documented npm message format (npm,
+    pnpm 12, aube).
+    The format has the `PUT` with `_attachments`, staged publish, the
+    per-package OIDC exchange, and a sigstore provenance bundle.
 15. Skip versions the packument lists, then wait until the registry serves the
     new version (pnpm 12, bun-release).
 16. mise for installing and verifying release binaries, for running extension
@@ -245,12 +327,14 @@ environment.
    pull request is open, and its head branch cannot be renamed.
 10. Delegating Cargo or Bun lockfile sync to mise `[deps]`: experimental, and no
     cargo provider.
-11. A committed ledger of consumed fragments (pnpm 12): in the Version PR the
-    fragment deletion is the record, `check` reads it from the diff, and the
-    committed CHANGELOG keeps the prose if a publish fails.
+11. A committed ledger of consumed fragments (pnpm 12).
+    In the Version PR the fragment deletion is the record, and `check` reads it
+    from the diff.
+    The committed CHANGELOG keeps the prose if a publish fails.
 12. Shelling out to `bun publish` (no provenance, staging, OIDC, or typed
-    results), and porting npm's file-selection rules (no maintained crate, and
-    rules that drift from Bun's).
+    results).
+    Porting npm's file-selection rules (no maintained crate, and rules that
+    drift from Bun's).
 
 [cs]: https://github.com/changesets/changesets/tree/c73949ba7b3160a4aa5729223335c190de1528f8
 [ca]: https://github.com/changesets/action/tree/615034bb14e5d240e559f941ce9769beb5e14fb0

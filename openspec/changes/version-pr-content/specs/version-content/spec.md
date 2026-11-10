@@ -35,7 +35,7 @@ covers.
 - **WHEN** the Version PR also changes `src/main.rs`
 - **THEN** `verctl check` exits non-zero and names `src/main.rs`
 
-#### Scenario: A Version PR that widens its own write set
+#### Scenario: A Version PR that adds a path to the write set
 
 - **WHEN** the Version PR adds `src/lib.rs` to `prepare.stage` in `.ctl/ver.yaml` and changes `src/lib.rs`
 - **THEN** `verctl check` exits non-zero and names `src/lib.rs`, because the write set comes from the merge-base
@@ -61,19 +61,21 @@ workspace with `cargo metadata --no-deps --offline`, and only for a planned
 ### Requirement: A Version PR applies the plan
 
 A Version PR SHALL fail unless every changed manifest version equals the plan
-of the fragments present at the merge-base and absent at HEAD, and every planned
-bump is applied. It SHALL also fail unless each changed package's CHANGELOG
+of the fragments present at the merge-base and absent at HEAD.
+It SHALL fail unless every planned bump is applied.
+It SHALL also fail unless each changed package's CHANGELOG
 carries the new version's section above the merge-base text.
 
-#### Scenario: The Version PR on its first CI run
+#### Scenario: The Version PR at the first CI run
 
 - **WHEN** the pull request was opened by `verctl version --pr` and carries no label
 - **THEN** `verctl check` exits zero
 
 ### Requirement: A Version PR changes a manifest only where the version step does
 
-A manifest on a Version PR SHALL equal its merge-base text with the planned
-version written by its driver and its pins applied at the planned versions.
+A manifest on a Version PR SHALL equal its merge-base text after two edits.
+Its driver writes the planned version, and its pins move to the planned
+versions.
 A difference SHALL fail and name the manifest and the key that differs.
 
 #### Scenario: A Version PR that adds a dependency
@@ -93,12 +95,14 @@ A difference SHALL fail and name the manifest and the key that differs.
 
 ### Requirement: A Version PR moves only workspace versions in a lockfile
 
-A Version PR SHALL fail unless every lockfile agrees with its manifests. It
-SHALL also fail unless a lockfile's parsed entries and header differ from the
-merge-base only in two places. One is the version of a workspace member whose
-version the plan moves, directly or through workspace inheritance. The other is
-a reference that resolves to such a member. It SHALL also fail if a lockfile has an entry added or
-removed.
+A Version PR SHALL fail unless every lockfile matches its manifests.
+
+It SHALL also fail unless a lockfile's parsed entries and header differ from the
+merge-base only in two places.
+One is the version of a workspace member whose version the plan moves, directly or through workspace inheritance.
+The other is a reference that resolves to such a member.
+
+It SHALL also fail if a lockfile has an entry added or removed.
 
 #### Scenario: A stale lockfile
 
@@ -135,7 +139,8 @@ file.
 ### Requirement: A Version PR leaves served and pinned files as rendered
 
 A Version PR SHALL fail unless every served file equals its template's render
-at the versions on HEAD, and every pinned file equals its merge-base text with
+at the versions on HEAD.
+It SHALL also fail unless every pinned file equals its merge-base text with
 its pins applied at the planned versions.
 
 #### Scenario: A served file edited by hand

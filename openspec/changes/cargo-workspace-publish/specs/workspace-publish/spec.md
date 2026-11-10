@@ -2,11 +2,16 @@
 
 ### Requirement: A virtual workspace publishes member by member
 
-A package on the stock cargo publisher, with no `publish` or `query` override
-on the package or on `publishers.cargo`, whose `path` is a manifest with a
-`[workspace]` table and no `[package]` table, SHALL be published by running
+A package on the stock cargo publisher SHALL be published member by member
+when both of these hold:
+
+- neither it nor `publishers.cargo` has a `publish` or `query` override;
+- its `path` is a manifest with a `[workspace]` table and no `[package]`
+  table.
+
+Its upload SHALL run
 `cargo publish --locked --manifest-path <path> --package <member>` once for
-each workspace member whose `publish` is not `false`. Each runs under its own
+each workspace member whose `publish` is not `false`, each under its own
 timeout. A member with `publish = false` SHALL never be published.
 
 #### Scenario: Two crates and a tool crate
@@ -22,11 +27,15 @@ timeout. A member with `publish = false` SHALL never be published.
 ### Requirement: Members publish in dependency order
 
 A member SHALL be published after every published member it depends on
-through a normal or build dependency, or through a development dependency
-that declares a version. A path-only development dependency SHALL NOT order
-publishes. Members with no such dependency between them SHALL keep the order
-of `workspace_members` in `cargo metadata`. A cycle among the dependencies
-that order publishes SHALL fail before any upload and name the cycle.
+through a normal or build dependency. The same holds for a development
+dependency that declares a version. A path-only development dependency SHALL
+NOT order publishes.
+
+Members with no such dependency between them SHALL keep the order of
+`workspace_members` in `cargo metadata`.
+
+A cycle among the dependencies that order publishes SHALL fail before any
+upload and name the cycle.
 
 #### Scenario: A dependent listed first
 
@@ -46,7 +55,7 @@ that order publishes SHALL fail before any upload and name the cycle.
 ### Requirement: The index decides which members are published
 
 For a member bound for crates.io, `verctl publish` SHALL read the member's
-crates.io index file before its upload, and SHALL skip the upload and report
+crates.io index file before its upload. It SHALL skip the upload and report
 the member `already` when the index lists the member's version. The package
 SHALL count as published only when every published member is listed.
 
@@ -63,8 +72,8 @@ SHALL count as published only when every published member is listed.
 ### Requirement: A rate limit stops the release without a tag
 
 When a member's upload fails with status 429, `verctl publish` SHALL exit
-non-zero, name the member, and repeat the time crates.io gives after "try
-again after". It SHALL create no tag and no Release in that run.
+non-zero and name the member. It SHALL also repeat the time crates.io gives
+after "try again after". It SHALL create no tag and no Release in that run.
 
 #### Scenario: The sixth new crate
 
@@ -74,8 +83,8 @@ again after". It SHALL create no tag and no Release in that run.
 ### Requirement: docs waits for every library member
 
 `verctl docs` SHALL wait for each published member bound for crates.io that
-has a library target, at the member's version, when the package's tag names
-HEAD.
+has a library target, at the member's version. It SHALL do so when the
+package's tag names HEAD.
 
 #### Scenario: A binary member
 

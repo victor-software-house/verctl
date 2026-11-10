@@ -25,9 +25,10 @@ served file; delete or ignore its template. Disable path: the same.
 ## 3. Pins hold the current version
 
 For each `pins` entry, `check` runs the pin rewrite with the versions on
-HEAD in memory. It fails when a pattern no longer matches at its declared
-count, and when the rewrite would change the file, which means the file names
-another version.
+HEAD in memory.
+It fails when a pattern no longer matches at its declared count.
+It also fails when the rewrite would change the file, which means the file
+names another version.
 
 ## 4. One owner per file
 
@@ -38,8 +39,8 @@ and is not covered. The message names the target, the template path, and
 the `pins` entry by its file and package.
 
 Alternative considered: refuse the overlap in `Config::load`. It lost
-because loading would have to render every template, and the load cannot
-know a target any other way.
+because loading would have to render every template, and a render is the only
+source of a target.
 
 Alternative considered: let the template win and warn. It lost because a
 warning in a release run is read by no one, and the pin's edit is lost.
@@ -49,9 +50,11 @@ warning in a release run is read by no one, and the pin's edit is lost.
 `render` rewrites the `pins` entries, then renders every template at the
 versions on HEAD through `templates::write`. It plans both first, so a
 pin that no longer matches, a template that fails, or a file with two
-owners writes nothing. Without it, `version` renders templates only when a
-fragment bumps a package, and a pull request that edits a template would
-have no command that makes `check` pass.
+owners writes nothing.
+
+Without it, `version` renders templates only when a fragment bumps a package.
+A pull request that edits a template would then have no command that makes
+`check` pass.
 
 The lead placed this in 0.8.0 as an operator-scope call on 2026-11-10,
 because `render` already breaks its callers in that minor. Rendering

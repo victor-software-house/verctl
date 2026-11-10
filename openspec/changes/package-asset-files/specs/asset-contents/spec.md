@@ -17,12 +17,17 @@ It SHALL fail naming the path when a listed file is missing after the build.
 
 ### Requirement: The listed files are validated at load
 
-The load SHALL fail when `assets.dir` is set without a non-empty `assets.files`, when `assets.files` is set without `assets.dir`, when `assets.binary` is set beside either, or when `dir` or a `files` entry leaves the repository.
+The load SHALL fail in any of these cases:
+
+- `assets.dir` is set without a non-empty `assets.files`;
+- `assets.files` is set without `assets.dir`;
+- `assets.binary` is set beside either;
+- `dir` or a `files` entry leaves the repository.
 
 #### Scenario: Binary beside files
 
 - **WHEN** `assets` declares `binary: out/{bin}`, `dir: out`, and `files: [demo]`
-- **THEN** loading `.ctl/ver.yaml` fails with a message that says to list the binary in `files`
+- **THEN** loading `.ctl/ver.yaml` fails with a message that names the fix: list the binary in `files`
 
 ### Requirement: Without listed files a tarball holds the one binary
 

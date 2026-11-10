@@ -42,7 +42,7 @@ line.
 - **WHEN** a package declares `chnagelog: docs/CHANGELOG.md`
 - **THEN** `verctl status` exits non-zero and its error names `chnagelog` on its line
 
-### Requirement: A removed key names its replacement
+### Requirement: A removed key names the replacement key
 
 verctl SHALL refuse every key this change removes and SHALL name what replaces
 it.
@@ -50,7 +50,8 @@ it.
 #### Scenario: A leftover prepare section
 
 - **WHEN** `.ctl/ver.yaml` declares `prepare: {after: [cargo, update, --workspace], stage: [Cargo.lock]}`
-- **THEN** `verctl status` exits non-zero and its error says the cargo Lockfile block refreshes `Cargo.lock`, and that other commands become `version` steps with `writes`
+- **THEN** `verctl status` exits non-zero and its error names the cargo Lockfile block as the refresh of `Cargo.lock`
+- **AND** the error names `version` steps with `writes` as the home of other commands
 
 #### Scenario: A leftover pins section
 

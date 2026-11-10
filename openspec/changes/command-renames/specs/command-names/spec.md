@@ -2,7 +2,7 @@
 
 ### Requirement: The version step is the version command
 
-`verctl version` SHALL apply fragment bumps and take every flag and
+`verctl version` SHALL apply fragment bumps. It SHALL take every flag and
 variable the version step took in verctl 0.7. Its report SHALL list
 follow-up commands under `after`.
 
@@ -101,7 +101,7 @@ or unshallow the clone.
 - **WHEN** `.ctl/ver.yaml` declares only `demo` at `0.0.0` and `verctl status --github-output out` runs with a token
 - **THEN** `out` holds `pending=false` and `commits=[]`
 
-### Requirement: A removed verb names its replacement
+### Requirement: A removed verb names the replacement verb
 
 `verctl prepare`, `pin`, `publish`, and `assets` SHALL exit 2 without
 reading the config, and their error SHALL name the command that replaced
@@ -117,7 +117,7 @@ them. None SHALL appear in `--help`. The usage spec SHALL mark each
 #### Scenario: The old pin verb under JSON
 
 - **WHEN** a user runs `verctl --format json pin --dry-run`
-- **THEN** it exits 2 and the JSON error on stdout says `pin is now render: run verctl render`
+- **THEN** it exits 2 and the JSON error on stdout shows `pin is now render: run verctl render`
 
 #### Scenario: The old assets verb
 

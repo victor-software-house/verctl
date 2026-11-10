@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: The Version PR branch is derived from its base
+### Requirement: The Version PR branch is derived from the base branch
 
 `verctl prepare --pr` SHALL commit the version step on `verctl/release/<base>`,
 where `<base>` is the branch the Version PR targets, and SHALL open or update
@@ -16,13 +16,16 @@ the pull request from that branch. No configuration SHALL name the branch.
 - **WHEN** the default branch is `trunk` and `GITHUB_REF_NAME` is `trunk`
 - **THEN** the Version PR's head branch is `verctl/release/trunk`
 
-### Requirement: Readers of the branch follow it
+### Requirement: Readers of the branch follow the new name
 
 `verctl check --versions` SHALL exempt a local branch named
-`verctl/release/<base>` instead of `version-packages`, and in CI SHALL exempt
-a pull request whose head repository is the repository, whose head branch is
-`verctl/release/<base>`, and whose current base is `<base>`, read through the
-API.
+`verctl/release/<base>` instead of `version-packages`.
+In CI it SHALL exempt a pull request, read through the API, that meets all of
+these:
+
+- its head repository is the repository;
+- its head branch is `verctl/release/<base>`;
+- its current base is `<base>`.
 
 #### Scenario: Checking versions on the Version PR branch
 

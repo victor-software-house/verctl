@@ -16,7 +16,8 @@ The version sources a path can resolve to are in [`version-files`](../version-fi
 Two manifests in one directory fail there, with both names.
 
 Alternative: a fixed priority order (`Cargo.toml` before `package.json`).
-It lost because a directory holding both is a Rust crate with JavaScript bindings or the other way round, and guessing which one carries the release version would be wrong half the time.
+It lost because a directory holding both is a Rust crate with JavaScript bindings or the other way round.
+Guessing which one carries the release version would be wrong half the time.
 Override: name the file.
 
 ### 2. Publisher inference follows the version source

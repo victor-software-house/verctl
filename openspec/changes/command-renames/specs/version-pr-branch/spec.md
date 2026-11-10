@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: The Version PR branch is derived from its base
+### Requirement: The Version PR branch is derived from the base branch
 
 `verctl version --pr` SHALL commit the version step on `verctl/release/<base>`,
 where `<base>` is the branch the Version PR targets, and SHALL open or update

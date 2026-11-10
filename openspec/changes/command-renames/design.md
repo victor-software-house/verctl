@@ -1,6 +1,6 @@
 # Design
 
-## 1. A removed verb names its replacement
+## 1. Removed verbs name the new verb
 
 `verctl prepare`, `pin`, `publish`, and `assets` stay as hidden commands,
 out of help. The usage spec marks them `hide`, so mise leaves them out of
@@ -11,8 +11,8 @@ verctl release asset`. Under
 `--format json` the same message is the JSON error on stdout.
 
 Alternative considered: let clap refuse the old verb as an unknown command.
-It lost because the error would say only that the command does not exist,
-and the operator approved the stub on 2026-11-09 (operator, 2026-11-09).
+It lost because the error would show only that the command does not exist.
+The operator approved the stub on 2026-11-09 (operator, 2026-11-09).
 
 Alternative considered: keep the old verbs as aliases. It lost because two
 names for one command is the parallel path the minor exists to remove.
@@ -60,29 +60,42 @@ with an incomplete release, under `unreleased`, oldest first.
 `publish --plan`. A missing `.ctl/ver.yaml` fails `status` as it fails
 every other verb that reads the config.
 
-Finding unreleased commits asks GitHub, so it needs `GITHUB_TOKEN` or
-`GH_TOKEN`. Without one, `status` still succeeds: JSON holds
-`"unreleased": null` and `unreleased_unchecked` holds the reason, and the
-human view reads `unreleased  not checked (no GITHUB_TOKEN or GH_TOKEN)`.
-An empty list means checked and none, so the two never read alike. A
-lookup that cannot run without `--github-output` is reported the same way,
-with the error as the reason. Such a lookup is a walk that reaches a shallow
-clone's boundary, no GitHub `origin`, or no answer from GitHub or a
-registry. No answer means a failed connection, a timeout, a 5xx, or a spent
-rate limit (a 429, or a 403 with `x-ratelimit-remaining: 0`). `github.rs`,
-`registry.rs`, and `git.rs` mark it where the request fails, with the typed
-`lookup::Unavailable` error, never a message match. Any other error, such
-as a release tag on the wrong commit or on a tree, a 401 from a bad token,
-or a config that does not resolve, fails `status` in both modes. `status` is a local view, so a
-lookup it only adds must not fail it. The human view shows the error's
-top-level message, and JSON keeps its whole chain. Under `--github-output`
-the error fails the run.
+Finding unreleased commits queries GitHub, so it needs `GITHUB_TOKEN` or
+`GH_TOKEN`. Without one, `status` still succeeds. JSON holds `"unreleased":
+null` and `unreleased_unchecked` holds the reason. The human view reads
+`unreleased  not checked (no GITHUB_TOKEN or GH_TOKEN)`. An empty list
+means checked and none, so the two never read alike.
 
-Without `--github-output`, `status` changes nothing in the clone: no fetch
-and no unshallow, so a shallow clone checks only the history it has. With
-`--github-output <file>`, it fetches the history the plan needs, requires a
-token, and writes the outputs under the names `assets --github-output` and
-`publish --plan` used, so `release.yml` changes only the verb it calls.
+Without `--github-output`, a lookup that cannot run is reported the same
+way, with the error as the reason. Such a lookup is one of these:
+
+- a walk that reaches a shallow clone's boundary;
+- no GitHub `origin`;
+- no answer from GitHub or a registry.
+
+No answer means a failed connection, a timeout, a 5xx, or a spent rate
+limit (a 429, or a 403 with `x-ratelimit-remaining: 0`). `github.rs`,
+`registry.rs`, and `git.rs` mark it where the request fails, with the typed
+`lookup::Unavailable` error, never a message match.
+
+Any other error fails `status` in both modes. Examples:
+
+- a release tag on the wrong commit or on a tree;
+- a 401 from a bad token;
+- a config that does not resolve.
+
+`status` is a local view, so a lookup it only adds must not fail it. The
+human view shows the error's top-level message, and JSON keeps its whole
+chain. Under `--github-output` the error fails the run.
+
+Without `--github-output`, `status` changes nothing in the clone. It runs
+no fetch and no unshallow, so a shallow clone checks only the history it
+has.
+
+With `--github-output <file>`, it fetches the history the plan needs,
+requires a token, and writes the outputs. The outputs keep the names
+`assets --github-output` and `publish --plan` used, so `release.yml`
+changes only the verb it calls.
 
 Alternative considered: keep `publish --plan` as `release --plan` until
 0.9.0. It lost because 0.9.0's plan job runs `status --github-output`, and

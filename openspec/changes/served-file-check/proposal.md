@@ -2,21 +2,24 @@
 
 ## Why
 
-[docs/served-files.md](../../../docs/served-files.md) section 6 says `check`
-compares every served file to what its template renders at the versions on
-HEAD. It does not. `verctl check` with no fragments returns before it reads
-the config, and with fragments it only plans the bumps. A served file edited
-by hand passes every pull request and is overwritten at the next release,
-or ships wrong when no release touches it.
+[docs/served-files.md](../../../docs/served-files.md) section 6 holds the rule
+that `check` compares every served file to what its template renders at the
+versions on HEAD.
+It does not.
+
+`verctl check` with no fragments returns before it reads the config, and with
+fragments it only plans the bumps.
+A served file edited by hand passes every pull request and is overwritten at
+the next release, or ships wrong when no release touches it.
 
 A file that a template renders and a `pins` entry also names has two owners.
 `version` rewrites pins first and renders templates second, so the template
 overwrites the pin's edit without a word.
 
-The operator placed this check in the 0.8.0 minor on 2026-11-09, because it
-fails pull requests that pass today (operator, 2026-11-09).
+The operator placed this check in the 0.8.0 minor (operator, 2026-11-09),
+because it fails pull requests that pass today.
 
-Queue row: VER-020.
+Queue row: [VER-020][ver-020].
 
 ## What changes
 
@@ -41,3 +44,5 @@ Queue row: VER-020.
    `skills/verctl/SKILL.md`, and `AGENTS.md` say what `check` verifies.
 3. A repository with a hand-edited served file fails `check` on its next pull
    request. The fix is `verctl render`.
+
+[ver-020]: ../../../tasks.yaml

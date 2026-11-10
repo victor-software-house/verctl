@@ -2,16 +2,21 @@
 
 ## Why
 
-verctl versions only a package whose manifest it knows: `Cargo.toml`, `package.json`, or a file a repository describes with its own driver.
+verctl versions only a package whose manifest has a format it supports: `Cargo.toml`, `package.json`, or a file a repository describes with its own driver.
 A repository with no manifest cannot release through verctl at all.
-The templates repository has been tagged by hand 75 times, `v0.0.1` to `v0.0.75`, two of the tags lightweight, with no Release.
-The actions repository has never been tagged, and five consumers sampled on 2026-11-09 pinned four different commits of it.
+
+The templates repository has been tagged by hand 75 times, `v0.0.1` to `v0.0.75`.
+Two of those tags are lightweight, and none has a Release.
+The actions repository has never been tagged.
+Five consumers sampled on 2026-11-09 pinned four different commits of it.
+
 Go modules have the same gap: `go.mod` holds no version.
 
-The operator ruled on 2026-11-09 that a version always lives in a tracked file, and that a `VERSION` file is the fallback when nothing else declares one.
-The [research](research.md) shows the tools that version many stacks, Knope and Nx, keep each version in the package's own file.
+The operator ruled on 2026-11-09 that a version always lives in a tracked file.
+A `VERSION` file is the fallback when nothing else declares one.
+The [research](research.md) shows that Knope and Nx, two tools that version many stacks, keep each version in the package's own file.
 
-Queue row: VER-083.
+Queue row: [VER-083][ver-083].
 
 ## What Changes
 
@@ -40,3 +45,5 @@ The operator chose all five version sources for the first slice (2026-11-09).
 2. Docs: the instructions, the operator skill, `README.md`, `docs/`.
 3. Adopters: the templates and actions repositories each add `.ctl/ver.yaml`, `VERSION`, `CHANGELOG.md`, and the release workflow. Their owner session makes those changes; verctl ships only the support.
 4. Not in this change: directory paths, publisher inference, and changelog collisions ([`package-resolution`](../package-resolution/proposal.md)), finding packages in a monorepo ([`package-discovery`](../package-discovery/proposal.md)), per-package tags ([`release-groups`](../release-groups/proposal.md)), internal ranges ([`dependent-ranges`](../dependent-ranges/proposal.md)), and immutable releases ([`release-immutability`](../release-immutability/proposal.md)).
+
+[ver-083]: ../../../tasks.yaml

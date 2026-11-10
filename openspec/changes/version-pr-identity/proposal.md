@@ -2,19 +2,21 @@
 
 ## Why
 
-The Version PR's own CI failed the hand-edit guard on the v0.1.1 release,
-because the guard reads a label from an event snapshot taken before the label
-existed (VER-029). The fix was a second CI trigger.
+The Version PR's own CI failed the hand-edit guard on the v0.1.1 release.
+The cause is that the guard reads a label from an event snapshot taken before
+the label existed (queue row [VER-029][ver-029]). The fix was a second CI
+trigger.
 
-Queue row: VER-011. This change is one part of
+Queue row [VER-011][ver-011]. This change is one part of
 [release-state-machine][rsm]; what a Version PR may contain is
 [version-pr-content][vpc].
 
 ## What Changes
 
 1. A Version PR is identified by its head repository and its head branch
-   `verctl/release/<base>`, which a pull request cannot change, and by its
-   base, read live on every run. Title, body, and labels are never read.
+   `verctl/release/<base>`, which a pull request cannot change. Its base, read
+   live on every run, also identifies it. Title, body, and labels are never
+   read.
 2. One Version PR per base. `propose` finds, opens, updates, and closes it,
    and refuses while a pull request on the proposal branch has another base.
 
@@ -47,5 +49,7 @@ The operator approved these as decisions 3 and 4 of
 
 [rsm]: ../release-state-machine/proposal.md
 [vpc]: ../version-pr-content/proposal.md
+[ver-011]: ../../../tasks.yaml
+[ver-029]: ../../../tasks.yaml
 [pr161]: https://github.com/victor-software-house/verctl/pull/161
 [pr188]: https://github.com/victor-software-house/verctl/pull/188
