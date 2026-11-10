@@ -351,17 +351,18 @@ release`. Every input is optional and defaults to verctl's, so a caller passes
 only what differs. Steps set `env:` and run `mise run ver <verb>`, so the
 caller serves the `ver` task and pins verctl in its mise config.
 
-To keep a registry token out of reach of every branch but the default one,
-store it in a GitHub environment that admits only that branch, under the
-`registry-token-env` name (`CARGO_REGISTRY_TOKEN` by default), pass
-`environment: <name>`, and pass `secrets: inherit`. Only `publish` runs in the
-environment. An environment secret reaches a called workflow only under its
-stored name, which is why the token is not mapped to `registry-token`.
-`secrets: inherit` replaces the `secrets:` map, so the App secrets are not
-passed either, and the Version PR is opened with `GITHUB_TOKEN`: its own CI
-does not start. Trusted publishing skips the stored-name read, so a crate's
-first publish from the environment turns `crates-io-trusted-publishing` off
-for that one release.
+A registry token stored in a GitHub environment that admits only the default
+branch is out of reach of every other branch. Pass `environment: <name>`, and
+map the token by its stored name:
+`registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}`. Only `publish` runs in
+the environment, and it receives the environment's value.
+
+The workflow reads no secret by a computed name, so a caller never passes
+`secrets: inherit`. The App secrets stay in the same `secrets:` map.
+`registry-token-env` names only the variable the publisher reads the token
+from (`CARGO_REGISTRY_TOKEN` by default). A crate's first publish maps the
+token and turns `crates-io-trusted-publishing` off for that one release,
+because the workflow refuses both.
 
 To migrate from `version-pr.yml` and `publish.yml`, do it in one pull request:
 

@@ -113,16 +113,15 @@ crate lists the caller's repository and workflow file as its trusted
 publisher. The publish job requests `id-token: write`, so every caller
 grants it. `environment` names a GitHub environment for the publish job,
 the only job that reads a registry token, so the token can live only in
-an environment that admits the default branch. The environment holds the
-token under the `registry-token-env` name, such as
-`CARGO_REGISTRY_TOKEN`, and the caller passes `secrets: inherit`: an
-environment secret reaches a called workflow only under its stored name,
-and no secret name holds the hyphen in `registry-token`.
-`secrets: inherit` replaces the `secrets:` map, so the App secrets are
-not passed and the Version PR is opened with `GITHUB_TOKEN`. Trusted
-publishing skips the stored-name read, so a crate's first publish from
-the environment turns `crates-io-trusted-publishing` off for that
-release. Empty runs publish in no environment.
+an environment that admits the default branch. The caller maps the
+token's stored name, such as `CARGO_REGISTRY_TOKEN`, to the
+`registry-token` secret, and the publish job receives the environment's
+value. The workflow reads no secret by a computed name, so a caller
+never passes `secrets: inherit`. `registry-token-env` names only the
+variable the publisher reads the token from. A crate's first publish
+maps the token and turns `crates-io-trusted-publishing` off for that
+release, because the workflow refuses both. Empty runs publish in no
+environment.
 Steps set `env:` and
 run `mise run ver <verb>`, so a caller serves the `ver` task. Without the
 App secrets the Version PR is opened with `GITHUB_TOKEN`, which needs the
