@@ -162,7 +162,10 @@ packages:
 A string is a **mise task**. A list is execvp (no shell).
 Stdin is the file. Write drivers also get `VERCTL_VERSION`.
 Stdout is the version (read) or the new file (write).
-`after` is printed, not run.
+`version` runs `after` once the versions are written: a detected lockfile
+refresh beside its lockfile, and a declared `after`, split on spaces with no
+shell, in the directory verctl runs from. The report's `after` lists each
+command it ran.
 
 `0.x` rejects a `major` fragment.
 

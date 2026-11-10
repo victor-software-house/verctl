@@ -11,8 +11,8 @@ use verctl::cli::{
 use verctl::config::{self, Config};
 use verctl::fragment::{self, Bump};
 use verctl::{
-    assets, ci, docsrs, git, github, pending, pins, prepare, process, publish, release,
-    semver_check, templates, versions,
+    assets, ci, docsrs, git, github, pending, pins, prepare, publish, release, semver_check,
+    templates, versions,
 };
 
 mod presentation;
@@ -173,7 +173,7 @@ fn version_report(args: &VersionArgs) -> Result<VersionReport> {
     let fragments = fragment::load_dir(&args.dir)?;
     let root = &config::root_of(&args.config);
     let plan = prepare::plan(&config, &fragments, root)?;
-    if plan.is_empty() {
+    if release::contributing_fragments(&plan, &fragments).is_empty() {
         return Ok(VersionReport {
             bumps: Vec::new(),
             changelog: String::new(),
@@ -210,10 +210,21 @@ fn version_report(args: &VersionArgs) -> Result<VersionReport> {
         &config.pins,
         &served,
     )?);
+    let cwd = std::env::current_dir()
+        .and_then(|dir| dir.canonicalize())
+        .context("the working directory")?;
+    let steps = prepare::steps(&plan, config.prepare.after.as_deref(), &cwd);
+    let after: Vec<String> = steps.iter().map(prepare::Step::command).collect();
     if dry_run {
-        return preview_report(root, &plan, &fragments, bumps, pinned, args.open_pr());
+        let preview = Preview {
+            bumps,
+            pinned,
+            after,
+            open_pr: args.open_pr(),
+        };
+        return preview_report(root, &plan, &fragments, preview);
     }
-    let follow_up = prepare::apply_plan(&plan)?;
+    prepare::apply_plan(&plan)?;
     // The tag names the merge commit, so a pin that lands after publish
     // never reaches the tree consumers fetch by ref. Rewrite them here,
     // where they ride the Version PR. Only the versions this release
@@ -231,24 +242,13 @@ fn version_report(args: &VersionArgs) -> Result<VersionReport> {
     let origins = release::origins(root, token, &config.changelog, &fragments)?;
     let changelog = release::changelog_sections_with(&plan, &fragments, &origins)?;
     let changelogs = release::write_changelogs_with(&config, root, &plan, &fragments, &origins)?;
-    if let Some(after) = &config.prepare.after {
-        process::run_inherit(after, std::time::Duration::from_mins(5)).context("prepare.after")?;
-    }
-    let consume: Vec<String> = consumed
-        .iter()
-        .map(|fragment| {
-            fragment
-                .path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("?")
-                .to_owned()
-        })
-        .collect();
+    prepare::run_steps(&steps)?;
+    let consume = file_names(&consumed);
     let mut paths: Vec<std::path::PathBuf> = plan.iter().map(|entry| entry.path.clone()).collect();
     paths.extend(pinned.iter().cloned());
     paths.extend(changelogs);
     paths.extend(consumed.iter().map(|fragment| fragment.path.clone()));
+    paths.extend(steps.iter().filter_map(|step| step.lockfile.clone()));
     let staged = git::assert_only_allowed(
         root,
         &paths,
@@ -267,10 +267,25 @@ fn version_report(args: &VersionArgs) -> Result<VersionReport> {
         consume,
         pins: display_paths(pinned),
         pr,
-        after: follow_up,
+        after,
         dry_run: false,
         bumps,
     })
+}
+
+/// The file name of each consumed fragment, as the report lists it.
+fn file_names(fragments: &[&fragment::Fragment]) -> Vec<String> {
+    fragments
+        .iter()
+        .map(|fragment| {
+            fragment
+                .path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("?")
+                .to_owned()
+        })
+        .collect()
 }
 
 fn display_paths(paths: Vec<std::path::PathBuf>) -> Vec<String> {
@@ -280,14 +295,26 @@ fn display_paths(paths: Vec<std::path::PathBuf>) -> Vec<String> {
         .collect()
 }
 
+/// What `version --dry-run` reports beside the changelog it renders.
+struct Preview {
+    bumps: Vec<VersionBump>,
+    pinned: Vec<std::path::PathBuf>,
+    after: Vec<String>,
+    open_pr: bool,
+}
+
 fn preview_report(
     root: &Path,
     plan: &[prepare::PlanEntry],
     fragments: &[fragment::Fragment],
-    bumps: Vec<VersionBump>,
-    pinned: Vec<std::path::PathBuf>,
-    open_pr: bool,
+    preview: Preview,
 ) -> Result<VersionReport> {
+    let Preview {
+        bumps,
+        pinned,
+        after,
+        open_pr,
+    } = preview;
     let origins = release::origins(root, None, &config::Changelog::default(), fragments)?;
     let changelog = release::changelog_sections_with(plan, fragments, &origins)?;
     let consume = if open_pr {
@@ -312,10 +339,7 @@ fn preview_report(
         consume,
         pins: display_paths(pinned),
         pr,
-        after: plan
-            .iter()
-            .filter_map(|entry| entry.driver.after().map(str::to_owned))
-            .collect(),
+        after,
         dry_run: true,
     })
 }

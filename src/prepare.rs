@@ -68,16 +68,14 @@ pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<
     Ok(plan)
 }
 
-/// Write each new version, returning the follow-up commands, sorted and
-/// deduplicated.
+/// Write each new version.
 ///
 /// # Errors
 ///
 /// Returns an error when a manifest cannot be read or written, or when its
 /// driver cannot write the new version. Manifests written before the failing
 /// entry stay changed.
-pub fn apply_plan(entries: &[PlanEntry]) -> Result<Vec<String>> {
-    let mut follow_up = Vec::new();
+pub fn apply_plan(entries: &[PlanEntry]) -> Result<()> {
     for entry in entries {
         if entry.from == entry.to {
             continue;
@@ -85,11 +83,94 @@ pub fn apply_plan(entries: &[PlanEntry]) -> Result<Vec<String>> {
         let raw = entry.driver.source(&entry.path)?;
         let updated = entry.driver.write(&raw, &entry.to)?;
         std::fs::write(&entry.path, updated).with_context(|| entry.path.display().to_string())?;
-        if let Some(after) = entry.driver.after() {
-            follow_up.push(after.to_owned());
+    }
+    Ok(())
+}
+
+/// A command the version step runs once the files it writes are written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Step {
+    /// The command.
+    pub argv: Vec<String>,
+    /// Where it runs.
+    pub dir: PathBuf,
+    /// The lockfile it rewrites, which the Version PR commits, when verctl
+    /// knows it. A command a repository declares stages what it writes
+    /// through `prepare.stage`.
+    pub lockfile: Option<PathBuf>,
+}
+
+impl Step {
+    /// The argv joined by spaces, as the report's `after` lists it.
+    #[must_use]
+    pub fn command(&self) -> String {
+        self.argv.join(" ")
+    }
+}
+
+/// The commands the version step runs after the bumps, each once: the owner
+/// of each bumped manifest's lockfile ([`crate::detect::owner`]), or the
+/// package's own `after`, then `prepare.after`.
+///
+/// A lockfile refresh belongs to the version step, so a lockfile on the
+/// Version PR comes from its owner and never from a hand edit. A package's
+/// own `after` and `prepare.after` run in `cwd`, as `prepare.after` always
+/// has; a command already listed for the same directory runs once.
+#[must_use]
+pub fn steps(entries: &[PlanEntry], prepare_after: Option<&[String]>, cwd: &Path) -> Vec<Step> {
+    let mut steps: Vec<Step> = Vec::new();
+    let mut push = |step: Step| {
+        if !steps
+            .iter()
+            .any(|ran| ran.argv == step.argv && ran.dir == step.dir)
+        {
+            steps.push(step);
+        }
+    };
+    for entry in entries {
+        if entry.from == entry.to {
+            continue;
+        }
+        let Some(after) = entry.driver.after() else {
+            continue;
+        };
+        match crate::detect::owner(&entry.path) {
+            Some(owner) if owner.command() == after => push(Step {
+                argv: owner.argv,
+                dir: owner.dir,
+                lockfile: owner.lockfile,
+            }),
+            Some(_) | None => push(Step {
+                argv: after.split_whitespace().map(str::to_owned).collect(),
+                dir: cwd.to_path_buf(),
+                lockfile: None,
+            }),
         }
     }
-    follow_up.sort();
-    follow_up.dedup();
-    Ok(follow_up)
+    if let Some(argv) = prepare_after {
+        push(Step {
+            argv: argv.to_vec(),
+            dir: cwd.to_path_buf(),
+            lockfile: None,
+        });
+    }
+    steps
+}
+
+/// Run each step in order, streaming its output to stderr.
+///
+/// # Errors
+///
+/// Returns an error naming the first command that fails or runs longer than
+/// five minutes. Steps before it have run.
+pub fn run_steps(steps: &[Step]) -> Result<()> {
+    for step in steps {
+        crate::process::run_inherit_in(
+            &step.argv,
+            Some(&step.dir),
+            std::time::Duration::from_mins(5),
+        )
+        .with_context(|| format!("version step `{}`", step.command()))?;
+    }
+    Ok(())
 }

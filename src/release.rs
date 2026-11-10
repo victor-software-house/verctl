@@ -8,7 +8,7 @@ use ctl_core::{formatdoc, writedoc};
 
 use crate::changelog::{self, Commit, PullRequest, ReleaseInput};
 use crate::config::Config;
-use crate::fragment::{Fragment, Group};
+use crate::fragment::{Bump, Fragment, Group};
 use crate::git::pull_request_number;
 use crate::prepare::PlanEntry;
 use crate::{git, github};
@@ -99,7 +99,9 @@ pub fn served_versions(
     versions
 }
 
-/// Fragments that named at least one package in `plan`.
+/// Fragments the version step consumes: each that names a package in
+/// `plan`, and each that bumps nothing, such as one holding only
+/// `demo: none`, which no later Version PR would consume either.
 #[must_use]
 pub fn contributing_fragments<'a>(
     plan: &[PlanEntry],
@@ -111,7 +113,11 @@ pub fn contributing_fragments<'a>(
             fragment
                 .packages
                 .iter()
-                .any(|package| plan.iter().any(|entry| entry.name == package.name))
+                .all(|package| package.bump == Bump::None)
+                || fragment
+                    .packages
+                    .iter()
+                    .any(|package| plan.iter().any(|entry| entry.name == package.name))
         })
         .collect()
 }
