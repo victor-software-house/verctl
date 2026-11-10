@@ -2,11 +2,11 @@
 
 use std::path::Path;
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
 
 use crate::config::Config;
-use crate::{content, git, release};
+use crate::{content, git, pull_request, release};
 
 /// Whether, and why, the version comparison is skipped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -148,20 +148,23 @@ fn on_version_branch(root: &Path) -> bool {
 
 /// Compare versions on HEAD to the merge-base. On the Version PR, check its
 /// content instead with [`content::check`]: the versions are meant to differ
-/// there, and every change must be one the version step makes.
+/// there, and every change must be one the version step makes. Any other pull
+/// request also fails on each change [`pull_request::problems`] lists.
 ///
-/// A pull request that changes no version and consumes no fragment never asks
-/// whether it is the Version PR, so it needs no token and no API. One that
-/// does asks through [`Skip::from_env`]; a merge queue run skips. On Actions,
-/// the base and default branches are fetched first when the checkout lacks
-/// them or is shallow, as the depth-1 pull request checkout is.
+/// A pull request that changes no version, consumes no fragment, and has no
+/// such problem never asks whether it is the Version PR, so it needs no token
+/// and no API. One that does asks through [`Skip::from_env`]; a merge queue
+/// run skips. On Actions, the base and default branches are fetched first when
+/// the checkout lacks them or is shallow, as the depth-1 pull request checkout
+/// is.
 ///
 /// # Errors
 ///
 /// Returns an error when that fetch fails, under the conditions of
-/// [`report_with`] and [`content::removes_fragment`], when [`Skip::from_env`]
-/// cannot read the pull request, or when the Version PR fails
-/// [`content::check`].
+/// [`report_with`], [`pull_request::problems`], and
+/// [`content::removes_fragment`], when [`Skip::from_env`] cannot read the pull
+/// request, when the Version PR fails [`content::check`], or when another pull
+/// request has a problem.
 pub fn report(root: &Path, config: &Config, inputs: &content::Inputs) -> Result<VersionReport> {
     let fetch = git::FetchDefault::from_env();
     for branch in git::comparison_branches() {
@@ -172,19 +175,24 @@ pub fn report(root: &Path, config: &Config, inputs: &content::Inputs) -> Result<
         content::check(root, config, inputs, &candidates)?;
         return report_with(root, config, Skip::VersionBranch, &[], &[]);
     }
-    let report = report_with(
-        root,
-        config,
-        Skip::None,
-        &candidates,
-        &git::release_branch_candidates(),
-    )?;
-    if report.drifted().is_empty() && !content::removes_fragment(root, inputs, &candidates)? {
+    let release_candidates = git::release_branch_candidates();
+    let report = report_with(root, config, Skip::None, &candidates, &release_candidates)?;
+    let problems = pull_request::problems(root, config, inputs, &candidates, &release_candidates)?;
+    if problems.is_empty()
+        && report.drifted().is_empty()
+        && !content::removes_fragment(root, inputs, &candidates)?
+    {
         return Ok(report);
     }
     let skip = Skip::from_env(root)?;
-    if skip == Skip::VersionBranch {
-        content::check(root, config, inputs, &candidates)?;
+    match skip {
+        Skip::VersionBranch => content::check(root, config, inputs, &candidates)?,
+        Skip::None if !problems.is_empty() => bail!(
+            "this pull request makes {count} change(s) only the Version PR may make:\n{list}",
+            count = problems.len(),
+            list = problems.join("\n"),
+        ),
+        Skip::None | Skip::Ci | Skip::MergeQueue => {}
     }
     Ok(match skip.label() {
         Some(label) => VersionReport {

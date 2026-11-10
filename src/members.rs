@@ -57,7 +57,8 @@ pub fn is_virtual(manifest: &Path) -> Result<bool> {
 /// orders publishes, and so does a development dependency that declares a
 /// version, which `cargo publish` keeps; a path-only development dependency
 /// does not, since `cargo publish` strips it. Members with no such dependency
-/// between them keep the order of `workspace_members`.
+/// between them keep the order of `workspace_members`. `--offline` with
+/// `--no-deps` reads only manifests, so it never reaches a registry.
 ///
 /// # Errors
 ///
@@ -74,6 +75,7 @@ pub fn members(manifest: &Path) -> Result<Vec<Member>> {
         "--format-version",
         "1",
         "--no-deps",
+        "--offline",
         "--manifest-path",
         &path,
     ]);

@@ -219,6 +219,18 @@ merge-base may change, and its content is left to the Version PR's
 review. The error lists every difference; `verctl version --pr` rewrites
 the Version PR.
 
+A pull request that is not the Version PR fails when it adds a
+CHANGELOG section for a version. A heading names its version last, as in
+`## demo 1.2.0` or `## 1.2.0`. A version the CHANGELOG held at the
+merge-base, or on the release branch at its merge-base with HEAD, is not
+added, so fixing a heading's name and merging the release branch both
+pass. Such a pull request also fails when it changes whether a package
+publishes and adds no fragment that bumps it above `none`, since only a
+release publishes it under the new setting. Whether it publishes comes
+from its `publisher`, the members a workspace package uploads, a Cargo
+`publish` key, and `private` in `package.json`. A merge queue run skips
+both rules.
+
 verctl never merges the Version PR and never enables auto-merge on it. A
 release starts only when a person merges the Version PR. Open it with a
 GitHub App token: a pull request opened with the job's `GITHUB_TOKEN` starts
