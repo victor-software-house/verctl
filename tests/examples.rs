@@ -1,5 +1,5 @@
 //! `examples/ver.yaml` is documentation that has to keep parsing. It is a
-//! real config, not a commented one, so the schema is what validates it.
+//! real config instead of a commented one, so the schema validates it.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -74,10 +74,10 @@ fn the_example_config_parses() {
     assert_eq!(config.patterns.len(), 3, "three spellings, named once each");
 }
 
-/// What makes the plan below sufficient: a table no package names is never
-/// rendered, so it could document anything. `cargo`, `npm`, and `bun` are stock
-/// names a manifest implies on its own; any other table has to be claimed by a
-/// package explicitly, or it is documentation nothing runs.
+/// Why the plan below is enough. A table no package names is never rendered,
+/// so it could document anything. `cargo`, `npm`, and `bun` are stock names a
+/// manifest implies on its own. Any other table has to be claimed by a package
+/// explicitly, or it is documentation nothing runs.
 #[test]
 fn the_example_declares_nothing_a_package_does_not_use() {
     let config = Config::load(&example()).expect("parse");
@@ -105,11 +105,12 @@ fn the_example_declares_nothing_a_package_does_not_use() {
     }
 }
 
-/// Resolving each declared table by hand would skip the stock merge production
-/// applies, so a valid `[drivers.npm] after = "…"` (stock supplying the rest)
-/// would fail here while working in the field. Plan the publish instead: it is
-/// the path that resolves every driver, reads the version through it, and
-/// resolves every publisher. With the test above, no declared table escapes.
+/// Resolving each declared table by hand would skip the stock merge that
+/// production applies. A valid `[drivers.npm] after = "…"` (stock supplying the
+/// rest) would then fail here while working in the field. Plan the publish
+/// instead: it is the path that resolves every driver, reads the version
+/// through it, and resolves every publisher. With the test above, no declared
+/// table escapes.
 #[test]
 fn the_example_resolves_every_driver_and_publisher_it_declares() {
     let root = planted();
@@ -164,10 +165,10 @@ fn the_example_resolves_every_driver_and_publisher_it_declares() {
     );
 }
 
-/// The comment above `[drivers.plain]` promises both directions: stdin is the
-/// file, stdout is the version on read and the whole new file on write, and a
-/// write also gets `VERCTL_VERSION`. Run both: an argv that opens its own file
-/// or ignores the variable would document a protocol that does not exist.
+/// The comment above `[drivers.plain]` promises both directions. Stdin is the
+/// file. Stdout is the version on read and the whole new file on write. A write
+/// also gets `VERCTL_VERSION`. Run both: an argv that opens its own file or
+/// ignores the variable would document a protocol that does not exist.
 #[test]
 fn the_example_command_driver_reads_and_writes_through_stdio() {
     let config = Config::load(&example()).expect("parse");
@@ -221,7 +222,8 @@ fn the_example_assets_table_plans_the_targets_it_documents() {
                 target.labels.join(", "),
                 target.asset.as_str(),
                 // The triple is what `cargo build --target` gets. Omit it here
-                // and the example could document a wrong one silently.
+                // and the example could document a wrong one with no test
+                // failing.
                 target.triple.as_str(),
             )
         })

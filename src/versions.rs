@@ -20,15 +20,15 @@ pub enum Skip {
     /// differ. [`report`] checks the Version PR's content instead.
     VersionBranch,
     /// Skip in a merge queue run. Each entry's pull request already compared
-    /// its own versions, and a queue run combines entries, so a Version PR
-    /// ahead in the queue changes the versions every later entry sees.
+    /// its own versions. A queue run combines entries, so a Version PR ahead in
+    /// the queue changes the versions every later entry sees.
     MergeQueue,
 }
 
 impl Skip {
-    /// Detect a Version PR from the current branch, when it is a
-    /// `verctl/release/<base>` branch, or from the identity of the event's
-    /// pull request, and a merge queue run from the event.
+    /// Detect a Version PR from the current `verctl/release/<base>` branch or
+    /// from the identity of the event's pull request. Detect a merge queue run
+    /// from the event.
     ///
     /// # Errors
     ///
@@ -146,25 +146,32 @@ fn on_version_branch(root: &Path) -> bool {
     git::current_branch(root).is_some_and(|branch| release::is_version_branch(&branch))
 }
 
-/// Compare versions on HEAD to the merge-base. On the Version PR, check its
-/// content instead with [`content::check`]: the versions are meant to differ
-/// there, and every change must be one the version step makes. Any other pull
-/// request also fails on each change [`pull_request::problems`] lists.
+/// Compare versions on HEAD to the merge-base.
+///
+/// On the Version PR, check its content instead with [`content::check`]. The
+/// versions are meant to differ there, and every change must be one the
+/// version step makes. Any other pull request also fails on each change that
+/// [`pull_request::problems`] lists.
 ///
 /// A pull request that changes no version, consumes no fragment, and has no
-/// such problem never asks whether it is the Version PR, so it needs no token
-/// and no API. One that does asks through [`Skip::from_env`]; a merge queue
-/// run skips. On Actions, the base and default branches are fetched first when
-/// the checkout lacks them or is shallow, as the depth-1 pull request checkout
-/// is.
+/// such problem needs no token and no API. It never has to learn whether it is
+/// the Version PR. One that has to learn it does so through
+/// [`Skip::from_env`]. A merge queue run skips.
+///
+/// On Actions, the base and default branches are fetched first when the
+/// checkout lacks them or is shallow. The depth-1 pull request checkout is
+/// shallow.
 ///
 /// # Errors
 ///
-/// Returns an error when that fetch fails, under the conditions of
-/// [`report_with`], [`git::MergeBase::read`], [`pull_request::problems`],
-/// and [`content::removes_fragment`], when [`Skip::from_env`] cannot read the
-/// pull request, when the Version PR fails [`content::check`], or when another
-/// pull request has a problem.
+/// Returns an error when:
+///
+/// - that fetch fails,
+/// - [`report_with`], [`git::MergeBase::read`], [`pull_request::problems`], or
+///   [`content::removes_fragment`] would return an error,
+/// - [`Skip::from_env`] cannot read the pull request,
+/// - the Version PR fails [`content::check`], or
+/// - another pull request has a problem.
 pub fn report(root: &Path, config: &Config, inputs: &content::Inputs) -> Result<VersionReport> {
     let fetch = git::FetchDefault::from_env();
     for branch in git::comparison_branches() {
@@ -211,11 +218,16 @@ pub fn report(root: &Path, config: &Config, inputs: &content::Inputs) -> Result<
 ///
 /// # Errors
 ///
-/// Returns an error when either merge-base cannot be found or read, as
-/// described for [`crate::git::files_on_merge_base`]. It also returns one,
-/// naming the package, when its current version cannot be read (see
-/// [`crate::config::PackageSpec::current`]) or its driver cannot read a
-/// version from the merge-base or release copy.
+/// Returns an error when:
+///
+/// - either merge-base cannot be found or read, as described for
+///   [`crate::git::files_on_merge_base`],
+/// - a package's current version cannot be read (see
+///   [`crate::config::PackageSpec::current`]), or
+/// - a package's driver cannot read a version from the merge-base or release
+///   copy.
+///
+/// The last two errors name the package.
 pub fn report_with(
     root: &Path,
     config: &Config,

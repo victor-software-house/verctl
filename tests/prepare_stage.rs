@@ -214,8 +214,8 @@ fn pins_move_with_the_bump() {
     assert!(stdout.contains("consumer/mise.toml"), "{stdout}");
 }
 
-/// A rewritten pin is part of the release, not a surprise in the worktree.
-/// Without that, the dirty check would reject the file `version` just wrote.
+/// A rewritten pin is part of the release and no surprise in the worktree.
+/// Without that, the dirty check would reject the file `version` wrote.
 #[test]
 fn a_rewritten_pin_is_not_unexpected_dirt() {
     let root = TempDir::new().unwrap();

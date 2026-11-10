@@ -220,8 +220,8 @@ pub(super) struct StatusReport {
 }
 
 /// Why `status` did not check for unreleased version commits. The human view
-/// shows the top-level message, which fits on one line; JSON holds the whole
-/// error chain, so automation keeps the cause.
+/// shows the top-level message, which fits on one line. JSON holds the whole
+/// error chain, so the cause stays available to automation.
 #[derive(Clone, Serialize)]
 #[serde(into = "String")]
 pub(super) struct Unchecked {
@@ -230,7 +230,7 @@ pub(super) struct Unchecked {
 }
 
 impl Unchecked {
-    /// No token was set, so nothing asked GitHub.
+    /// No token was set, so no request reached GitHub.
     pub(super) fn missing_token() -> Self {
         let reason = "no GITHUB_TOKEN or GH_TOKEN".to_owned();
         Self {
@@ -451,8 +451,8 @@ pub(super) struct ReleaseReport {
 }
 
 impl ReleaseReport {
-    /// One `allowed` row per proof the run went past, so the log of a run
-    /// that went past one says so.
+    /// One `allowed` row per proof the run went past. The log of such a run
+    /// shows each one.
     fn allowed_rows(&self, fields: Fields) -> Fields {
         self.allowed.iter().fold(fields, |fields, allowed| {
             fields.row(
@@ -666,7 +666,7 @@ mod tests {
         })
     }
 
-    /// A run that went past a proof says so on its own row, and the JSON
+    /// A run that went past a proof shows it on its own row, and the JSON
     /// lists it under `allowed`.
     #[test]
     fn an_allowed_proof_is_on_the_record_in_both_shapes() {

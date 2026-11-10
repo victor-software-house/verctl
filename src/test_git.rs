@@ -3,8 +3,9 @@
 use std::path::Path;
 use std::process::Command;
 
-/// Run `git` with `args` in `dir` under a fixed identity and no user or system
-/// configuration, and return its trimmed stdout. A failure panics with stderr.
+/// Run `git` with `args` in `dir`, and return its trimmed stdout. The run uses
+/// a fixed identity and no user or system configuration. A failure panics with
+/// stderr.
 pub(crate) fn git(dir: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .current_dir(dir)
@@ -36,8 +37,8 @@ pub(crate) fn init(dir: &Path) {
     git(dir, &["init", "-q", "-b", "main"]);
 }
 
-/// Commit everything in `dir` on top of HEAD, with `subject`, and return the
-/// new commit's id. An unchanged tree still commits.
+/// Commit everything in `dir` as a child of HEAD, using `subject`, and return
+/// the new commit's id. An unchanged tree still commits.
 pub(crate) fn commit_all(dir: &Path, subject: &str) -> String {
     git(dir, &["add", "-A"]);
     git(dir, &["commit", "-q", "--allow-empty", "-m", subject]);

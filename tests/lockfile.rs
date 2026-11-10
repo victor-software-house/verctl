@@ -1,7 +1,8 @@
-//! Lockfile parsing and comparison on real lockfiles: an excerpt of
-//! ctl-core's `Cargo.lock` from its 0.7.0 Version PR, and the `bun.lock`,
-//! `package-lock.json`, and `uv.lock` that bun, npm, and uv wrote for a
-//! two-package workspace before and after `a` moved from 1.0.0 to 1.1.0.
+//! Lockfile parsing and comparison on real lockfiles. One is an excerpt of
+//! ctl-core's `Cargo.lock` from its 0.7.0 Version PR. The others are the
+//! `bun.lock`, `package-lock.json`, and `uv.lock` that bun, npm, and uv wrote
+//! for a two-package workspace. Each has an old and a new copy, where `a` moves
+//! from 1.0.0 to 1.1.0.
 
 use std::path::Path;
 

@@ -78,9 +78,11 @@ pub fn summary_has_terminal(summary: &str) -> bool {
         .is_some_and(|ch| matches!(ch, '.' | '!' | '?'))
 }
 
-/// The summary a reference follows: one trailing period removed, so the entry
-/// ends `… ([#12](url)).` with a single period, never `…. ([#12](url)).`. An
-/// ellipsis (`...`) stays whole, since dropping one dot would leave `..`.
+/// The summary a reference follows, with one trailing period removed.
+///
+/// The entry then ends `… ([#12](url)).` with a single period, never
+/// `…. ([#12](url)).`. An ellipsis (`...`) stays whole, since dropping one dot
+/// would leave `..`.
 #[must_use]
 pub fn summary_body(summary: &str) -> &str {
     let summary = summary.trim_end();
@@ -100,7 +102,7 @@ pub fn render_release(input: &ReleaseInput) -> Result<String> {
     render_release_template(RELEASE_TEMPLATE, input)
 }
 
-/// Renders `input` with `template` in place of the stock release template.
+/// Renders `input` with `template` instead of the stock release template.
 ///
 /// # Errors
 ///

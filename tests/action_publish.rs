@@ -29,8 +29,8 @@ fn publish_action_passes_the_default_branch() {
     assert!(ACTION.contains("VERCTL_DEFAULT_BRANCH"), "{ACTION}");
 }
 
-/// An empty title or commit message reaches verctl as an empty variable,
-/// which it reads as unset, so one place owns the default.
+/// An empty title or commit message reaches verctl as an empty variable.
+/// verctl reads it as unset, so one place owns the default.
 #[test]
 fn version_pr_action_leaves_the_title_to_verctl() {
     assert!(
@@ -56,8 +56,8 @@ fn actions_set_variables_and_run_the_bare_verb() {
 }
 
 /// GitHub refuses an action whose metadata is not YAML, and actionlint reads
-/// only workflows. An unquoted `: ` in a description made the Version PR
-/// action fail at "Set up job" in every consumer of v0.4.6 to v0.4.8.
+/// only workflows. An unquoted `: ` in a description broke the Version PR
+/// action at "Set up job" for every consumer of v0.4.6 to v0.4.8.
 #[test]
 fn every_action_is_yaml() {
     for (name, action) in [

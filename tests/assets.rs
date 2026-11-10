@@ -1,5 +1,5 @@
-//! The `release asset` command as run through the binary: package tarballs as
-//! they have always been built, and vendored sets beside them. `--dry-run`
+//! The `release asset` command, run through the binary. It covers package
+//! tarballs, built as before, and vendored sets beside them. `--dry-run`
 //! builds and uploads nothing.
 
 #![expect(
@@ -49,8 +49,8 @@ fn entries(path: &Path) -> Vec<String> {
         .collect()
 }
 
-/// A package config from before vendored sets existed, with a build that does
-/// nothing over a binary already in place, so only the packing is under test.
+/// A package config from before vendored sets existed. Its build does nothing
+/// over a binary already in place, so only the packing is under test.
 #[test]
 fn a_package_target_plans_and_packs_as_before() {
     let root = TempDir::new().expect("tmp");

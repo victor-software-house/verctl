@@ -2,10 +2,12 @@
 //! `module` line.
 //!
 //! Go itself records no version in `go.mod`: a release is a tag. The comment
-//! gives verctl a tracked line to read and bump, and Go ignores it. The
-//! [go.mod reference] gives a module-line comment meaning only when it starts
-//! with `Deprecated:`, which this format never writes. A notice directly above
-//! the line is read together with that comment, so such a file is refused.
+//! gives verctl a tracked line to read and bump, and Go ignores it.
+//!
+//! The [go.mod reference] gives a module-line comment meaning only when it
+//! starts with `Deprecated:`, which this format never writes. A notice
+//! directly above the line is read together with that comment, so such a file
+//! is refused.
 //!
 //! [go.mod reference]: https://go.dev/ref/mod#go-mod-file-module-deprecation
 
@@ -19,7 +21,7 @@ const UNRELEASED: &str = "0.0.0";
 struct ModuleLine<'a> {
     /// The module path, without quotes.
     path: &'a str,
-    /// Byte offset just after the path, where the comment goes.
+    /// Byte offset after the path, where the comment goes.
     path_end: usize,
     /// Byte offset of the line ending, or of the end of the file.
     line_end: usize,
@@ -66,18 +68,23 @@ pub(crate) fn write(raw: &str, new_version: &str) -> Result<String> {
 /// Refuse a version whose major the module path does not carry.
 ///
 /// From v2 on, the Go toolchain resolves a module only at a path that ends in
-/// `/v<major>`, and below v2 the path carries no such suffix
-/// ([major version suffixes]). A tag that breaks this rule is one no `go get`
-/// can fetch, so the bump stops and names the path the release needs.
-/// `gopkg.in` paths spell the major as `.vN` and are left to their owner.
+/// `/v<major>`. Below v2 the path carries no such suffix
+/// ([major version suffixes]).
+///
+/// A tag that breaks this rule is one no `go get` can fetch, so the bump stops
+/// and names the path the release needs. `gopkg.in` paths spell the major as
+/// `.vN` and are left to their owner.
 ///
 /// [major version suffixes]: https://go.dev/ref/mod#major-version-suffixes
 ///
 /// # Errors
 ///
-/// Returns an error when the file cannot be read as [`read`] describes, when
-/// `new_version` is not semver, when its major conflicts with the path, or
-/// when [`refuse_deprecated`] refuses the file.
+/// Returns an error when:
+///
+/// - the file cannot be read as [`read`] describes,
+/// - `new_version` is not semver,
+/// - its major conflicts with the path, or
+/// - [`refuse_deprecated`] refuses the file.
 pub(crate) fn accepts(raw: &str, new_version: &str) -> Result<()> {
     let line = module_line(raw)?;
     refuse_deprecated(&line)?;

@@ -1,5 +1,5 @@
-//! Rendering of release entries and dependency lists from the stock and
-//! override templates.
+//! The stock and override templates make release entries. They also make
+//! dependency lists.
 
 use indoc::indoc;
 use verctl::changelog::{

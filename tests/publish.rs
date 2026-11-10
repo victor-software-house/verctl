@@ -1,4 +1,4 @@
-//! `publish --dry-run` prints the stock command plan and writes nothing.
+//! `publish --dry-run` prints the stock plan and writes nothing.
 
 mod common;
 
@@ -260,7 +260,7 @@ fn dry_run_leaves_out_a_package_at_0_0_0() {
     assert_eq!(publish_stdout(root.path()), expected);
 }
 
-/// A dry run agrees with `publish`: a repository whose only package is at
+/// A dry run matches `publish`: a repository whose only package is at
 /// `0.0.0` has nothing to release.
 #[test]
 fn dry_run_of_a_package_at_0_0_0_has_nothing_to_release() {
@@ -286,8 +286,9 @@ fn dry_run_of_a_package_at_0_0_0_has_nothing_to_release() {
     assert!(stdout.contains("nothing to release"), "{stdout}");
 }
 
-/// A `VERSION` package before its first release has no file yet, which
-/// reads as `0.0.0`: nothing to release, not a missing-file error.
+/// A `VERSION` package before its first release has no file yet. The missing
+/// file reads as `0.0.0`, so there is nothing to release and no missing-file
+/// error.
 #[test]
 fn dry_run_of_a_missing_version_file_has_nothing_to_release() {
     let root = TempDir::new().unwrap();
@@ -303,8 +304,8 @@ fn dry_run_of_a_missing_version_file_has_nothing_to_release() {
     assert!(stdout.contains("nothing to release"), "{stdout}");
 }
 
-/// A version file `publish` cannot read fails and names the package, as
-/// `version` does.
+/// When `publish` cannot read a version file, it fails and names the package,
+/// as `version` does.
 #[test]
 fn dry_run_names_the_package_whose_version_it_cannot_read() {
     let root = TempDir::new().unwrap();
@@ -588,8 +589,8 @@ fn publish_without_token(root: &std::path::Path, env: &[(&str, &str)]) -> String
     stderr
 }
 
-/// A retry of a release commit after a workflow changed on `main` refuses
-/// before it asks for a token, and the variable lets it go on.
+/// Retrying a release commit is refused before any token is needed when a
+/// workflow changed on `main`. The variable lets it go on.
 #[test]
 fn a_changed_workflow_refuses_before_any_publish() {
     let root = TempDir::new().unwrap();
@@ -616,7 +617,7 @@ fn a_changed_workflow_refuses_before_any_publish() {
     assert!(stderr.contains("GITHUB_TOKEN"), "{stderr}");
 }
 
-/// A commit `main` does not contain refuses before it asks for a token, and
+/// A commit `main` does not contain refuses before any token is needed, and
 /// the variable lets it go on.
 #[test]
 fn a_commit_off_the_default_branch_refuses_before_any_publish() {
