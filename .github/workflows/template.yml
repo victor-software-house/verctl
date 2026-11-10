@@ -29,7 +29,7 @@ jobs:
   # takes that App's key and no other secret.
   template:
     if: ${{ !github.event.pull_request.draft }}
-    uses: victor-software-house/actions/.github/workflows/template-check.yml@a02d0e82d8003c63499e6d5dd526795830f20f1a # main, 2026-11-09
+    uses: victor-software-house/actions/.github/workflows/template-check.yml@d6ce82bb1fe3a3bac6c68619c603993c08990d64 # main, 2026-11-09
     permissions:
       contents: read
       # The mise action trades the job's OIDC token for a mirror session token.
