@@ -8,7 +8,8 @@ Before, `version: {version}` against `version: 0.1.1-rc1` rewrote the numeric he
 
 A side's literal is the text between `{version}` and the pattern's edge, on that side.  
 A side is bounded when its literal holds at least one character that is not a digit, `.`, `-`, or `+`.  
-Under `whole_line: true`, the line start or end bounds the side, unless the literal on that side is made only of those four characters.  
+Under `whole_line: true`, the line start or end bounds the side, unless the literal on that side is made only of those four characters.
+
 The character next to `{version}` must not be a digit, or a `.` with a digit beyond it.  
 `name-{version}.tar.gz` loads; `verctl@{version}.`, `v{version}-`, and `v{version}.5x` do not.
 
