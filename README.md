@@ -205,10 +205,10 @@ Two sections take runners and no others, because of what config is for here:
 
 To declare N jobs, a static workflow has to hold N, and only the repo's config holds it.  
 That fan-out is what `ci` and `assets` buy; the machine rides along on it.  
-Every other job verctl ships (`plan`, `crate`, `render`, `version`) is always exactly one job.  
-So nothing decides its count, and nothing needs to configure it.
+No other job's machine is a config key.  
+The release workflow's `plan`, `publish`, `docs`, and `propose` jobs run on its `runner` input, a JSON label list that defaults to `["ubuntu-latest"]`.
 
-Its `runs-on` is one literal in a workflow you own and already copied from `examples/`:
+A CI `plan` job's `runs-on` is one literal in a workflow you own and already copied from `examples/`:
 
 ```yaml
   plan:

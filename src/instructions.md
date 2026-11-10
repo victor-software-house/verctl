@@ -35,7 +35,39 @@ It never rebuilds argv in a shell.
 
 Install a released tarball through mise (`github:victor-software-house/verctl`), or `cargo install verctl`.
 
+## Output
+
+One typed report feeds ctl-core pretty, colorless, and JSON output.  
+JSON is never coloured, whatever `CLICOLOR_FORCE` or `FORCE_COLOR` hold.  
+A parse error under `--format json` is a JSON error even when the bad argument comes first.
+
+## Workflow
+
+1. A pull request that changes behaviour adds a fragment ([Fragments](#fragments)).
+2. Each push to the default branch runs the release workflow ([Release workflow](#release-workflow)).  
+   It releases every incomplete version commit, then opens or updates the Version PR.
+3. A person merges the Version PR, and verctl never merges it ([Version PR](#version-pr)).
+4. The push that merges it releases the new version commit ([Release](#release)).  
+   That is the registry publish, the tag and GitHub Release, the assets, and the docs.rs wait.
+
+## Configuration
+
+`.ctl/ver.yaml` holds the configuration, and one section covers each top-level key:
+
+| Key | Section |
+|:--|:--|
+| `packages`, `drivers` | [Version files](#version-files), and `first_minor` under [The first release](#the-first-release) |
+| `changelog` | [Changelog](#changelog) |
+| `prepare`, `proposal` | [Version PR](#version-pr) |
+| `publishers` | [Publishers](#publishers) |
+| `tags` | [Tags and GitHub Releases](#tags-and-github-releases) |
+| `assets`, `vendored` | [Assets](#assets) |
+| `patterns`, `pins`, `templates` | [Pins and templates](#pins-and-templates) |
+| `runners`, `ci` | [Runners and CI](#runners-and-ci) |
+
 ## Fragments
+
+### Format
 
 `.changeset/<slug>.md`.  
 YAML fence.  
@@ -57,6 +89,8 @@ The colon keeps it from naming a package.
 A section where no fragment names a group stays a flat list.  
 Once one does, the section gets `### Added`, `### Changed`, and `### Fixed` headings in that order, and a fragment without the key goes under `### Changed`.
 
+### The first release
+
 A new package starts at `0.0.0`.  
 Its first fragment is a `patch`, so its first release is `0.0.1`: `0.0.x` is the initial line.  
 Moving to `0.1.0`, where a package claims a usable API, or to `1.0.0` is a separate operator decision.  
@@ -68,6 +102,8 @@ So a repo can adopt the release workflow before its first release.
 `version` and `check` refuse a `minor` or `major` fragment on a package at `0.0.0`, including its pre-releases and builds, naming the package.  
 To open at `0.1.0` on purpose, the operator sets `first_minor: true` on that package in `.ctl/ver.yaml`.  
 The key does nothing once the package has released.
+
+### Validation
 
 `check` plans the pending fragments against `.ctl/ver.yaml` the way `version` does.  
 A repo that runs it in its verify task therefore fails the pull request that adds such a fragment.
@@ -81,18 +117,23 @@ A pin fails too when it names another version or its pattern matches nothing.
 A file that a template renders and a `pins` entry also names has two owners.  
 `version`, `check`, and `render` refuse it before writing anything.
 
+### Authoring rules
+
 Write the fragment on the same PR that ships the behavior.  
 Do not save them up for a release dump.
 
 Do not invent a third fragment format.  
-Do not infer bumps from `feat:` / `fix:` unless the repo has turned that mode on (not first slice).
+Do not infer bumps from `feat:` / `fix:` commit subjects.
 
 ## Changelog
 
+### Templates
+
 Render through minijinja (Jinja2) files.  
 Defaults live in this crate (`templates/changelog.jinja`, `templates/dependency-changelog.jinja`).  
-Repos may override the paths.  
-The adapter does not concatenate Markdown in Rust beyond a typed context.
+Repos may override the paths.
+
+### Links and credits
 
 Each entry links where its fragment came from.  
 That is the pull request a trailing `(#N)` names in the subject of the first-parent commit that added the fragment, else that commit.  
@@ -111,6 +152,8 @@ Without a token no one is credited.
 GitHub's `author_association` cannot decide it.  
 The App token behind a Version PR reads a private organization member as `CONTRIBUTOR`.
 
+### Template context
+
 Context: `summary` is a fragment's first paragraph, and the link and period follow its last line.  
 `continuations` holds each later line.  
 The stock template indents every line after the first two spaces under the bullet.  
@@ -119,12 +162,14 @@ So a second paragraph, a list, or a code fence stays in the entry.
 The rest are `pull_request`, `commit`, `summary_has_terminal`, `dependencies`, and `summary_body`.  
 `summary_body` is the summary without one trailing period, for an entry that ends with a reference.
 
-## Version PR
+## Release workflow
 
-Happy path is verctl's reusable workflow, `victor-software-house/verctl/.github/workflows/release.yml`.  
+Releases run through verctl's reusable workflow, `victor-software-house/verctl/.github/workflows/release.yml`.  
 A thin caller (`examples/workflows/release.yml`) calls it on push to the default branch and on `workflow_dispatch`.  
 It plans every incomplete version commit and publishes each in history order.  
 Then it builds the assets each Release lacks, waits for docs.rs, and opens or updates the Version PR.
+
+### Inputs and secrets
 
 Every input is optional and defaults to verctl's:
 
@@ -146,13 +191,10 @@ Every job but propose ignores them, so they install only the release tools.
 Propose keeps them because `prepare.after` runs the repository's tasks.  
 The plan job checks the paths once.
 
+### Registry tokens in the workflow
+
 `crates-io-trusted-publishing: true` replaces the `registry-token` secret with a trusted-publishing token for crates.io.  
 Each crate lists the caller's repository and workflow file as its trusted publisher.
-
-Every job requests `id-token: write`, so every caller grants it.  
-The publish job needs it for trusted publishing.  
-Every job needs it for `victor-software-house/actions/mise`, which downloads tools through the organization's release mirror.  
-A job without the grant downloads from GitHub and logs a notice.
 
 `environment` names a GitHub environment for the publish job, the only job that reads a registry token.  
 So the token can live only in an environment that admits the default branch.  
@@ -165,10 +207,19 @@ The workflow reads no secret by a computed name, so a caller never passes `secre
 
 A crate's first publish maps the token and turns `crates-io-trusted-publishing` off for that release, because the workflow refuses both.
 
+### Permissions and the ver task
+
+Every job requests `id-token: write`, so every caller grants it.  
+The publish job needs it for trusted publishing.  
+Every job needs it for `victor-software-house/actions/mise`, which downloads tools through the organization's release mirror.  
+A job without the grant downloads from GitHub and logs a notice.
+
 Steps set `env:` and run `mise run ver <verb>`, so a caller serves the `ver` task.  
 Without the App secrets the Version PR is opened with `GITHUB_TOKEN`.  
 That needs the setting `Allow GitHub Actions to create and approve pull requests`, and the Version PR's own CI does not start.  
 The actions under `actions/` remain for hand-written workflows.
+
+### Adoption
 
 Migrating from `version-pr.yml` and `publish.yml`:
 
@@ -180,6 +231,8 @@ Adopt `release.yml` when no release is pending, or merge the adoption before the
 Each release runs at its version commit.  
 A version commit from before the adoption lacks the `ver` task the reusable workflow runs.  
 Its publish then fails with `no task ver found`.
+
+### Workflow changes and the 403
 
 GitHub refuses to create a Release with 403 "Resource not accessible by integration" when the version commit's `.github/workflows` differs from the default branch.  
 The Releases API then needs `workflows: write`, which `GITHUB_TOKEN` cannot hold.
@@ -193,11 +246,79 @@ A package with an unchecked upload is tagged after its upload, because its tag i
 A merge that changes a workflow while its release is pending brings the 403 back, and `release` names the permission.  
 Rerun `verctl release` at that commit with a token that holds it.
 
+## Version PR
+
+verctl never merges the Version PR and never enables auto-merge on it.  
+A release starts only when a person merges the Version PR.  
+Open it with a GitHub App token: a pull request opened with the job's `GITHUB_TOKEN` starts no CI.
+
+### The version commit
+
+`version` writes versions and a CHANGELOG.md next to each manifest.  
+It consumes fragments as `changeset version` does, a fragment that bumps nothing included.
+
+Then it runs each lockfile owner, a package's own `after`, and `prepare.after`, one argv each.  
+Each command runs once: a `prepare.after` that repeats an owner's command in the same directory runs once.  
+The report's `after` lists each command it ran.
+
+`prepare.stage` lists extra globs those commands may write.  
+Any other dirty path fails.
+
+`version --dry-run` and `version --preview` print the same plan and write nothing.  
+`version --pr --dry-run` also lists consumed fragments and whether the Version PR would open or update.  
+Preview does not require GitHub auth.
+
+### Lockfiles
+
+Once the versions are written, verctl refreshes each lockfile beside the manifest or above it in the repository.  
+It runs the lockfile's owner in the lockfile's directory:
+
+- `cargo update --workspace` for `Cargo.lock`;
+- the package manager's install for a JavaScript lockfile;
+- `uv lock` for `uv.lock`.
+
+`version` commits that lockfile with no `prepare.stage` entry.
+
+### Branch, title, and auth
+
+`--pr` also opens or force-updates `verctl/release/<base>`, where `<base>` is the branch the PR targets.  
+The PR body is the changelog.  
+The PR targets `GITHUB_REF_NAME`, else `VERCTL_DEFAULT_BRANCH`, else the branch `origin/HEAD` names.  
+With none of them, `--pr` fails rather than guess `main`.
+
+`proposal.title` and `proposal.commit_message` in `.ctl/ver.yaml` set the title and commit message.  
+Unset or empty, the title is `chore(release): version packages` and the message is the title.  
+The Version PR gets no label.
+
+Auth is `GITHUB_TOKEN` / `GH_TOKEN` only.  
+Push uses that token over HTTPS instead of the machine's git or ssh account.  
+`--pr` runs `git push`, so it needs `git` on `PATH`.
+
+The push runs with a credential helper that reads the token from the push's environment, in place of any helper you configured.  
+The push skips repository hooks.  
+verctl does not call `gh`.  
+Local `--pr` is recovery when that same token is already in the environment.
+
+verctl reads the repository that covers the directory it runs in, as it is on disk.  
+Inside a git hook it ignores `GIT_INDEX_FILE`, `GIT_WORK_TREE`, and `GIT_DIR`, and it never writes the index.
+
+### The version check
+
 Do not hand-edit versions.  
 `verctl check --versions` compares each declared manifest to the merge-base of HEAD and the default branch.  
 It fails when they differ.  
 CI does not skip.  
 A fragment-only commit does not change versions.
+
+A version the default branch carries at its merge-base with HEAD is not a hand edit either.  
+So merging the default branch into another branch passes.
+
+On Actions the check first fetches `VERCTL_DEFAULT_BRANCH`, the event's default branch, and `GITHUB_BASE_REF`, with their whole history.  
+It does so when the checkout lacks them or is shallow.  
+So the depth-1 pull request checkout of `actions/checkout` needs no `fetch-depth`.  
+A full clone that has them fetches nothing.
+
+### Exempt branches and events
 
 The check is exempt in three cases:
 
@@ -213,13 +334,7 @@ When a version differs, the check reads the pull request's head repository, head
 So the job needs `GITHUB_TOKEN` with `pull-requests: read`.  
 A pull request that changes no version reads nothing.
 
-A version the default branch carries at its merge-base with HEAD is not a hand edit either.  
-So merging the default branch into another branch passes.
-
-On Actions the check first fetches `VERCTL_DEFAULT_BRANCH`, the event's default branch, and `GITHUB_BASE_REF`, with their whole history.  
-It does so when the checkout lacks them or is shallow.  
-So the depth-1 pull request checkout of `actions/checkout` needs no `fetch-depth`.  
-A full clone that has them fetches nothing.
+### Replaying the Version PR
 
 On a Version PR the check also replays the version step on the merge-base.  
 It fails each change the replay does not make.  
@@ -237,6 +352,8 @@ A path that `prepare.stage` names at the merge-base may change, and the Version 
 
 The error lists every difference.  
 `verctl version --pr` rewrites the Version PR.
+
+### Other pull requests
 
 A pull request that is not the Version PR fails when it adds a CHANGELOG section for a version.  
 A heading names its version last, as in `## demo 1.2.0` or `## 1.2.0`.
@@ -257,102 +374,9 @@ Whether it publishes comes from four settings:
 A setting the release branch already holds at its merge-base with HEAD passes too.  
 A merge queue run skips both rules.
 
-verctl never merges the Version PR and never enables auto-merge on it.  
-A release starts only when a person merges the Version PR.  
-Open it with a GitHub App token: a pull request opened with the job's `GITHUB_TOKEN` starts no CI.
+## Release
 
-This repo compiles itself: `mise.toml` holds the toolchain, and `mise run ver` runs this checkout.  
-`.miserc.toml` sets the local default profile to `dev`, which adds the hook tools.  
-CI runs the `ci` profile.
-
-Its release run builds verctl once per platform, and every release job reuses that build through `verctl-artifact`.  
-`release` here is a `ver` task that runs `verctl` from `PATH`, with no pin.  
-A release that installed its own tarball could only ever run the previous release, which is exactly when new behaviour is needed.
-
-Consumers run their pin, because the verctl they install is independent of the version they release.  
-`verctl render` rewrites collocated `github:…/verctl` entries (and `?ref=v…` includes) and renders every template, at the versions on HEAD.  
-`version` does the same at the versions it writes, so the Version PR commit holds them.
-
-A `patterns.match` needs a boundary on each side of `{version}`.  
-A side's literal is the text between `{version}` and the pattern's edge, on that side.
-
-A side is bounded when its literal holds at least one character that is not a digit, `.`, `-`, or `+`.  
-Under `whole_line: true`, the line start or end bounds the side, unless the literal on that side is made only of those four characters.
-
-The character next to `{version}` must not be a digit, or a `.` with a digit beyond it: `v{version}.5x` would read `v1.2.3.5x` as 1.2.3.
-
-Loading `.ctl/ver.yaml` refuses a pattern with an open side, naming it and the side.  
-A prerelease such as `0.1.1-rc1` then fails to match instead of having its numeric head rewritten.
-
-An include whose `?ref=v…` starts with a version and goes on fails the same way.
-
-A package's `path` names the file that holds its version.  
-`Cargo.toml`, `package.json`, and `pyproject.toml` need no driver.  
-`version` rewrites `workspace.package.version` or `package.version`, `version`, and `project.version` in place and keeps every other byte.
-
-A `pyproject.toml` whose `project.dynamic` lists `version` fails, because its build backend sets the version.  
-Write a static one, keep it in a `VERSION` file, or declare a driver.  
-verctl has no stock Python publisher, so a `pyproject.toml` package names its `publisher`, or `none`.
-
-A `go.mod` keeps its version as a `// vX.Y.Z` comment at the end of its `module` line, and reads as `0.0.0` without one.  
-A `Deprecated:` notice that ends the comments directly above that line fails the bump.  
-Go reads that notice together with the version comment.
-
-A bump to v2 or later fails until the module path ends in `/v<major>`.  
-A Go module with no publisher releases on GitHub only.
-
-A `VERSION` file holds one version and a newline.  
-A missing one reads as `0.0.0`: `check` leaves it missing and `version` writes it.  
-Its directory must exist, or the plan fails before any write.  
-With no publisher, a `VERSION` package releases on GitHub only.
-
-`marker: true` makes any file a package.  
-Its version is the one line such as `# version: 1.2.0`, `// version: 1.2.0`, or `<!-- version: 1.2.0 -->`, and no such line, or two, fails.  
-It takes no driver, and with no publisher it releases on GitHub only.
-
-Once the versions are written, verctl refreshes each lockfile beside the manifest or above it in the repository.  
-It runs the lockfile's owner in the lockfile's directory:
-
-- `cargo update --workspace` for `Cargo.lock`;
-- the package manager's install for a JavaScript lockfile;
-- `uv lock` for `uv.lock`.
-
-`version` commits that lockfile with no `prepare.stage` entry.
-
-`version` writes versions and a CHANGELOG.md next to each manifest.  
-It consumes fragments as `changeset version` does, a fragment that bumps nothing included.
-
-Then it runs each lockfile owner, a package's own `after`, and `prepare.after`, one argv each.  
-Each command runs once: a `prepare.after` that repeats an owner's command in the same directory runs once.  
-The report's `after` lists each command it ran.
-
-`prepare.stage` lists extra globs those commands may write.  
-Any other dirty path fails.
-
-`--pr` also opens or force-updates `verctl/release/<base>`, where `<base>` is the branch the PR targets.  
-The PR body is the changelog.  
-The PR targets `GITHUB_REF_NAME`, else `VERCTL_DEFAULT_BRANCH`, else the branch `origin/HEAD` names.  
-With none of them, `--pr` fails rather than guess `main`.
-
-`proposal.title` and `proposal.commit_message` in `.ctl/ver.yaml` set the title and commit message.  
-Unset or empty, the title is `chore(release): version packages` and the message is the title.  
-The Version PR gets no label.
-
-Auth is `GITHUB_TOKEN` / `GH_TOKEN` only.  
-Push uses that token over HTTPS instead of the machine's git or ssh account.  
-`--pr` runs `git push`, so it needs `git` on `PATH`.
-
-The push runs with a credential helper that reads the token from the push's environment, in place of any helper you configured.  
-The push skips repository hooks.  
-We do not call `gh`.  
-Local `--pr` is recovery when that same token is already in the environment.
-
-verctl reads the repository that covers the directory it runs in, as it is on disk.  
-Inside a git hook it ignores `GIT_INDEX_FILE`, `GIT_WORK_TREE`, and `GIT_DIR`, and it never writes the index.
-
-`version --dry-run` and `version --preview` print the same plan and write nothing.  
-`version --pr --dry-run` also lists consumed fragments and whether the Version PR would open or update.  
-Preview does not require GitHub auth.
+### Version commits
 
 `release` ships the versions already on HEAD, then a GitHub Release.  
 A package's version commit is the newest commit on HEAD's first-parent history where its manifest version became the version at HEAD.
@@ -364,6 +388,8 @@ A tag on a commit HEAD does not contain, or at another version, fails.
 
 A release is complete when the registry lists the version and its tag, its Release, and every declared asset exist.  
 `--skip-assets` (`VERCTL_SKIP_ASSETS`) leaves assets out.
+
+### Status
 
 `status` lists every version commit with an incomplete release, oldest first, under `unreleased`.  
 With `--github-output <file>` it fetches the full history and needs `GITHUB_TOKEN` or `GH_TOKEN`.  
@@ -380,6 +406,8 @@ A spent rate limit, a 429 or a 403 with `x-ratelimit-remaining: 0`, counts as no
 
 Under `--github-output` that failure fails the run.  
 Any other error, such as a release tag on the wrong commit or a 401 from a bad token, fails `status` in both modes.
+
+### Refusals
 
 `release --plan` fails and names `status --github-output`.  
 `release` releases only the packages whose version commit is HEAD, and names the others.  
@@ -400,6 +428,10 @@ Changed steps or permissions can then publish to the registry and fail to tag.
 The report lists each under `allowed`: a row in the human view, and `allowed: [{check, reason}]` in JSON.  
 A check that cannot run, as with no `origin` or no default-branch ref, refuses even with a flag set.
 
+The reusable `release.yml` takes the `allow-workflow-change` and `allow-off-default-branch` boolean inputs, default `false`, and passes them through `env:`.
+
+### Skipped versions
+
 `release` also refuses a package with a skipped version, because releasing past it would skip that version for good.  
 No flag allows it.  
 A version v is skipped when all three hold:
@@ -413,7 +445,7 @@ Otherwise it ends at the root.
 `status` lists each skipped version once, at its oldest commit in the range, oldest first.  
 So the workflow releases it before the newer one.
 
-The reusable `release.yml` takes the `allow-workflow-change` and `allow-off-default-branch` boolean inputs, default `false`, and passes them through `env:`.
+### Registry tokens
 
 `release` reads the registry token from `VERCTL_REGISTRY_TOKEN` or `VERCTL_TRUSTED_PUBLISHING_TOKEN`, which no flag takes.  
 It fails when both are set.  
@@ -422,6 +454,8 @@ That option (`VERCTL_REGISTRY_TOKEN_ENV`) defaults to `CARGO_REGISTRY_TOKEN`, an
 
 No other command it starts sees either token variable.  
 The publish step of `release.yml` sets the three from the `registry-token` secret, `crates-io-trusted-publishing`, and `registry-token-env`.
+
+### Default branch and git auth
 
 `release` does not sniff the commit subject.  
 It does not treat `GITHUB_REF_NAME` as the default, since that is the branch being pushed.  
@@ -436,8 +470,10 @@ GitHub git HTTPS authenticates as `x-access-token`.
 The token is never in the URL and never sent as Bearer.  
 Locally `git clone` already has the ref; otherwise run `git remote set-head origin --auto`.
 
+## Publishers
+
 A `publishers` entry holds the command: argv plus placeholders.  
-Cargo and bun are stock recipes (first-class examples).  
+Cargo and bun are stock recipes.  
 Override or add another stack without a new verb.
 
 `publisher: none` releases a package on GitHub only, with no registry upload.  
@@ -445,6 +481,8 @@ Override or add another stack without a new verb.
 Use it for a private binary, such as a Cargo package with `publish = false`.  
 A `registry` or `publish` on the same package fails the load, and so does a `publishers.none` entry.  
 Every other publisher must render a command.
+
+### Registry checks
 
 Before a publisher runs, `release` checks the registry.  
 A stock cargo package whose publish target is crates.io is read from the crates.io sparse index.  
@@ -458,6 +496,8 @@ It fails unless the registry lists the version.
 A package with no check succeeds on a zero exit or on a version-exists message on stderr.  
 A package has no check with `query: []`, with an overridden command, or as a cargo package with another target and no `query`.
 
+### Workspaces and rate limits
+
 A stock cargo package whose `path` is a virtual workspace manifest publishes each workspace member that publishes, dependencies first.  
 A virtual workspace manifest has a `[workspace]` table and no `[package]`.  
 Each member publishes as `cargo publish --package <member>` and is checked against the index on its own.  
@@ -467,33 +507,7 @@ A registry rate limit (status 429) stops the run before any tag and names the cr
 A rerun then skips every member the index lists.  
 GitHub Packages for bun uses a nearby `bunfig.toml` as `--config`.
 
-One typed report feeds ctl-core pretty, colorless, and JSON output; tests pass `--color never`.  
-JSON is never coloured, whatever `CLICOLOR_FORCE` or `FORCE_COLOR` hold.  
-A parse error under `--format json` is a JSON error even when the bad argument comes first.
-
-`docs` waits for docs.rs to build each crates.io library crate released at HEAD, each library member of a workspace package included.  
-It polls every 30 seconds for `--timeout` minutes (default 60, `VERCTL_TIMEOUT`).  
-It needs a GitHub token to read the tag.
-
-It fails naming each crate docs.rs failed to build or had not built in time.  
-A failed build stays failed for that version, so the fix is the next patch release.  
-docs.rs shows a running build and a failed one alike.  
-So a failed build fails the job only when the timeout runs out.
-
-`semver` checks the public API of each crates.io crate whose next release is a patch.  
-Patch is the default bump, and a real API break bumps the minor.  
-It runs `cargo semver-checks --release-type minor` against the baseline cargo-semver-checks picks, so only a break fails.
-
-It skips a crate whose package has a pending `minor` or `major` fragment.  
-It also skips one whose manifest's major.minor differs from that baseline, because the Version PR already moved it.  
-A crate with no crates.io release is skipped too.
-
-A crate with no library target, or a proc-macro, is left out, as cargo-semver-checks leaves it.
-
-A workspace package counts once per publishing member.  
-The rule covers 0.x: a crate with a library target at 1.0 or later fails the run.  
-Reaching 1.0 is an operator decision that revisits the rule.  
-It needs `cargo-semver-checks` on `PATH` and reads the crates.io index.
+## Tags and GitHub Releases
 
 Tag names come from `tags.template` (default `v{version}`).  
 The placeholders are `{version}` and `{name}`, the same vocabulary `patterns.match` uses.  
@@ -506,6 +520,10 @@ A template that would render the same tag for two packages fails at plan time.
 Each Release is created at HEAD (`target_commitish` is that SHA).  
 After create, and when a Release already exists, the tag is re-read, and the run fails if it names another commit.  
 A retry at the same commit is a no-op.
+
+## Assets
+
+### Package tarballs
 
 After the Version PR merges, the next push runs the reusable workflow's `publish` matrix at each version commit.  
 A hand-written workflow uses `victor-software-house/verctl/actions/publish` instead.  
@@ -523,10 +541,7 @@ It replaces `{bin}`, `{version}`, `{id}`, `{os}`, `{arch}`, and `{triple}` in th
 A target that ships other files, such as a tool built only on Linux, lists its own `files` under `assets.<target>`.  
 They replace `assets.files` for that target, and `release asset` checks and packs exactly that list.
 
-`release` pushes nothing but the tag.  
-`version` rewrites `pins` on the Version PR commit the tag will name, so the released tree carries its own pins.  
-A pin that must name an already-published tarball, such as a repo's own bootstrap tool, is not a `pins` entry.  
-OpenID Connect (OIDC) trusted publishing for npm is deferred work, tracked as queue row [`VER-007`](https://github.com/victor-software-house/verctl/blob/52a7471097f8afeac806315970b1cc7665850d3a/tasks.yaml).
+### Vendored sets
 
 A vendored set is release assets built from someone else's source, at that source's version, so mise can install them as a `github:` tool.  
 Declare it as `vendored.<name>` with these keys:
@@ -544,6 +559,8 @@ A config that vendors may declare no packages.
 `verctl status --vendored <name>` (`VERCTL_VENDORED`) plans the set.  
 With `--github-output` it writes the same `has_assets`, `tag`, and `matrix` outputs.
 
+### Building a vendored set
+
 `verctl release asset <id> --vendored <name>` runs `build` with `{name}`, `{version}`, and `{id}` replaced.  
 It then packs `tar czf <archive> -C <dir> <files>`.  
 Unless `--dry-run`, it then creates the Release at HEAD when it is missing, never marked latest, with `notes` as its body.  
@@ -551,6 +568,67 @@ It attaches the archive and `<archive>.sha256`, written from the digest GitHub r
 
 An asset the Release already holds is `already`.  
 To replace an archive, delete it and its `.sha256` together.
+
+## Version files
+
+### Manifests
+
+A package's `path` names the file that holds its version.  
+`Cargo.toml`, `package.json`, and `pyproject.toml` need no driver.  
+`version` rewrites `workspace.package.version` or `package.version`, `version`, and `project.version` in place and keeps every other byte.
+
+A `pyproject.toml` whose `project.dynamic` lists `version` fails, because its build backend sets the version.  
+Write a static one, keep it in a `VERSION` file, or declare a driver.  
+verctl has no stock Python publisher, so a `pyproject.toml` package names its `publisher`, or `none`.
+
+### Go modules
+
+A `go.mod` keeps its version as a `// vX.Y.Z` comment at the end of its `module` line, and reads as `0.0.0` without one.  
+A `Deprecated:` notice that ends the comments directly above that line fails the bump.  
+Go reads that notice together with the version comment.
+
+A bump to v2 or later fails until the module path ends in `/v<major>`.  
+A Go module with no publisher releases on GitHub only.
+
+### VERSION files and markers
+
+A `VERSION` file holds one version and a newline.  
+A missing one reads as `0.0.0`: `check` leaves it missing and `version` writes it.  
+Its directory must exist, or the plan fails before any write.  
+With no publisher, a `VERSION` package releases on GitHub only.
+
+`marker: true` makes any file a package.  
+Its version is the one line such as `# version: 1.2.0`, `// version: 1.2.0`, or `<!-- version: 1.2.0 -->`, and no such line, or two, fails.  
+It takes no driver, and with no publisher it releases on GitHub only.
+
+## Pins and templates
+
+### Pins
+
+Consumers run their pin, because the verctl they install is independent of the version they release.  
+`verctl render` rewrites collocated `github:…/verctl` entries (and `?ref=v…` includes) and renders every template, at the versions on HEAD.  
+`version` does the same at the versions it writes, so the Version PR commit holds them.
+
+`release` pushes nothing but the tag.  
+`version` rewrites `pins` on the Version PR commit the tag will name, so the released tree carries its own pins.  
+A pin that must name an already-published tarball, such as a repo's own bootstrap tool, is not a `pins` entry.
+
+### Version patterns
+
+A `patterns.match` needs a boundary on each side of `{version}`.  
+A side's literal is the text between `{version}` and the pattern's edge, on that side.
+
+A side is bounded when its literal holds at least one character that is not a digit, `.`, `-`, or `+`.  
+Under `whole_line: true`, the line start or end bounds the side, unless the literal on that side is made only of those four characters.
+
+The character next to `{version}` must not be a digit, or a `.` with a digit beyond it: `v{version}.5x` would read `v1.2.3.5x` as 1.2.3.
+
+Loading `.ctl/ver.yaml` refuses a pattern with an open side, naming it and the side.  
+A prerelease such as `0.1.1-rc1` then fails to match instead of having its numeric head rewritten.
+
+An include whose `?ref=v…` starts with a version and goes on fails the same way.
+
+### Served templates
 
 Prefer a template over a pin.  
 A served file under `.ctl/templates/` declares its own target in top-level `{%- set … -%}` exports.  
@@ -563,12 +641,16 @@ An ignored one is disowned and left alone, and a symlink is not followed.
 One outside the source tree was never verctl's to render, which keeps this crate's changelog templates out.  
 See docs/served-files.md.
 
+### Served mise tasks
+
 A served mise task execs the tool from `PATH`, never `"$(mise where <tool>)/<tool>"`.  
 `mise where` resolves a version from the surrounding config, so it ignores the task's own `#MISE tools` pin.  
 mise already puts that pin first on `PATH`.
 
 Drop the `mise where` call only in the same change that renders the pin from a template.  
 Otherwise the task freezes on whatever version the file happens to name.
+
+## Runners and CI
 
 Machines are configuration instead of a hardcoded map.  
 A machine is declared once under `runners` with `labels`, the literal GitHub label list.  
@@ -582,16 +664,38 @@ PR CI stays unary by default: compiling a PR on two hosts wastes time.
 A built-in target (`darwin-arm64`, `linux-x64`) fills in `runner`, `os`, `arch`, and `triple`; any other name must state all four.  
 `verctl ci` writes the matrix for a `plan` job, since `runs-on` exists before the job does.
 
-verctl decides how many jobs there are; the workflow file decides where a fixed job runs.  
-`ci` and `assets` exist because the number of verify checks or tarballs differs per repo.  
-A workflow file is static, so it cannot list a number of jobs that is unknown when it is written.
+The release workflow's `plan`, `publish`, `docs`, and `propose` jobs run on its `runner` input, a JSON label list that defaults to `["ubuntu-latest"]`.  
+It is never a `.ctl/ver.yaml` key, and there is no `release` runner section.
 
-`plan`, `crate`, `render`, and `version` are always exactly one job each.  
-So their `runs-on` is a literal in the workflow the consumer owns.  
-It is never a config key.  
-Do not add one.  
-There is no `release` runner section and none is planned.  
-Publishing a crate twice is wrong the same way two machines per tarball is wrong.
+## Docs and semver
+
+### docs
+
+`docs` waits for docs.rs to build each crates.io library crate released at HEAD, each library member of a workspace package included.  
+It polls every 30 seconds for `--timeout` minutes (default 60, `VERCTL_TIMEOUT`).  
+It needs a GitHub token to read the tag.
+
+It fails naming each crate docs.rs failed to build or had not built in time.  
+A failed build stays failed for that version, so the fix is the next patch release.  
+docs.rs shows a running build and a failed one alike.  
+So a failed build fails the job only when the timeout runs out.
+
+### semver
+
+`semver` checks the public API of each crates.io crate whose next release is a patch.  
+Patch is the default bump, and a real API break bumps the minor.  
+It runs `cargo semver-checks --release-type minor` against the baseline cargo-semver-checks picks, so only a break fails.
+
+It skips a crate whose package has a pending `minor` or `major` fragment.  
+It also skips one whose manifest's major.minor differs from that baseline, because the Version PR already moved it.  
+A crate with no crates.io release is skipped too.
+
+A crate with no library target, or a proc-macro, is left out, as cargo-semver-checks leaves it.
+
+A workspace package counts once per publishing member.  
+The rule covers 0.x: a crate with a library target at 1.0 or later fails the run.  
+Reaching 1.0 is an operator decision that revisits the rule.  
+It needs `cargo-semver-checks` on `PATH` and reads the crates.io index.
 
 ## Stop conditions
 
