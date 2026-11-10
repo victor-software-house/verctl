@@ -160,16 +160,19 @@ templates:
 # "many" is for a document whose examples come and go, where only "still
 # tracked" is worth asserting. "never" guards a spelling that was retired,
 # `{exactly: 2}` and `{at_least: 2}` name counts.
+# Each side of `{version}` needs text a version cannot hold, so a longer
+# version such as `1.0.0-rc1` fails to match rather than have its numeric head
+# rewritten: a character other than a digit or `.`, and after the version a
+# `-` or `+` only with more text after it. The load refuses a pattern without.
 # `whole_line` says the match owns its line instead of sitting inside one, for a
-# frontmatter key or a shell assignment. It beats naming the neighbouring text,
-# which breaks when the neighbour moves, and it makes `version: 0.1.1-rc1` fail
-# to match rather than have its numeric head rewritten.
+# frontmatter key or a shell assignment, and the line then marks both ends. It
+# beats naming the neighbouring text, which breaks when the neighbour moves.
 patterns:
   install:
-    match: "github:victor-software-house/verctl@{version}"
+    match: "github:victor-software-house/verctl@{version} --"
     occurrences: once
   mention:
-    match: "verctl@{version}"
+    match: "`verctl@{version}`"
     occurrences: many
   frontmatter:
     match: "version: {version}"

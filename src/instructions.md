@@ -222,6 +222,17 @@ verctl they install is independent of the version they release.
 HEAD. `version` does the same at the versions it writes, so the
 Version PR commit carries them.
 
+A `patterns.match` needs a boundary on each side of `{version}`. That
+is a character other than a digit or `.`, and after the version a `-`
+or `+` only with more text after it. `whole_line: true` makes the line
+start and end boundaries too. Loading `.ctl/ver.yaml` refuses a
+pattern without one, naming it and the side. A prerelease such as
+`0.1.1-rc1` then fails to match instead of having its numeric head
+rewritten.
+
+An include whose `?ref=v…` starts with a version and goes on fails the
+same way.
+
 A package's `path` names the file that holds its version. `Cargo.toml`,
 `package.json`, and `pyproject.toml` need no driver: `version` rewrites
 `workspace.package.version` or `package.version`, `version`, and
