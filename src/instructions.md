@@ -1,6 +1,6 @@
 # verctl agent instructions
 
-`verctl` consumes Changesets-format fragments and prepares a Version PR.
+`verctl` consumes Changesets-format fragments and prepares a Version PR.  
 It is not `@changesets/cli` and not a forkctl verb.
 
 ## Invocation
@@ -40,7 +40,7 @@ Install a released tarball through mise (`github:victor-software-house/verctl`),
 `.changeset/<slug>.md`.  
 YAML fence.  
 Quoted or unquoted keys.  
-Values are `major` | `minor` | `patch` | `none`.  
+Values are `major`, `minor`, `patch`, or `none`.  
 Body is the changelog summary.
 
 ```md
@@ -55,8 +55,7 @@ What changed.
 An optional `verctl:group` key files the entry under a changelog heading: `added`, `changed`, or `fixed`.  
 The colon keeps it from naming a package.  
 A section where no fragment names a group stays a flat list.  
-Once one does, the section gets `### Added`, `### Changed`, and `### Fixed` headings in that order.  
-A fragment without the key then goes under `### Changed`.
+Once one does, the section gets `### Added`, `### Changed`, and `### Fixed` headings in that order, and a fragment without the key goes under `### Changed`.
 
 A new package starts at `0.0.0`.  
 Its first fragment is a `patch`, so its first release is `0.0.1`: `0.0.x` is the initial line.  
@@ -74,9 +73,9 @@ The key does nothing once the package has released.
 A repo that runs it in its verify task therefore fails the pull request that adds such a fragment.
 
 `check` also renders every template and rewrites every `pins` entry in memory, at the versions the manifests hold.  
-It does so with or without fragments.  
+This happens with or without fragments.  
 It fails on each served file whose bytes differ, naming the file and its template.  
-It also fails on each pin that names another version or whose pattern matches nothing.
+A pin fails too when it names another version or its pattern matches nothing.
 
 `verctl render` writes what `check` compares, so it fixes a hand edit and a template change alike.  
 A file that a template renders and a `pins` entry also names has two owners.  
@@ -147,7 +146,7 @@ Every job but propose ignores them, so they install only the release tools.
 Propose keeps them because `prepare.after` runs the repository's tasks.  
 The plan job checks the paths once.
 
-`crates-io-trusted-publishing: true` publishes to crates.io with a trusted-publishing token in place of the `registry-token` secret.  
+`crates-io-trusted-publishing: true` replaces the `registry-token` secret with a trusted-publishing token for crates.io.  
 Each crate lists the caller's repository and workflow file as its trusted publisher.
 
 Every job requests `id-token: write`, so every caller grants it.  
@@ -160,7 +159,7 @@ So the token can live only in an environment that admits the default branch.
 Empty runs publish in no environment.
 
 The caller maps the token's stored name, such as `CARGO_REGISTRY_TOKEN`, to the `registry-token` secret.  
-The publish job then receives the environment's value.  
+Only the publish job receives the environment's value.  
 The workflow reads no secret by a computed name, so a caller never passes `secrets: inherit`.  
 `registry-token-env` names only the variable the publisher reads the token from.
 
@@ -168,7 +167,7 @@ A crate's first publish maps the token and turns `crates-io-trusted-publishing` 
 
 Steps set `env:` and run `mise run ver <verb>`, so a caller serves the `ver` task.  
 Without the App secrets the Version PR is opened with `GITHUB_TOKEN`.  
-That needs the setting "Allow GitHub Actions to create and approve pull requests", and the Version PR's own CI does not start.  
+That needs the setting `Allow GitHub Actions to create and approve pull requests`, and the Version PR's own CI does not start.  
 The actions under `actions/` remain for hand-written workflows.
 
 Migrating from `version-pr.yml` and `publish.yml`:
@@ -203,8 +202,11 @@ A fragment-only commit does not change versions.
 The check is exempt in three cases:
 
 - locally, on a `verctl/release/<base>` branch;
-- when the GitHub event's pull request is a Version PR. Its head repository is this repository, and its head branch is `verctl/release/<base>` for the base it targets;
-- in a merge queue run (a `merge_group` event). Each entry's pull request already compared its own versions, and an entry behind the Version PR carries its versions.
+- when the GitHub event's pull request is a Version PR;
+- in a merge queue run (a `merge_group` event).
+
+A Version PR's head repository is this repository, and its head branch is `verctl/release/<base>` for the base it targets.  
+A merge queue entry's pull request already compared its own versions, and an entry behind the Version PR holds its versions.
 
 Labels, title, and body are never read, and neither is `GITHUB_HEAD_REF`.  
 When a version differs, the check reads the pull request's head repository, head branch, and base through the API.  
@@ -239,7 +241,8 @@ The error lists every difference.
 A pull request that is not the Version PR fails when it adds a CHANGELOG section for a version.  
 A heading names its version last, as in `## demo 1.2.0` or `## 1.2.0`.
 
-A version the CHANGELOG held at the merge-base, or on the release branch at its merge-base with HEAD, is not added.  
+A version is not added when the CHANGELOG already held it at the merge-base.  
+It is also not added when the release branch held it at that branch's merge-base with HEAD.  
 So fixing a heading's name and merging the release branch both pass.
 
 Such a pull request also fails when it changes whether a package publishes and adds no fragment that bumps it above `none`.  
@@ -259,15 +262,16 @@ A release starts only when a person merges the Version PR.
 Open it with a GitHub App token: a pull request opened with the job's `GITHUB_TOKEN` starts no CI.
 
 This repo compiles itself: `mise.toml` holds the toolchain, and `mise run ver` runs this checkout.  
-Local default is `dev` (`.miserc.toml`), which adds the hook tools; CI runs `ci`.
+`.miserc.toml` sets the local default profile to `dev`, which adds the hook tools.  
+CI runs the `ci` profile.
 
 Its release run builds verctl once per platform, and every release job reuses that build through `verctl-artifact`.  
-`release` here is a `ver` task that runs `verctl` from PATH, with no pin.  
+`release` here is a `ver` task that runs `verctl` from `PATH`, with no pin.  
 A release that installed its own tarball could only ever run the previous release, which is exactly when new behaviour is needed.
 
 Consumers run their pin, because the verctl they install is independent of the version they release.  
 `verctl render` rewrites collocated `github:…/verctl` entries (and `?ref=v…` includes) and renders every template, at the versions on HEAD.  
-`version` does the same at the versions it writes, so the Version PR commit carries them.
+`version` does the same at the versions it writes, so the Version PR commit holds them.
 
 A `patterns.match` needs a boundary on each side of `{version}`.  
 A side's literal is the text between `{version}` and the pattern's edge, on that side.
@@ -335,8 +339,8 @@ Unset or empty, the title is `chore(release): version packages` and the message 
 The Version PR gets no label.
 
 Auth is `GITHUB_TOKEN` / `GH_TOKEN` only.  
-Push uses that token over HTTPS, not the machine git/ssh account.  
-`--pr` runs `git push`, so it needs `git` on PATH.
+Push uses that token over HTTPS instead of the machine's git or ssh account.  
+`--pr` runs `git push`, so it needs `git` on `PATH`.
 
 The push runs with a credential helper that reads the token from the push's environment, in place of any helper you configured.  
 The push skips repository hooks.  
@@ -368,7 +372,7 @@ It writes them beside the asset plan's `has_assets`, `tag`, and `matrix`.
 
 Without `--github-output`, `status` fetches nothing.  
 With no token, or when a lookup cannot run, it reports `unreleased` as not checked.  
-That is `null` in JSON, with the reason in `unreleased_unchecked`.
+JSON shows `null` there and puts the reason in `unreleased_unchecked`.
 
 A lookup cannot run in a shallow clone, with no GitHub `origin`, or with no answer from GitHub or a registry.  
 No answer means a failed connection, a timeout, or a 5xx.  
@@ -467,7 +471,7 @@ One typed report feeds ctl-core pretty, colorless, and JSON output; tests pass `
 JSON is never coloured, whatever `CLICOLOR_FORCE` or `FORCE_COLOR` hold.  
 A parse error under `--format json` is a JSON error even when the bad argument comes first.
 
-`docs` waits for docs.rs to build each crates.io library crate whose release tag names HEAD, each library member of a workspace package included.  
+`docs` waits for docs.rs to build each crates.io library crate released at HEAD, each library member of a workspace package included.  
 It polls every 30 seconds for `--timeout` minutes (default 60, `VERCTL_TIMEOUT`).  
 It needs a GitHub token to read the tag.
 
@@ -482,14 +486,14 @@ It runs `cargo semver-checks --release-type minor` against the baseline cargo-se
 
 It skips a crate whose package has a pending `minor` or `major` fragment.  
 It also skips one whose manifest's major.minor differs from that baseline, because the Version PR already moved it.  
-It also skips a crate with no crates.io release.
+A crate with no crates.io release is skipped too.
 
 A crate with no library target, or a proc-macro, is left out, as cargo-semver-checks leaves it.
 
 A workspace package counts once per publishing member.  
 The rule covers 0.x: a crate with a library target at 1.0 or later fails the run.  
 Reaching 1.0 is an operator decision that revisits the rule.  
-It needs `cargo-semver-checks` on PATH and reads the crates.io index.
+It needs `cargo-semver-checks` on `PATH` and reads the crates.io index.
 
 Tag names come from `tags.template` (default `v{version}`).  
 The placeholders are `{version}` and `{name}`, the same vocabulary `patterns.match` uses.  
@@ -519,7 +523,7 @@ It replaces `{bin}`, `{version}`, `{id}`, `{os}`, `{arch}`, and `{triple}` in th
 `release` pushes nothing but the tag.  
 `version` rewrites `pins` on the Version PR commit the tag will name, so the released tree carries its own pins.  
 A pin that must name an already-published tarball, such as a repo's own bootstrap tool, is not a `pins` entry.  
-OIDC trusted publishing for npm is deferred work, tracked as [VER-007 in the work queue](https://github.com/victor-software-house/verctl/blob/main/tasks.yaml).
+OpenID Connect (OIDC) trusted publishing for npm is deferred work, tracked as queue row [`VER-007`](https://github.com/victor-software-house/verctl/blob/52a7471097f8afeac806315970b1cc7665850d3a/tasks.yaml).
 
 A vendored set is release assets built from someone else's source, at that source's version, so mise can install them as a `github:` tool.  
 Declare it as `vendored.<name>` with these keys:
@@ -556,32 +560,32 @@ An ignored one is disowned and left alone, and a symlink is not followed.
 One outside the source tree was never verctl's to render, which keeps this crate's changelog templates out.  
 See docs/served-files.md.
 
-A served mise task execs the tool from PATH, never `"$(mise where <tool>)/<tool>"`.  
+A served mise task execs the tool from `PATH`, never `"$(mise where <tool>)/<tool>"`.  
 `mise where` resolves a version from the surrounding config, so it ignores the task's own `#MISE tools` pin.  
-mise already puts that pin first on PATH.
+mise already puts that pin first on `PATH`.
 
 Drop the `mise where` call only in the same change that renders the pin from a template.  
 Otherwise the task freezes on whatever version the file happens to name.
 
-Machines are configuration, not a hardcoded map.  
+Machines are configuration instead of a hardcoded map.  
 A machine is declared once under `runners` with `labels`, the literal GitHub label list.  
 GitHub reads the list as AND: one machine, however many labels.  
-Jobs name machines: a `ci` job takes `runners`, one check each.  
-An `assets` target takes a single `runner`, because one tarball is one machine.
+Jobs name machines: a `ci` job takes `runners`, one check each, and an `assets` target takes a single `runner`, because one tarball is one machine.
 
 A name resolves against `runners` or fails; only labels reach `runs-on`.  
 Omit `ci` for one `verify` on `ubuntu-latest`.  
-PR CI stays unary by default because compiling on two hosts for a PR is waste.
+PR CI stays unary by default: compiling a PR on two hosts wastes time.
 
 A built-in target (`darwin-arm64`, `linux-x64`) fills in `runner`, `os`, `arch`, and `triple`; any other name must state all four.  
 `verctl ci` writes the matrix for a `plan` job, since `runs-on` exists before the job does.
 
 verctl decides how many jobs there are; the workflow file decides where a fixed job runs.  
 `ci` and `assets` exist because the number of verify checks or tarballs differs per repo.  
-A static YAML file cannot declare N jobs when N is unknown.
+A workflow file is static, so it cannot list a number of jobs that is unknown when it is written.
 
 `plan`, `crate`, `render`, and `version` are always exactly one job each.  
-So their `runs-on` is a literal in the workflow the consumer owns, not a config key.  
+So their `runs-on` is a literal in the workflow the consumer owns.  
+It is never a config key.  
 Do not add one.  
 There is no `release` runner section and none is planned.  
 Publishing a crate twice is wrong the same way two machines per tarball is wrong.

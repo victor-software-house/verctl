@@ -11,8 +11,8 @@ version: 0.7.4
 
 # verctl
 
-`verctl instructions` is the installed contract. Actions run `verctl` from
-PATH.
+`verctl instructions` is the installed contract.  
+Actions run `verctl` from `PATH`.
 
 ## Invocation
 
@@ -84,7 +84,7 @@ Its first fragment is a `patch`, so its first release is `0.0.1`.
 Moving to `0.1.0` or `1.0.0` is a separate operator decision, never the first fragment's bump.
 
 `version` and `check` refuse a `minor` or `major` fragment on a `0.0.0` package.  
-`first_minor: true` on the package in `.ctl/ver.yaml` opens it at `0.1.0`, and only the operator sets it.  
+Only the operator sets a package's `first_minor: true` in `.ctl/ver.yaml`, which opens the package at `0.1.0`.  
 `release` and `status` leave a package at `0.0.0` out, so a repo can adopt the release workflow before its first release.
 
 A repo declares everything in `.ctl/ver.yaml`, the one file verctl reads.  
@@ -97,15 +97,15 @@ A template declares its own target with top-level `{%- set … -%}` exports.
 Commit it: one the repo neither tracks nor ignores fails the run, because rendering nothing would serve the stale file instead.  
 An ignored one is disowned and left alone; one outside the source tree was never verctl's to render.
 
-A served mise task execs the tool from PATH, never `"$(mise where <tool>)/<tool>"`.  
+A served mise task execs the tool from `PATH`, never `"$(mise where <tool>)/<tool>"`.  
 `mise where` resolves from the surrounding config, so it ignores the task's own `#MISE tools` pin.  
-mise already puts that pin first on PATH.
+mise already puts that pin first on `PATH`.
 
 Removing the `mise where` call is only safe together with rendering the pin.  
 Otherwise the task freezes on whatever version the file happens to name.
 
 `render` rewrites those pins and renders every template at the versions on HEAD.  
-`check` fails when a served file or a pin differs from that, with or without fragments.  
+`check` fails when a served file or a pin differs from that render, whether or not fragments are pending.  
 `render` is the fix for both.  
 A file that a template and a `pins` entry both claim fails `version`, `check`, and `render` before any write.
 
@@ -126,7 +126,8 @@ An `assets` target takes a single `runner`, because one tarball is one machine.
 Only `labels` reach `runs-on`; a name resolves against `runners` or fails.
 
 verctl decides how many jobs there are; the workflow file decides where a fixed job runs.  
-`plan`, `crate`, and `version` are always one job each, so their `runs-on` is a literal in the consumer's workflow, not a config key.  
+`plan`, `crate`, and `version` are always one job each, so their `runs-on` is a literal in the consumer's workflow.  
+It is never a config key.  
 Do not add one, and do not add a `release` runner section.
 
 Stop in any of these cases:
@@ -195,7 +196,8 @@ It skips a crate with a pending `minor` fragment or a minor the Version PR alrea
 A crate at 1.0 or later fails: the rule covers 0.x.
 
 `release` checks the registry before and after each publisher.  
-It reads the crates.io sparse index for a stock cargo package bound for crates.io, and the recipe's `query` otherwise.  
+For a stock cargo package that publishes to crates.io, it reads the crates.io sparse index.  
+Otherwise it runs the recipe's `query`.  
 A listed version is `already`.
 
 A publisher that exits zero while the registry never lists the version fails.  
