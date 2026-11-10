@@ -233,7 +233,10 @@ fn render(
 /// templates, so a template would overwrite a pin's edit without a word, and
 /// the target is known only once its template has rendered.
 fn refuse_pinned(template: &Path, target: &Path, pins: &[Pin]) -> Result<()> {
-    if let Some(pin) = pins.iter().find(|pin| pin.file == target) {
+    if let Some(pin) = pins
+        .iter()
+        .find(|pin| without_cur_dir(&pin.file).eq(without_cur_dir(target)))
+    {
         bail!(
             "{target} has two owners: template {template} renders it, and the pins entry for {file} (package {package}) rewrites it; keep one",
             target = target.display(),
@@ -243,6 +246,15 @@ fn refuse_pinned(template: &Path, target: &Path, pins: &[Pin]) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// A path's parts without `.`. `Path::components()` keeps a leading `.`, so
+/// `./tools.toml` and `tools.toml` would compare unequal while naming one file.
+/// Both paths are already refused when they climb with `..`, and either file
+/// may not exist yet, so dropping `.` is all the comparison needs.
+fn without_cur_dir(path: &Path) -> impl Iterator<Item = Component<'_>> {
+    path.components()
+        .filter(|part| !matches!(part, Component::CurDir))
 }
 
 impl Declared {
@@ -568,31 +580,40 @@ mod tests {
 
     /// A template and a `pins` entry that claim one file stop the run before
     /// anything is written.
+    /// The same file spelled with a leading `./` on either side still has two
+    /// owners.
     #[test]
     fn a_target_a_pin_also_rewrites_is_refused() {
-        let root = repo(&[(TEMPLATE_PATH, TEMPLATE), (SERVED, BEFORE)]);
-        let pin = Pin {
-            file: PathBuf::from(SERVED),
-            tool: None,
-            pattern_ids: Vec::new(),
-            patterns: Vec::new(),
-            package: "verctl".to_owned(),
-        };
-        let error = write(
-            root.path(),
-            &Templates::default(),
-            &[pin],
-            &versions(&[("verctl", "0.0.2"), ("ctl-core", "1.2.3")]),
-        )
-        .unwrap_err();
-        let message = format!("{error:#}");
-        assert!(
-            message.contains("tasks/ver/ver has two owners"),
-            "{message}"
-        );
-        assert!(message.contains(TEMPLATE_PATH), "{message}");
-        assert!(message.contains("package verctl"), "{message}");
-        assert_eq!(read(&root, SERVED), BEFORE);
+        let dotted = TEMPLATE.replace(r#""tasks/ver""#, r#""./tasks/ver""#);
+        for (pin_file, template) in [
+            (SERVED, TEMPLATE),
+            ("./tasks/ver/ver", TEMPLATE),
+            (SERVED, dotted.as_str()),
+        ] {
+            let root = repo(&[(TEMPLATE_PATH, template), (SERVED, BEFORE)]);
+            let pin = Pin {
+                file: PathBuf::from(pin_file),
+                tool: None,
+                pattern_ids: Vec::new(),
+                patterns: Vec::new(),
+                package: "verctl".to_owned(),
+            };
+            let error = write(
+                root.path(),
+                &Templates::default(),
+                &[pin],
+                &versions(&[("verctl", "0.0.2"), ("ctl-core", "1.2.3")]),
+            )
+            .unwrap_err();
+            let message = format!("{error:#}");
+            assert!(
+                message.contains("tasks/ver/ver has two owners"),
+                "{pin_file}: {message}"
+            );
+            assert!(message.contains(TEMPLATE_PATH), "{pin_file}: {message}");
+            assert!(message.contains("package verctl"), "{pin_file}: {message}");
+            assert_eq!(read(&root, SERVED), BEFORE, "{pin_file}");
+        }
     }
 
     /// Which pairs exist at all: the tree varies here, not the versions.
