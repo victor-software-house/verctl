@@ -129,7 +129,62 @@ pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
 ///
 /// Returns an error when [`run_pending`] fails.
 pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome> {
-    Ok(run_pending(config, root, dry_run, false)?.published)
+    Ok(run_pending(config, root, dry_run, false, Allow::default())?.published)
+}
+
+/// The proofs a run may go past, each refused unless the operator allows it.
+///
+/// The one-version-commit proof has none: publishing past a skipped version
+/// leaves a gap in the registry that no later run fills, and the fix is to
+/// release the older commit first.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Allow {
+    /// Publish when `.github/workflows/` at HEAD differs from the default
+    /// branch's tip.
+    pub workflow_change: bool,
+    /// Publish from a commit the default branch does not contain.
+    pub off_default_branch: bool,
+}
+
+/// A proof that would have refused the run, which the operator allowed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Allowed {
+    /// The proof the run went past.
+    pub check: Check,
+    /// What the proof found.
+    pub reason: String,
+}
+
+/// A proof the operator can allow.
+///
+/// Not `#[non_exhaustive]`: the binary prints each one, and an exhaustive
+/// match makes a new variant fail the build until it is printed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Check {
+    /// `.github/workflows/` differs from the default branch's tip.
+    WorkflowChange,
+    /// The default branch does not contain HEAD.
+    OffDefaultBranch,
+}
+
+impl Check {
+    /// The name the report and the JSON use.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::WorkflowChange => "workflow-change",
+            Self::OffDefaultBranch => "off-default-branch",
+        }
+    }
+
+    /// The flag that allows it.
+    const fn flag(self) -> &'static str {
+        match self {
+            Self::WorkflowChange => "--allow-workflow-change",
+            Self::OffDefaultBranch => "--allow-off-default-branch",
+        }
+    }
 }
 
 /// Whether a publish run found anything to release.
@@ -156,6 +211,8 @@ pub struct PublishRun {
     pub published: PublishOutcome,
     /// Incomplete packages whose version commit is not HEAD.
     pub waiting: Vec<Waiting>,
+    /// The proofs the operator allowed this run to go past.
+    pub allowed: Vec<Allowed>,
 }
 
 /// An incomplete package left for the run at its own version commit.
@@ -183,25 +240,32 @@ pub struct Waiting {
 /// toward completeness. A package at `0.0.0` is never released and needs no
 /// changelog section. A dry run plans every other package and asks nothing.
 ///
+/// Before any publisher, tag, or Release call, the run proves the release
+/// commit: the default branch contains it, its `.github/workflows/` matches
+/// the default branch's tip, and each package it releases has one version
+/// commit since its last release. `allow` lets the run go past the first two,
+/// and each one it goes past is listed in [`PublishRun::allowed`].
+///
 /// # Errors
 ///
 /// Returns an error when the plan cannot be resolved, a changelog lacks the
-/// heading for a package version, HEAD is not on the default branch, or no
-/// token is set. It also returns one when a registry or GitHub lookup fails,
-/// HEAD is not the version commit of an incomplete release, or a publisher,
-/// tag, or Release step fails.
+/// heading for a package version, a proof refuses or cannot run, or no token
+/// is set. It also returns one when a registry or GitHub lookup fails, HEAD is
+/// not the version commit of an incomplete release, or a publisher, tag, or
+/// Release step fails.
 pub fn run_pending(
     config: &Config,
     root: &Path,
     dry_run: bool,
     skip_assets: bool,
+    allow: Allow,
 ) -> Result<PublishRun> {
     let planned = plan(config, root)?;
     if dry_run {
         return dry_run_plan(config, root, &planned);
     }
     full_history(root)?;
-    prove_version_commit(config, root, &planned)?;
+    let allowed = prove_version_commit(config, root, &planned, allow)?;
     let token = release::resolve_token()?;
     let pending = pending::pending(config, root, &token, skip_assets)?;
     if pending.is_empty() {
@@ -212,10 +276,12 @@ pub fn run_pending(
                 releases: Vec::new(),
             },
             waiting: Vec::new(),
+            allowed,
         });
     }
     let head = git::head_sha(root)?;
     let (here, waiting) = at_head(&pending, &head)?;
+    refuse_skipped_versions(here, &waiting, &head)?;
     let selected: Vec<(&crate::config::PackageSpec, &PublishEntry)> = config
         .packages
         .iter()
@@ -272,6 +338,7 @@ pub fn run_pending(
         outcome: Outcome::Released,
         published: PublishOutcome { packages, releases },
         waiting,
+        allowed,
     })
 }
 
@@ -411,6 +478,7 @@ fn dry_run_plan(config: &Config, root: &Path, planned: &PublishPlan) -> Result<P
         outcome,
         published: PublishOutcome { packages, releases },
         waiting: Vec::new(),
+        allowed: Vec::new(),
     })
 }
 
@@ -542,7 +610,14 @@ pub fn full_history(root: &Path) -> Result<()> {
     }
 }
 
-fn prove_version_commit(config: &Config, root: &Path, planned: &PublishPlan) -> Result<()> {
+/// The changelog, ancestry, and workflow proofs, which need no token. Each
+/// finding the operator allowed comes back; any other refuses the run.
+fn prove_version_commit(
+    config: &Config,
+    root: &Path,
+    planned: &PublishPlan,
+    allow: Allow,
+) -> Result<Vec<Allowed>> {
     release::require_changelog_versions(
         config,
         root,
@@ -555,7 +630,51 @@ fn prove_version_commit(config: &Config, root: &Path, planned: &PublishPlan) -> 
     if let Some(branch) = git::configured_default_branch() {
         git::ensure_origin_head(root, &branch, &git::FetchDefault::from_env())?;
     }
-    git::require_on_default_history(root)
+    let mut allowed = Vec::new();
+    for (check, found, allows) in [
+        (
+            Check::OffDefaultBranch,
+            git::off_default_history(root)?,
+            allow.off_default_branch,
+        ),
+        (
+            Check::WorkflowChange,
+            git::workflows_differ(root)?,
+            allow.workflow_change,
+        ),
+    ] {
+        let Some(reason) = found else { continue };
+        ensure!(
+            allows,
+            "publish refuses this commit: {reason}; pass {flag} to publish anyway",
+            flag = check.flag(),
+        );
+        allowed.push(Allowed { check, reason });
+    }
+    Ok(allowed)
+}
+
+/// Refuse a package HEAD releases while an earlier commit's version of it is
+/// still unreleased: publishing this one would skip that version, and nothing
+/// would publish it later. `waiting` holds those versions, oldest first,
+/// because the plan lists each one at the commit that set it.
+fn refuse_skipped_versions(
+    here: &pending::PendingCommit,
+    waiting: &[Waiting],
+    head: &str,
+) -> Result<()> {
+    for package in &here.packages {
+        if let Some(skipped) = waiting.iter().find(|left| left.name == package.name) {
+            bail!(
+                "{name} {version} was never released: {sha} set it, and publishing {name} {current} at {head} would skip it; run `verctl publish --plan`, which lists {sha} first, and publish that commit before this one",
+                name = package.name,
+                version = skipped.version,
+                sha = skipped.commit,
+                current = package.version,
+            );
+        }
+    }
+    Ok(())
 }
 
 fn already_published(message: &str) -> bool {
@@ -652,7 +771,7 @@ mod tests {
     use crate::config::Config;
 
     mod head {
-        use super::super::at_head;
+        use super::super::{at_head, refuse_skipped_versions};
         use crate::pending::{Pending, PendingCommit, PendingPackage};
 
         fn pending() -> Pending {
@@ -691,6 +810,44 @@ mod tests {
             assert_eq!(waiting.len(), 1);
             assert_eq!(waiting[0].name, "core");
             assert_eq!(waiting[0].commit, "aaa");
+        }
+
+        /// Another package waiting is not a skip; the same package waiting
+        /// at an older commit is, and the refusal names the way out.
+        #[test]
+        fn a_skipped_version_of_the_same_package_refuses() {
+            let pending = pending();
+            let (here, waiting) = at_head(&pending, "ccc").unwrap();
+            refuse_skipped_versions(here, &waiting, "ccc").unwrap();
+
+            let skipped = Pending {
+                commits: vec![
+                    PendingCommit {
+                        sha: "aaa1111".into(),
+                        packages: vec![PendingPackage {
+                            name: "demo".into(),
+                            version: "0.7.5".into(),
+                        }],
+                    },
+                    PendingCommit {
+                        sha: "bbb2222".into(),
+                        packages: vec![PendingPackage {
+                            name: "demo".into(),
+                            version: "0.7.6".into(),
+                        }],
+                    },
+                ],
+                assets: Vec::new(),
+            };
+            let (here, waiting) = at_head(&skipped, "bbb2222").unwrap();
+            let error = refuse_skipped_versions(here, &waiting, "bbb2222").unwrap_err();
+            let message = format!("{error:#}");
+            assert!(
+                message.contains("demo 0.7.5 was never released"),
+                "{message}"
+            );
+            assert!(message.contains("aaa1111 set it"), "{message}");
+            assert!(message.contains("verctl publish --plan"), "{message}");
         }
     }
 

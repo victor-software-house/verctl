@@ -176,6 +176,25 @@ pub struct PublishArgs {
     /// that builds none. `publish` only.
     #[arg(long)]
     pub skip_assets: bool,
+    /// The proofs `publish` may go past.
+    #[command(flatten)]
+    pub allow: AllowArgs,
+}
+
+/// The proofs `publish` may go past, each an independent switch with its own
+/// variable. `publish` only.
+#[derive(Debug, Args)]
+#[non_exhaustive]
+pub struct AllowArgs {
+    /// Publish even when `.github/workflows/` at HEAD differs from the
+    /// default branch's tip. The report lists it under `allowed`. `publish`
+    /// only.
+    #[arg(long)]
+    pub allow_workflow_change: bool,
+    /// Publish from a commit the default branch does not contain. The report
+    /// lists it under `allowed`. `publish` only.
+    #[arg(long)]
+    pub allow_off_default_branch: bool,
 }
 
 /// Arguments of `assets`.
@@ -409,6 +428,11 @@ mod tests {
         for (id, variable) in [
             ("plan", "VERCTL_PLAN"),
             ("skip_assets", "VERCTL_SKIP_ASSETS"),
+            ("allow_workflow_change", "VERCTL_ALLOW_WORKFLOW_CHANGE"),
+            (
+                "allow_off_default_branch",
+                "VERCTL_ALLOW_OFF_DEFAULT_BRANCH",
+            ),
             ("config", "VERCTL_CONFIG"),
         ] {
             let arg = publish

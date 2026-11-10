@@ -9,10 +9,11 @@ Compile, format, lint, and test tasks run in pull request CI with
 - [ ] 1.2 The workflow-drift proof compares the `.github/workflows/` tree ids; proof: tests for a matching tree and a changed workflow pass in CI
 - [ ] 1.3 The one-version-commit proof counts first-parent version changes since the newest release tag; proof: tests for one commit, a skipped version, and an untagged package pass in CI
 - [ ] 1.4 All proofs run before any publisher, tag, or Release call; proof: a test with a refused proof asserts no publisher ran
+- [ ] 1.5 `publish --plan` lists a skipped version at the commit that set it, oldest first, with its assets on its own tag; proof: the git walk and plan grouping tests pass in CI
 
 ## 2. Flags
 
-- [ ] 2.1 `--allow-workflow-change` and `--allow-off-default-branch` read their `VERCTL_` variables, print `allowed:` lines, and fill `allowed` in JSON; proof: cli and report tests pass in CI
+- [ ] 2.1 `--allow-workflow-change` and `--allow-off-default-branch` read their `VERCTL_` variables, add `allowed` rows, and fill `allowed` in JSON; proof: cli and report tests pass in CI
 - [ ] 2.2 `release.yml` declares both boolean inputs and sets them only in step `env:`; proof: `mise run lint:workflow-policy` passes in CI
 
 ## 3. Bundle

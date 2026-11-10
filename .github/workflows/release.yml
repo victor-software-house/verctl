@@ -48,6 +48,19 @@ on:
         description: Wait for docs.rs to build each released crate.
         type: boolean
         default: true
+      allow-workflow-change:
+        description: >-
+          Publish a version commit whose .github/workflows/ differs from the
+          default branch's tip, as when retrying an old release after a
+          workflow changed. The publish report lists it under allowed.
+        type: boolean
+        default: false
+      allow-off-default-branch:
+        description: >-
+          Publish a version commit the default branch does not contain. The
+          publish report lists it under allowed.
+        type: boolean
+        default: false
       config:
         description: Path to the declarations file. Empty means .ctl/ver.yaml.
         type: string
@@ -327,6 +340,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           VERCTL_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           VERCTL_SKIP_ASSETS: ${{ !inputs.assets }}
+          VERCTL_ALLOW_WORKFLOW_CHANGE: ${{ inputs.allow-workflow-change }}
+          VERCTL_ALLOW_OFF_DEFAULT_BRANCH: ${{ inputs.allow-off-default-branch }}
           # The token is read only under its declared name. A caller whose
           # token lives in an environment maps the stored name to
           # registry-token, and this job, running in that environment,

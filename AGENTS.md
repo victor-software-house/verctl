@@ -199,6 +199,10 @@ rewrites `pins` onto the Version PR commit, because the tag names
 that commit and publish pushes nothing but the tag. Actions run
 `verctl` from PATH.
 `publish` is exact-SHA plus a matching per-package CHANGELOG heading.
+Before any upload it proves the commit: the default branch contains it,
+its `.github/workflows/` tree equals the default tip's, and each package
+has one version commit since its last tag. Only the first two have an
+`--allow-…` flag, and a run that uses one lists it under `allowed`.
 Cargo and bun are stock recipes, not the architecture. Do not name
 private release skills in this repo.
 

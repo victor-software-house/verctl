@@ -16,7 +16,7 @@ SHALL let the run continue.
 #### Scenario: A commit off the default branch, allowed
 
 - **WHEN** HEAD is not an ancestor of `origin/main` and `verctl publish --allow-off-default-branch` runs
-- **THEN** it publishes, and stderr says `allowed: off-default-branch` with the two commits
+- **THEN** it publishes, and the report lists `off-default-branch` under `allowed` with the two commits
 
 ### Requirement: The workflows at the release commit match the default branch
 

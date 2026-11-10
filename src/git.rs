@@ -18,7 +18,7 @@ use gix::sec::trust::{DefaultForLevel, Mapping};
 use gix::sec::{Permission, Trust};
 
 use crate::github::Repo;
-use crate::process;
+use crate::{bump, process};
 
 /// The checked-out branch, or `None` for a detached HEAD or no repository.
 #[must_use]
@@ -439,11 +439,13 @@ pub fn upstream_default_branch(root: &Path) -> Option<String> {
     origin_head_branch(&discover(root).ok()?)
 }
 
-/// Fail unless HEAD is on the default-branch history.
+/// Whether HEAD is off the default-branch history: `None` when the default
+/// branch contains HEAD, or why it does not, naming both commits.
 ///
-/// A proof that cannot run fails, and says which fact is missing. A check
-/// that passed by skipping itself would let a release run from any commit,
-/// in exactly the CI shapes where the proof matters. Each of these fails: no
+/// Being off the branch is a finding the caller may allow. Not knowing is
+/// not: a proof that cannot run fails, and says which fact is missing. A check
+/// that passed by skipping itself would let a release run from any commit, in
+/// exactly the CI shapes where the proof matters. Each of these fails: no
 /// repository, no HEAD commit, no `origin` remote, an `origin` with no
 /// peelable default-tracking ref, and a shallow clone that cannot walk the
 /// graph.
@@ -452,10 +454,150 @@ pub fn upstream_default_branch(root: &Path) -> Option<String> {
 ///
 /// Returns an error when no repository covers `root`, HEAD has no commit, or
 /// there is no `origin` remote. It also returns one when the default branch
-/// ref cannot be resolved, when HEAD is not an ancestor of it, or when the
-/// merge-base cannot be computed, as in a shallow clone.
-pub fn require_on_default_history(root: &Path) -> Result<()> {
+/// ref cannot be resolved, or when the merge-base cannot be computed, as in a
+/// shallow clone.
+pub fn off_default_history(root: &Path) -> Result<Option<String>> {
     prove_default_history(root, &candidate_names(env_base_ref().as_deref()))
+}
+
+/// Whether `.github/workflows/` at HEAD differs from the default branch's
+/// tip: `None` when the two trees are the same object, or why not, naming
+/// both commits.
+///
+/// A retry of an old release commit runs its workflows as they were at that
+/// commit. Steps or permissions changed since can publish to the registry and
+/// then fail to tag, and the registry cannot take a version back. Equal tree
+/// ids prove equal content, so no file is read. A tree that is missing on both
+/// sides counts as equal.
+///
+/// # Errors
+///
+/// Returns an error when no repository covers `root`, HEAD has no commit, or
+/// the default branch ref cannot be resolved or is missing.
+pub fn workflows_differ(root: &Path) -> Result<Option<String>> {
+    let repo = repo_covering(root).with_context(|| {
+        format!(
+            "publish cannot compare workflows: no git repository covers {}",
+            root.display()
+        )
+    })?;
+    let head = repo
+        .head_commit()
+        .context("publish cannot compare workflows: HEAD has no commit")?;
+    let upstream = default_upstream_commit(&repo, &candidate_names(env_base_ref().as_deref()))?
+        .context("publish cannot compare workflows: there is no `origin` remote")?;
+    let upstream = repo.find_commit(upstream)?;
+    let workflows = |commit: &gix::Commit<'_>| -> Result<Option<gix::ObjectId>> {
+        Ok(commit
+            .tree()?
+            .lookup_entry_by_path(WORKFLOWS)?
+            .map(|entry| entry.object_id()))
+    };
+    if workflows(&head)? == workflows(&upstream)? {
+        return Ok(None);
+    }
+    Ok(Some(format!(
+        "{WORKFLOWS}/ at HEAD {head} differs from the default branch at {upstream}",
+        head = head.id(),
+        upstream = upstream.id(),
+    )))
+}
+
+/// Where a repository keeps its GitHub Actions workflows.
+const WORKFLOWS: &str = ".github/workflows";
+
+/// A version an earlier commit set and no release has.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Unreleased {
+    /// The version.
+    pub version: String,
+    /// Full hex SHA of the commit on the first-parent line that set it.
+    pub sha: String,
+    /// First-parent steps from HEAD, as in [`VersionCommit::depth`].
+    pub depth: usize,
+}
+
+/// The versions earlier commits set on HEAD's first-parent line since the last
+/// release, newest first, leaving out the one HEAD carries.
+///
+/// The walk goes back from HEAD one version at a time and stops at a version
+/// `released` accepts, at `0.0.0`, at a revision with no version, or at the
+/// root. Empty means the version commit of HEAD's version is the only one
+/// since the last release. `read` reads one revision of `path`, as in
+/// [`version_commit`].
+///
+/// # Errors
+///
+/// Returns an error when `root` is in no repository, `path` is outside it,
+/// HEAD has no version in `path`, a commit or tree cannot be read, or
+/// `released` fails. It also returns one when the walk reaches a shallow
+/// clone's boundary before it stops.
+pub fn unreleased_below(
+    root: &Path,
+    path: &Path,
+    read: &dyn Fn(&str) -> Option<String>,
+    released: &mut dyn FnMut(&str) -> Result<bool>,
+) -> Result<Vec<Unreleased>> {
+    let repo = discover(root).context("finding earlier versions needs a git repository")?;
+    let rel = git_path(root, path, repo.workdir())
+        .with_context(|| format!("{} is not in the repository", path.display()))?;
+    let version_at = |commit: &gix::Commit<'_>| -> Result<Option<String>> {
+        Ok(blob_at(&commit.tree()?, &rel).and_then(|raw| read(&raw)))
+    };
+    let mut commit = repo
+        .head_commit()
+        .context("finding earlier versions needs HEAD")?;
+    let mut version = version_at(&commit)?
+        .with_context(|| format!("HEAD has no version in {}", rel.display()))?;
+    let boundary: Vec<gix::ObjectId> = repo
+        .shallow_commits()?
+        .map(|commits| commits.iter().copied().collect())
+        .unwrap_or_default();
+    let mut found = Vec::new();
+    let mut below_head = false;
+    let mut depth = 0;
+    loop {
+        ensure!(
+            !boundary.contains(&commit.id().detach()),
+            "cannot find the versions set before {version} in {}: the clone is shallow; fetch the full history{}",
+            rel.display(),
+            shallow_hint()
+        );
+        let Some(parent) = commit.parent_ids().next() else {
+            if below_head {
+                found.push(Unreleased {
+                    version,
+                    sha: commit.id().to_string(),
+                    depth,
+                });
+            }
+            break;
+        };
+        let parent = repo.find_commit(parent.detach())?;
+        let earlier = version_at(&parent)?;
+        if earlier.as_deref() == Some(version.as_str()) {
+            commit = parent;
+            depth += 1;
+            continue;
+        }
+        if below_head {
+            found.push(Unreleased {
+                version,
+                sha: commit.id().to_string(),
+                depth,
+            });
+        }
+        let Some(earlier) = earlier else { break };
+        if bump::unreleased(&earlier) || released(&earlier)? {
+            break;
+        }
+        below_head = true;
+        version = earlier;
+        commit = parent;
+        depth += 1;
+    }
+    Ok(found)
 }
 
 /// How to fetch `origin/<branch>` when that ref is missing.
@@ -515,7 +657,7 @@ pub fn github_git_user() -> &'static str {
 
 /// `VERCTL_DEFAULT_BRANCH` only.
 ///
-/// `GITHUB_BASE_REF` is a candidate for `require_on_default_history`,
+/// `GITHUB_BASE_REF` is a candidate for `off_default_history`,
 /// not a name to rewrite `origin/HEAD` with.
 #[must_use]
 pub fn configured_default_branch() -> Option<String> {
@@ -527,7 +669,7 @@ pub fn configured_default_branch() -> Option<String> {
 
 /// Point `origin/HEAD` at `origin/<branch>`. Fetch that one ref only
 /// when it is missing. The fetch is the branch's history, not a
-/// depth-1 tip: `require_on_default_history` walks parents.
+/// depth-1 tip: `off_default_history` walks parents.
 ///
 /// An empty `branch`, no repository, and no `origin` remote are each a no-op.
 ///
@@ -706,7 +848,7 @@ fn github_credentials(token: &str) -> impl FnMut(Action) -> gix::Result<Option<O
     }
 }
 
-fn prove_default_history(root: &Path, candidates: &[String]) -> Result<()> {
+fn prove_default_history(root: &Path, candidates: &[String]) -> Result<Option<String>> {
     let repo = repo_covering(root).with_context(|| {
         format!(
             "publish cannot prove HEAD is on the default branch: no git repository covers {}",
@@ -722,13 +864,13 @@ fn prove_default_history(root: &Path, candidates: &[String]) -> Result<()> {
         "publish cannot prove HEAD is on the default branch: there is no `origin` remote; add it and fetch the default branch",
     )?;
     if head == upstream {
-        return Ok(());
+        return Ok(None);
     }
     match repo.merge_base(head, upstream) {
-        Ok(Some(base)) if base == head => Ok(()),
-        Ok(Some(_) | None) => bail!(
-            "publish only from a Version PR commit on the default branch (HEAD {head} is not an ancestor of {upstream})"
-        ),
+        Ok(Some(base)) if base == head => Ok(None),
+        Ok(Some(_) | None) => Ok(Some(format!(
+            "HEAD {head} is not an ancestor of the default branch at {upstream}"
+        ))),
         Err(error) => Err(error).context(
             "publish cannot prove HEAD is on the default branch (need a full fetch, not a shallow clone)",
         ),
@@ -1437,7 +1579,10 @@ mod tests {
 
     use indoc::indoc;
 
-    use super::{AddedBy, VersionCommit, added_by, origin_url, tagged_commit, version_commit};
+    use super::{
+        AddedBy, Unreleased, VersionCommit, added_by, origin_url, tagged_commit, unreleased_below,
+        version_commit,
+    };
     use crate::test_git::{commit_all, git, init};
 
     /// The paths of every blob in the commit `sha`.
@@ -1491,6 +1636,79 @@ mod tests {
             version_commit(dir.path(), &dir.path().join("Cargo.toml"), &version_line).unwrap();
         assert_eq!(found.sha, first);
         assert_eq!(found.depth, 0);
+    }
+
+    /// The versions below HEAD's that no release has, with `released`
+    /// accepting the versions listed.
+    fn unreleased(dir: &Path, released: &[&str]) -> Vec<Unreleased> {
+        unreleased_below(
+            dir,
+            &dir.join("Cargo.toml"),
+            &version_line,
+            &mut |version| Ok(released.contains(&version)),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn one_version_commit_since_the_last_release_leaves_nothing_below() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        write_version(dir.path(), "0.7.4");
+        commit_all(dir.path(), "chore: start");
+        write_version(dir.path(), "0.7.5");
+        commit_all(dir.path(), "chore(release): version packages (#7)");
+        std::fs::write(dir.path().join("README"), "later\n").unwrap();
+        commit_all(dir.path(), "docs: later (#8)");
+        assert_eq!(unreleased(dir.path(), &["0.7.4"]), Vec::new());
+    }
+
+    #[test]
+    fn a_skipped_version_is_named_with_the_commit_that_set_it() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        write_version(dir.path(), "0.7.4");
+        commit_all(dir.path(), "chore: start");
+        write_version(dir.path(), "0.7.5");
+        let skipped = commit_all(dir.path(), "chore(release): version packages (#7)");
+        write_version(dir.path(), "0.7.6");
+        commit_all(dir.path(), "chore(release): version packages (#9)");
+        assert_eq!(
+            unreleased(dir.path(), &["0.7.4"]),
+            [Unreleased {
+                version: "0.7.5".to_owned(),
+                sha: skipped,
+                depth: 1,
+            }]
+        );
+    }
+
+    /// With no release at all, the walk counts from the root, and stops at
+    /// `0.0.0`, which is never released.
+    #[test]
+    fn an_untagged_package_counts_from_the_root() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        write_version(dir.path(), "0.0.1");
+        let root = commit_all(dir.path(), "chore: start");
+        write_version(dir.path(), "0.0.2");
+        commit_all(dir.path(), "chore(release): version packages (#7)");
+        assert_eq!(
+            unreleased(dir.path(), &[]),
+            [Unreleased {
+                version: "0.0.1".to_owned(),
+                sha: root,
+                depth: 1,
+            }]
+        );
+
+        let fresh = tempfile::TempDir::new().unwrap();
+        init(fresh.path());
+        write_version(fresh.path(), "0.0.0");
+        commit_all(fresh.path(), "chore: adopt");
+        write_version(fresh.path(), "0.0.1");
+        commit_all(fresh.path(), "chore(release): version packages (#1)");
+        assert_eq!(unreleased(fresh.path(), &[]), Vec::new());
     }
 
     #[test]
@@ -2319,8 +2537,12 @@ mod tests {
         );
     }
 
+    /// The proof as a pass or a failure: being off the branch fails too.
     fn prove(root: &std::path::Path, candidates: &[String]) -> anyhow::Result<()> {
-        super::prove_default_history(root, candidates)
+        match super::prove_default_history(root, candidates)? {
+            None => Ok(()),
+            Some(off) => anyhow::bail!(off),
+        }
     }
 
     #[test]
@@ -2718,6 +2940,8 @@ mod tests {
         prove(dir.path(), &stock()).unwrap();
     }
 
+    /// Being off the branch is a finding, not an error, and names both
+    /// commits.
     #[test]
     fn head_off_default_history_fails() {
         let (dir, first) = fixture();
@@ -2726,9 +2950,59 @@ mod tests {
         git(dir.path(), &["update-ref", "refs/heads/other", &first]);
         git(dir.path(), &["symbolic-ref", "HEAD", "refs/heads/other"]);
         std::fs::write(dir.path().join("extra.txt"), "x\n").unwrap();
-        commit_all(dir.path(), "ahead");
-        let err = prove(dir.path(), &stock()).unwrap_err();
-        assert!(format!("{err:#}").contains("not an ancestor"), "{err:#}");
+        let head = commit_all(dir.path(), "ahead");
+        let off = super::prove_default_history(dir.path(), &stock())
+            .unwrap()
+            .unwrap();
+        assert!(off.contains("not an ancestor"), "{off}");
+        assert!(off.contains(&head), "{off}");
+        assert!(off.contains(&first), "{off}");
+    }
+
+    #[test]
+    fn workflows_at_the_default_tip_match() {
+        let (dir, _) = fixture();
+        std::fs::create_dir_all(dir.path().join(".github/workflows")).unwrap();
+        std::fs::write(dir.path().join(".github/workflows/ci.yml"), "on: push\n").unwrap();
+        let release = commit_all(dir.path(), "chore(release): version packages");
+        std::fs::write(dir.path().join("README"), "later\n").unwrap();
+        let tip = commit_all(dir.path(), "docs: later");
+        add_origin(dir.path());
+        track(dir.path(), "main", &tip);
+        git(dir.path(), &["update-ref", "--no-deref", "HEAD", &release]);
+        assert_eq!(super::workflows_differ(dir.path()).unwrap(), None);
+    }
+
+    /// A workflow changed on the default branch after the release commit, and
+    /// a repository with workflows on one side only, both differ.
+    #[test]
+    fn a_workflow_changed_since_the_release_commit_differs() {
+        let (dir, _) = fixture();
+        std::fs::create_dir_all(dir.path().join(".github/workflows")).unwrap();
+        std::fs::write(dir.path().join(".github/workflows/ci.yml"), "on: push\n").unwrap();
+        let release = commit_all(dir.path(), "chore(release): version packages");
+        std::fs::write(
+            dir.path().join(".github/workflows/ci.yml"),
+            "on: [push, pull_request]\n",
+        )
+        .unwrap();
+        let tip = commit_all(dir.path(), "ci: run on pull requests");
+        add_origin(dir.path());
+        track(dir.path(), "main", &tip);
+        git(dir.path(), &["update-ref", "--no-deref", "HEAD", &release]);
+        let differs = super::workflows_differ(dir.path()).unwrap().unwrap();
+        assert!(differs.contains(".github/workflows/"), "{differs}");
+        assert!(differs.contains(&release), "{differs}");
+        assert!(differs.contains(&tip), "{differs}");
+
+        let (bare, first) = fixture();
+        add_origin(bare.path());
+        std::fs::create_dir_all(bare.path().join(".github/workflows")).unwrap();
+        std::fs::write(bare.path().join(".github/workflows/ci.yml"), "on: push\n").unwrap();
+        let added = commit_all(bare.path(), "ci: add");
+        track(bare.path(), "main", &added);
+        git(bare.path(), &["update-ref", "--no-deref", "HEAD", &first]);
+        assert!(super::workflows_differ(bare.path()).unwrap().is_some());
     }
 
     #[test]

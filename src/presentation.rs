@@ -333,7 +333,22 @@ pub(super) struct PublishReport {
     pub(super) waiting: Vec<ReleaseRow>,
     /// `--plan`: every incomplete package, at its version commit.
     pub(super) pending: Vec<ReleaseRow>,
+    /// The proofs the operator allowed this run to go past.
+    pub(super) allowed: Vec<publish::Allowed>,
     pub(super) dry_run: bool,
+}
+
+impl PublishReport {
+    /// One `allowed` row per proof the run went past, so the log of a run
+    /// that went past one says so.
+    fn allowed_rows(&self, fields: Fields) -> Fields {
+        self.allowed.iter().fold(fields, |fields, allowed| {
+            fields.row(
+                "allowed",
+                format!("{}: {}", allowed.check.name(), allowed.reason),
+            )
+        })
+    }
 }
 
 /// A package at the version commit that releases it.
@@ -371,7 +386,8 @@ impl Present for PublishReport {
     fn present(&self) -> Document {
         match self.outcome {
             publish::Outcome::NothingToRelease => {
-                return Document::new().fields(Fields::new().row("outcome", "nothing to release"));
+                return Document::new()
+                    .fields(self.allowed_rows(Fields::new().row("outcome", "nothing to release")));
             }
             publish::Outcome::Released => {}
         }
@@ -404,6 +420,7 @@ impl Present for PublishReport {
         if self.dry_run {
             fields = fields.row("dry-run", "nothing published");
         }
+        let fields = self.allowed_rows(fields);
         let mut document = Document::new();
         if !self.packages.is_empty() {
             document = document.table(table);
@@ -536,8 +553,49 @@ mod tests {
             releases: Vec::new(),
             waiting: Vec::new(),
             pending,
+            allowed: Vec::new(),
             dry_run: false,
         })
+    }
+
+    /// A run that went past a proof says so on its own row, and the JSON
+    /// lists it under `allowed`.
+    #[test]
+    fn an_allowed_proof_is_on_the_record_in_both_shapes() {
+        let report = Report::Publish(PublishReport {
+            outcome: publish::Outcome::NothingToRelease,
+            packages: Vec::new(),
+            releases: Vec::new(),
+            waiting: Vec::new(),
+            pending: Vec::new(),
+            allowed: vec![publish::Allowed {
+                check: publish::Check::WorkflowChange,
+                reason: ".github/workflows/ at HEAD aaa differs from the default branch at bbb"
+                    .into(),
+            }],
+            dry_run: false,
+        });
+        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+            .width(120)
+            .capture(&report)
+            .expect("pretty");
+        assert_eq!(
+            pretty.text(),
+            formatdoc! {"
+                outcome  nothing to release
+                allowed  workflow-change: .github/workflows/ at HEAD aaa differs from the default branch at bbb
+            "},
+        );
+        let json = View::new(OutputFormat::Json, ColorMode::Never)
+            .width(80)
+            .capture(&report)
+            .expect("json");
+        let value: serde_json::Value = serde_json::from_str(json.text()).expect("JSON");
+        assert_eq!(value["allowed"][0]["check"], "workflow-change");
+        assert_eq!(
+            value["allowed"][0]["reason"],
+            ".github/workflows/ at HEAD aaa differs from the default branch at bbb"
+        );
     }
 
     #[test]
@@ -635,6 +693,7 @@ mod tests {
             releases: vec![url.into()],
             waiting: Vec::new(),
             pending: Vec::new(),
+            allowed: Vec::new(),
             dry_run: false,
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
@@ -656,6 +715,7 @@ mod tests {
             releases: vec!["https://example.test/v1".into()],
             waiting: Vec::new(),
             pending: Vec::new(),
+            allowed: Vec::new(),
             dry_run: false,
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
