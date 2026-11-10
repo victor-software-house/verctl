@@ -2076,6 +2076,66 @@ mod tests {
         );
     }
 
+    /// A later pull request that only edits a fragment keeps the link to the
+    /// one that added it. The walk follows the file, not its content, so an
+    /// edit through a titled merge or a squash leaves the adding merge named.
+    #[test]
+    fn added_by_keeps_the_adding_pull_request_after_an_edit() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        std::fs::write(dir.path().join("README"), "start\n").unwrap();
+        let base = commit_all(dir.path(), "chore: start");
+        std::fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
+        let side = commit_all(dir.path(), "wip");
+        git(dir.path(), &["reset", "-q", "--hard", &base]);
+        std::fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
+        git(dir.path(), &["add", "-A"]);
+        let tree = git(dir.path(), &["write-tree"]);
+        let added = git(
+            dir.path(),
+            &[
+                "commit-tree",
+                &tree,
+                "-p",
+                &base,
+                "-p",
+                &side,
+                "-m",
+                "fix: the parser (#12)",
+            ],
+        );
+        git(dir.path(), &["reset", "-q", "--hard", &added]);
+        std::fs::write(dir.path().join("fix.md"), "Fix, reworded.\n").unwrap();
+        let edit = commit_all(dir.path(), "docs: reword the fix");
+        git(dir.path(), &["reset", "-q", "--hard", &added]);
+        std::fs::write(dir.path().join("fix.md"), "Fix, reworded.\n").unwrap();
+        git(dir.path(), &["add", "-A"]);
+        let tree = git(dir.path(), &["write-tree"]);
+        let edited = git(
+            dir.path(),
+            &[
+                "commit-tree",
+                &tree,
+                "-p",
+                &added,
+                "-p",
+                &edit,
+                "-m",
+                "docs: reword the fix (#13)",
+            ],
+        );
+        git(dir.path(), &["reset", "-q", "--hard", &edited]);
+        std::fs::write(dir.path().join("fix.md"), "Fix, reworded again.\n").unwrap();
+        commit_all(dir.path(), "docs: reword the fix again (#14)");
+        assert_eq!(
+            added_by(dir.path(), &dir.path().join("fix.md")).unwrap(),
+            Some(AddedBy {
+                sha: added,
+                subject: "fix: the parser (#12)".into(),
+            })
+        );
+    }
+
     /// A shallow clone ends at a commit git reports as parentless. When the
     /// adding commit lies beyond it, naming the boundary would be wrong.
     #[test]
