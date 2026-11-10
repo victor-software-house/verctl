@@ -10,7 +10,7 @@ For Bun and pnpm workspaces it does nothing.
 A dependent keeps its old range.
 Publish follows declaration order and ignores the dependency graph (queue row [VER-033][ver-033]).
 
-The [research](../version-files/research.md) found one rule shared by pnpm 11 and Changesets.
+The [research](../archive/2026-11-10-version-files/research.md) found one rule shared by pnpm 11 and Changesets.
 Leave `workspace:*`, `workspace:^`, and `workspace:~` alone, because the package manager rewrites them in the packed manifest.
 Touch only an explicit range.
 

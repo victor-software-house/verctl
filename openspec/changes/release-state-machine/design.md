@@ -354,7 +354,7 @@ their previous config from git.
 [drs]: ../derived-release-state/design.md
 [rc]: ../release-completion/design.md
 [vpi]: ../version-pr-identity/design.md
-[vpc]: ../version-pr-content/design.md
+[vpc]: ../archive/2026-11-10-version-pr-content/design.md
 [bb]: ../building-blocks/design.md
 [bie]: ../built-in-ecosystems/design.md
 [queue]: ../../../tasks.yaml

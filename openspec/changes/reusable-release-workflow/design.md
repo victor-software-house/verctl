@@ -296,7 +296,7 @@ wildcard arm.
 [ctc-022]: https://github.com/victor-software-house/ctl-core/blob/main/tasks.yaml
 [rsm]: ../release-state-machine/design.md
 [pr-153]: https://github.com/victor-software-house/verctl/pull/153
-[docs]: ../docs-build-check/design.md
-[rpc]: ../registry-publish-check/design.md
-[ravc]: ../release-at-version-commit/design.md
-[dvpb]: ../derived-version-pr-branch/design.md
+[docs]: ../archive/2026-11-10-docs-build-check/design.md
+[rpc]: ../archive/2026-11-10-registry-publish-check/design.md
+[ravc]: ../archive/2026-11-10-release-at-version-commit/design.md
+[dvpb]: ../archive/2026-11-10-derived-version-pr-branch/design.md

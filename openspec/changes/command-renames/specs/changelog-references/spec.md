@@ -10,7 +10,7 @@ verctl SHALL link that commit when the subject names no pull request.
 
 #### Scenario: Squash-merged fragment
 
-- **WHEN** `.changeset/fix.md` was added by commit `feat: fix the parser (#12)` in a repository whose `origin` is `https://github.com/acme/demo.git`, and `verctl version --dry-run` runs
+- **WHEN** `.changeset/fix.md` was added by a commit with subject `feat: fix the parser` and the trailing pull request reference `#12` in parentheses, in a repository whose `origin` is `https://github.com/acme/demo.git`, and `verctl version --dry-run` runs
 - **THEN** the entry reads `- Fix the parser ([#12](https://github.com/acme/demo/pull/12)).`
 
 #### Scenario: Fragment pushed directly

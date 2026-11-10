@@ -94,7 +94,7 @@ Changesets uses the same rule (`changeset-release/<base>`); release-please
 names a branch per base and per component.
 
 [rsm]: ../release-state-machine/design.md
-[vpc]: ../version-pr-content/design.md
+[vpc]: ../archive/2026-11-10-version-pr-content/design.md
 [gh-pr-update]: https://docs.github.com/en/rest/pulls/pulls#update-a-pull-request
 [ver-012]: ../../../tasks.yaml
 [ver-029]: ../../../tasks.yaml

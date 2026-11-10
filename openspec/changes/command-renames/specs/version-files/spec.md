@@ -79,7 +79,7 @@ The refusal SHALL name the module path the release needs.
 - **WHEN** `go.mod` holds `module example.com/demo // v1.4.0` and `.changeset/break.md` holds `demo: major`
 - **THEN** `verctl version --dry-run` exits non-zero and its error names `example.com/demo/v2`
 
-#### Scenario: A v2 module bumps within major 2
+#### Scenario: A v2 module bumps inside major 2
 
 - **WHEN** `go.mod` holds `module example.com/demo/v2 // v2.1.0` and `.changeset/fix.md` holds `demo: patch`
 - **THEN** `verctl version --dry-run` plans `demo` from `2.1.0` to `2.1.1`
