@@ -161,7 +161,7 @@ enum Origin {
 }
 
 /// Resolve each committed fragment to the commit that added it, and that
-/// commit to the pull request its subject names (`… (#12)`, GitHub's squash
+/// commit to the pull request its subject names (`… (#N)`, GitHub's squash
 /// subject).
 /// With a token, the pull request author is credited when [`credits`] allows
 /// it.

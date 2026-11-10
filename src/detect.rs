@@ -110,8 +110,8 @@ fn javascript_owner(dir: &Path) -> Option<Owner> {
 ///
 /// The repository root is the ceiling: a lockfile above it belongs to
 /// some other project that happens to contain this one on disk. Without
-/// a repository the search never leaves `dir` at all, so a stray
-/// lockfile in a parent directory cannot claim this manifest.
+/// a repository the search never leaves `dir` at all, so a lockfile in a
+/// parent directory is never matched to this manifest.
 fn scope(dir: &Path) -> Vec<PathBuf> {
     let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
     let ceiling = git::workdir_covering(&dir);

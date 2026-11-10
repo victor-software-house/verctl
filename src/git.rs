@@ -378,7 +378,7 @@ pub struct AddedBy {
 /// parent's first-parent history. A fragment merged from `next` links the pull
 /// request that added it there, instead of the merge.
 ///
-/// A merge titled with its pull request, `Title (#12)`, may have branch commits
+/// A merge titled with its pull request, `Title (#N)`, may have branch commits
 /// that name none. That merge is then the commit named instead. A repository
 /// that merges with merge commits thus keeps its pull request links. The
 /// deepest such merge on the way down wins.
@@ -683,7 +683,7 @@ fn named(commit: &gix::Commit<'_>) -> Result<AddedBy> {
     })
 }
 
-/// The pull request a squash-merge subject names: a trailing `(#12)`.
+/// The pull request a squash-merge subject names: a trailing `(#N)`.
 pub(crate) fn pull_request_number(subject: &str) -> Option<u64> {
     let (_, digits) = subject.trim_end().strip_suffix(')')?.rsplit_once("(#")?;
     if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {

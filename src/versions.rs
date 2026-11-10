@@ -154,9 +154,9 @@ fn on_version_branch(root: &Path) -> bool {
 /// [`pull_request::problems`] lists.
 ///
 /// A pull request that changes no version, consumes no fragment, and has no
-/// such problem needs no token and no API. It never has to learn whether it is
-/// the Version PR. One that has to learn it does so through
-/// [`Skip::from_env`]. A merge queue run skips.
+/// such problem needs no token and no API. It skips the Version PR lookup.
+/// For any other pull request, [`Skip::from_env`] checks whether it is the
+/// Version PR. A merge queue run skips.
 ///
 /// On Actions, the base and default branches are fetched first when the
 /// checkout lacks them or is shallow. The depth-1 pull request checkout is
