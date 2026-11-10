@@ -160,6 +160,8 @@ queue:
       - In an environment, with no `registry-token` secret, `publish` reads the secret named by `registry-token-env`; without one, it reads only `registry-token`, as before.
       - 'A caller publishes from an environment with `secrets: inherit`.'
     plan: openspec/changes/release-environment/proposal.md
+    notes:
+      - '2026-11-10, VER-104 replaces the stored-name read and secrets: inherit with a token mapped by name.'
 
   - id: VER-015
     title: Asset runners are configuration, not a hardcoded map
@@ -571,6 +573,20 @@ queue:
     plan: openspec/changes/command-renames/proposal.md
     notes:
       - 2026-11-09, the operator placed this in the 0.8.0 minor; the pin rename changes only the name.
+
+  - id: VER-104
+    title: release.yml takes the registry token only as the registry-token secret
+    scope: release.yml publish job
+    outcome: "A caller passes its registry token by name, from a repository or an environment, and never passes secrets: inherit."
+    blocked_by: []
+    acceptance:
+      - The publish job reads only `secrets.registry-token`, and jactionlint finds no overprovisioned-secrets or obfuscation finding in `release.yml`.
+      - A caller that maps `registry-token` by the stored name of an environment secret publishes with the environment value.
+      - 'The instructions, `README.md`, and the example caller show the mapping and never tell a caller to pass `secrets: inherit`.'
+    plan: openspec/changes/registry-token-secret/proposal.md
+    notes:
+      - 2026-11-10, the operator placed this break in the 0.8.0 minor (operator, 2026-11-10).
+      - 2026-11-10, registry-token-env stays as the variable the publisher reads, because that name differs by registry.
 
 horizon:
   - id: VER-038

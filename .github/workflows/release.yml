@@ -92,7 +92,10 @@ on:
         type: string
         default: ""
       registry-token-env:
-        description: The variable the registry-token secret is exported as.
+        description: >-
+          The variable the publisher reads the registry token from, such as
+          CARGO_REGISTRY_TOKEN for crates.io or CARGO_REGISTRIES_<NAME>_TOKEN
+          for another cargo registry. It names no secret.
         type: string
         default: CARGO_REGISTRY_TOKEN
       crates-io-trusted-publishing:
@@ -106,10 +109,10 @@ on:
         description: >-
           GitHub environment the publish job runs in, the only job that reads
           a registry token, so the token can live only in an environment that
-          admits the default branch. The environment holds the token under
-          the registry-token-env name, and the caller passes secrets: inherit,
-          because an environment secret reaches a called workflow only under
-          its stored name. Empty runs publish in no environment.
+          admits the default branch. The caller maps the token's stored name,
+          such as CARGO_REGISTRY_TOKEN, to the registry-token secret, and the
+          publish job receives the environment's value. Empty runs publish in
+          no environment.
         type: string
         default: ""
     secrets:
@@ -124,9 +127,8 @@ on:
       registry-token:
         description: >-
           Registry token for the publisher, exported as registry-token-env.
-          Without it, publish in an environment reads the secret named by
-          registry-token-env, and otherwise the publisher uses whatever
-          credential its config finds.
+          A token stored in an environment is mapped here by its stored name.
+          Without it, the publisher uses whatever credential its config finds.
         required: false
 
 permissions: {}
@@ -299,11 +301,11 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           VERCTL_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           VERCTL_SKIP_ASSETS: ${{ !inputs.assets }}
-          # Inside an environment the token is read under its stored name too:
-          # a secret name holds no hyphen, so no environment can hold
-          # registry-token. Trusted publishing, or no environment, skips that
-          # read, so a stored token never trips the "not both" guard below.
-          REGISTRY_TOKEN: ${{ secrets.registry-token || (inputs.environment != '' && !inputs.crates-io-trusted-publishing && secrets[inputs.registry-token-env]) || '' }}
+          # The token is read only under its declared name. A caller whose
+          # token lives in an environment maps the stored name to
+          # registry-token, and this job, running in that environment,
+          # receives the environment's value.
+          REGISTRY_TOKEN: ${{ secrets.registry-token }}
           TRUSTED_TOKEN: ${{ steps.crates-io.outputs.token }}
           REGISTRY_TOKEN_ENV: ${{ inputs.registry-token-env }}
         # The token is exported under the caller's chosen name with a shell
