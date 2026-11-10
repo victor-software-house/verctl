@@ -13,6 +13,14 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# One self-release at a time. A newer run waits instead of cancelling one that
+# may be publishing; release.yml plans every unreleased version commit, so the
+# queued run covers what any skipped one would have. The "-caller" part keeps
+# this group apart from the called workflow's own groups.
+concurrency:
+  group: ${{ github.workflow }}-caller-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
@@ -24,6 +32,9 @@ jobs:
       matrix:
         runner: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.runner }}
+    # Recent runs take under 7 minutes; a cold cache, as on a new runner, takes
+    # longer.
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
