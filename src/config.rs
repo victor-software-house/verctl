@@ -108,6 +108,11 @@ impl DriverSpec {
                 keys: Some(vec!["version".into()]),
                 ..Self::default()
             }),
+            "pyproject" => Some(Self {
+                format: Some("toml".into()),
+                keys: Some(vec!["project.version".into()]),
+                ..Self::default()
+            }),
             _ => None,
         }
     }
@@ -183,7 +188,8 @@ impl PackageSpec {
     ///
     /// Returns an error when the merged driver is incomplete or invalid, as
     /// described for [`DriverSpec::into_driver`]. A package whose file is
-    /// neither `Cargo.toml` nor `package.json` needs a driver of its own.
+    /// not `Cargo.toml`, `package.json`, or `pyproject.toml` needs a driver of
+    /// its own.
     pub fn resolve(&self, config: &Config, root: &Path) -> Result<Driver> {
         let inferred = self
             .path
@@ -511,14 +517,18 @@ fn something_to_release(packages: &[PackageSpec], config: &Config) -> garde::Res
 #[garde(allow_unvalidated)]
 #[non_exhaustive]
 pub struct Config {
-    /// Custom drivers by name. A stock name (`cargo`, `npm`) is overridden
-    /// field by field.
+    /// Custom drivers by name. A stock name (`cargo`, `npm`, `pyproject`) is
+    /// overridden field by field.
     #[serde(default)]
     pub drivers: BTreeMap<String, DriverSpec>,
     /// What this repo releases. Omit only when the repo declares `vendored`;
     /// a config with neither has nothing to do.
     #[serde(default)]
-    #[garde(custom(something_to_release), custom(release_only_names_no_registry))]
+    #[garde(
+        custom(something_to_release),
+        custom(release_only_names_no_registry),
+        custom(python_names_its_publisher)
+    )]
     pub packages: Vec<PackageSpec>,
     /// Publish recipes by name, for a package's `publisher` to select.
     #[serde(default)]
@@ -661,6 +671,26 @@ fn release_only_names_no_registry(packages: &[PackageSpec], _: &Config) -> garde
         {
             return Err(garde::Error::new(format!(
                 "package {:?} has publisher: none, which uploads to no registry; remove its registry and publish",
+                package.name
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// verctl has no stock Python publisher, so a `pyproject.toml` package that
+/// names none would release a tag while nothing reached PyPI. It names one,
+/// through `publisher`, `publish`, or a `publishers` entry under its own
+/// name, or says `publisher: none` to release on GitHub only.
+fn python_names_its_publisher(packages: &[PackageSpec], config: &Config) -> garde::Result {
+    for package in packages {
+        if package.path.file_name() == Some(OsStr::new("pyproject.toml"))
+            && package.publisher.is_none()
+            && package.publish_argv.is_none()
+            && !config.publishers.contains_key(&package.name)
+        {
+            return Err(garde::Error::new(format!(
+                "package {:?} needs a publisher: verctl has no stock Python publisher; set publisher to a publishers entry, or to none to release on GitHub only",
                 package.name
             )));
         }
@@ -1139,6 +1169,7 @@ fn stock_name_for_file(file_name: &str) -> Option<&'static str> {
     match file_name {
         "Cargo.toml" => Some("cargo"),
         "package.json" => Some("npm"),
+        "pyproject.toml" => Some("pyproject"),
         _ => None,
     }
 }
@@ -1204,6 +1235,47 @@ mod tests {
                 "{extra}: {error:#}"
             );
         }
+    }
+
+    /// No stock recipe uploads to PyPI, so a Python package names its
+    /// publisher, or `none`, before anything is released.
+    #[test]
+    fn a_python_package_names_its_publisher() {
+        let error = load(indoc! {"
+            packages:
+              - name: demo
+                path: pyproject.toml
+        "})
+        .expect_err("no publisher");
+        assert!(
+            format!("{error:#}").contains("needs a publisher"),
+            "{error:#}"
+        );
+        for named in [
+            "publisher: none",
+            "publish: [uv, publish]",
+            "publisher: pypi",
+        ] {
+            load(&formatdoc! {"
+                packages:
+                  - name: demo
+                    path: pyproject.toml
+                    {named}
+                publishers:
+                  pypi:
+                    argv: [uv, publish]
+            "})
+            .unwrap_or_else(|error| panic!("{named}: {error:#}"));
+        }
+        load(indoc! {"
+            packages:
+              - name: demo
+                path: pyproject.toml
+            publishers:
+              demo:
+                argv: [uv, publish]
+        "})
+        .expect("a publishers entry under the package name");
     }
 
     /// A `path` is relative to the repository, not to the directory the

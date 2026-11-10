@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use jsonc_parser::ParseOptions;
 use jsonc_parser::cst::{CstInputValue, CstObject, CstRootNode};
 use toml_edit::{DocumentMut, Item, value};
@@ -120,7 +120,7 @@ fn read_toml(raw: &str, keys: &[String]) -> Result<String> {
             return Ok(version.to_owned());
         }
     }
-    bail!("none of these TOML keys exist: {}", keys.join(", "))
+    Err(missing_toml_keys(&doc, keys))
 }
 
 fn write_toml(raw: &str, keys: &[String], new_version: &str) -> Result<String> {
@@ -136,7 +136,27 @@ fn write_toml(raw: &str, keys: &[String], new_version: &str) -> Result<String> {
             return Ok(doc.to_string());
         }
     }
-    bail!("none of these TOML keys exist: {}", keys.join(", "))
+    Err(missing_toml_keys(&doc, keys))
+}
+
+/// Why no key held a version.
+///
+/// A `pyproject.toml` that lists `version` in `project.dynamic` has no
+/// static `project.version`: the build backend computes it, and the
+/// [pyproject.toml specification] lets nothing else change it. verctl cannot
+/// bump a version it does not own, so the error says what can.
+///
+/// [pyproject.toml specification]: https://packaging.python.org/en/latest/specifications/pyproject-toml/#dynamic
+fn missing_toml_keys(doc: &DocumentMut, keys: &[String]) -> anyhow::Error {
+    let dynamic_version = toml_get(doc, "project.dynamic")
+        .and_then(Item::as_array)
+        .is_some_and(|fields| fields.iter().any(|field| field.as_str() == Some("version")));
+    if dynamic_version {
+        return anyhow!(
+            "project.dynamic lists version, so the build backend sets it and verctl cannot; write a static project.version, keep the version in a VERSION file, or declare a driver"
+        );
+    }
+    anyhow!("none of these TOML keys exist: {}", keys.join(", "))
 }
 
 fn toml_get<'a>(doc: &'a DocumentMut, path: &str) -> Option<&'a Item> {

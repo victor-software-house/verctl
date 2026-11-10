@@ -120,7 +120,9 @@ Local writes are the default. `prepare --pr` is the Version PR
 (Action happy path; the token is `GITHUB_TOKEN`, not the `gh` account).
 `prepare --dry-run` / `--preview` prints the plan and writes nothing.
 `prepare --pr --preview` also shows consumed fragments and open vs update.
-Cargo and npm are stock drivers, not a separate code path.
+Cargo, npm, and `pyproject.toml` are stock drivers, not a separate code
+path. A `pyproject.toml` package names its `publisher`, or `none`: verctl
+has no stock Python publisher.
 
 A repo's declarations live in one file, `.ctl/ver.yaml`. `.ctl/` is the
 directory every ctl CLI shares, so a repo root gains one entry however many of
@@ -132,7 +134,7 @@ drivers:
     format: toml
     keys: [workspace.package.version, package.version]
     # after is optional. If omitted, verctl looks at lockfiles /
-    # packageManager (bun, pnpm, yarn, npm) and Cargo.lock.
+    # packageManager (bun, pnpm, yarn, npm), Cargo.lock, and uv.lock.
 
   npm:
     format: json
