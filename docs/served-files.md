@@ -210,8 +210,8 @@ pins:
   | `"once"` | exactly one | the same thing, said out loud |
   | `"many"` | one or more, count unknown | a document whose examples come and go, where only "still tracked" is worth asserting |
   | `"never"` | none | a spelling that was retired and must stay gone |
-  | `{ exactly = 2 }` | exactly that many | a file that holds it a known number of times |
-  | `{ at_least = 2 }` | that many or more | a floor without a ceiling |
+  | `{exactly: 2}` | exactly that many | a file that holds it a known number of times |
+  | `{at_least: 2}` | that many or more | a floor without a ceiling |
 
   verctl never infers arity.  
   Each pin declares it, and too few or too many both stop the release.  

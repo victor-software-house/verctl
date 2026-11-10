@@ -7,4 +7,4 @@ verctl:group: changed
 Both open with the release workflow in four steps and a table that maps each `.ctl/ver.yaml` key to its section.
 
 The instructions, the skill, and the README now say that the release workflow's `plan`, `publish`, `docs`, and `propose` jobs run on its `runner` input.  
-They named jobs that no longer exist.
+Before, they named jobs the workflow does not have.

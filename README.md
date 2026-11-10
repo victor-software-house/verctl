@@ -5,7 +5,7 @@
   <img src="docs/banner.svg" alt="verctl: Version PRs from Changesets-format fragments. Any stack.">
 </picture>
 
-It reads `.changeset/*.md`, bumps declared version files, writes changelogs, and opens or updates one prepare-release PR.
+It reads `.changeset/*.md`, bumps declared version files, writes changelogs, and opens or updates one Version PR.
 
 It is not `@changesets/cli`, not Knope, and not a forkctl verb.
 
@@ -36,12 +36,6 @@ includes = [
 mise run ver status
 mise run ver check
 mise run ver release --dry-run
-```
-
-Until a GitHub Release exists, build from this repo:
-
-```sh
-cargo run -- status
 ```
 
 ## Output
@@ -421,7 +415,8 @@ It also fails when it changes whether a package publishes without a fragment tha
 verctl never merges the Version PR or enables auto-merge on it: a release starts only when a person merges it.
 
 Mise owns tools.  
-Publish uses the registry's token secret (for crates.io, `CARGO_REGISTRY_TOKEN`) and the workflow's `GITHUB_TOKEN`, with no personal access token.
+Publish uses the `registry-token` secret and the workflow's `GITHUB_TOKEN`, with no personal access token.  
+The publisher reads the token as `CARGO_REGISTRY_TOKEN` for crates.io.
 
 A package with `publisher: none` is released on GitHub only: `release` creates its tag and Release, and `release asset` its tarballs, with no registry upload.  
 Use it for private binaries, such as a Cargo package with `publish = false`.

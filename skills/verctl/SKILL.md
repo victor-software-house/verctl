@@ -108,8 +108,8 @@ The Version PR gets no label.
 ### Checks on pull requests
 
 The PR comes from `verctl/release/<base>`, derived and never configured.  
-`check --versions` exempts that branch locally.  
-On it, the check replays the version step on the merge-base and fails any change the replay does not make.  
+On that branch, `check --versions` replays the version step on the merge-base in place of the version comparison.  
+It fails any change the replay does not make.  
 The replay runs no lockfile owner and no `prepare.after` command.
 
 Any other pull request fails when it adds a CHANGELOG section for a version.  
@@ -257,7 +257,7 @@ It is never a `.ctl/ver.yaml` key, and there is no `release` runner section.
 It fails on a build that failed or never arrived (`--timeout`, minutes, default 60).
 
 `semver` runs `cargo semver-checks --release-type minor` on each crates.io crate whose next release is a patch, so only an API break fails.  
-It skips a crate with a pending `minor` fragment or a minor the Version PR already moved.  
+It skips a crate with a pending `minor` or `major` fragment or a minor the Version PR already moved.  
 A crate at 1.0 or later fails: the rule covers 0.x.
 
 ## Stop conditions

@@ -9,6 +9,7 @@ The error lists every difference.
 Each one is of these kinds:
 
 - a path the version step does not write, such as a source file;
+- a changed symlink, compared by its target, and a submodule whose commit changed;
 - a manifest key that differs from the planned version and its pins, such as an added dependency;
 - a CHANGELOG without the new version's section, or with older text rewritten;
 - a fragment the version step consumes that is still present;

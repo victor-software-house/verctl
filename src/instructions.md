@@ -184,7 +184,8 @@ The plan job first requires verctl 0.8.0 or later, unless `verctl-artifact` is s
 The caller's pin chooses verctl apart from the workflow ref, so move both together.
 
 The later jobs check out each version commit and run the verctl it pins.  
-So a pending version commit that pins verctl older than 0.8.0 fails on the `release` verb.
+So a pending version commit that pins verctl older than 0.8.0 fails on the `release` verb.  
+Finish every pending release before moving the workflow ref to 0.8.0.
 
 `mise-ignored-config-paths` takes colon-separated config paths relative to the repository root, such as `mise.toml`.  
 Every job but propose ignores them, so they install only the release tools.  
@@ -318,13 +319,13 @@ It does so when the checkout lacks them or is shallow.
 So the depth-1 pull request checkout of `actions/checkout` needs no `fetch-depth`.  
 A full clone that has them fetches nothing.
 
-### Exempt branches and events
+### Exceptions to the comparison
 
-The check is exempt in three cases:
+The version comparison gives way in three cases:
 
-- locally, on a `verctl/release/<base>` branch;
-- when the GitHub event's pull request is a Version PR;
-- in a merge queue run (a `merge_group` event).
+- locally, on a `verctl/release/<base>` branch, where the replay of the Version PR runs instead;
+- when the GitHub event's pull request is a Version PR, where the replay runs instead;
+- in a merge queue run (a `merge_group` event), which skips the check.
 
 A Version PR's head repository is this repository, and its head branch is `verctl/release/<base>` for the base it targets.  
 A merge queue entry's pull request already compared its own versions, and an entry behind the Version PR holds its versions.
