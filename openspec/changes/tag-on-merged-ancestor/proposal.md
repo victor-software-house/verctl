@@ -38,5 +38,5 @@ None.
 ## Impact
 
 1. `src/git.rs` and the rustdoc of `src/pending.rs`.
-2. The design of the open change `reusable-release-workflow`, which stated the first-parent rule.
+2. The design of the open change `release-at-version-commit`, split from `reusable-release-workflow`, which stated the first-parent rule.
 3. The operator instructions and skill do not state which tagged commits count, so they do not change.

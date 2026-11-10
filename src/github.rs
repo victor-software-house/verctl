@@ -237,7 +237,7 @@ pub fn create_pr(
 }
 
 /// Whether the pull request of this `pull_request` event is a Version PR by
-/// the identity of the release-state-machine design §2.1: its head repository
+/// the identity of the version-pr-identity design §1: its head repository
 /// is this repository, and its head branch is `verctl/release/<base>` for the
 /// base it targets now. All three are read through the API when the check
 /// runs, never from the event payload, because a base can change after the

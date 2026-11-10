@@ -10,7 +10,7 @@ The stock publisher is also chosen from the file name: `cargo` for `Cargo.toml`,
 
 ## Goals / Non-Goals
 
-Goals: four new stock version sources, directory paths, and the load-time checks the spec lists, all at the parsing boundary.
+Goals: four new stock version sources and the load-time checks the spec lists, all at the parsing boundary. Directory paths, publisher inference, and changelog collisions are in [`package-resolution`](../package-resolution/design.md).
 
 Non-goals:
 
@@ -40,39 +40,13 @@ Alternative: detect a marker line in any file a `path` names.
 It lost because a stray `# version:` line in a file would change how verctl reads it with no declaration saying so.
 Override: a `drivers` entry for that file. Disable: drop `marker: true`.
 
-### 3. A directory resolves once, at parse time
-
-`Config::parse` replaces a directory `path` with the file it resolves to, so every later step sees a file, as it does today.
-Two manifests in one directory fail there, with both names.
-
-Alternative: a fixed priority order (`Cargo.toml` before `package.json`).
-It lost because a directory holding both is a Rust crate with JavaScript bindings or the other way round, and guessing which one carries the release version would be wrong half the time.
-Override: name the file.
-
-### 4. A missing VERSION file is 0.0.0
+### 3. A missing VERSION file is 0.0.0
 
 Every new package starts at `0.0.0` (the `versioning` spec), so a missing `VERSION` reads as that, and `prepare` writes the file with the first version.
 `check` never writes.
 
 Alternative: `check` or a new verb creates `VERSION` at `0.0.0`.
 It lost because `check` would then change the tree it checks, and a new verb adds a step to adoption that the first Version PR already does.
-
-### 5. Publisher inference follows the version source
-
-`VERSION`, a marker line, and `go.mod` infer `publisher: none`.
-`pyproject.toml` infers nothing, so its load fails and names `publisher` until a Python publisher ships.
-
-Alternative: infer `none` for Python too.
-It lost because a Python package that releases without uploading to PyPI would look released and not be.
-Override: `publisher:` on the package.
-
-### 6. Changelog collisions fail the load
-
-Two packages resolving to one changelog file fail `Config::parse`, naming both and `changelog`.
-This is general, not marker-specific, so it also catches two manifests that share a directory through custom drivers.
-
-Alternative: a per-file default such as `ci.CHANGELOG.md` for marker packages.
-It lost because it invents a file-name convention no other tool reads, and the explicit `changelog` key already exists.
 
 ## Risks / Trade-offs
 

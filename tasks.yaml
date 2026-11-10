@@ -39,6 +39,89 @@ queue:
       - 2026-11-09, breaking-change audit against main at cb1be28 recorded in the change as audit.md, with each breaking item, its state, what it breaks, and the decision it waits on. The target minor moves from 0.4.0 to 0.8.0; decision 8 (0.4.0 from next) is contradicted by what shipped. A first publish beside crates.io trusted publishing is task 6.5, not a new row, because the open stack already holds VER-085 to VER-089.
     plan: openspec/changes/release-state-machine/proposal.md
 
+  - id: VER-097
+    title: Ship cargo and bun as built-ins, with bun-release in Rust
+    scope: verctl cargo and bun providers, npm registry client, mise
+    outcome: Cargo and Bun release through built-in providers, and bun-release retires.
+    blocked_by: []
+    acceptance:
+      - Cargo and Bun are built-in providers of the Manifest, Lockfile, Artifact, and Registry blocks.
+      - "Bun packages publish through `bun pm pack` and verctl's own npm registry client, with `auth: oidc` and provenance available, and bun-release is archived."
+    plan: openspec/changes/built-in-ecosystems/proposal.md
+    notes:
+      - 2026-11-10, split from release-state-machine (VER-011) along the boundaries of its work, because each change stays within the templates specs:budget word budgets.
+
+  - id: VER-096
+    title: Build a release from blocks, with steps as the extension unit
+    scope: verctl config, version, publish
+    outcome: >-
+      Any package can replace one block with a step, and any stack can declare a
+      whole ecosystem from steps.
+    blocked_by: []
+    acceptance:
+      - A package can replace one block with a step, and another stack can declare a whole ecosystem from steps.
+      - A step is a mise task or an argv that changes only its declared `writes`, and a step that runs after a release declares a `check`.
+      - 'verctl writes no lockfile: `Cargo.lock`, `bun.lock`, and `mise.lock` change only through cargo, bun, and mise, and verctl only reads them to check agreement.'
+    plan: openspec/changes/building-blocks/proposal.md
+    notes:
+      - 2026-11-10, split from release-state-machine (VER-011) along the boundaries of its work, because each change stays within the templates specs:budget word budgets.
+
+  - id: VER-095
+    title: Require a Version PR to be the version step and nothing else
+    scope: verctl version, check
+    outcome: >-
+      A hand edit cannot ride a Version PR, and the version step writes every file a
+      release changes.
+    blocked_by: []
+    acceptance:
+      - '`verctl version` writes every manifest, dependent requirement, lockfile, CHANGELOG section, and served file a release changes, removes the consumed fragments, and reports the commands and steps it ran under `after`.'
+      - '`check` requires a Version PR diff to equal the version step applied to its base.'
+    plan: openspec/changes/version-pr-content/proposal.md
+    notes:
+      - 2026-11-10, split from release-state-machine (VER-011) along the boundaries of its work, because each change stays within the templates specs:budget word budgets.
+
+  - id: VER-094
+    title: Identify the Version PR by facts that cannot change
+    scope: verctl propose, check
+    outcome: >-
+      Only a pull request from this repository on verctl/release/<base> into <base>
+      is a Version PR, whatever its title or labels.
+    blocked_by: []
+    acceptance:
+      - A Version PR is identified by its head repository, its head branch `verctl/release/<base>`, and its base, and no label is read.
+    plan: openspec/changes/version-pr-identity/proposal.md
+    notes:
+      - 2026-11-10, split from release-state-machine (VER-011) along the boundaries of its work, because each change stays within the templates specs:budget word budgets.
+
+  - id: VER-093
+    title: State how each kind of release completes
+    scope: verctl release, assets
+    outcome: >-
+      A release with assets, a release that publishes nothing, and a first
+      publication each end in a defined state.
+    blocked_by: []
+    acceptance:
+      - A Release with assets stays a draft until every asset is uploaded.
+      - A release that does not publish and declares no assets is complete at merged, with no tag and no Release.
+      - A first publication the registry needs stops at bootstrap instead of guessing.
+    plan: openspec/changes/release-completion/proposal.md
+    notes:
+      - 2026-11-10, split from release-state-machine (VER-011) along the boundaries of its work, because each change stays within the templates specs:budget word budgets.
+
+  - id: VER-092
+    title: Derive release state from facts and guard every transition
+    scope: verctl release, status, publish, workflows
+    outcome: >-
+      A rerun of the release after a partial failure finishes it, and each transition
+      whose postcondition holds reports already.
+    blocked_by: []
+    acceptance:
+      - Release state is derived from facts on every run, and a rerun of `verctl release` after a partial failure finishes the release and reports each completed transition as `already`.
+      - Publish precedes the tag for a package with an unchecked upload, a registry-checked package is tagged before its uploads (VER-073), and tags land on the release commit in one atomic push.
+    plan: openspec/changes/derived-release-state/proposal.md
+    notes:
+      - 2026-11-10, split from release-state-machine (VER-011) along the boundaries of its work, because each change stays within the templates specs:budget word budgets.
+
   - id: VER-080
     title: Publish vendored builds as Release assets
     scope: verctl assets, .ctl/ver.yaml
@@ -302,6 +385,61 @@ queue:
     notes:
       - Design section 1.4 and task 3.4 of OpenSpec change reusable-release-workflow.
     plan: openspec/changes/reusable-release-workflow/proposal.md
+
+  - id: VER-101
+    title: Derive the Version PR branch from its base
+    scope: verctl prepare --pr, check --versions
+    outcome: The Version PR branch is verctl/release/<base>, and auto-merge runs in Rust.
+    blocked_by: []
+    acceptance:
+      - The change is archived, so its spec is in `openspec/specs/`.
+    plan: openspec/changes/derived-version-pr-branch/proposal.md
+    notes:
+      - 'Shipped in #161 on 2026-10-17 as part of VER-066; every task of the change is checked.'
+      - Archive it before command-renames (VER-091), whose version-pr-branch delta needs this spec.
+      - 2026-11-10, split from reusable-release-workflow (VER-066) at its capability boundaries, because each change stays within the templates specs:budget word budgets.
+
+  - id: VER-100
+    title: Check the docs.rs build of each released crate
+    scope: verctl docs, the docs job
+    outcome: >-
+      A crates.io release whose docs.rs build fails or never arrives fails the docs
+      job.
+    blocked_by: []
+    acceptance:
+      - The change is archived, so its spec is in `openspec/specs/`.
+    plan: openspec/changes/docs-build-check/proposal.md
+    notes:
+      - 'Shipped in #165 and #171 on 2026-10-17 as part of VER-066; every task of the change is checked.'
+      - 2026-11-10, split from reusable-release-workflow (VER-066) at its capability boundaries, because each change stays within the templates specs:budget word budgets.
+
+  - id: VER-099
+    title: Publish at the commit that set each version
+    scope: verctl publish, publish --plan
+    outcome: >-
+      A publish acts only on the version commit of each package, and a complete
+      release reports nothing to release.
+    blocked_by: []
+    acceptance:
+      - The change is archived, so its spec is in `openspec/specs/`.
+    plan: openspec/changes/release-at-version-commit/proposal.md
+    notes:
+      - 'Shipped in #164 on 2026-10-17 as part of VER-066; every task of the change is checked.'
+      - 2026-11-10, split from reusable-release-workflow (VER-066) at its capability boundaries, because each change stays within the templates specs:budget word budgets.
+
+  - id: VER-098
+    title: Ask the registry whether a version is published
+    scope: verctl publish, publisher recipes
+    outcome: >-
+      verctl publish decides already published from the registry, not from publisher
+      stderr.
+    blocked_by: []
+    acceptance:
+      - The change is archived, so its spec is in `openspec/specs/`.
+    plan: openspec/changes/registry-publish-check/proposal.md
+    notes:
+      - 'Shipped in #162 on 2026-10-17 as part of VER-066; every task of the change is checked.'
+      - 2026-11-10, split from reusable-release-workflow (VER-066) at its capability boundaries, because each change stays within the templates specs:budget word budgets.
 
   - id: VER-075
     title: 'verctl semver: cargo-semver-checks at the release type the pending release allows'
@@ -804,6 +942,32 @@ horizon:
       The operator has not agreed the design; decisions are asked one at a time on
       VER-083.
     plan: openspec/changes/release-immutability/proposal.md
+
+  - id: VER-102
+    title: Resolve directory paths, GitHub-only releases, and one changelog per package
+    scope: verctl
+    outcome: >-
+      A package path may name a directory, a package with no registry releases on
+      GitHub only, and no two packages share a changelog.
+    kind: research
+    open: >-
+      The operator has not agreed the design; decisions are asked one at a time on
+      VER-083.
+    plan: openspec/changes/package-resolution/proposal.md
+    notes:
+      - 2026-11-10, split from version-files (VER-083) at one boundary of its work, because each change stays within the templates specs:budget word budgets.
+
+  - id: VER-103
+    title: Map changed files to packages and report a changed package with no fragment
+    scope: verctl
+    outcome: check names each package whose owned files changed with no fragment naming it.
+    kind: research
+    open: >-
+      The operator has not agreed the design; decisions are asked one at a time on
+      VER-083.
+    plan: openspec/changes/package-ownership/proposal.md
+    notes:
+      - 2026-11-10, split from package-discovery (VER-085) at one boundary of its work, because each change stays within the templates specs:budget word budgets.
 
 archive:
   - id: VER-079
