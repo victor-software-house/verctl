@@ -311,7 +311,7 @@ fn the_example_pin_rewrites_the_file_it_names() {
         root.path().join("README.md"),
         indoc! {"
             Install: mise x github:victor-software-house/verctl@0.0.1 -- verctl
-            Pin verctl@0.0.1 in CI, and verctl@0.0.1 locally.
+            Pin `verctl@0.0.1` in CI, and `verctl@0.0.1` locally.
         "},
     )
     .expect("doc");
@@ -319,7 +319,7 @@ fn the_example_pin_rewrites_the_file_it_names() {
     fs::write(
         root.path().join("docs/install.md"),
         indoc! {"
-            One line: github:victor-software-house/verctl@0.0.1
+            One line: mise x github:victor-software-house/verctl@0.0.1 -- verctl
         "},
     )
     .expect("second doc");
@@ -338,14 +338,14 @@ fn the_example_pin_rewrites_the_file_it_names() {
         fs::read_to_string(root.path().join("README.md")).expect("reread"),
         indoc! {"
             Install: mise x github:victor-software-house/verctl@4.5.6 -- verctl
-            Pin verctl@4.5.6 in CI, and verctl@4.5.6 locally.
+            Pin `verctl@4.5.6` in CI, and `verctl@4.5.6` locally.
         "},
         "every spelling this file lists moves, at the arity the pattern declares"
     );
     assert_eq!(
         fs::read_to_string(root.path().join("docs/install.md")).expect("reread"),
         indoc! {"
-            One line: github:victor-software-house/verctl@4.5.6
+            One line: mise x github:victor-software-house/verctl@4.5.6 -- verctl
         "},
         "the shared pattern moves in the second file that lists it too"
     );
