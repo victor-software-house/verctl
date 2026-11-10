@@ -120,9 +120,10 @@ pub struct MergeBase {
 }
 
 impl MergeBase {
-    /// Read the merge-base tree and list each tracked path whose bytes in the
-    /// working tree differ from it: committed on the branch, modified, or
-    /// deleted. Untracked files are left out.
+    /// Read the merge-base tree and list each tracked path that differs from
+    /// it: committed on the branch, modified, or deleted. A symlink or a
+    /// submodule differs when its entry on HEAD does. Untracked files are left
+    /// out.
     ///
     /// `None` when there is no repository, or no `origin` and none of the
     /// candidate refs, as for [`files_on_merge_base`].
@@ -176,11 +177,27 @@ impl MergeBase {
             changed: BTreeSet::new(),
         };
         for path in candidates {
-            if merge_base.base_bytes(&path)? != merge_base.worktree_bytes(&path)? {
+            if merge_base.differs(&path, head_files.get(&path))? {
                 merge_base.changed.insert(path);
             }
         }
         Ok(Some(merge_base))
+    }
+
+    /// Whether `rel` differs from the merge-base. A regular file compares by
+    /// its bytes in the working tree. A symlink or a submodule holds no bytes
+    /// the version step writes, so it compares by its entry on HEAD: its
+    /// target or commit, and its mode.
+    fn differs(&self, rel: &str, head: Option<&(gix::ObjectId, EntryKind)>) -> Result<bool> {
+        let base = self.files.get(rel);
+        let regular = |entry: Option<&(gix::ObjectId, EntryKind)>| {
+            entry
+                .is_none_or(|(_, kind)| matches!(kind, EntryKind::Blob | EntryKind::BlobExecutable))
+        };
+        if regular(base) && regular(head) {
+            return Ok(self.base_bytes(rel)? != self.worktree_bytes(rel)?);
+        }
+        Ok(base != head)
     }
 
     /// The working tree's root, canonical.
@@ -263,16 +280,16 @@ pub fn read_optional(path: &Path) -> Result<Option<Vec<u8>>> {
     }
 }
 
-/// Every regular file in `tree`, by path, with its blob and kind. A symlink
-/// or a submodule holds no bytes the version step writes, so the content check
-/// neither compares nor replays one.
+/// Every entry in `tree` other than a directory, by path, with its object and
+/// kind. A symlink or a submodule holds no bytes the version step writes, so
+/// the content check never replays one, but it still lists one that changed.
 fn files_of(tree: &gix::Tree<'_>) -> Result<BTreeMap<String, (gix::ObjectId, EntryKind)>> {
     Ok(tree
         .traverse()
         .breadthfirst
         .files()?
         .into_iter()
-        .filter(|entry| entry.mode.is_blob())
+        .filter(|entry| !entry.mode.is_tree())
         .map(|entry| {
             (
                 entry.filepath.to_str_lossy().into_owned(),
