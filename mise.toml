@@ -5,9 +5,10 @@ min_version = "2026.10.25"
 # mise loads git:: task includes only in experimental mode.
 experimental = true
 lockfile = true
-# The platforms CI and contributors use. Without it, mise install fills every
-# tool up to the platforms any tool already records, and rewrites the locks.
-lockfile_platforms = ["linux-x64", "macos-arm64"]
+# The platforms CI and contributors use, from the platforms answer. Without
+# it, mise install fills every tool up to the platforms any tool already
+# records, and rewrites the locks.
+lockfile_platforms = ["linux-x64", "linux-arm64", "macos-arm64"]
 
 # Every tool this root declares must match mise.lock or mise.<env>.lock.
 [tool_config]
@@ -66,7 +67,7 @@ includes = [
   "mise-tasks",
   "git::https://github.com/victor-software-house/qctl.git//tasks/q?ref=v0.6.0",
   # The shared Rust tasks, at actions main, 2026-11-09.
-  "git::https://github.com/victor-software-house/actions.git//tasks/rust.toml?ref=a02d0e82d8003c63499e6d5dd526795830f20f1a",
+  "git::https://github.com/victor-software-house/actions.git//tasks/rust.toml?ref=d6ce82bb1fe3a3bac6c68619c603993c08990d64",
   # template:check, template:off, and template:on, at actions main, 2026-11-09.
-  "git::https://github.com/victor-software-house/actions.git//tasks/template.toml?ref=a02d0e82d8003c63499e6d5dd526795830f20f1a",
+  "git::https://github.com/victor-software-house/actions.git//tasks/template.toml?ref=d6ce82bb1fe3a3bac6c68619c603993c08990d64",
 ]
