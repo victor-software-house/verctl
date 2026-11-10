@@ -1,6 +1,6 @@
 # Proposal
 
-## Why
+## Motivation
 
 `verctl publish --plan` fails for good once a release tag's commit leaves HEAD's first-parent history, even though HEAD still contains it.
 A forkctl append publish leaves exactly that shape.
@@ -20,7 +20,7 @@ The registry already had `0.0.1`, so the release was complete.
 Queue row: [VER-084][ver-084].
 A patch: it accepts a history that fails today and adds no configuration key.
 
-## What Changes
+## Changes
 
 1. `git::tagged_commit` accepts a tag whose commit HEAD contains off the first-parent history, when the manifest version at that commit equals the version at HEAD.
 2. Its depth is that of the merge that brought it in: the oldest first-parent commit that contains it.

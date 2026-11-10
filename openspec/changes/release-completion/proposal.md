@@ -1,6 +1,6 @@
 # State how each kind of release completes
 
-## Why
+## Motivation
 
 A release that publishes nothing, a release with assets, and a package's
 first publication each end differently. Today the `publish` job creates the
@@ -12,7 +12,7 @@ Queue row: [VER-011][ver-011]. This change is one part of
 [release-state-machine][rsm]; the stages and transitions it completes are in
 [derived-release-state][drs].
 
-## What Changes
+## Changes
 
 1. A release with assets is a draft until they are all uploaded.
 2. A release that does not publish has no `publish` transition. Without

@@ -1,6 +1,6 @@
 # Pass the registry token as a named secret
 
-## Why
+## Motivation
 
 The reusable `release.yml` reads the registry token with
 `secrets[inputs.registry-token-env]` when the publish job runs in an
@@ -32,7 +32,7 @@ None of the eight callers of `release.yml`, this repository's included, passes
 Queue row: [VER-104][ver-104]. The operator placed this break in the 0.8.0 minor
 (operator, 2026-11-10).
 
-## What Changes
+## Changes
 
 1. **BREAKING:** the publish job reads the token only from the
    `registry-token` secret. A caller that keeps the token in an environment

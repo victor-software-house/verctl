@@ -1,6 +1,6 @@
 # Release from shallow clones and drifted workflow trees
 
-## Why
+## Motivation
 
 A consumer adopting the reusable release workflow hit three failures that
 verctl either causes or explains badly:
@@ -26,7 +26,7 @@ Queue row: [VER-072][ver-072].
 A patch: it changes behaviour only for runs that fail today, and adds no
 configuration key.
 
-## What changes
+## Changes
 
 1. With `VERCTL_DEFAULT_BRANCH` set, `verctl publish` and
    `verctl publish --plan` fetch the whole history of `origin/<default>`

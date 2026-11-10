@@ -1,6 +1,6 @@
 # Check the docs.rs build of each released crate
 
-## Why
+## Motivation
 
 verctl 0.4.5 and qctl 0.5.4 both shipped with no docs.rs build, and nothing
 noticed.
@@ -10,7 +10,7 @@ This change was split from [reusable-release-workflow][rrw] at its capability
 boundaries.
 It ships as a patch.
 
-## What Changes
+## Changes
 
 1. A new `verctl docs` waits for docs.rs to build each crates.io crate
    released at a version commit, and fails when the build failed.

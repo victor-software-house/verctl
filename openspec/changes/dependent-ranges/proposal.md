@@ -1,6 +1,6 @@
 # Proposal
 
-## Why
+## Motivation
 
 When a package in a monorepo moves to a new version, the packages that depend on it may hold a range the new version leaves.
 They must be published after it.
@@ -16,7 +16,7 @@ Touch only an explicit range.
 
 Queue row: [VER-083][ver-083]. Folds in [VER-033][ver-033].
 
-## What Changes
+## Changes
 
 1. `prepare` leaves `workspace:*`, `workspace:^`, `workspace:~`, and `catalog:` specs unchanged.
 2. `prepare` rewrites an explicit internal range (`workspace:^1.2.0` or `^1.2.0`) that no longer admits the new version, keeping its prefix and operator.

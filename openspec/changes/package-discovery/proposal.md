@@ -1,6 +1,6 @@
 # Proposal
 
-## Why
+## Motivation
 
 Every package verctl releases is listed by hand in `.ctl/ver.yaml`.
 A Cargo workspace is the one exception: its members come from `cargo metadata`.
@@ -15,7 +15,7 @@ Each names a package by its manifest and fails on a duplicate name.
 Queue row: [VER-085][ver-085], under the research in [VER-083][ver-083].
 The files each package owns, and the `check` that uses them, are in [`package-ownership`](../package-ownership/proposal.md), split from this change at that boundary.
 
-## What Changes
+## Changes
 
 1. With no `packages` key, verctl infers the packages from the repository root, the way mise's workspace providers do (operator, 2026-11-09).
    One provider per stack reads only root files:

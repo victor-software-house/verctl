@@ -1,6 +1,6 @@
 # Derive release state from facts on every run
 
-## Why
+## Motivation
 
 verctl has no model of a release, so each command rebuilds what it needs from
 indirect signals:
@@ -20,7 +20,7 @@ Queue row: [VER-011][ver-011].
 This change is one part of [release-state-machine][rsm], which holds the shared
 goals, decisions, and migration.
 
-## What Changes
+## Changes
 
 1. A release is derived on every run from these facts:
    - fragments

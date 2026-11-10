@@ -1,6 +1,6 @@
 # Proposal
 
-## Why
+## Motivation
 
 The operator decided on 2026-11-02 that no repository releases on its own.
 A release starts only when a person merges the Version PR.
@@ -9,7 +9,7 @@ Ten caller workflows pass `auto-merge: true` to the reusable release workflow, s
 
 Queue row: [VER-079][ver-079].
 
-## What Changes
+## Changes
 
 1. `verctl prepare` loses `--auto-merge` and the `VERCTL_AUTO_MERGE` variable that binds to it.
 2. `prepare --pr` no longer reads the base branch's rules or `VERCTL_JOB_TOKEN`, and never calls `enablePullRequestAutoMerge`.

@@ -1,6 +1,6 @@
 # Merge the Version PR automatically once required checks pass
 
-## Why
+## Motivation
 
 In the seven days to 2026-10-12, 13 Version PRs were merged by hand across
 the six ctl repositories.
@@ -13,7 +13,7 @@ All six repositories already allow auto-merge.
 
 Queue row: [VER-047][ver-047].
 
-## What Changes
+## Changes
 
 1. `actions/version-pr` gains an `auto-merge` input, `false` by default.
 2. With `auto-merge: true`, after opening or updating the Version PR, the

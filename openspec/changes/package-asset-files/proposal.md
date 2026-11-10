@@ -1,6 +1,6 @@
 # Proposal
 
-## Why
+## Motivation
 
 A package asset tarball holds exactly one file.
 `assets --build` runs `tar czf <asset> -C <parent of binary> <bin>` ([`src/assets.rs`][assets]).
@@ -11,7 +11,7 @@ Vendored sets already pack several files from a directory (`vendored.<name>.dir`
 
 Queue row: [VER-081][ver-081].
 
-## What Changes
+## Changes
 
 1. `assets` in `.ctl/ver.yaml` gains optional `dir` and `files`, with the placeholders `binary` takes: `{bin}`, `{version}`, `{id}`, `{os}`, `{arch}`, `{triple}`.
 2. With them, `assets --build <id>` runs `prepare` and `build` as today, checks that each listed path exists under `dir`, then packs `tar czf <asset> -C <dir> <files…>`.

@@ -1,6 +1,6 @@
 # Proposal
 
-## Why
+## Motivation
 
 A caller cannot keep its registry token in a GitHub environment that admits only the default branch.
 The reusable workflow's jobs run in no environment, so an environment secret never reaches them.
@@ -17,7 +17,7 @@ An environment secret is never named `registry-token`, because secret names hold
 
 Queue row: [VER-082][ver-082].
 
-## What Changes
+## Changes
 
 1. `release.yml` gains an `environment` input, default empty, applied to the `publish` job, the only job that reads a registry token.
 2. In an environment, when the `registry-token` secret is empty, `publish` reads the secret named by `registry-token-env`, such as `CARGO_REGISTRY_TOKEN`.

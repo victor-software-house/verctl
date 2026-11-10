@@ -1,6 +1,6 @@
 # Tag at merge for registry-checked packages
 
-## Why
+## Motivation
 
 A release whose first publish run does not finish is retried at its version
 commit. By then a later merge may have changed `.github/workflows`, and
@@ -23,7 +23,7 @@ Queue row: [VER-073][ver-073].
 A patch: it changes when `publish` creates a tag, and adds no configuration
 key.
 
-## What changes
+## Changes
 
 1. `verctl publish` creates the tag and Release of a tag whose packages all
    have a registry check, or no upload, before any upload. In the run that

@@ -1,6 +1,6 @@
 # Check the API at the release type the pending release allows
 
-## Why
+## Motivation
 
 The operator set the version rule on 2026-10-19: a release is a patch by
 default, and a real API break bumps the minor.
@@ -19,7 +19,7 @@ only while no minor fragment is pending.
 Queue row: [VER-075][ver-075].
 A patch: it adds a verb and changes no existing behaviour.
 
-## What changes
+## Changes
 
 1. A new `verctl semver` verb checks each crates.io crate of each package:
    1. It skips the crate when a pending fragment bumps its package's minor

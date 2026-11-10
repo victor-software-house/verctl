@@ -1,6 +1,6 @@
 # Link each changelog entry to the pull request
 
-## Why
+## Motivation
 
 Every changelog entry verctl writes is a bare summary.
 `release::changelog_sections` passes `pull_request: None` and `commit: None`
@@ -17,7 +17,7 @@ outside contributors only.
 
 Queue row: [VER-051][ver-051].
 
-## What changes
+## Changes
 
 1. Each entry links the pull request that merged its fragment, written
    `([#N](url))`, or the commit that added it when no pull request is named.

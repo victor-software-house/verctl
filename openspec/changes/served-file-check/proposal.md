@@ -1,6 +1,6 @@
 # Check served files on every pull request
 
-## Why
+## Motivation
 
 [docs/served-files.md](../../../docs/served-files.md) section 6 holds the rule
 that `check` compares every served file to what its template renders at the
@@ -21,7 +21,7 @@ because it fails pull requests that pass today.
 
 Queue row: [VER-020][ver-020].
 
-## What changes
+## Changes
 
 1. **BREAKING:** `verctl check` renders every template at the versions on
    HEAD and fails on each served file whose bytes differ, naming the file and

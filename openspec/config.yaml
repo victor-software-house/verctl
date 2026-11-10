@@ -13,6 +13,7 @@ context: |
 
 rules:
   proposal:
+    - Head the two sections `## Motivation` and `## Changes`, the headings of the pull request template, in place of `## Why` and `## What Changes`.
     - State the measured problem, with numbers where they exist.
     - Name the queue row the change belongs to.
   specs:

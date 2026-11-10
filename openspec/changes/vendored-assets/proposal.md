@@ -1,6 +1,6 @@
 # Proposal
 
-## Why
+## Motivation
 
 Some repositories build a third-party library from a pinned upstream release.
 They publish the result as GitHub Release assets, so mise can install it with a `github:` tool.
@@ -13,7 +13,7 @@ Three things stand in the way, read at [`39a26ee`][base]:
 
 Queue row: [VER-080][ver-080].
 
-## What Changes
+## Changes
 
 1. `.ctl/ver.yaml` gains a `vendored` section of named asset sets.
    Each set has:

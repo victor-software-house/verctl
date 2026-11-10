@@ -1,6 +1,6 @@
 # Release a package on GitHub only
 
-## Why
+## Motivation
 
 A repository that ships private binaries sets `publish = false` on every crate.
 verctl has no publisher that uploads nothing.
@@ -15,7 +15,7 @@ It fits [VER-011](../../release-state-machine/proposal.md): in the release state
 machine, a release-only package is one with no Registry block.
 This change gives that state a name now.
 
-## What changes
+## Changes
 
 1. `publisher: none` on a package releases it on GitHub only.
    `publish` runs no upload command for it, then creates its tag and Release.

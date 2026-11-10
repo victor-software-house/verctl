@@ -1,6 +1,6 @@
 # Read every flag from the environment
 
-## Why
+## Motivation
 
 The three actions rebuilt verctl's argv in bash.
 Each turned `VERCTL_CONFIG` back into `-c` and `VERCTL_DRY_RUN` back into
@@ -16,7 +16,7 @@ ctl-core 0.6.21 ships the binding (`EnvPrefix`, `env_under_flags`).
 
 Queue row: [VER-067][ver-067].
 
-## What Changes
+## Changes
 
 1. verctl takes ctl-core 0.6.21 and puts `env_prefix = "VERCTL"` on its root
    parser. Every long option at every depth reads `VERCTL_<LONG>`, and help

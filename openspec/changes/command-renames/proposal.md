@@ -1,6 +1,6 @@
 # Rename prepare, pin, publish, and assets
 
-## Why
+## Motivation
 
 `prepare` is the step that writes versions, changelogs, and served files.
 Its report lists the follow-up commands under `next`.
@@ -24,7 +24,7 @@ of them once, so it belongs in the one minor that carries every break.
 
 Queue row [VER-091][ver-091].
 
-## What changes
+## Changes
 
 1. **BREAKING:** `verctl prepare` becomes `verctl version`, with the same
    flags (`--pr`, `--dry-run`, `--dir`, `--config`) and the same variables.

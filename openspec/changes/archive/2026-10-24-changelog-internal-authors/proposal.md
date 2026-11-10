@@ -1,6 +1,6 @@
 # List the maintainers a changelog never credits
 
-## Why
+## Motivation
 
 Release notes credit no maintainer and credit outside contributors only.
 verctl 0.3.15 writes no byline at all, because it has no list of maintainers.
@@ -14,7 +14,7 @@ The operator chose an explicit list as the control.
 Queue row: [VER-054][ver-054]. Lands on `next` for 0.4.0, because a new `Config` field
 is a breaking library change.
 
-## What changes
+## Changes
 
 1. `.ctl/ver.yaml` accepts `changelog.internal_authors`, a list of GitHub
    logins never credited.

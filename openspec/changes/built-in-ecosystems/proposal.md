@@ -1,6 +1,6 @@
 # Ship cargo and bun as built-ins, with bun-release in Rust
 
-## Why
+## Motivation
 
 Changesets publishes Bun workspaces through npm, which ships `workspace:`
 ranges raw, and Bun's own lockfile, not package.json, decides the dependency
@@ -11,7 +11,7 @@ Queue row [VER-011][ver-011]. This change is one part of
 [release-state-machine][rsm]; the blocks it provides are
 [building-blocks][bb].
 
-## What Changes
+## Changes
 
 1. Cargo and Bun are built-in providers of the Manifest, Lockfile, Artifact,
    and Registry blocks.

@@ -1,6 +1,6 @@
 # Proposal
 
-## Why
+## Motivation
 
 verctl versions only a package whose manifest has a format it supports: `Cargo.toml`, `package.json`, or a file a repository describes with its own driver.
 A repository with no manifest cannot release through verctl at all.
@@ -18,7 +18,7 @@ The [research](research.md) shows that Knope and Nx, two tools that version many
 
 Queue row: [VER-083][ver-083].
 
-## What Changes
+## Changes
 
 The operator chose all five version sources for the first slice (2026-11-09).
 

@@ -1,6 +1,6 @@
 # Release a new package first as 0.0.1
 
-## Why
+## Motivation
 
 verctl applies whatever bump a fragment names.
 A new package at `0.0.0` with a `minor` fragment releases `0.1.0`.
@@ -13,7 +13,7 @@ Nothing enforces it.
 
 Queue row: [VER-042][ver-042].
 
-## What changes
+## Changes
 
 1. `prepare` refuses a `minor` or `major` bump on a package whose version is
    `0.0.0`, with or without a pre-release or build suffix.
