@@ -1,4 +1,11 @@
-## ADDED Requirements
+# served-file-check Specification
+
+## Purpose
+
+`verctl check` fails when a served file differs from its template's render or a pin names another version.
+Each file has one owner, and `verctl render` writes the pins and every template.
+
+## Requirements
 
 ### Requirement: check compares served files with their templates
 
@@ -20,8 +27,8 @@ and SHALL name every differing target with its template before it exits.
 
 ### Requirement: check verifies each pins entry
 
-`verctl check` SHALL fail when a `pins` entry's pattern no longer matches at
-its declared count.
+`verctl check` SHALL fail when the pattern of a `pins` entry matches its file
+a number of times other than its declared count.
 `verctl check` SHALL also fail when the file of the entry names a version other
 than the one the manifest holds.
 
