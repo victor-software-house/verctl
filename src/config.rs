@@ -709,20 +709,25 @@ fn every_pattern_bounds_the_version(
 /// What leaves one side of the placeholder open, if anything does.
 ///
 /// A side's literal is the text between `{version}` and the pattern's edge on
-/// that side. The side is bounded when its literal holds at least one
-/// character that is not a digit, `.`, `-`, or `+`. A version and its
-/// prerelease or build hold only those four, so any other character fixes
-/// where the version starts or ends. Under `whole_line` the line start or end
-/// bounds a side whose literal is empty. A literal made only of those four
-/// characters stays open.
+/// that side. A version and its prerelease or build hold only digits, `.`,
+/// `-`, and `+`. So the side is bounded when its literal holds some other
+/// character. Under `whole_line` the line start or end bounds a side whose
+/// literal is empty.
+///
+/// The character next to `{version}` also matters. A digit there, or a `.`
+/// with a digit beyond it, lets the regex end a version early or start it
+/// late. `v{version}.5x` reads `v1.2.3.5x` as 1.2.3, so that side is open.
 fn unbounded(before: &str, after: &str, whole_line: bool) -> Option<String> {
-    for (text, side, edge) in [(before, "before", "starts"), (after, "after", "ends")] {
-        if text
-            .chars()
-            .any(|next| !matches!(next, '0'..='9' | '.' | '-' | '+'))
-        {
-            continue;
-        }
+    let sides = [
+        (
+            before,
+            before.chars().rev().collect::<String>(),
+            "before",
+            "starts",
+        ),
+        (after, after.to_owned(), "after", "ends"),
+    ];
+    for (text, outward, side, edge) in sides {
         if text.is_empty() {
             if whole_line {
                 continue;
@@ -731,9 +736,23 @@ fn unbounded(before: &str, after: &str, whole_line: bool) -> Option<String> {
                 "nothing {side} {PLACEHOLDER} marks where the version {edge}: add the text {side} it to match, or set whole_line: true"
             ));
         }
-        return Some(format!(
-            "{text:?} {side} {PLACEHOLDER} holds only digits, '.', '-', and '+', which a version can continue into: add more of the text {side} it to match"
-        ));
+        if text
+            .chars()
+            .all(|next| matches!(next, '0'..='9' | '.' | '-' | '+'))
+        {
+            return Some(format!(
+                "{text:?} {side} {PLACEHOLDER} holds only digits, '.', '-', and '+', which a version can continue into: add more of the text {side} it to match"
+            ));
+        }
+        let mut nearest = outward.chars();
+        if matches!(
+            (nearest.next(), nearest.next()),
+            (Some('0'..='9'), _) | (Some('.'), Some('0'..='9'))
+        ) {
+            return Some(format!(
+                "{text:?} {side} {PLACEHOLDER} puts a digit, or a '.' and a digit, next to the version, so a longer version would match only in part: put a character other than a digit or '.' next to {PLACEHOLDER}"
+            ));
+        }
     }
     None
 }
@@ -1088,9 +1107,10 @@ pub struct PinPattern {
     ///
     /// Each side is bounded when the literal text between `{version}` and
     /// the pattern's edge on that side holds at least one character that is
-    /// not a digit, `.`, `-`, or `+`. Under `whole_line` the line start or end
-    /// bounds a side whose literal is empty. The load refuses a pattern with
-    /// an open side.
+    /// not a digit, `.`, `-`, or `+`. The character next to `{version}` must
+    /// not be a digit, or a `.` with a digit beyond it. Under `whole_line` the
+    /// line start or end bounds a side whose literal is empty. The load
+    /// refuses a pattern with an open side.
     pub r#match: String,
     /// How often the file must say it. A pin that lost its only mention, or
     /// drifted to one nobody declared, fails the release rather than serving
@@ -1783,6 +1803,48 @@ mod tests {
                 Some(format!("\"-\" after {{version}} {only}")),
             ),
         ];
+        assert_bounds(cases);
+    }
+
+    /// A digit, or a `.` and a digit, next to `{version}` lets a longer version
+    /// match in part, whatever the rest of the literal holds.
+    #[test]
+    fn a_digit_next_to_the_version_leaves_the_side_open() {
+        let near = "puts a digit, or a '.' and a digit, next to the version";
+        assert_bounds([
+            ("v{version}.tar", false, None),
+            ("v{version}-1x", false, None),
+            (
+                "v{version}.5x",
+                false,
+                Some(format!("\".5x\" after {{version}} {near}")),
+            ),
+            (
+                "v{version}1x",
+                false,
+                Some(format!("\"1x\" after {{version}} {near}")),
+            ),
+            (
+                "x1.{version}-linux",
+                false,
+                Some(format!("\"x1.\" before {{version}} {near}")),
+            ),
+            (
+                "x1{version}-linux",
+                false,
+                Some(format!("\"x1\" before {{version}} {near}")),
+            ),
+            (
+                "{version}.1x",
+                true,
+                Some(format!("\".1x\" after {{version}} {near}")),
+            ),
+        ]);
+    }
+
+    /// Loads one `skill` pattern per case and checks that it loads, or that
+    /// the refusal names the needle.
+    fn assert_bounds<const N: usize>(cases: [(&str, bool, Option<String>); N]) {
         for (text, whole_line, refusal) in cases {
             let loaded = load(&formatdoc! {"
                 {PACKAGE}

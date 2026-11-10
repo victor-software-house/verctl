@@ -102,6 +102,9 @@ digit, `.`, `-`, or `+`. Under `whole_line: true`, the line start or end
 bounds the side, unless the literal on that side is made only of those four
 characters.
 
+The character next to `{version}` must not be a digit, or a `.` with a digit
+beyond it: `v{version}.5x` would read `v1.2.3.5x` as 1.2.3.
+
 The load refuses a pattern with an open side, so `0.1.1-rc1` fails to match
 rather than being half rewritten. A `?ref=v1.2.3-rc1` include fails too.
 

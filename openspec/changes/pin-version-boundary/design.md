@@ -5,9 +5,10 @@
 A pattern is literal text around `{version}`, and `{version}` matches `[0-9]+(\.[0-9]+)*`.
 A version, with its prerelease or build, holds only digits, `.`, `-`, and `+`.
 A side's literal is the text between `{version}` and the pattern's edge, on that side.
-The regex can end a version early, or start one late, only where that literal is missing or made of those four characters.
+The regex can end a version early, or start one late, where that literal is missing or made of those four characters.
+It can also do so where the literal puts a digit, or a `.` and a digit, next to `{version}`: `v{version}.5x` reads `v1.2.3.5x` as 1.2.3, and `x1{version}` reads `x11.2.3` as 1.2.3.
 
-A side is bounded when its literal holds at least one character that is not a digit, `.`, `-`, or `+`.
+A side is bounded when its literal holds at least one character that is not a digit, `.`, `-`, or `+`, and its character next to `{version}` is neither a digit nor a `.` with a digit beyond it.
 Under `whole_line: true`, the line start or end bounds the side, unless the literal is made only of those four.
 
 `name-{version}.tar.gz` is bounded on both sides: `name-` fixes where the version starts, and `.tar` cannot follow a shorter head of `1.2.3-rc1`.
@@ -21,6 +22,10 @@ Only the author can close it, and docs/served-files.md section 4 names it.
 
 Alternative considered: only the character next to `{version}` decides, so a digit or `.` there refuses.
 It lost because it refused safe patterns such as `name-{version}.tar.gz`, where the rest of the literal anchors the match.
+The rule keeps its narrower part: a `.` refuses only with a digit beyond it, where a longer version could go on.
+
+Alternative considered: only the literal as a whole decides.
+It lost because a literal such as `.5x` holds a letter and still splits `1.2.3.5x`.
 
 Alternative considered: refuse when the file's next character continues a version, such as `-` or `+`.
 It lost because `download/v1.2.3-linux-x64.tar.gz` is a correct pin whose next character is `-`.
