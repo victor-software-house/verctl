@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: A release owes the assets its version commit declared
+### Requirement: A release owes the assets declared at the version commit
 
 A release SHALL owe an asset target only when `.ctl/ver.yaml` declares it both at HEAD and at the release's version commit.
 A version commit without `.ctl/ver.yaml` SHALL owe no asset.

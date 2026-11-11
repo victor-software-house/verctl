@@ -1,4 +1,4 @@
-# A release owes the assets its own commit declared
+# Assets owed by the commit that released them
 
 ## Motivation
 
@@ -6,19 +6,23 @@ Adding an asset target reopens every earlier release.
 `pending::pending` builds the targets each release owes from `.ctl/ver.yaml` at HEAD ([`src/pending.rs`][pending]).
 A release made before the target existed then lacks it, so the release counts as incomplete.
 
-A caller hit this on 2026-11-11.
-One commit moved it to verctl 0.8.0, added a `darwin-arm64` target, and added a patch fragment.
-The plan then listed its `0.0.1` release, which holds only the `linux-x64` tarball, as incomplete.
-The publish job checked out that release's commit, which pins verctl 0.7.4, and failed on `unrecognized subcommand 'release'`.
-The asset jobs and the Version PR job were skipped, so no Version PR opens, and every push to the default branch fails the same way.
+A caller hit this on 2026-11-11:
+
+1. One commit moved it to verctl 0.8.0, added a `darwin-arm64` target, and added a patch fragment.
+2. The plan then listed its `0.0.1` release, which holds only the `linux-x64` tarball, as incomplete.
+3. The publish job checked out that release's commit, which pins verctl 0.7.4, and failed on `unrecognized subcommand 'release'`.
+4. The asset jobs and the Version PR job were skipped, so no Version PR opens.
+
+Every push to the default branch fails the same way.
 
 Queue row: [VER-122][ver-122].
 
 ## Changes
 
-1. A release owes only the asset targets that `.ctl/ver.yaml` declared at its version commit, and that HEAD's config still declares.
+1. A release owes an asset target only when `.ctl/ver.yaml` declares it at HEAD and at the release's version commit.
 2. A version commit with no `.ctl/ver.yaml` owes no assets.
-3. The config at an old commit is read only when the release lacks a target HEAD declares, so a complete release never needs its old config to parse.
+3. The config at an old commit is read only when the release lacks a target HEAD declares.
+   A complete release never needs its old config to parse.
 
 ## Capabilities
 
