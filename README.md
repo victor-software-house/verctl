@@ -61,7 +61,8 @@ forkctl: patch
 Restore mise.toml when later patches unapply.
 ```
 
-Allowed bumps: `major`, `minor`, `patch`, `none`.
+Allowed bumps: `major`, `minor`, `patch`, `patch!`, `none`.  
+`patch!` is a patch that breaks the API on purpose: `verctl semver` skips the package for that release, and the changelog lists the entry under `### Breaking`.
 
 An optional `verctl:group` key, `added`, `changed`, or `fixed`, files the entry under that heading.  
 A section where no fragment names a group stays a flat list.  

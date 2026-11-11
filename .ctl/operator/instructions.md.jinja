@@ -71,6 +71,11 @@ The colon keeps it from naming a package.
 A section where no fragment names a group stays a flat list.  
 Once one does, the section gets `### Added`, `### Changed`, and `### Fixed` headings in that order, and a fragment without the key goes under `### Changed`.
 
+`patch!` in place of `patch` marks a patch that breaks the package's API on purpose.  
+While the fragment is pending, `semver` skips the package, and the entry goes under `### Breaking`, above the other headings.  
+The Version PR consumes the fragment, so the next release is checked again.  
+`!` goes only on patch, because a minor or major already allows a break.
+
 ### The first release
 
 A new package starts at `0.0.0`.  
@@ -710,6 +715,9 @@ Patch is the default bump, and a real API break bumps the minor.
 It runs `cargo semver-checks --release-type minor` against the baseline cargo-semver-checks picks, so only a break fails.
 
 It skips a crate whose package has a pending `minor` or `major` fragment.  
+It skips one whose package a pending fragment bumps by `patch!`, for that release only.  
+On the Version PR the fragment is gone, so it skips a crate one patch above crates.io whose new CHANGELOG section holds `### Breaking`.
+
 It also skips one whose manifest's major.minor differs from that baseline, because the Version PR already moved it.  
 A crate with no crates.io release is skipped too.
 

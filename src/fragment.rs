@@ -30,7 +30,9 @@ impl Bump {
             "patch" => Ok(Self::Patch),
             "minor" => Ok(Self::Minor),
             "major" => Ok(Self::Major),
-            other => bail!("unknown bump type {other:?} (expected major, minor, patch, or none)"),
+            other => {
+                bail!("unknown bump type {other:?} (expected major, minor, patch, patch!, or none)")
+            }
         }
     }
 
@@ -53,6 +55,41 @@ pub struct PackageBump {
     pub name: String,
     /// Bump the fragment declares.
     pub bump: Bump,
+    /// Whether the bump is `patch!`: a patch that breaks the package's API on
+    /// purpose. While the fragment is pending, `semver` skips the package, and
+    /// the changelog lists the entry under Breaking. Only a patch carries it,
+    /// because a minor or major already allows a break.
+    pub breaking: bool,
+}
+
+impl PackageBump {
+    /// The suffix that marks a breaking patch, as `!` marks a breaking change
+    /// in a Conventional Commits type ([Conventional Commits 1.0.0]).
+    ///
+    /// [Conventional Commits 1.0.0]: https://www.conventionalcommits.org/en/v1.0.0/
+    pub const BREAKING: char = '!';
+
+    /// Read `name: raw`, where `raw` is a [`Bump`] or `patch!`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `raw` is no bump, or when `!` follows anything
+    /// but `patch`.
+    pub fn parse(name: String, raw: &str) -> Result<Self> {
+        let (bare, breaking) = raw
+            .strip_suffix(Self::BREAKING)
+            .map_or((raw, false), |bare| (bare, true));
+        let bump = Bump::parse(bare)?;
+        ensure!(
+            !breaking || bump == Bump::Patch,
+            "{name}: {raw:?}: `!` goes only on patch: a minor or major already allows an API break, and none releases nothing"
+        );
+        Ok(Self {
+            name,
+            bump,
+            breaking,
+        })
+    }
 }
 
 /// The changelog heading a fragment's entry goes under, from the optional
@@ -169,10 +206,8 @@ pub fn parse_str(raw: &str, path: impl Into<PathBuf>) -> Result<Fragment> {
     );
     let mut packages = Vec::new();
     for (name, bump_raw) in mapping {
-        packages.push(PackageBump {
-            name,
-            bump: Bump::parse(&bump_raw)?,
-        });
+        packages
+            .push(PackageBump::parse(name, &bump_raw).with_context(|| path.display().to_string())?);
     }
     Ok(Fragment {
         path,

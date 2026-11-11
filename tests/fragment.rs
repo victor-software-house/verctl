@@ -2,7 +2,7 @@
 
 use std::fs;
 
-use indoc::indoc;
+use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
 use verctl::fragment::{Bump, Group, load_dir, parse_str};
 
@@ -275,4 +275,51 @@ fn an_unknown_group_fails() {
         text.contains(r#"unknown verctl:group "security""#),
         "{text}"
     );
+}
+
+#[test]
+fn patch_bang_is_a_breaking_patch_for_its_package_only() {
+    let fragment = parse_str(
+        indoc! {"
+            ---
+            demo-core: patch!
+            demo-cli: patch
+            ---
+
+            Split the config type.
+        "},
+        "split.md",
+    )
+    .expect("parse");
+    let core = fragment
+        .packages
+        .iter()
+        .find(|package| package.name == "demo-core")
+        .unwrap();
+    let cli = fragment
+        .packages
+        .iter()
+        .find(|package| package.name == "demo-cli")
+        .unwrap();
+    assert_eq!((core.bump, core.breaking), (Bump::Patch, true));
+    assert_eq!((cli.bump, cli.breaking), (Bump::Patch, false));
+    assert_eq!(fragment.max_bump(), Bump::Patch);
+}
+
+#[test]
+fn the_breaking_mark_goes_only_on_patch() {
+    for raw in ["minor!", "major!", "none!"] {
+        let text = err_text(parse_str(
+            &formatdoc! {"
+                ---
+                demo: {raw}
+                ---
+
+                Break the API.
+            "},
+            "break.md",
+        ));
+        assert!(text.contains("break.md"), "{raw}: {text}");
+        assert!(text.contains("`!` goes only on patch"), "{raw}: {text}");
+    }
 }

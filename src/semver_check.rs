@@ -28,7 +28,7 @@ use toml_edit::DocumentMut;
 use crate::config::Config;
 use crate::fragment::{Bump, Fragment};
 use crate::registry::{self, RegistryCheck};
-use crate::{docsrs, process, publish, publisher};
+use crate::{docsrs, process, publish, publisher, release};
 
 /// How long one crate's check may run. It builds the rustdoc of the current
 /// crate and of its baseline, so it sits as high as a cold test build.
@@ -47,6 +47,11 @@ pub enum Decision {
     Failed,
     /// A pending fragment bumps the package's minor or major.
     MinorPending,
+    /// The package's release is a patch that a `patch!` fragment marks. The
+    /// fragment is pending, or the Version PR consumed it and gave the
+    /// version's CHANGELOG section the Breaking heading. The API break ships
+    /// as a patch on purpose, for that release.
+    BreakingPatch,
     /// The manifest's major.minor differs from the baseline's: the Version PR
     /// already moved it.
     VersionMoved,
@@ -137,7 +142,7 @@ pub fn run(config: &Config, root: &Path, fragments: &[Fragment]) -> Result<Vec<S
     }
     if !failed.is_empty() {
         bail!(
-            "cargo semver-checks did not pass for {}. A failed lint is an API break in a crate whose next release is a patch: add a minor fragment if it is intended. Any other failure is the tool's, shown above",
+            "cargo semver-checks did not pass for {}. A failed lint is an API break in a crate whose next release is a patch: if it is intended, add a minor fragment, or bump the package by `patch!` to ship it in this patch. Any other failure is the tool's, shown above",
             failed.join(", ")
         );
     }
@@ -152,6 +157,8 @@ fn plan(config: &Config, root: &Path, fragments: &[Fragment]) -> Result<Vec<Plan
             continue;
         }
         let bump = pending_bump(fragments, &entry.name);
+        let pending_mark = marked_breaking(fragments, &entry.name);
+        let changelog = read_changelog(&spec.changelog_path(root))?;
         for upload in publisher::uploads(config, spec, root, entry)? {
             let RegistryCheck::CratesIo { name } = &upload.check else {
                 continue;
@@ -162,7 +169,9 @@ fn plan(config: &Config, root: &Path, fragments: &[Fragment]) -> Result<Vec<Plan
             let version = Version::parse(&upload.version)
                 .with_context(|| format!("{name}: semver {:?}", upload.version))?;
             let baseline = registry::crates_io_baseline(registry::CRATES_IO_INDEX, name, &version)?;
-            let skip = skip_reason(name, bump, &version, baseline.as_ref())?;
+            let breaking =
+                pending_mark || released_mark(&changelog, &entry.name, &version, baseline.as_ref());
+            let skip = skip_reason(name, bump, breaking, &version, baseline.as_ref())?;
             crates.push(Planned {
                 line: SemverLine {
                     name: name.clone(),
@@ -213,11 +222,46 @@ fn pending_bump(fragments: &[Fragment], package: &str) -> Bump {
         .unwrap_or(Bump::None)
 }
 
-/// Why a crate at `version` whose package has `bump` pending is not checked
-/// against `baseline`, or `None` when it is checked.
+/// The package CHANGELOG at `path`, or nothing when the file does not exist.
+fn read_changelog(path: &Path) -> Result<String> {
+    match std::fs::read_to_string(path) {
+        Ok(body) => Ok(body),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(error) => Err(error).with_context(|| path.display().to_string()),
+    }
+}
+
+/// Whether the Version PR already wrote a `patch!` release: `version` is above
+/// `baseline` in the same minor, and its CHANGELOG section holds the Breaking
+/// heading. The Version PR consumed the fragment, so the section is where the
+/// mark is left until the release reaches crates.io.
+fn released_mark(
+    changelog: &str,
+    package: &str,
+    version: &Version,
+    baseline: Option<&Version>,
+) -> bool {
+    let heading = format!("### {}", release::BREAKING);
+    baseline.is_some_and(|baseline| version > baseline)
+        && release::changelog_section_for(changelog, package, &version.to_string())
+            .is_some_and(|section| section.lines().any(|line| line.trim() == heading))
+}
+
+/// Whether a fragment in `fragments` bumps `package` by `patch!`.
+fn marked_breaking(fragments: &[Fragment], package: &str) -> bool {
+    fragments
+        .iter()
+        .flat_map(|fragment| &fragment.packages)
+        .any(|named| named.name == package && named.breaking)
+}
+
+/// Why a crate at `version` whose package has `bump` pending, marked `patch!`
+/// when `breaking`, is not checked against `baseline`, or `None` when it is
+/// checked.
 fn skip_reason(
     name: &str,
     bump: Bump,
+    breaking: bool,
     version: &Version,
     baseline: Option<&Version>,
 ) -> Result<Option<Decision>> {
@@ -232,6 +276,9 @@ fn skip_reason(
     if bump >= Bump::Minor {
         return Ok(Some(Decision::MinorPending));
     }
+    if breaking {
+        return Ok(Some(Decision::BreakingPatch));
+    }
     if (baseline.major, baseline.minor) != (version.major, version.minor) {
         return Ok(Some(Decision::VersionMoved));
     }
@@ -242,10 +289,11 @@ fn skip_reason(
 mod tests {
     use std::fs;
 
+    use indoc::indoc;
     use semver::Version;
     use tempfile::TempDir;
 
-    use super::{Decision, checkable, pending_bump, skip_reason};
+    use super::{Decision, checkable, marked_breaking, pending_bump, released_mark, skip_reason};
     use crate::fragment::{Bump, Fragment, PackageBump};
 
     fn version(raw: &str) -> Version {
@@ -253,9 +301,19 @@ mod tests {
     }
 
     fn skip(bump: Bump, current: &str, baseline: Option<&str>) -> Option<Decision> {
+        skip_marked(bump, false, current, baseline)
+    }
+
+    fn skip_marked(
+        bump: Bump,
+        breaking: bool,
+        current: &str,
+        baseline: Option<&str>,
+    ) -> Option<Decision> {
         skip_reason(
             "demo",
             bump,
+            breaking,
             &version(current),
             baseline.map(version).as_ref(),
         )
@@ -275,6 +333,88 @@ mod tests {
             skip(Bump::Minor, "0.0.2", Some("0.0.2")),
             Some(Decision::MinorPending)
         );
+    }
+
+    /// The mark lasts as long as its fragment: once the Version PR consumed
+    /// it, the next patch is checked again.
+    #[test]
+    fn a_patch_bang_fragment_skips_the_check_for_its_release_only() {
+        assert_eq!(
+            skip_marked(Bump::Patch, true, "0.8.0", Some("0.8.0")),
+            Some(Decision::BreakingPatch)
+        );
+        assert_eq!(
+            skip_marked(Bump::Patch, false, "0.8.1", Some("0.8.1")),
+            None
+        );
+    }
+
+    /// On the Version PR the fragment is gone, the manifest is one patch above
+    /// crates.io, and the new section carries the Breaking heading. Once
+    /// crates.io holds that version, the same section does not count.
+    #[test]
+    fn the_version_pr_finds_the_mark_in_its_changelog_section() {
+        let changelog = indoc! {"
+            # Changelog
+
+            ## verctl 0.8.1
+
+            ### Breaking
+
+            - Replace a public field.
+
+            ## verctl 0.8.0
+
+            - Earlier.
+        "};
+        let v081 = version("0.8.1");
+        assert!(released_mark(
+            changelog,
+            "verctl",
+            &v081,
+            Some(&version("0.8.0"))
+        ));
+        assert!(!released_mark(changelog, "verctl", &v081, Some(&v081)));
+        assert!(!released_mark(changelog, "verctl", &v081, None));
+        assert!(!released_mark(
+            changelog,
+            "verctl",
+            &version("0.8.0"),
+            Some(&version("0.7.4"))
+        ));
+    }
+
+    #[test]
+    fn a_minor_beside_the_mark_keeps_its_own_decision() {
+        assert_eq!(
+            skip_marked(Bump::Minor, true, "0.8.0", Some("0.8.0")),
+            Some(Decision::MinorPending)
+        );
+    }
+
+    #[test]
+    fn the_mark_counts_only_for_the_package_it_names() {
+        let fragment = Fragment {
+            path: "f.md".into(),
+            packages: vec![
+                PackageBump {
+                    name: "demo-core".into(),
+                    bump: Bump::Patch,
+                    breaking: true,
+                },
+                PackageBump {
+                    name: "demo-cli".into(),
+                    bump: Bump::Patch,
+                    breaking: false,
+                },
+            ],
+            summary: String::new(),
+            group: None,
+        };
+        let fragments = [fragment];
+        assert!(marked_breaking(&fragments, "demo-core"));
+        assert!(!marked_breaking(&fragments, "demo-cli"));
+        assert!(!marked_breaking(&fragments, "other"));
     }
 
     #[test]
@@ -335,7 +475,7 @@ mod tests {
 
     #[test]
     fn a_crate_at_1_0_fails() {
-        let error = skip_reason("demo", Bump::Patch, &version("1.0.0"), None).unwrap_err();
+        let error = skip_reason("demo", Bump::Patch, false, &version("1.0.0"), None).unwrap_err();
         assert!(format!("{error:#}").contains("1.0"), "{error:#}");
     }
 
@@ -346,6 +486,7 @@ mod tests {
             packages: vec![PackageBump {
                 name: name.into(),
                 bump,
+                breaking: false,
             }],
             summary: String::new(),
             group: None,

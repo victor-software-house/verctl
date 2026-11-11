@@ -84,6 +84,13 @@ A crate is skipped with `Decision::BreakingPatch` when both hold:
 2. a pending fragment bumps the package by `patch!`.
 
 A pending minor or major still reads `skipped: minor fragment`, because that release is no patch.
+
+The Version PR consumes the fragment, yet it still runs the Semver step with the manifest one patch above crates.io.
+
+There the mark is read from the version's CHANGELOG section: a `### Breaking` heading skips the crate the same way.
+The heading comes from `group_entries`, not from the template, so a custom template cannot drop it.
+Once crates.io holds the version, the section does not count.
+
 The row label is `skipped: patch! fragment`.
 
 ### 4. The changelog lists the entry under `### Breaking`
