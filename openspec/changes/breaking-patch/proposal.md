@@ -10,7 +10,7 @@ The library has no callers outside verctl, and the change is meant to ship in th
 The only way to ship it as a patch today is a `[package.metadata.cargo-semver-checks.lints]` table in `Cargo.toml`.
 The release that removed Version PR auto-merge did that in [#230][pr-230].
 [#235][pr-235] then had to remove the table once 0.7.2 was on crates.io.
-The table lowers a lint for every change until someone deletes it, and the changelog never mentions it.
+Until someone deletes it, the table lowers a lint for every change, and the changelog never mentions it.
 
 A fragment already lives exactly as long as one release: the Version PR consumes it.
 An exception written in the fragment ends with that release by itself.

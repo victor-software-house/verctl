@@ -47,8 +47,8 @@ pub enum Decision {
     Failed,
     /// A pending fragment bumps the package's minor or major.
     MinorPending,
-    /// The package's release is a patch that a `patch!` fragment marks. The
-    /// fragment is pending, or the Version PR consumed it and gave the
+    /// The package's release is a patch that a `patch!` fragment marks. Either
+    /// the fragment is pending, or the Version PR consumed it and gave the
     /// version's CHANGELOG section the Breaking heading. The API break ships
     /// as a patch on purpose, for that release.
     BreakingPatch,

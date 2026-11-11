@@ -19,7 +19,8 @@ A bounded pattern's `{version}` SHALL match a whole semver version, its prerelea
 
 A `tool` pin SHALL move each include of the tool's own repository whose `?ref=v` value is a whole semver version, prerelease included.
 A `?ref=v` value that starts with a digit and is not a whole version SHALL fail the pin and leave its file unchanged.
-A `?ref=v` value that does not start with a digit SHALL stay unchanged and SHALL NOT fail the pin.
+
+When a `?ref=v` value does not start with a digit, it SHALL stay unchanged and SHALL NOT fail the pin.
 
 #### Scenario: A candidate ref
 

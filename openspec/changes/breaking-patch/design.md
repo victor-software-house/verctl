@@ -20,7 +20,7 @@ See [proposal.md](proposal.md) for why, and the specs for what:
 
 **Non-Goals:**
 
-1. Excusing some lints and keeping others. cargo-semver-checks reads lint levels only from `Cargo.toml` ([README][csc-levels]), so a per-lint exception would bring the table back.
+1. Excusing some lints and keeping others. Lint levels come only from `Cargo.toml` in cargo-semver-checks ([README][csc-levels]), so a per-lint exception would bring the table back.
 2. A mark for a stack without an API check. Only cargo has one today.
 
 ## Prior art
@@ -88,7 +88,7 @@ A pending minor or major still reads `skipped: minor fragment`, because that rel
 The Version PR consumes the fragment, yet it still runs the Semver step with the manifest one patch above crates.io.
 
 There the mark is read from the version's CHANGELOG section: a `### Breaking` heading skips the crate the same way.
-The heading comes from `group_entries`, not from the template, so a custom template cannot drop it.
+`group_entries` writes the heading in Rust, so no custom template can drop it.
 Once crates.io holds the version, the section does not count.
 
 The row label is `skipped: patch! fragment`.

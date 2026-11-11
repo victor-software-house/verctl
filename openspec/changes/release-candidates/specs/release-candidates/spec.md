@@ -114,7 +114,7 @@ The candidate sections SHALL stay in the CHANGELOG.
 
 ### Requirement: A candidate's GitHub Release is a prerelease
 
-`verctl release` SHALL create the Release of a version with a prerelease with `prerelease: true` and `make_latest: false`.
+For a version with a prerelease, `verctl release` SHALL create the Release with `prerelease: true` and `make_latest: false`.
 It SHALL create the Release of a stable version with GitHub's defaults.
 
 #### Scenario: A candidate Release
