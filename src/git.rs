@@ -2134,9 +2134,10 @@ mod tests {
     };
     use crate::test_git::{commit_all, git, init};
 
-    /// The version a `VERSION` fixture holds.
+    /// The version a `VERSION` fixture holds, or `None` for an empty file.
     fn version_file(raw: &str) -> Option<String> {
-        Some(raw.trim().to_owned())
+        let version = raw.trim();
+        (!version.is_empty()).then(|| version.to_owned())
     }
 
     /// A fragment that bumps `demo` by `bump`, with `summary` as its body.
