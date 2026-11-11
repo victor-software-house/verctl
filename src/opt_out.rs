@@ -284,9 +284,9 @@ mod tests {
         );
         root(r#"edition = "2024""#);
         assert!(
-            !cargo_opts_out(&member, text, dir.path())
+            cargo_opts_out(&member, text, dir.path())
                 .expect("toml")
-                .is_some()
+                .is_none()
         );
     }
 
@@ -315,15 +315,15 @@ mod tests {
         )
         .expect("write");
         assert!(
-            !cargo_opts_out(&member, text, &tree)
+            cargo_opts_out(&member, text, &tree)
                 .expect("toml")
-                .is_some()
+                .is_none()
         );
         fs::write(&above, "[workspace").expect("write");
         assert!(
-            !cargo_opts_out(&member, text, &tree)
+            cargo_opts_out(&member, text, &tree)
                 .expect("toml")
-                .is_some()
+                .is_none()
         );
     }
 
@@ -353,15 +353,15 @@ mod tests {
             publish.workspace = true
         "#};
         assert!(
-            !cargo_opts_out(&member, text, &tree)
+            cargo_opts_out(&member, text, &tree)
                 .expect("toml")
-                .is_some()
+                .is_none()
         );
         fs::write(&outside, "[workspace").expect("write");
         assert!(
-            !cargo_opts_out(&member, text, &tree)
+            cargo_opts_out(&member, text, &tree)
                 .expect("toml")
-                .is_some()
+                .is_none()
         );
     }
 
@@ -403,9 +403,9 @@ mod tests {
                 .is_some()
         );
         assert!(
-            !cargo_opts_out(&member, &named("../../linked"), &tree)
+            cargo_opts_out(&member, &named("../../linked"), &tree)
                 .expect("toml")
-                .is_some()
+                .is_none()
         );
         let text = indoc! {r#"
             [package]
@@ -418,9 +418,9 @@ mod tests {
                 .is_some()
         );
         assert!(
-            !cargo_opts_out(&tree.join("crates/b/Cargo.toml"), text, &tree)
+            cargo_opts_out(&tree.join("crates/b/Cargo.toml"), text, &tree)
                 .expect("toml")
-                .is_some()
+                .is_none()
         );
     }
 }
