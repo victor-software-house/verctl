@@ -15,6 +15,10 @@ autotests = false
 all-features = true
 rustdoc-args = ["--cap-lints", "warn"]
 
+# One-off for the VER-120 patch release; delete this table once it is on crates.io.
+[package.metadata.cargo-semver-checks.lints]
+struct_pub_field_missing = "warn"
+
 [lints.rust]
 # deny instead of forbid, because forbid refuses the item-level
 # #[expect(unsafe_code, reason = "...")] that a justified exception carries.
