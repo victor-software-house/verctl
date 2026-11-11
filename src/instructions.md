@@ -518,7 +518,8 @@ A `publishers.none` entry fails the load, and every other publisher must render 
 
 A manifest that opts out of publishing needs no `publisher: none`.  
 That is a `Cargo.toml` with `publish = false` or `publish = []`, set on the package or inherited from its workspace, or a `package.json` with `"private": true`.  
-A named `publisher`, a `publish` list, or a `publishers` entry with its own `argv` is used as written, whatever the manifest holds.  
+A named `publisher`, a `publish` list, or a `publishers` entry with its own `argv` is used as written, whatever the manifest holds.
+
 A `registry` or `publish` beside `publisher: none` fails the load, and beside a manifest that opts out it fails the plan.
 
 ### Registry checks

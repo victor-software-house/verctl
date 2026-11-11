@@ -1375,8 +1375,8 @@ mod tests {
             r#"package "demo": publish.verify is true or false"#
         );
         assert_eq!(
-            cargo_options(r#"{"verfy": false}"#).unwrap_err(),
-            r#"package "demo": cargo has no publish option "verfy"; its options are: verify"#
+            cargo_options(r#"{"allow_dirty": true}"#).unwrap_err(),
+            r#"package "demo": cargo has no publish option "allow_dirty"; its options are: verify"#
         );
     }
 
