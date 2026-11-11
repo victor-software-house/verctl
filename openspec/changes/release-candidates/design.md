@@ -250,13 +250,13 @@ Rollback: remove the key. A published candidate stays on crates.io and GitHub, a
 [pending]: ../../../src/pending.rs
 [drs]: ../derived-release-state/proposal.md
 [groups]: ../release-groups/proposal.md
-[cs-pre]: https://github.com/changesets/changesets/blob/main/docs/prereleases.md
-[cs-prestate]: https://github.com/changesets/changesets/blob/main/packages/types/src/index.ts
-[cargo-release]: https://github.com/crate-ci/cargo-release/blob/master/docs/reference.md
+[cs-pre]: https://github.com/changesets/changesets/blob/2f6995d5bbd3b1572d7a6cd897d2229bfc1ce8c1/docs/prereleases.md
+[cs-prestate]: https://github.com/changesets/changesets/blob/2f6995d5bbd3b1572d7a6cd897d2229bfc1ce8c1/packages/types/src/index.ts
+[cargo-release]: https://github.com/crate-ci/cargo-release/blob/5f271e4beb11b59f6305fbce1df7f9033ec27042/docs/reference.md
 [sr-pre]: https://semantic-release.gitbook.io/semantic-release/usage/workflow-configuration#pre-release-branches
 [rplz-config]: https://release-plz.dev/docs/config
 [gr-release]: https://goreleaser.com/customization/release/
-[semver-inc]: https://github.com/npm/node-semver/blob/main/classes/semver.js
+[semver-inc]: https://github.com/npm/node-semver/blob/b37b033b585ad5e575afeccadb426ea41bc6cea4/classes/semver.js
 [cargo-pre]: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#pre-releases
 [mise-pre]: https://mise.jdx.dev/configuration/settings.html#prereleases
 [gh-latest]: https://docs.github.com/en/rest/releases/releases#get-the-latest-release
