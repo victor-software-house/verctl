@@ -49,7 +49,8 @@ Read on 2026-11-10 (UTC), from source where a link names a file.
   - Cargo flags are flat keys with a prefix: `publish_no_verify`, `publish_features`.
   - Every struct refuses unknown fields.
 - **cargo-release** ([reference][cargo-release]): `verify = false` is the key for `--no-verify`.
-- **Nx** ([inferred tasks][nx-inferred]): a plugin reads the tool's own config file; the project's own file overrides what was inferred; `nx show project` prints where each setting came from.
+- **Nx** ([inferred tasks][nx-inferred]): a plugin reads the tool's own config file, and the project's own file overrides what was inferred.
+  `nx show project` prints where each setting came from.
 - **GoReleaser** ([prebuilt builder][goreleaser-prebuilt]): `builder: prebuilt` is written by hand, with its options in a mapping named after the builder.
 
 What they share, and what this design takes:
@@ -69,7 +70,7 @@ Four small types, each with one job.
 | `Publish` | `config` | What a package wrote under `publish`: `Options(map)` or `Command(argv)`. Read by a visitor, so a wrong shape is reported in the file's own words |
 | `CargoPublish` | `publisher` | The cargo publisher's options, complete: `verify: bool`. `CargoPublish::read` is the one place that names cargo's option keys, their types, and their defaults |
 | `Publisher` | `publisher` | How one package is published, resolved: the enum below |
-| `Opted` | `publisher` | Whether a manifest says it does not publish: the Cargo and npm readers that `check` already uses |
+| `opt_out` | `opt_out` | Whether a manifest opts out of publishing, as words an error can repeat. It holds the Cargo and npm readers that `check` already used |
 
 ```rust
 pub enum Publisher {
@@ -86,7 +87,8 @@ pub enum Publisher {
 }
 ```
 
-`Publisher::of(config, package, root)` is the only constructor.
+`Publisher::of(config, package, root)` is the only public constructor.
+`Publisher::of_in` runs the same resolution on a merge-base copy, and the load check runs steps 1 to 4 through the same private function.
 `resolve`, `registry_check`, `uploads`, `workspace_members`, and the `check` that asks whether a package publishes each match on its result.
 The three "was it overridden" tests and the `name == "cargo"` branch are gone, because the variant already says it.
 
@@ -119,7 +121,8 @@ Alternatives:
 2. **A flat key on the package**, `verify: false` or `publish_no_verify: true`, as release-plz has.
    Lost: release-plz is cargo only. Here the key would sit on every package, and the package struct would grow one field per tool.
 3. **Extra arguments**, `publishers.cargo.extra_argv: [--no-verify]`.
-   Lost: verctl would not know what the arguments mean, so it could not show them, check them, or keep them apart from arguments that change the registry.
+   Lost: verctl would not know what the arguments mean.
+   It could not show them, check them, or keep them apart from arguments that change the registry.
 4. **Reusing `default_argv`.** It appends when no registry is named, which is the usual case.
    Lost: it exists for a registry default (`--access public`), and it would stop applying the day a package names a registry.
 
@@ -151,13 +154,15 @@ Lost: a negated boolean, and `no_verify: false` reads twice.
 
 `Cargo.toml` `publish = false` or `[]`, and `package.json` `"private": true`, give `ReleaseOnly` at step 5.
 The readers already exist in `src/pull_request.rs`, where `check` compares whether a package publishes at the merge base and at HEAD.
-They move beside `Publisher::of`, and `check` calls the same resolution, so the two cannot disagree.
+They move to their own module, `opt_out`, which `Publisher::of` calls.
+`check` calls the same resolution, through `Publisher::of_in` for the merge-base copy, so the two cannot diverge.
 
 Today such a package fails its release: `cargo publish` refuses a crate with `publish = false`, and `bun publish` refuses a private package.
 So no working release changes.
 
 Alternative: keep requiring `publisher: none`.
-Lost: 15 callers write it beside a manifest that already says so, and a caller that forgets it gets a failed release after the Version PR merged.
+Lost: 15 callers write it beside a manifest that already states it.
+A caller that forgets it gets a failed release after the Version PR merged.
 
 Override: name the `publisher`, or write a `publish` list; either is used as written.
 Disable path: none in `.ctl/ver.yaml`. The manifest is where the stack's own tool reads the setting.
@@ -185,17 +190,21 @@ Lost: a breaking minor for 19 callers, which the operator batches.
 
 ## Risks / Trade-offs
 
-1. [A released verctl reads `publish` as a list only] → verctl's own release runs the verctl built in the same run, so its `publish` mapping is read by code that knows it.
+1. [A released verctl reads `publish` as a list only] → verctl's own release runs the verctl built in the same run.
+   Its `publish` mapping is therefore read by code that knows the mapping.
    A caller sets a `publish` mapping only after it pins a verctl that has this change; an older pin fails the load, and names the key.
 2. [`--no-verify` uploads a crate nobody built] → the option is off unless written.
-   The instructions say when to set it: CI builds the packed crate on every commit the default branch receives, such as a `cargo package` step the merge queue requires.
+   The instructions name when to set it.
+   CI must build the packed crate on every commit the default branch receives, such as a `cargo package` step the merge queue requires.
 3. [The manifest opt-out reads a file at plan time] → the same readers already run in `check`, inside the repository tree, without following a symlink.
-4. [`Publisher::of` replaces three code paths at once] → the existing tests in `src/publisher.rs` cover each path and must pass unchanged, apart from two that call the removed helpers.
+4. [`Publisher::of` replaces three code paths at once] → the existing tests in `src/publisher.rs` cover each path and must pass unchanged.
+   The one exception is the root argument that `resolve` now takes in place of a manifest path.
 
 ## Migration Plan
 
 Additive.
-A repository that writes nothing new gets the same commands as before, with one exception that only repairs a failure: a package whose manifest opts out no longer fails at `cargo publish`.
+A repository that writes nothing new gets the same commands as before.
+The one exception only repairs a failure: a package whose manifest opts out no longer fails at `cargo publish`.
 It ships as a patch.
 
 [publisher]: ../../../src/publisher.rs

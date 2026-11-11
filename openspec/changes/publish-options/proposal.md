@@ -15,7 +15,7 @@ A replaced command turns off three things the built-in cargo upload does:
 3. member-by-member publishing of a workspace.
 
 The config also asks for what the manifest already states.
-15 of the 19 repositories that call `release.yml` write `publisher: none`, and their comments say the crate also sets `publish = false` (GitHub code search, 2026-11-10).
+15 of the 19 repositories that call `release.yml` write `publisher: none`, and their comments state that the crate also sets `publish = false` (GitHub code search, 2026-11-10).
 
 Queue row: [VER-120][ver-120].
 The asset jobs' builds are the other 3 of the 7 that can go; they stay with [VER-118][ver-118] and [VER-119][ver-119].

@@ -2,9 +2,9 @@
 
 ### Requirement: A manifest that opts out releases on GitHub only
 
-A package whose publisher is inferred from its manifest file name SHALL release as `publisher: none` does when its manifest says it does not publish.
-A `Cargo.toml` says so with `package.publish` set to `false` or `[]`, read through `publish.workspace = true` from the workspace root.
-A `package.json` says so with `"private": true`.
+A package whose publisher is inferred from its manifest file name SHALL release as `publisher: none` does when its manifest opts out of publishing.
+A `Cargo.toml` opts out with `package.publish` set to `false` or `[]`, read through `publish.workspace = true` from the workspace root.
+A `package.json` opts out with `"private": true`.
 A virtual workspace manifest SHALL NOT count: its members decide one by one.
 
 #### Scenario: A private binary with nothing written
