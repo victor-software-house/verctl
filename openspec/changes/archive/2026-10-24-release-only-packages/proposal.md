@@ -5,7 +5,7 @@
 A repository that ships private binaries sets `publish = false` on every crate.
 verctl has no publisher that uploads nothing.
 So such a repository declares a stand-in publish command:
-a check that succeeds only when every crate refuses to publish.
+a check that succeeds only when publishing is refused for every crate.
 That command is a workaround for a missing mode.
 
 Queue row: [VER-057][ver-057].

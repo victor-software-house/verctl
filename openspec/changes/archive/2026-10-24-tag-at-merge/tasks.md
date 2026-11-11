@@ -16,7 +16,7 @@ Compile, format, lint, and test tasks run in pull request CI with
 ## 3. Docs
 
 - [ ] 3.1 The operator instructions and README describe the order; proof: `cargo test operator_docs` passes in CI
-- [ ] 3.2 release-state-machine, release-from-shallow-and-drifted-trees, [VER-011][ver-011], and [VER-072][ver-072] record the operator decision; proof: `openspec validate --all --strict` passes in CI
+- [ ] 3.2 release-state-machine, `release-from-shallow-and-drifted-trees`, [VER-011][ver-011], and [VER-072][ver-072] record the operator decision; proof: `openspec validate --all --strict` passes in CI
 
 [ver-011]: ../../../../tasks.yaml
 [ver-072]: ../../../../tasks.yaml

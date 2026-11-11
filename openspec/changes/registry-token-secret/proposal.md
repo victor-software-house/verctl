@@ -45,7 +45,7 @@ Queue row: [VER-104][ver-104]. The operator placed this break in the 0.8.0 minor
    `crates-io-trusted-publishing`.
 4. With `environment` set, the App secrets now reach the propose job, because
    the caller keeps its `secrets:` map.
-5. verctl, not a shell script, hands the token to the publisher. The publish
+5. verctl hands the token to the publisher, with no shell script in between. The publish
    step sets `VERCTL_REGISTRY_TOKEN`, `VERCTL_TRUSTED_PUBLISHING_TOKEN`, and
    `VERCTL_REGISTRY_TOKEN_ENV` and runs `mise run ver release`. `verctl
    release` refuses both tokens at once, checks the variable name, and starts

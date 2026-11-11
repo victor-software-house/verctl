@@ -93,7 +93,7 @@ The tag and Release loop never runs, so no tag exists until every member is
 listed.
 
 verctl does not sleep until the retry time. A first release of 7 new crates
-waits 20 minutes after the burst. That would hold a runner idle. The next
+needs a 20-minute wait after the burst. That would hold a runner idle. The next
 run picks up where this one stopped.
 
 Override: none needed; the operator reruns the publish.

@@ -80,7 +80,7 @@ after "try again after". It SHALL create no tag and no Release in that run.
 - **WHEN** `cargo publish` for `app` fails with `the remote server responded with an error (status 429 Too Many Requests): You have published too many new crates in a short period of time. Please try again after Sat, 19 Oct 2026 01:23:45 GMT or email help@crates.io to have your limit increased.`
 - **THEN** `verctl publish` exits non-zero with a message that names `app@0.0.2` and `Sat, 19 Oct 2026 01:23:45 GMT`, and no tag `v0.0.2` exists
 
-### Requirement: docs waits for every library member
+### Requirement: `verctl docs` waits for every library member
 
 `verctl docs` SHALL wait for each published member bound for crates.io that
 has a library target, at the member's version. It SHALL do so when the

@@ -60,7 +60,7 @@ State notes are from the code on `main` at [cb1be28][main], read on 2026-11-09 (
 - [ ] 7.2 Archive this change and queue row [VER-011][queue] after every part is archived; proof: `openspec validate --specs` passes
 
 [queue]: ../../../tasks.yaml
-[ctc-008]: https://github.com/victor-software-house/ctl-core/blob/main/tasks.yaml
+[ctc-008]: https://github.com/victor-software-house/ctl-core/blob/8a4095fbe4d30b5ea067682f13478be0ba21fbac/tasks.yaml
 [main]: https://github.com/victor-software-house/verctl/commit/cb1be28
 [pr166]: https://github.com/victor-software-house/verctl/pull/166
 [stack]: https://github.com/victor-software-house/verctl/pull/256

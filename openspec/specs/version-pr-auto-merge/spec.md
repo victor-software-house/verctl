@@ -1,4 +1,4 @@
-# version-pr-auto-merge Specification
+# `version-pr-auto-merge` Specification
 
 ## Purpose
 

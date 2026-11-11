@@ -39,7 +39,7 @@ The tag is the record that the upload ran.
 - **WHEN** `tags.template` is `v{version}`, `demo` publishes to crates.io, and `tool` declares `publish: [./upload.sh]` with no `query`
 - **THEN** `verctl publish` runs both uploads before it creates `v0.4.0`
 
-### Requirement: docs waits only for listed crates
+### Requirement: `verctl docs` waits only for listed crates
 
 `verctl docs` SHALL wait for a crate only when its tag names HEAD and the
 crates.io index lists its version.

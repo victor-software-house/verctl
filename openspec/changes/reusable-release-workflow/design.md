@@ -21,9 +21,9 @@ same slice is split into four changes of its own.
 
 The registry check is
 [registry-publish-check][rpc], and the release at a version commit is
-[release-at-version-commit][ravc]. The docs.rs check is
+[`release-at-version-commit`][ravc]. The docs.rs check is
 [docs-build-check][docs], and the Version PR branch and auto-merge are
-[derived-version-pr-branch][dvpb].
+[`derived-version-pr-branch`][dvpb].
 
 ## 1. The reusable workflow
 
@@ -293,7 +293,7 @@ wildcard arm.
    [release-state-machine][rsm].
 
 [queue]: ../../../tasks.yaml
-[ctc-022]: https://github.com/victor-software-house/ctl-core/blob/main/tasks.yaml
+[ctc-022]: https://github.com/victor-software-house/ctl-core/blob/8a4095fbe4d30b5ea067682f13478be0ba21fbac/tasks.yaml
 [rsm]: ../release-state-machine/design.md
 [pr-153]: https://github.com/victor-software-house/verctl/pull/153
 [docs]: ../archive/2026-11-10-docs-build-check/design.md

@@ -33,18 +33,18 @@ jobs:
   # Fails an update pull request that does not reach the newest template tag.
   # Any other pull request gets a notice; the daily run keeps an issue
   # open while the newest tag would change this repository. The shared
-  # workflow reads the template with the organization's reader App, so it
-  # takes that App's key and no other secret.
+  # workflow reads the template with the organization's reader App's key, and
+  # installs its tools through the release mirror with the ci login.
   template:
     if: ${{ !github.event.pull_request.draft }}
-    uses: victor-software-house/actions/.github/workflows/template-check.yml@a333d6f8cb6a3dfd55088fec5a22924262017212 # main, 2026-11-10
+    uses: victor-software-house/actions/.github/workflows/template-check.yml@e6e13c808cce87ac8f1faf59cfaf2bab34bda7aa # main, 2026-11-11
     permissions:
       contents: read
-      # The mise action trades the job's OIDC token for a mirror session token.
+      # The mise action's fallback; it downloads with the mirror's ci login.
       id-token: write
       issues: write
     with:
-      mise-version: 2026.10.25
+      mise-version: 2026.11.6
       runner: ubuntu-latest
       # A pull request that changes none of these files skips the check, which
       # still reports. The list holds every file the template renders, whole
@@ -85,4 +85,6 @@ jobs:
         tsconfig.json
         tsdown.config.ts
     secrets:
+      RELEASE_MIRROR_URL: ${{ secrets.RELEASE_MIRROR_URL }}
+      RELEASE_MIRROR_CI_PASSWORD: ${{ secrets.RELEASE_MIRROR_CI_PASSWORD }}
       TEMPLATES_APP_PRIVATE_KEY: ${{ secrets.TEMPLATES_APP_PRIVATE_KEY }}

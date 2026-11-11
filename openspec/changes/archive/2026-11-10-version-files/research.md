@@ -202,7 +202,7 @@ The order is:
 [renovate-gha]: https://github.com/renovatebot/renovate/blob/677638d3f9a476b575a5d0a3c1e9c27e437dedad/lib/modules/manager/github-actions/readme.md
 [mise-git]: https://github.com/jdx/mise/blob/32c96c4d51d3abe9af0c868eda63aabe77efddb0/src/task/task_file_providers/remote_task_git.rs#L120-L127
 [monochange]: https://monochange.dev/book/guide/ecosystems
-[bumpy]: https://github.com/dmno-dev/bumpy/blob/main/docs/differences-from-changesets.md
+[bumpy]: https://github.com/dmno-dev/bumpy/blob/c97d3d3ce52ca03a183fb58648e7507f675f14f7/docs/differences-from-changesets.md
 [mise-providers]: https://github.com/jdx/mise/blob/32c96c4d51d3abe9af0c868eda63aabe77efddb0/src/task/workspace.rs#L610-L691
 [nx-merge]: https://github.com/nrwl/nx/blob/b68115cd05cd2b79c36b216f6c03dafb8266f1e0/packages/nx/src/project-graph/utils/project-configuration-utils.ts#L359-L470
 [moon-builder]: https://github.com/moonrepo/moon/blob/6ef65c505823486fcbcea6491de3f7313e3c5190/crates/project-builder/src/project_builder.rs#L166-L220
@@ -221,5 +221,5 @@ The order is:
 [release-cli]: https://github.com/0x1306e6d/release-cli
 [flowfuse]: https://github.com/flowfuse/github-actions-workflows
 [wire]: https://github.com/albertodeago/wire
-[govuk-tf]: https://github.com/alphagov/gds-tech-and-security-github-actions/blob/main/docs/terraform-module-release.md
+[govuk-tf]: https://github.com/alphagov/gds-tech-and-security-github-actions/blob/397c77e0997ed63e4d7e50d292820416ab76f18f/docs/terraform-module-release.md
 [ver-083]: ../../../../tasks.yaml
