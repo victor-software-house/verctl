@@ -1127,7 +1127,7 @@ fn prepare_fails_a_package_whose_candidate_cannot_be_counted_on() {
         )
         .expect("cargo");
         let config = Config::load(&path).expect("load");
-        let patch = parse_str(
+        let fragment = parse_str(
             indoc! {"
                 ---
                 demo: patch
@@ -1137,8 +1137,8 @@ fn prepare_fails_a_package_whose_candidate_cannot_be_counted_on() {
             "},
             "a.md",
         )
-        .expect("patch");
-        let error = prepare::plan(&config, &[patch], root.path()).expect_err(version);
+        .expect("fragment");
+        let error = prepare::plan(&config, &[fragment], root.path()).expect_err(version);
         let message = format!("{error:#}");
         for version in named {
             assert!(message.contains(version), "{message}");
