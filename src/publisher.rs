@@ -481,31 +481,53 @@ impl Publisher {
         spec: &crate::config::PackageSpec,
         root: &Path,
     ) -> Result<Self> {
-        Self::of_in(config, spec, root, root)
+        let (publisher, opted_out) = Self::settle(config, spec, root, root)?;
+        if let Some(reason) = opted_out {
+            ensure!(
+                spec.registry.is_none() && spec.publish.is_none(),
+                "package {:?} does not publish: {reason}; remove its publish and registry, or the manifest key",
+                spec.name
+            );
+        }
+        Ok(publisher)
     }
 
-    /// [`Publisher::of`] for a copy of the repository: `tree` is the root of
-    /// the tree `root` is in, and no manifest lookup leaves it.
+    /// Whether `spec` publishes, for a copy of the repository: `tree` is the
+    /// root of the tree `root` is in, and no manifest lookup leaves it.
+    ///
+    /// It answers as [`Publisher::of`] does, apart from one case. A manifest
+    /// that opts out while the package still sets `registry` or `publish`
+    /// gives [`Publisher::ReleaseOnly`] here. The conflict fails the plan, and
+    /// `check` reads a merge-base config that may hold it, such as on the
+    /// pull request that removes the `registry`.
     pub(crate) fn of_in(
         config: &crate::config::Config,
         spec: &crate::config::PackageSpec,
         root: &Path,
         tree: &Path,
     ) -> Result<Self> {
+        Ok(Self::settle(config, spec, root, tree)?.0)
+    }
+
+    /// The publisher of `spec`, and the manifest's reason when its opt-out
+    /// turned an inferred built-in publisher into [`Publisher::ReleaseOnly`].
+    fn settle(
+        config: &crate::config::Config,
+        spec: &crate::config::PackageSpec,
+        root: &Path,
+        tree: &Path,
+    ) -> Result<(Self, Option<&'static str>)> {
         let declared = Self::declared(config, spec).map_err(anyhow::Error::msg)?;
         let built_in = matches!(declared, Self::Cargo { .. } | Self::Bun { .. });
         if spec.publisher.is_some() || !built_in {
-            return Ok(declared);
+            return Ok((declared, None));
         }
-        let Some(reason) = crate::opt_out::opt_out(&root.join(&spec.path), tree)? else {
-            return Ok(declared);
-        };
-        ensure!(
-            spec.registry.is_none() && spec.publish.is_none(),
-            "package {:?} does not publish: {reason}; remove its publish and registry, or the manifest key",
-            spec.name
-        );
-        Ok(Self::ReleaseOnly)
+        Ok(
+            match crate::opt_out::opt_out(&root.join(&spec.path), tree)? {
+                Some(reason) => (Self::ReleaseOnly, Some(reason)),
+                None => (declared, None),
+            },
+        )
     }
 }
 
@@ -1497,8 +1519,10 @@ mod tests {
         assert_eq!(found, ["command bun", "command bun"]);
     }
 
+    /// The plan refuses the conflict. `check`, which may read it from a
+    /// merge-base config, still finds that the package does not publish.
     #[test]
-    fn options_beside_a_manifest_that_opts_out_fail() {
+    fn options_beside_a_manifest_that_opts_out_fail_the_plan_only() {
         let root = manifests();
         let config = crate::config::Config::parse(indoc! {"
             packages:
@@ -1513,6 +1537,9 @@ mod tests {
             error.to_string(),
             r#"package "private" does not publish: Cargo.toml sets publish = false; remove its publish and registry, or the manifest key"#
         );
+        let check = super::Publisher::of_in(&config, &config.packages[0], root.path(), root.path())
+            .unwrap();
+        assert_eq!(shape(&check), "release only");
     }
 
     #[test]
