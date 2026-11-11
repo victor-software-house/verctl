@@ -9,8 +9,10 @@ use toml_edit::{DocumentMut, Formatted, Item, Value};
 
 use crate::config::{Config, PLACEHOLDER, Pin, PinPattern};
 
-/// A version, as every pin site spells one.
-const VERSION: &str = r"[0-9]+(?:\.[0-9]+)*";
+/// A whole semver version as every pin site spells one: digits and dots, then
+/// an optional prerelease after `-` and build after `+`. A release candidate
+/// is a version, so a pin that names one moves like any other.
+const VERSION: &str = r"[0-9]+(?:\.[0-9]+)*(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?";
 
 /// Current declared versions of every configured package.
 ///
@@ -200,8 +202,8 @@ fn set_string(held: &mut Value, version: &str) -> Result<()> {
 /// YAML value all rewrite the same way, with nothing assumed about the file.
 ///
 /// `Config::load` refuses a pattern with nothing marking where the version
-/// starts and ends. So a longer version here fails to match instead of
-/// matching by its numeric head.
+/// starts and ends. So the pattern matches the whole token, prerelease and
+/// build included, and never a numeric head with its tail kept.
 ///
 /// The file must hold the version exactly as often as declared. The count is
 /// never inferred. A count off in either direction stops the release. Too few
@@ -246,10 +248,11 @@ fn rewrite_pattern(body: &str, pattern: &PinPattern, version: &str) -> Result<St
 /// carry the tool's own name.
 ///
 /// The ref runs to the end of the URL or to the next query separator (`&`,
-/// `#`, `;`). A ref that starts with a version and goes on, such as
-/// `v1.2.3-rc1`, fails. Its numeric head is never moved with its tail kept. A
-/// ref that is not a version at all, such as a branch, is not a pin and stays
-/// put.
+/// `#`, `;`). A ref that is a whole version, prerelease included, moves. A
+/// ref that starts with a digit and is not a whole version, such as
+/// `v1.2.3_local`, fails, so its numeric head is never moved with its tail
+/// kept. A ref that does not start with a digit, such as a branch, is not a pin
+/// and stays put.
 fn rewrite_own_refs(body: &str, tool: &str, version: &str) -> Result<String> {
     let name = escape(tool.rsplit(['/', ':']).next().unwrap_or(tool));
     let finder = Regex::new(&format!(
@@ -586,20 +589,36 @@ mod tests {
         }
     }
 
-    /// A prerelease is not a version this rewriter tracks. It must fail the
-    /// release, never rewrite the numeric head and drop the tail.
+    /// A candidate is a version, so its whole spelling moves to the next
+    /// version, prerelease included, and a stable one drops the tail.
     #[test]
-    fn a_prerelease_pin_fails_instead_of_half_rewriting() {
-        let root = TempDir::new().unwrap();
-        let before = "Install verctl@1.0.0-rc.1 today.\n";
-        let path = write_file(&root, DOC, before);
-        let pins = [pattern_pin(
-            DOC,
-            &[("verctl@{version} today", Occurrences::Once)],
-        )];
-        let err = write(root.path(), &pins, &versions("1.0.0")).unwrap_err();
-        assert!(format!("{err:#}").contains("matches 0 times"), "{err:#}");
-        assert_eq!(fs::read_to_string(&path).unwrap(), before);
+    fn a_prerelease_pin_moves_whole_to_the_next_version() {
+        for (before, next, after) in [
+            (
+                "Install verctl@1.0.0-rc.1 today.\n",
+                "1.0.0-rc.2",
+                "Install verctl@1.0.0-rc.2 today.\n",
+            ),
+            (
+                "Install verctl@1.0.0-rc.2 today.\n",
+                "1.0.0",
+                "Install verctl@1.0.0 today.\n",
+            ),
+            (
+                "Install verctl@1.0.0+build.5 today.\n",
+                "1.0.1",
+                "Install verctl@1.0.1 today.\n",
+            ),
+        ] {
+            let root = TempDir::new().unwrap();
+            let path = write_file(&root, DOC, before);
+            let pins = [pattern_pin(
+                DOC,
+                &[("verctl@{version} today", Occurrences::Once)],
+            )];
+            write(root.path(), &pins, &versions(next)).unwrap();
+            assert_eq!(fs::read_to_string(&path).unwrap(), after, "{before}");
+        }
     }
 
     /// Two pins in the same file, back to back, with nothing between them.
@@ -846,11 +865,49 @@ mod tests {
         );
     }
 
-    /// An include whose ref is a prerelease is not a version this rewrites.
-    /// Moving its numeric head would leave the tail on a tag of another
-    /// release. So the pin fails and the file stays as it was.
+    /// An include whose ref is a prerelease is a whole version, so the pin
+    /// moves it to the new version and no tail of the old one stays behind.
     #[test]
-    fn an_include_with_a_prerelease_ref_fails_instead_of_half_rewriting() {
+    fn an_include_with_a_prerelease_ref_moves_whole_to_the_next_version() {
+        let root = TempDir::new().unwrap();
+        let path = write_file(
+            &root,
+            "mise.toml",
+            indoc! {r#"
+                [tools]
+                "github:victor-software-house/verctl" = "0.8.0-rc.1"
+
+                [task_config]
+                includes = [
+                  "git::https://github.com/victor-software-house/verctl.git//tasks/ver?ref=v0.8.0-rc.1",
+                ]
+            "#},
+        );
+        write(
+            root.path(),
+            &[tool_pin("mise.toml", "verctl")],
+            &versions("0.8.0"),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            indoc! {r#"
+                [tools]
+                "github:victor-software-house/verctl" = "0.8.0"
+
+                [task_config]
+                includes = [
+                  "git::https://github.com/victor-software-house/verctl.git//tasks/ver?ref=v0.8.0",
+                ]
+            "#}
+        );
+    }
+
+    /// A ref that starts with a digit and is not a whole version is not ours
+    /// to move. Moving its numeric head would leave the tail on a tag of
+    /// another release. So the pin fails and the file stays as it was.
+    #[test]
+    fn an_include_with_a_ref_that_is_not_a_version_fails_instead_of_half_rewriting() {
         let root = TempDir::new().unwrap();
         let before = indoc! {r#"
             [tools]
@@ -858,7 +915,7 @@ mod tests {
 
             [task_config]
             includes = [
-              "git::https://github.com/victor-software-house/verctl.git//tasks/ver?ref=v1.2.3-rc1",
+              "git::https://github.com/victor-software-house/verctl.git//tasks/ver?ref=v1.2.3_local",
             ]
         "#};
         let path = write_file(&root, "mise.toml", before);
@@ -869,7 +926,7 @@ mod tests {
         )
         .unwrap_err();
         let report = format!("{err:#}");
-        assert!(report.contains("v1.2.3-rc1"), "{report}");
+        assert!(report.contains("v1.2.3_local"), "{report}");
         assert!(report.contains("mise.toml"), "{report}");
         assert_eq!(fs::read_to_string(&path).unwrap(), before);
     }
@@ -985,10 +1042,23 @@ mod tests {
                 "}),
             ),
             (
-                "a tail the version does not cover leaves the line unmatched",
+                "a prerelease is part of the version and moves with it",
                 indoc! {"
                     ---
                     version: 0.0.1-rc1
+                    ---
+                "},
+                Ok(indoc! {"
+                    ---
+                    version: 0.0.2
+                    ---
+                "}),
+            ),
+            (
+                "a tail the version does not cover leaves the line unmatched",
+                indoc! {"
+                    ---
+                    version: 0.0.1_local
                     ---
                 "},
                 Err("matches 0 times"),

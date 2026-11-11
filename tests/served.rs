@@ -202,11 +202,10 @@ fn a_file_with_two_owners_is_refused_before_any_write() {
     assert_eq!(read(&root, "tools.toml"), "demo@0.1.0\n");
 }
 
-/// A prerelease where a pin's version goes is not a version `version`
-/// rewrites. It stops before any manifest moves, naming the file and the
-/// pattern, and the pinned file keeps its bytes.
+/// A prerelease where a pin's version goes is a whole version, so `version`
+/// moves it with the manifest and the pinned file holds the new version.
 #[test]
-fn a_prerelease_pin_stops_version_before_any_write() {
+fn a_prerelease_pin_moves_with_the_version() {
     let root = repo();
     write(root.path(), "tools.toml", "demo@0.1.0-rc1\n");
     common::git(root.path(), &["commit", "-qam", "prerelease"]);
@@ -222,11 +221,7 @@ fn a_prerelease_pin_stops_version_before_any_write() {
         "},
     );
     let output = verctl(&root, &["version"]);
-    assert!(!output.status.success());
-    let message = stderr(&output);
-    assert!(message.contains("tools.toml"), "{message}");
-    assert!(message.contains("demo@{version}"), "{message}");
-    assert!(message.contains("matches 0 times"), "{message}");
-    assert_eq!(read(&root, "tools.toml"), "demo@0.1.0-rc1\n");
-    assert!(read(&root, "Cargo.toml").contains("version = \"0.1.0\""));
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(read(&root, "tools.toml"), "demo@0.1.1\n");
+    assert!(read(&root, "Cargo.toml").contains("version = \"0.1.1\""));
 }
