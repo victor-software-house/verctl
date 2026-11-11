@@ -261,15 +261,15 @@ pub fn changelog_sections_with(
 ) -> Result<String> {
     let mut sections = String::new();
     for entry in plan {
-        let mut entries: Vec<(Option<Group>, String)> = Vec::new();
+        let mut entries: Vec<Entry> = Vec::new();
         for fragment in fragments {
-            if !fragment
+            let Some(named) = fragment
                 .packages
                 .iter()
-                .any(|package| package.name == entry.name)
-            {
+                .find(|package| package.name == entry.name)
+            else {
                 continue;
-            }
+            };
             let origin = origins.by_path.get(&fragment.path);
             let lines: Vec<&str> = fragment.summary.lines().collect();
             let paragraph_end = lines
@@ -293,7 +293,11 @@ pub fn changelog_sections_with(
             if !line.ends_with('\n') {
                 line.push('\n');
             }
-            entries.push((fragment.group, line));
+            entries.push(Entry {
+                group: fragment.group,
+                breaking: named.breaking,
+                line,
+            });
         }
         let bullets = group_entries(&entries);
         ensure!(
@@ -315,23 +319,54 @@ pub fn changelog_sections_with(
     Ok(sections)
 }
 
-/// Join one section's entries. A section where no fragment names a group stays
-/// the flat list it always was, so existing changelogs render unchanged. Once
-/// one does, every entry goes under a [`Group`] heading, and an ungrouped one
-/// lands under [`Group::Changed`].
-fn group_entries(entries: &[(Option<Group>, String)]) -> String {
-    if entries.iter().all(|(group, _)| group.is_none()) {
-        return entries.iter().map(|(_, line)| line.as_str()).collect();
+/// One fragment's rendered entry in one package's section.
+struct Entry {
+    /// The fragment's `verctl:group`.
+    group: Option<Group>,
+    /// Whether the fragment bumps this section's package by `patch!`.
+    breaking: bool,
+    /// The rendered bullet.
+    line: String,
+}
+
+/// The heading over a `patch!` entry. It comes first and is not a [`Group`],
+/// so only the mark puts an entry under it.
+const BREAKING: &str = "Breaking";
+
+/// Join one section's entries. A section where no fragment names a group and
+/// none is `patch!` stays the flat list it always was, so existing changelogs
+/// render unchanged. Otherwise a `patch!` entry goes under [`BREAKING`], first,
+/// and every other entry under a [`Group`] heading, an ungrouped one under
+/// [`Group::Changed`].
+fn group_entries(entries: &[Entry]) -> String {
+    if entries
+        .iter()
+        .all(|entry| entry.group.is_none() && !entry.breaking)
+    {
+        return entries.iter().map(|entry| entry.line.as_str()).collect();
     }
-    Group::ALL
-        .into_iter()
-        .filter_map(|heading| {
-            let lines: String = entries
+    let breaking = (
+        BREAKING,
+        entries
+            .iter()
+            .filter(|entry| entry.breaking)
+            .collect::<Vec<_>>(),
+    );
+    let grouped = Group::ALL.into_iter().map(|heading| {
+        (
+            heading.heading(),
+            entries
                 .iter()
-                .filter(|(group, _)| group.unwrap_or(Group::Changed) == heading)
-                .map(|(_, line)| line.as_str())
-                .collect();
-            (!lines.is_empty()).then(|| format!("### {}\n\n{lines}", heading.heading()))
+                .filter(|entry| !entry.breaking && entry.group.unwrap_or(Group::Changed) == heading)
+                .collect::<Vec<_>>(),
+        )
+    });
+    std::iter::once(breaking)
+        .chain(grouped)
+        .filter(|(_, members)| !members.is_empty())
+        .map(|(heading, members)| {
+            let lines: String = members.iter().map(|entry| entry.line.as_str()).collect();
+            format!("### {heading}\n\n{lines}")
         })
         .collect::<Vec<_>>()
         .join("\n")

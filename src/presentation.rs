@@ -101,6 +101,7 @@ impl Present for SemverReport {
                     semver_check::Decision::Passed => "passed",
                     semver_check::Decision::Failed => "failed",
                     semver_check::Decision::MinorPending => "skipped: minor fragment",
+                    semver_check::Decision::BreakingPatch => "skipped: patch! fragment",
                     semver_check::Decision::VersionMoved => "skipped: minor moved",
                     semver_check::Decision::Unpublished => "skipped: unpublished",
                 };

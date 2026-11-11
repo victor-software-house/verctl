@@ -18,6 +18,7 @@ fn contributing_fragments_skip_unused() {
         packages: vec![PackageBump {
             name: "demo".into(),
             bump: Bump::Patch,
+            breaking: false,
         }],
         summary: "used".into(),
         group: None,
@@ -27,6 +28,7 @@ fn contributing_fragments_skip_unused() {
         packages: vec![PackageBump {
             name: "other".into(),
             bump: Bump::Patch,
+            breaking: false,
         }],
         summary: "skip".into(),
         group: None,
@@ -59,6 +61,7 @@ fn consume_fragments_deletes_the_files() {
         packages: vec![PackageBump {
             name: "demo".into(),
             bump: Bump::Patch,
+            breaking: false,
         }],
         summary: "gone".into(),
         group: None,
@@ -536,6 +539,7 @@ fn demo_fragment(summary: &str, group: Option<Group>) -> Fragment {
         packages: vec![PackageBump {
             name: "demo".into(),
             bump: Bump::Patch,
+            breaking: false,
         }],
         summary: summary.into(),
         group,
@@ -600,6 +604,75 @@ fn an_ungrouped_fragment_lands_in_the_default_group() {
             ### Fixed
 
             - Fix the parser.
+
+        "}
+    );
+}
+
+#[test]
+fn a_patch_bang_entry_comes_first_under_breaking() {
+    let mut breaking = demo_fragment("Replace a public field", None);
+    breaking.packages[0].breaking = true;
+    let fragments = [breaking, demo_fragment("Fix the parser", None)];
+    assert_eq!(
+        release::changelog_sections(&demo_plan(), &fragments).unwrap(),
+        indoc! {"
+            ## demo 1.0.1
+
+            ### Breaking
+
+            - Replace a public field.
+
+            ### Changed
+
+            - Fix the parser.
+
+        "}
+    );
+}
+
+/// The mark belongs to one package of the fragment, so the other package's
+/// section renders the same entry as a plain one.
+#[test]
+fn a_patch_bang_entry_is_breaking_only_in_its_package() {
+    let [demo] = demo_plan();
+    let core = PlanEntry {
+        name: "demo-core".into(),
+        ..demo.clone()
+    };
+    let cli = PlanEntry {
+        name: "demo-cli".into(),
+        ..demo
+    };
+    let fragment = Fragment {
+        path: std::path::PathBuf::from("split.md"),
+        packages: vec![
+            PackageBump {
+                name: "demo-core".into(),
+                bump: Bump::Patch,
+                breaking: true,
+            },
+            PackageBump {
+                name: "demo-cli".into(),
+                bump: Bump::Patch,
+                breaking: false,
+            },
+        ],
+        summary: "Split the config type".into(),
+        group: None,
+    };
+    assert_eq!(
+        release::changelog_sections(&[core, cli], &[fragment]).unwrap(),
+        indoc! {"
+            ## demo-core 1.0.1
+
+            ### Breaking
+
+            - Split the config type.
+
+            ## demo-cli 1.0.1
+
+            - Split the config type.
 
         "}
     );

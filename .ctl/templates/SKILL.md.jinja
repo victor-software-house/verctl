@@ -54,6 +54,7 @@ There is no `verctl.toml`.
 Fragments are `.changeset/*.md` with YAML fences (quoted or unquoted keys).  
 An optional `verctl:group: added | changed | fixed` key files the entry under that heading.  
 Once one fragment in a section names a group, an ungrouped one goes under Changed.  
+`patch!` ships an API break as a patch: `semver` skips the package while the fragment is pending, and the entry goes under Breaking.  
 Changelog Markdown is rendered with minijinja.
 
 ### The first release
@@ -250,7 +251,7 @@ It is never a `.ctl/ver.yaml` key, and there is no `release` runner section.
 It fails on a build that failed or never arrived (`--timeout`, minutes, default 60).
 
 `semver` runs `cargo semver-checks --release-type minor` on each crates.io crate whose next release is a patch, so only an API break fails.  
-It skips a crate with a pending `minor` or `major` fragment or a minor the Version PR already moved.  
+It skips a crate with a pending `minor`, `major`, or `patch!` fragment, or a minor the Version PR already moved.  
 A crate at 1.0 or later fails: the rule covers 0.x.
 
 ## Stop conditions
