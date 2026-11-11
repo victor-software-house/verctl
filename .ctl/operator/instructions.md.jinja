@@ -716,6 +716,8 @@ It runs `cargo semver-checks --release-type minor` against the baseline cargo-se
 
 It skips a crate whose package has a pending `minor` or `major` fragment.  
 It skips one whose package a pending fragment bumps by `patch!`, for that release only.  
+On the Version PR the fragment is gone, so it skips a crate one patch above crates.io whose new CHANGELOG section holds `### Breaking`.
+
 It also skips one whose manifest's major.minor differs from that baseline, because the Version PR already moved it.  
 A crate with no crates.io release is skipped too.
 

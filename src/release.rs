@@ -331,7 +331,7 @@ struct Entry {
 
 /// The heading over a `patch!` entry. It comes first and is not a [`Group`],
 /// so only the mark puts an entry under it.
-const BREAKING: &str = "Breaking";
+pub(crate) const BREAKING: &str = "Breaking";
 
 /// Join one section's entries. A section where no fragment names a group and
 /// none is `patch!` stays the flat list it always was, so existing changelogs
