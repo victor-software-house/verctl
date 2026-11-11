@@ -146,6 +146,11 @@ A listed version is `already`.
 A publisher that exits zero while the registry never lists the version fails.  
 Set `query` on a package or a `publishers` entry for another registry, and `query: []` to turn the check off.
 
+`publish` as a mapping holds options of the package's publisher and keeps its registry check.  
+`publish: {verify: false}` makes cargo upload with `--no-verify`, for a crate CI already packs on every commit to the default branch.  
+`publish` as a list replaces the whole upload command.  
+An option the publisher does not have fails the load.
+
 ## Tags and GitHub Releases
 
 `tags.template` (default `v{version}`) names release tags.  
@@ -175,7 +180,8 @@ It then attaches the archive and its `.sha256`.
 
 ## Version files
 
-`publisher: none` on a package releases it on GitHub only (tag, Release, assets), with no registry upload; use it for private binaries.  
+`publisher: none` on a package releases it on GitHub only (tag, Release, assets), with no registry upload.  
+A manifest that opts out needs none: `Cargo.toml` with `publish = false` or `[]`, or `package.json` with `"private": true`.  
 verctl has no stock Python publisher, so a `pyproject.toml` package names its `publisher`, or `none`.  
 One whose `project.dynamic` lists `version` fails, because its build backend sets the version.
 

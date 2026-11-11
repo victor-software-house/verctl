@@ -472,15 +472,36 @@ Locally `git clone` already has the ref; otherwise run `git remote set-head orig
 
 ## Publishers
 
-A `publishers` entry holds the command: argv plus placeholders.  
+A package's manifest names its publisher: `Cargo.toml` publishes with cargo, and `package.json` with bun.  
 Cargo and bun are stock recipes.  
-Override or add another stack without a new verb.
+Name `publisher` only to choose another.  
+A `publishers` entry holds a command, argv plus placeholders, and adds another stack without a new verb.
+
+### Publish options
+
+`publish` as a mapping holds options of the package's publisher.  
+Options keep the publisher's upload command, its registry check, and the member-by-member upload of a workspace.  
+`publish` as a list replaces the whole upload command, and the package then has no registry check unless it sets `query`.
+
+Cargo has one option, `verify`, which is `true` when omitted.  
+`verify: false` adds `--no-verify`, so `cargo publish` uploads without building the packed crate again.  
+Set it when CI already builds the packed crate on every commit the default branch receives, such as a `cargo package` step the merge queue requires.  
+Bun has no options.
+
+An option the publisher does not have, a value of the wrong type, and options beside a replaced command fail the load.  
+The error names the setting to remove.  
+The plan lists an option that differs from its default beside the publisher, such as `cargo, no verify`.
+
+### Release only
 
 `publisher: none` releases a package on GitHub only, with no registry upload.  
 `release` creates its tag and Release, and `release asset` its tarballs.  
-Use it for a private binary, such as a Cargo package with `publish = false`.  
-A `registry` or `publish` on the same package fails the load, and so does a `publishers.none` entry.  
-Every other publisher must render a command.
+A `publishers.none` entry fails the load, and every other publisher must render a command.
+
+A manifest that opts out of publishing needs no `publisher: none`.  
+That is a `Cargo.toml` with `publish = false` or `publish = []`, set on the package or inherited from its workspace, or a `package.json` with `"private": true`.  
+A named `publisher` or a `publish` list is used as written, whatever the manifest holds.  
+A `registry` or `publish` beside `publisher: none` fails the load, and beside a manifest that opts out it fails the plan.
 
 ### Registry checks
 
@@ -501,7 +522,7 @@ A package has no check with `query: []`, with an overridden command, or as a car
 A stock cargo package whose `path` is a virtual workspace manifest publishes each workspace member that publishes, dependencies first.  
 A virtual workspace manifest has a `[workspace]` table and no `[package]`.  
 Each member publishes as `cargo publish --package <member>` and is checked against the index on its own.  
-`publish` on the package runs that one command instead.
+A `publish` list on the package runs that one command instead, and `publish` options apply to each member.
 
 A registry rate limit (status 429) stops the run before any tag and names the crate and the time the registry gives.  
 A rerun then skips every member the index lists.  

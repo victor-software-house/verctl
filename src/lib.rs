@@ -83,6 +83,8 @@ pub mod lookup;
 /// A package's version on one marker line of any file.
 pub(crate) mod marker;
 pub mod members;
+/// Whether a manifest opts its package out of publishing.
+pub(crate) mod opt_out;
 pub mod pending;
 pub mod pins;
 /// The plan of version bumps for a release.

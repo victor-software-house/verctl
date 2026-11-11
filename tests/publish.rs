@@ -167,6 +167,78 @@ fn dry_run_lists_a_release_only_package() {
     assert_eq!(publish_stdout(root.path()), expected);
 }
 
+/// A cargo option that differs from its default shows beside the publisher.
+#[test]
+fn dry_run_lists_a_crate_that_skips_the_verify_build() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publish:
+                  verify: false
+        "},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "0.0.1"
+        "#},
+    )
+    .unwrap();
+    let expected = formatdoc! {"
+        ┌──────┬─────────┬──────────────────┐
+        │ name ┆ version ┆ via              │
+        ╞══════╪═════════╪══════════════════╡
+        │ demo ┆ 0.0.1   ┆ cargo, no verify │
+        └──────┴─────────┴──────────────────┘
+
+        release  would create v0.0.1
+        dry-run  nothing published
+    "};
+    assert_eq!(publish_stdout(root.path()), expected);
+}
+
+/// A manifest that opts out of publishing releases on GitHub only, with no
+/// `publisher: none` in `.ctl/ver.yaml`.
+#[test]
+fn dry_run_releases_a_private_crate_on_github_only() {
+    let root = TempDir::new().unwrap();
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "0.0.1"
+            publish = false
+        "#},
+    )
+    .unwrap();
+    let expected = formatdoc! {"
+        ┌──────┬─────────┬──────────────┐
+        │ name ┆ version ┆ via          │
+        ╞══════╪═════════╪══════════════╡
+        │ demo ┆ 0.0.1   ┆ release only │
+        └──────┴─────────┴──────────────┘
+
+        release  would create v0.0.1
+        dry-run  nothing published
+    "};
+    assert_eq!(publish_stdout(root.path()), expected);
+}
+
 #[test]
 fn dry_run_lists_many_packages() {
     let root = TempDir::new().unwrap();
