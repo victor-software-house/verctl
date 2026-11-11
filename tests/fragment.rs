@@ -280,14 +280,14 @@ fn an_unknown_group_fails() {
 #[test]
 fn patch_bang_is_a_breaking_patch_for_its_package_only() {
     let fragment = parse_str(
-        indoc! {r#"
+        indoc! {"
             ---
             demo-core: patch!
             demo-cli: patch
             ---
 
             Split the config type.
-        "#},
+        "},
         "split.md",
     )
     .expect("parse");
