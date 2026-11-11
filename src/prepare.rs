@@ -25,7 +25,15 @@ pub struct PlanEntry {
     pub driver: Driver,
 }
 
-/// Fold the fragments into one bump per package, leaving out `none`.
+/// Fold the fragments into one bump per package, and leave out each package
+/// whose version stays.
+///
+/// A package no fragment bumps still moves in two cases, because its
+/// manifest and the config say so: its version is a prerelease and
+/// `prerelease` is omitted (the stable release), or its version is a
+/// prerelease of another tag than `prerelease` (the first candidate of the
+/// new tag). Such an entry has [`Bump::None`] and a `to` that differs from
+/// its `from`.
 ///
 /// # Errors
 ///
@@ -45,15 +53,23 @@ pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<
             }
         }
     }
+    for spec in &config.packages {
+        by_name.entry(spec.name.as_str()).or_insert(Bump::None);
+    }
     let mut plan = Vec::new();
     for (name, bump) in by_name {
-        if bump == Bump::None {
-            continue;
-        }
         let spec = config.find(name)?;
         let current = spec.current(config, root)?;
-        let to = bump::apply(&current.version, bump, spec.first_minor)
-            .with_context(|| format!("package {name}"))?;
+        let to = bump::apply(
+            &current.version,
+            bump,
+            spec.first_minor,
+            spec.prerelease.as_ref(),
+        )
+        .with_context(|| format!("package {name}"))?;
+        if to == current.version {
+            continue;
+        }
         current
             .driver
             .accepts(&current.raw, &to)

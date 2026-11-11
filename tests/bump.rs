@@ -8,51 +8,66 @@ use std::fs;
 use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
 use verctl::bump::apply;
-use verctl::config::Config;
+use verctl::config::{Config, Prerelease};
 use verctl::driver::Driver;
 use verctl::fragment::{Bump, parse_str};
 use verctl::prepare;
 
 #[test]
 fn patch_and_minor() {
-    assert_eq!(apply("1.2.3", Bump::Patch, false).expect("p"), "1.2.4");
-    assert_eq!(apply("1.2.3", Bump::Minor, false).expect("m"), "1.3.0");
-    assert_eq!(apply("0.0.22", Bump::Patch, false).expect("0p"), "0.0.23");
-    assert_eq!(apply("0.1.4", Bump::Minor, false).expect("0m"), "0.2.0");
+    assert_eq!(
+        apply("1.2.3", Bump::Patch, false, None).expect("p"),
+        "1.2.4"
+    );
+    assert_eq!(
+        apply("1.2.3", Bump::Minor, false, None).expect("m"),
+        "1.3.0"
+    );
+    assert_eq!(
+        apply("0.0.22", Bump::Patch, false, None).expect("0p"),
+        "0.0.23"
+    );
+    assert_eq!(
+        apply("0.1.4", Bump::Minor, false, None).expect("0m"),
+        "0.2.0"
+    );
 }
 
 #[test]
 fn rejects_major_on_0x() {
-    let error = apply("0.0.22", Bump::Major, false).expect_err("major");
+    let error = apply("0.0.22", Bump::Major, false, None).expect_err("major");
     assert!(format!("{error:#}").contains("0.x"), "{error:#}");
 }
 
 #[test]
 fn major_on_1x() {
-    assert_eq!(apply("1.4.2", Bump::Major, false).expect("1"), "2.0.0");
-}
-
-#[test]
-fn release_bump_clears_prerelease_and_build() {
     assert_eq!(
-        apply("1.2.3-rc.1+build5", Bump::Patch, false).expect("p"),
-        "1.2.4"
-    );
-    assert_eq!(
-        apply("1.2.3-rc.1+build5", Bump::Minor, false).expect("m"),
-        "1.3.0"
-    );
-    assert_eq!(
-        apply("1.4.2-beta.2+exp", Bump::Major, false).expect("M"),
+        apply("1.4.2", Bump::Major, false, None).expect("1"),
         "2.0.0"
     );
 }
 
 #[test]
-fn none_keeps_prerelease_and_build() {
+fn a_stable_release_drops_the_prerelease_and_build() {
     assert_eq!(
-        apply("1.2.3-rc.1+build5", Bump::None, false).expect("none"),
-        "1.2.3-rc.1+build5"
+        apply("1.2.3-rc.1+build5", Bump::Patch, false, None).expect("p"),
+        "1.2.3"
+    );
+    assert_eq!(
+        apply("1.2.3-rc.1+build5", Bump::Minor, false, None).expect("m"),
+        "1.3.0"
+    );
+    assert_eq!(
+        apply("1.4.2-beta.2+exp", Bump::Major, false, None).expect("M"),
+        "2.0.0"
+    );
+}
+
+#[test]
+fn none_releases_the_base_of_a_prerelease_when_prerelease_is_omitted() {
+    assert_eq!(
+        apply("1.2.3-rc.1+build5", Bump::None, false, None).expect("none"),
+        "1.2.3"
     );
 }
 
@@ -484,13 +499,16 @@ fn argv_write_driver_does_not_deadlock_on_large_stdin() {
 
 #[test]
 fn a_new_package_takes_a_patch() {
-    assert_eq!(apply("0.0.0", Bump::Patch, false).expect("p"), "0.0.1");
+    assert_eq!(
+        apply("0.0.0", Bump::Patch, false, None).expect("p"),
+        "0.0.1"
+    );
 }
 
 #[test]
 fn a_new_package_refuses_minor_and_major() {
     for bump in [Bump::Minor, Bump::Major] {
-        let error = apply("0.0.0", bump, false).expect_err("refused");
+        let error = apply("0.0.0", bump, false, None).expect_err("refused");
         let message = format!("{error:#}");
         assert!(message.contains("0.0.0 refuses"), "{message}");
         assert!(message.contains("first_minor"), "{message}");
@@ -499,25 +517,31 @@ fn a_new_package_refuses_minor_and_major() {
 
 #[test]
 fn a_pre_release_of_0_0_0_is_still_new() {
-    let error = apply("0.0.0-alpha.1", Bump::Minor, false).expect_err("refused");
+    let error = apply("0.0.0-alpha.1", Bump::Minor, false, None).expect_err("refused");
     assert!(format!("{error:#}").contains("first_minor"), "{error:#}");
 }
 
 #[test]
 fn first_minor_opens_a_new_package_at_0_1_0() {
-    assert_eq!(apply("0.0.0", Bump::Minor, true).expect("m"), "0.1.0");
-    let error = apply("0.0.0", Bump::Major, true).expect_err("major");
+    assert_eq!(apply("0.0.0", Bump::Minor, true, None).expect("m"), "0.1.0");
+    let error = apply("0.0.0", Bump::Major, true, None).expect_err("major");
     assert!(format!("{error:#}").contains("0.x"), "{error:#}");
 }
 
 #[test]
 fn none_leaves_a_new_package_alone() {
-    assert_eq!(apply("0.0.0", Bump::None, false).expect("none"), "0.0.0");
+    assert_eq!(
+        apply("0.0.0", Bump::None, false, None).expect("none"),
+        "0.0.0"
+    );
 }
 
 #[test]
 fn the_first_release_rule_ends_at_0_0_1() {
-    assert_eq!(apply("0.0.1", Bump::Minor, false).expect("m"), "0.1.0");
+    assert_eq!(
+        apply("0.0.1", Bump::Minor, false, None).expect("m"),
+        "0.1.0"
+    );
 }
 
 #[test]
@@ -886,4 +910,284 @@ fn a_marker_line_versions_a_single_file() {
         fs::read_to_string(root.path().join(".github/workflows/ci.yml")).expect("read"),
         workflow.replace("1.2.0", "1.2.1")
     );
+}
+
+/// One line of the design's table of next versions.
+struct Row {
+    current: &'static str,
+    bump: Bump,
+    prerelease: Option<&'static str>,
+    next: &'static str,
+}
+
+#[test]
+fn the_next_version_follows_the_design_table() {
+    let rows = [
+        Row {
+            current: "0.7.4",
+            bump: Bump::Minor,
+            prerelease: Some("rc"),
+            next: "0.8.0-rc.1",
+        },
+        Row {
+            current: "0.8.0-rc.1",
+            bump: Bump::Patch,
+            prerelease: Some("rc"),
+            next: "0.8.0-rc.2",
+        },
+        Row {
+            current: "0.8.0-rc.2",
+            bump: Bump::Minor,
+            prerelease: Some("rc"),
+            next: "0.8.0-rc.3",
+        },
+        Row {
+            current: "1.2.3",
+            bump: Bump::Patch,
+            prerelease: Some("rc"),
+            next: "1.2.4-rc.1",
+        },
+        Row {
+            current: "1.2.4-rc.1",
+            bump: Bump::Minor,
+            prerelease: Some("rc"),
+            next: "1.3.0-rc.1",
+        },
+        Row {
+            current: "1.3.0-rc.1",
+            bump: Bump::Major,
+            prerelease: Some("rc"),
+            next: "2.0.0-rc.1",
+        },
+        Row {
+            current: "0.8.0-beta.2",
+            bump: Bump::None,
+            prerelease: Some("rc"),
+            next: "0.8.0-rc.1",
+        },
+        Row {
+            current: "0.8.0-rc.2",
+            bump: Bump::None,
+            prerelease: None,
+            next: "0.8.0",
+        },
+        Row {
+            current: "1.3.0-rc.2",
+            bump: Bump::Major,
+            prerelease: None,
+            next: "2.0.0",
+        },
+    ];
+    for row in rows {
+        let tag = row.prerelease.map(|tag| Prerelease::new(tag).expect("tag"));
+        let next = apply(row.current, row.bump, false, tag.as_ref()).expect(row.current);
+        assert_eq!(next, row.next, "{} {:?}", row.current, row.bump);
+    }
+}
+
+#[test]
+fn a_candidate_stays_when_nothing_is_pending() {
+    let rc = Prerelease::new("rc").expect("tag");
+    for current in ["0.8.0", "0.8.0-rc.2"] {
+        assert_eq!(
+            apply(current, Bump::None, false, Some(&rc)).expect(current),
+            current
+        );
+    }
+}
+
+#[test]
+fn a_candidate_keeps_the_refusals_of_a_stable_release() {
+    let rc = Prerelease::new("rc").expect("tag");
+    let error = apply("0.7.4", Bump::Major, false, Some(&rc)).expect_err("major");
+    assert!(
+        format!("{error:#}").contains("0.x refuses a major"),
+        "{error:#}"
+    );
+    let error = apply("0.0.0", Bump::Minor, false, Some(&rc)).expect_err("minor");
+    let message = format!("{error:#}");
+    assert!(message.contains("0.0.0 refuses"), "{message}");
+    assert!(message.contains("first_minor"), "{message}");
+    assert_eq!(
+        apply("0.0.0", Bump::Minor, true, Some(&rc)).expect("opened"),
+        "0.1.0-rc.1"
+    );
+}
+
+#[test]
+fn a_prerelease_that_verctl_does_not_write_fails_naming_the_shape() {
+    let rc = Prerelease::new("rc").expect("tag");
+    for current in ["0.8.0-rc1", "0.8.0-rc.1.2", "0.8.0-RC.1", "0.8.0-1"] {
+        let error = apply(current, Bump::Patch, false, Some(&rc)).expect_err(current);
+        let message = format!("{error:#}");
+        assert!(message.contains(current), "{message}");
+        assert!(message.contains("`<tag>.<count>`"), "{message}");
+        assert!(message.contains("0.8.0-rc.2"), "{message}");
+    }
+}
+
+#[test]
+fn a_tag_that_sorts_below_the_current_one_fails_naming_both_versions() {
+    let beta = Prerelease::new("beta").expect("tag");
+    let error = apply("0.8.0-rc.2", Bump::None, false, Some(&beta)).expect_err("lower");
+    let message = format!("{error:#}");
+    assert!(message.contains("0.8.0-rc.2"), "{message}");
+    assert!(message.contains("0.8.0-beta.1"), "{message}");
+}
+
+#[test]
+fn a_tag_that_sorts_above_the_current_one_restarts_the_count() {
+    let rc = Prerelease::new("rc").expect("tag");
+    assert_eq!(
+        apply("0.8.0-beta.2", Bump::Patch, false, Some(&rc)).expect("rc"),
+        "0.8.0-rc.1"
+    );
+}
+
+/// A package no fragment names is planned when its version is a prerelease:
+/// the stable release when `prerelease` is omitted, the first candidate under
+/// the new tag when it names another tag, and nothing when it names the same
+/// tag.
+#[test]
+fn prepare_plans_a_package_with_no_fragment_out_of_a_prerelease() {
+    let rows = [
+        ("0.8.0-rc.2", "", Some(("0.8.0-rc.2", "0.8.0"))),
+        (
+            "0.8.0-beta.2",
+            "prerelease: rc",
+            Some(("0.8.0-beta.2", "0.8.0-rc.1")),
+        ),
+        ("0.8.0-rc.2", "prerelease: rc", None),
+        ("0.8.0", "prerelease: rc", None),
+    ];
+    for (version, setting, expected) in rows {
+        let root = TempDir::new().expect("tmp");
+        let path = common::write_config(
+            root.path(),
+            &formatdoc! {"
+                packages:
+                  - name: demo
+                    path: Cargo.toml
+                    {setting}
+            "},
+        );
+        fs::write(
+            root.path().join("Cargo.toml"),
+            formatdoc! {r#"
+                [package]
+                name = "demo"
+                version = "{version}"
+            "#},
+        )
+        .expect("cargo");
+        let config = Config::load(&path).expect("load");
+        let plan = prepare::plan(&config, &[], root.path()).expect("plan");
+        let planned: Vec<(&str, &str)> = plan
+            .iter()
+            .map(|entry| (entry.from.as_str(), entry.to.as_str()))
+            .collect();
+        assert_eq!(
+            planned,
+            expected.into_iter().collect::<Vec<_>>(),
+            "{version} {setting}"
+        );
+        assert!(plan.iter().all(|entry| entry.bump == Bump::None));
+    }
+}
+
+/// `0.8.0-rc1` and a lower tag fail the plan, each naming both versions.
+#[test]
+fn prepare_fails_a_package_whose_candidate_cannot_be_counted_on() {
+    let rows = [
+        ("0.8.0-rc1", "prerelease: rc", ["0.8.0-rc1", "0.8.0-rc.2"]),
+        (
+            "0.8.0-rc.2",
+            "prerelease: beta",
+            ["0.8.0-rc.2", "0.8.0-beta.1"],
+        ),
+    ];
+    for (version, setting, named) in rows {
+        let root = TempDir::new().expect("tmp");
+        let path = common::write_config(
+            root.path(),
+            &formatdoc! {"
+                packages:
+                  - name: demo
+                    path: Cargo.toml
+                    {setting}
+            "},
+        );
+        fs::write(
+            root.path().join("Cargo.toml"),
+            formatdoc! {r#"
+                [package]
+                name = "demo"
+                version = "{version}"
+            "#},
+        )
+        .expect("cargo");
+        let config = Config::load(&path).expect("load");
+        let patch = parse_str(
+            indoc! {"
+                ---
+                demo: patch
+                ---
+
+                Patch.
+            "},
+            "a.md",
+        )
+        .expect("patch");
+        let error = prepare::plan(&config, &[patch], root.path()).expect_err(version);
+        let message = format!("{error:#}");
+        for version in named {
+            assert!(message.contains(version), "{message}");
+        }
+        assert!(message.contains("package demo"), "{message}");
+    }
+}
+
+/// `verctl version` writes the stable version out of a candidate with an
+/// empty `.changeset/`, and the first candidate of a new tag. The changelog
+/// section of an entry no fragment names belongs to another change, so this
+/// reads only the written manifest.
+#[test]
+fn version_writes_the_version_of_a_package_no_fragment_names() {
+    let rows = [
+        ("0.8.0-rc.2", "", "0.8.0"),
+        ("0.8.0-beta.2", "prerelease: rc", "0.8.0-rc.1"),
+    ];
+    for (version, setting, written) in rows {
+        let root = TempDir::new().expect("tmp");
+        common::write_config(
+            root.path(),
+            &formatdoc! {"
+                packages:
+                  - name: demo
+                    path: Cargo.toml
+                    {setting}
+            "},
+        );
+        fs::write(
+            root.path().join("Cargo.toml"),
+            formatdoc! {r#"
+                [package]
+                name = "demo"
+                version = "{version}"
+            "#},
+        )
+        .expect("cargo");
+        fs::create_dir_all(root.path().join(".changeset")).expect("dir");
+        let output = common::verctl()
+            .current_dir(root.path())
+            .args(["version", "--no-pr"])
+            .output()
+            .expect("run");
+        let manifest = fs::read_to_string(root.path().join("Cargo.toml")).expect("read");
+        assert!(
+            manifest.contains(&format!("version = \"{written}\"")),
+            "{version}: {manifest}\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }

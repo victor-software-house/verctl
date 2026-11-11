@@ -24,7 +24,7 @@
 //!     Read every flag from the environment.
 //! "};
 //! let fragment = fragment::parse_str(raw, ".changeset/env-flags.md")?;
-//! let next = bump::apply("1.4.2", fragment.max_bump(), false)?;
+//! let next = bump::apply("1.4.2", fragment.max_bump(), false, None)?;
 //! assert_eq!(next, "1.5.0");
 //! assert_eq!(fragment.summary, "Read every flag from the environment.");
 //! # Ok::<(), anyhow::Error>(())
