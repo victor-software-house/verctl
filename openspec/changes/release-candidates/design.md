@@ -235,10 +235,10 @@ A per-pin switch waits until a pin needs one.
 
 ## Migration Plan
 
-1. Ship this change in a patch release.
-2. verctl's own package sets `prerelease: rc` with the first 0.8.0 fragment, and releases `0.8.0-rc.1`.
-3. One caller pins `verctl = "0.8.0-rc.1"` and runs its release workflow.
-4. verctl removes the key, and the next Version PR writes `0.8.0`.
+1. Ship this change in 0.8.1, a stable patch release.
+2. verctl's own package then sets `prerelease: rc`, and the next patch fragment releases `0.8.2-rc.1`.
+3. One caller pins `verctl = "0.8.2-rc.1"` and runs its release workflow.
+4. verctl removes the key, and the next Version PR writes `0.8.2`.
 
 Rollback: remove the key. A published candidate stays on crates.io and GitHub, and consumers never resolve it unless they pin it.
 

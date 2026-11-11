@@ -57,9 +57,9 @@ Nothing is removed, and no caller must change.
    - `src/publisher.rs`: the bun tag;
    - `src/pins.rs`: the version pattern.
 2. Bundle: `verctl instructions`, the operator skill, `README.md`, `examples/ver.yaml`, through their templates.
-3. Callers: none must change. A caller that wants to try a candidate pins its exact version, such as `verctl = "0.8.0-rc.1"` in `mise.toml`.
+3. Callers: none must change. A caller that wants to try a candidate pins its exact version, such as `verctl = "0.8.2-rc.1"` in `mise.toml`.
 4. Release: a patch. Every change is an addition.
-   The first use is 0.8.0 itself: verctl ships `0.8.0-rc.1` to its callers before `0.8.0`.
+   It ships in 0.8.1, which releases stable. verctl then sets `prerelease: rc`, so 0.8.2 reaches its callers first as `0.8.2-rc.1` (operator, 2026-11-11).
 
 [bump]: ../../../src/bump.rs
 [rsm]: ../release-state-machine/proposal.md

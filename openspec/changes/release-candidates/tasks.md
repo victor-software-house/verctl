@@ -52,9 +52,9 @@ Compile, format, lint, and test tasks that must run before a push run on the bui
 
 ## 7. First use
 
-- [ ] 7.1 verctl's own package sets `prerelease: rc` with the first 0.8.0 fragment, and releases `0.8.0-rc.1`.
-  Verify: the release run's log shows a crates.io upload of `0.8.0-rc.1`, and `gh release view v0.8.0-rc.1 --json isPrerelease` reads `true`.
-- [ ] 7.2 One caller pins `0.8.0-rc.1` and runs its release workflow green.
+- [ ] 7.1 After 0.8.1 releases with this change, verctl's own package sets `prerelease: rc`, and the next patch fragment releases `0.8.2-rc.1`.
+  Verify: the release run's log shows a crates.io upload of `0.8.2-rc.1`, and `gh release view v0.8.2-rc.1 --json isPrerelease` reads `true`.
+- [ ] 7.2 One caller pins `0.8.2-rc.1` and runs its release workflow green.
   Verify: the caller's run link, recorded here.
-- [ ] 7.3 verctl removes the key and releases `0.8.0`, whose CHANGELOG section lists every candidate's entries.
-  Verify: `gh release view --json tagName` with no tag reads `v0.8.0`.
+- [ ] 7.3 verctl removes the key and releases `0.8.2`, whose CHANGELOG section lists every candidate's entries.
+  Verify: `gh release view --json tagName` with no tag reads `v0.8.2`.
