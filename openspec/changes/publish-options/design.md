@@ -135,7 +135,7 @@ Disable path: omit `publish`.
 The messages:
 
 - `package "web" publishes with bun, which has no publish options; remove publish.verify`
-- `package "demo": cargo has no publish option "verfy"; its options are: verify`
+- `package "demo": cargo has no publish option "allow_dirty"; its options are: verify`
 - `package "demo": publish.verify is true or false`
 - `package "demo": publishers.cargo replaces the upload command, which takes no options; remove publish, or the argv`
 
