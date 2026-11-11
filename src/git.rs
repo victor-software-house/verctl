@@ -95,10 +95,17 @@ pub fn files_on_merge_base(
 /// `rel` as a path inside the repository. A relative path joins the
 /// canonical root without being canonicalized itself. A file deleted from the
 /// working tree still resolves to its committed copy this way. The version
-/// guard has to see a manifest that a pull request removed.
+/// guard has to see a manifest that a pull request removed. An absolute path
+/// to a file that is gone resolves through its canonical directory, so a
+/// fragment a commit deleted still names its committed copy.
 fn git_path(root: &Path, rel: &Path, workdir: Option<&Path>) -> Option<PathBuf> {
     let abs = if rel.is_absolute() {
-        rel.canonicalize().ok()?
+        rel.canonicalize().ok().or_else(|| {
+            rel.parent()?
+                .canonicalize()
+                .ok()
+                .map(|dir| dir.join(rel.file_name().unwrap_or_default()))
+        })?
     } else {
         let inside: PathBuf = rel
             .components()

@@ -179,14 +179,40 @@ pub fn origins(
     changelog: &crate::config::Changelog,
     fragments: &[Fragment],
 ) -> Result<Origins> {
+    origins_with(root, token, changelog, fragments, &[])
+}
+
+/// [`origins`] for the pending `fragments` and for the `recovered` ones an
+/// earlier candidate consumed. A recovered fragment is gone from HEAD, so its
+/// origin is found from the commit that last held it ([`git::added_by_from`]).
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`origins`], and when a recovered
+/// fragment's commit is not in the repository.
+pub fn origins_with(
+    root: &Path,
+    token: Option<&str>,
+    changelog: &crate::config::Changelog,
+    fragments: &[Fragment],
+    recovered: &[Recovered],
+) -> Result<Origins> {
     let Ok(repo) = git::origin_url(root).and_then(|url| github::parse_remote(&url)) else {
         return Ok(Origins::default());
     };
     let base = format!("https://github.com/{}/{}", repo.owner, repo.name);
     let mut authors: BTreeMap<u64, Option<String>> = BTreeMap::new();
     let mut by_path = BTreeMap::new();
-    for fragment in fragments {
-        let Some(added) = git::added_by(root, &fragment.path)? else {
+    let pending = fragments.iter().map(|fragment| (fragment, None));
+    let earlier = recovered
+        .iter()
+        .map(|recovered| (&recovered.fragment, Some(recovered.parent.as_str())));
+    for (fragment, start) in pending.chain(earlier) {
+        let added = match start {
+            None => git::added_by(root, &fragment.path)?,
+            Some(start) => git::added_by_from(root, &fragment.path, start)?,
+        };
+        let Some(added) = added else {
             continue;
         };
         let origin = if let Some(number) = pull_request_number(&added.subject) {
@@ -217,6 +243,90 @@ pub fn origins(
         by_path.insert(fragment.path.clone(), origin);
     }
     Ok(Origins { by_path })
+}
+
+/// A fragment an earlier candidate's Version PR consumed, read back from
+/// history for one package's section.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Recovered {
+    /// The fragment, reduced to the one package whose section it feeds, so it
+    /// adds nothing to another package's section.
+    pub fragment: Fragment,
+    /// Full hex SHA of a commit that still holds the file.
+    pub parent: String,
+}
+
+/// The fragments earlier candidates consumed, for each plan entry whose
+/// section must list them, oldest first.
+///
+/// Two entries need them:
+///
+/// - A stable version after candidates. Its section covers every change the
+///   candidates carried, beside the fragments pending now.
+/// - An entry no pending fragment names: the first candidate under a new tag.
+///   Its section covers what the earlier candidates carried.
+///
+/// Every other entry renders from the pending fragments alone. A file in
+/// `dir` that is not a fragment, such as `README.md`, is skipped.
+///
+/// # Errors
+///
+/// Returns an error when the history walk fails, as
+/// [`git::candidate_deletions`] describes, including a shallow clone that
+/// ends before the last stable release. It returns one too when a recovered
+/// file is not a valid fragment.
+pub fn recovered_fragments(
+    root: &Path,
+    dir: &Path,
+    plan: &[PlanEntry],
+    pending: &[Fragment],
+) -> Result<Vec<Recovered>> {
+    let mut recovered = Vec::new();
+    for entry in plan {
+        let named = pending.iter().any(|fragment| {
+            fragment
+                .packages
+                .iter()
+                .any(|package| package.name == entry.name)
+        });
+        let after_candidates = prerelease(&entry.from) && !prerelease(&entry.to);
+        if named && !after_candidates {
+            continue;
+        }
+        let read = |raw: &str| {
+            entry
+                .driver
+                .read(raw)
+                .ok()
+                .map(|version| version.trim().to_owned())
+        };
+        let deleted = git::candidate_deletions(root, &entry.path, &read, dir)
+            .with_context(|| format!("package {}", entry.name))?;
+        for file in deleted.into_iter().rev() {
+            if !crate::fragment::is_fragment_path(&file.path) {
+                continue;
+            }
+            let mut fragment = crate::fragment::parse_str(&file.text, file.path.clone())
+                .with_context(|| format!("a fragment candidate {} consumed", file.parent))?;
+            fragment
+                .packages
+                .retain(|package| package.name == entry.name);
+            if fragment.packages.is_empty() {
+                continue;
+            }
+            recovered.push(Recovered {
+                fragment,
+                parent: file.parent,
+            });
+        }
+    }
+    Ok(recovered)
+}
+
+/// Whether `version` is semver with a prerelease.
+fn prerelease(version: &str) -> bool {
+    semver::Version::parse(version).is_ok_and(|version| !version.pre.is_empty())
 }
 
 /// Release notes credit no maintainer: a byline needs a login outside
