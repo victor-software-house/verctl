@@ -30,10 +30,10 @@ The load SHALL fail when a package's `publish` mapping holds a key its publisher
 The error SHALL name the package, the publisher, the key, and the options that publisher has.
 An option whose value has the wrong type SHALL fail the load and name the type it takes.
 
-#### Scenario: A misspelt option
+#### Scenario: An option cargo has and verctl does not
 
-- **WHEN** crate `demo` at `Cargo.toml` declares `publish: {verfy: false}`
-- **THEN** `verctl status` exits non-zero and its error names `demo`, `cargo`, `verfy`, and `verify`
+- **WHEN** crate `demo` at `Cargo.toml` declares `publish: {allow_dirty: true}`
+- **THEN** `verctl status` exits non-zero and its error names `demo`, `cargo`, `allow_dirty`, and `verify`
 
 #### Scenario: A value of the wrong type
 
