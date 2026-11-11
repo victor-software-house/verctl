@@ -423,8 +423,10 @@ queue:
       - A caller can build a named version commit's missing assets with the recipe from the default branch, and the asset uploads to that version's Release.
       - A caller can retire one missing asset of one version commit, and state_of then treats that release as complete for that asset only.
       - Neither path hides a missing asset of any other release.
+      - A tagged release that still misses a declared asset stays in the plan after a newer version commit lands, so it is never dropped without a rebuild or a retirement.
     notes:
       - "2026-11-11, hakkiri lead: hakkiri v0.0.3 has no linux-x64 tarball because its version commit's prepare.sh runs apt-get, which failed on GitHub's runners from 14:21 UTC; hakkiri PR 85 fixed the recipe on main, but the asset job builds from the old commit's tree, so every push to main replans v0.0.3 and reruns the broken job (state_of, src/pending.rs:400-422)."
+      - "2026-11-11, hakkiri lead: run 43053358185 on 3535fb8 (v0.0.4) planned only hakkiri 0.0.4, so v0.0.3's missing linux-x64 dropped out; pending() checks only the current version's completeness, and earlier versions enter only through git::unreleased_below, which lists untagged ones."
 
 horizon:
   - id: VER-038
