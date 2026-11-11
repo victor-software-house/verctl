@@ -14,7 +14,9 @@
 #
 # A word is a whitespace-separated token, as wc -w counts it, so list markers,
 # table pipes, code blocks and HTML comments count. A reference-style link
-# definition, a line such as `[x]: https://…`, does not.
+# definition does not: `[label]: <url-or-path>`, with an optional title in
+# double quotes or parentheses and no prose after it. A footnote definition,
+# `[^1]: text`, and a line such as `[Note]: some prose` count.
 #
 # In tasks.md the budget covers the task text: headings, the task lines and
 # their Verify lines. An evidence note is a nested list item that starts with
@@ -30,6 +32,12 @@ find openspec/changes -path openspec/changes/archive -prune -o -type f -name '*.
     # BusyBox awk keeps a -v value a string, and would compare 949 > 1200 as
     # text. Adding 0 makes each budget a number.
     BEGIN { proposal += 0; design += 0; tasks += 0; spec += 0; research += 0; note += 0 }
+    # A reference-style link definition: a label that is not a footnote, one
+    # target token, and at most a title in double quotes or parentheses.
+    BEGIN {
+      definition = "^[ \t]*\\[[^]^][^]]*\\]:[ \t]*[^ \t]+"
+      definition = definition "([ \t]+(\"[^\"]*\"|\\([^)]*\\)))?[ \t]*$"
+    }
     function budget(path) {
       if (path ~ /^openspec\/changes\/[^\/]+\/proposal\.md$/) return proposal
       if (path ~ /^openspec\/changes\/[^\/]+\/design\.md$/) return design
@@ -56,8 +64,9 @@ find openspec/changes -path openspec/changes/archive -prune -o -type f -name '*.
       line = 0
       while ((getline text < path) > 0) {
         line++
-        # A reference-style link definition.
-        if (text ~ /^[ \t]*\[[^]]+\]:/) continue
+        # Prose after the target keeps counting, and so does a title in
+        # single quotes.
+        if (text ~ definition) continue
         n = split(text, tokens)
         if (!is_tasks) { words += n; continue }
         indent = match(text, /[^ \t]/) - 1
