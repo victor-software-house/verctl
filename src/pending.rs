@@ -12,12 +12,13 @@
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
+use std::fmt;
 use std::path::Path;
 
 use anyhow::{Context, Result};
 use ctl_core::input::Input;
-use serde::de::IgnoredAny;
-use serde::{Deserialize, Serialize};
+use serde::de::{IgnoredAny, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::assets::{self, MatrixTarget};
 use crate::config::Config;
@@ -285,7 +286,7 @@ fn declared_at(root: &Path, path: &Path, sha: &str) -> Result<Option<Vec<String>
     Ok(Some(
         declared
             .assets
-            .map(|assets| assets.targets.into_keys().collect())
+            .map(|assets| assets.targets)
             .unwrap_or_default(),
     ))
 }
@@ -304,9 +305,31 @@ struct DeclaredTargets {
 /// The `assets` mapping of an old config, reduced to its target ids.
 #[derive(Deserialize)]
 struct TargetIds {
-    /// Each target, by id. Its fields are not read.
-    #[serde(default)]
-    targets: BTreeMap<String, IgnoredAny>,
+    /// The id of each target, in file order. Its fields are not read.
+    #[serde(default, deserialize_with = "mapping_keys")]
+    targets: Vec<String>,
+}
+
+/// The keys of a mapping, each value skipped unread.
+fn mapping_keys<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<String>, D::Error> {
+    struct Keys;
+    impl<'de> Visitor<'de> for Keys {
+        type Value = Vec<String>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a mapping of asset targets")
+        }
+
+        fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
+            let mut keys = Vec::new();
+            while let Some(key) = map.next_key::<String>()? {
+                map.next_value::<IgnoredAny>()?;
+                keys.push(key);
+            }
+            Ok(keys)
+        }
+    }
+    deserializer.deserialize_map(Keys)
 }
 
 /// The version `driver` reads from one revision of a manifest, or `None` when
@@ -805,8 +828,10 @@ mod tests {
         )
         .parse()
         .unwrap();
-        let ids: Vec<String> = declared.assets.unwrap().targets.into_keys().collect();
-        assert_eq!(ids, ["darwin-arm64", "linux-x64"]);
+        assert_eq!(
+            declared.assets.unwrap().targets,
+            ["linux-x64", "darwin-arm64"]
+        );
     }
 
     #[test]
