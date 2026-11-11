@@ -35,9 +35,9 @@ It is the design `version`, `check`, and `pins` implement; read it before adding
   chezmoi reaches the same conclusion and puts metadata in the file *name*, because it has to know a file's attributes before parsing it.  
   verctl parses every template anyway.
 - **Defaults are the convention, and stated.**  
-  Every field has a stated meaning when unsaid, so a repo that wants the obvious thing writes nothing.
+  Every field has a stated meaning when omitted, so a repo that wants the obvious thing writes nothing.
 - **Silence is a declaration.**  
-  Unsaid means the default, which replaces whatever is there.
+  An omitted field means the default, which replaces whatever is there.
 
 ## 1. Declarations in the filesystem
 
@@ -57,9 +57,9 @@ A top-level `{% set %}` is its equivalent: an export, readable from the evaluate
 The metadata therefore travels inside the file it describes.  
 No manifest lists templates, no directory tree is mirrored to spell out a path, and nothing sits beside the file it generates.
 
-The whole schema, and what each field means unsaid:
+The whole schema, and what each field means when omitted:
 
-| Export | Type | Unsaid |
+| Export | Type | When omitted |
 |:--|:--|:--|
 | `path` | directory, relative, never upward | the repository root |
 | `name` | one file name | this template's own name, without the suffix |

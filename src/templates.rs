@@ -46,7 +46,7 @@ use crate::git;
 #[derive(Debug, Deserialize, Validate)]
 #[garde(allow_unvalidated)]
 struct Declared {
-    /// The directory the target goes in. Unsaid: the repository root.
+    /// The directory the target goes in. When omitted, the repository root.
     #[serde(default)]
     #[garde(custom(inside_the_repo))]
     path: PathBuf,
@@ -61,7 +61,8 @@ struct Declared {
     /// regular file and nothing else ("only 0755 and 0644 are valid for
     /// regular files", gitformat-index). Its other modes are not files a
     /// template renders: 120000 is a symlink, 160000 a gitlink, 040000 a tree.
-    /// So there is no third state, and no mode field: unsaid means 0644.
+    /// So there is no third state, and no mode field: when omitted, the file is
+    /// 0644.
     #[serde(default)]
     executable: bool,
 }

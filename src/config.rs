@@ -180,14 +180,14 @@ pub struct PackageSpec {
     /// Empty means none.
     pub registry: Option<String>,
     /// Asks the registry whether a version is published, in place of the
-    /// publisher's query or the crates.io index read. Unsaid, the publisher
-    /// decides; an empty list turns the check off for this package.
+    /// publisher's query or the crates.io index read. When omitted, the
+    /// publisher decides; an empty list turns the check off for this package.
     pub query: Option<Vec<String>>,
     /// Package CHANGELOG.md. Defaults to next to the manifest.
     pub changelog: Option<PathBuf>,
     /// Lets this package leave `0.0.0` with a `minor` fragment, so its first
-    /// release is `0.1.0`. Unsaid, a package at `0.0.0` takes only `patch` and
-    /// first releases `0.0.1`. Inert once the package has released.
+    /// release is `0.1.0`. When omitted, a package at `0.0.0` takes only
+    /// `patch` and first releases `0.0.1`. Inert once the package has released.
     #[serde(default)]
     pub first_minor: bool,
     /// The version is on one marker line of the file, such as

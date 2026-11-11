@@ -77,7 +77,7 @@ Code that uses a value never looks it up and converts it on the spot.
 - Rules shared across schemas come from `ctl_core::validate`.  
   Each message names what a person has to change, such as "must declare at least one label" in place of "length is lower than 1".  
   Never ship a stock validator's wording.
-- Every field states what it means when unsaid, in its doc comment, and gets its default from `#[serde(default)]`.  
+- Every field states what it means when omitted, in its doc comment, and gets its default from `#[serde(default)]`.  
   A default that cannot be written as an attribute (one derived from a file name) is seeded before parsing, so the field stays non-optional.
 - `Option` means a real third state, not "unset".  
   If a file is either executable or not, the field is `bool`.
