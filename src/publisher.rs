@@ -38,9 +38,9 @@ pub struct PublisherSpec {
     pub registries: BTreeMap<String, String>,
     /// Asks the registry whether a version is published: it exits zero and
     /// prints the version when the registry has it. It runs in the package
-    /// directory, where the publisher's registry config is in effect. Unsaid,
-    /// the stock recipe's query applies; an empty list turns the check off,
-    /// leaving the stderr match.
+    /// directory, where the publisher's registry config is in effect. When
+    /// omitted, the stock recipe's query applies; an empty list turns the check
+    /// off, leaving the stderr match.
     pub query: Option<Vec<String>>,
 }
 

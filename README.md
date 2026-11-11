@@ -303,7 +303,7 @@ vendored:
         runner: macos
 ```
 
-| key | means | when unsaid |
+| key | means | when omitted |
 |:--|:--|:--|
 | `version` | the upstream version, `{version}` | required |
 | `tag` | the Release tag, with `{name}` and `{version}` | `{name}-{version}` |
