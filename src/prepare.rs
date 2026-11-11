@@ -29,7 +29,10 @@ pub struct PlanEntry {
 /// whose version stays.
 ///
 /// A package no fragment bumps still moves in two cases, because its
-/// manifest and the config say so: its version is a prerelease and
+/// manifest and the config say so. Only a version that parses as semver and
+/// holds a prerelease is looked at, so a package whose version is not semver
+/// never fails the plan unless a fragment names it. The cases are: its
+/// version is a prerelease and
 /// `prerelease` is omitted (the stable release), or its version is a
 /// prerelease of another tag than `prerelease` (the first candidate of the
 /// new tag). Such an entry has [`Bump::None`] and a `to` that differs from
@@ -60,6 +63,12 @@ pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<
     for (name, bump) in by_name {
         let spec = config.find(name)?;
         let current = spec.current(config, root)?;
+        if bump == Bump::None
+            && !semver::Version::parse(&current.version)
+                .is_ok_and(|version| !version.pre.is_empty())
+        {
+            continue;
+        }
         let to = bump::apply_with(
             &current.version,
             bump,

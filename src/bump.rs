@@ -158,7 +158,7 @@ impl Counted {
         let Some((name, count)) = shaped else {
             let base = format!("{}.{}.{}", version.major, version.minor, version.patch);
             bail!(
-                "{version} has a prerelease verctl cannot count on from; verctl writes \
+                "{version} has a prerelease verctl cannot count from; verctl writes \
                  `<tag>.<count>`, such as {base}-{}.2: change the version in the manifest to that \
                  shape",
                 tag.as_str()

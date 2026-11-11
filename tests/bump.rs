@@ -1167,3 +1167,54 @@ fn version_writes_the_version_of_a_package_no_fragment_names() {
         );
     }
 }
+
+/// A package that no fragment names and whose version is not semver, such as a
+/// date, is left out of the plan instead of failing it.
+#[test]
+fn prepare_leaves_a_package_with_a_version_that_is_not_semver_alone() {
+    let root = TempDir::new().expect("tmp");
+    let path = common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+              - name: dated
+                path: dated/Cargo.toml
+        "},
+    );
+    fs::create_dir_all(root.path().join("dated")).expect("dir");
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "1.0.0"
+        "#},
+    )
+    .expect("cargo");
+    fs::write(
+        root.path().join("dated/Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "dated"
+            version = "2026-11-11"
+        "#},
+    )
+    .expect("dated");
+    let config = Config::load(&path).expect("load");
+    let fragment = parse_str(
+        indoc! {"
+            ---
+            demo: patch
+            ---
+
+            Patch.
+        "},
+        "a.md",
+    )
+    .expect("fragment");
+    let plan = prepare::plan(&config, &[fragment], root.path()).expect("plan");
+    let names: Vec<&str> = plan.iter().map(|entry| entry.name.as_str()).collect();
+    assert_eq!(names, ["demo"]);
+}
