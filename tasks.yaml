@@ -346,6 +346,23 @@ queue:
       - '2026-11-10, run 42917622310 compiled verctl 7 times: 3 tool builds, 3 asset builds with no mbx step, and the publish verify build (1m17s).'
       - The asset jobs build the version commit, which can be older than the run commit, so they cannot always reuse the tool build.
 
+  - id: VER-120
+    title: Publish options belong to the package's publisher
+    scope: verctl config, publisher, release
+    outcome: >-
+      A package sets typed options for the publisher it resolves to, and a manifest
+      that opts out of publishing needs no publisher key.
+    blocked_by: []
+    acceptance:
+      - A `publish` mapping keeps the publisher, its registry check, and its workspace handling; a list still replaces the command.
+      - '`verify: false` adds `--no-verify` to the built-in cargo upload for one crate and for each workspace member.'
+      - An option the publisher does not have fails the load and names the package, the publisher, and its options.
+      - 'A Cargo.toml with `publish = false` and a package.json with `"private": true` release on GitHub only with no `publisher` written.'
+      - The verctl release after this ships runs no verify build and still reads the crates.io index.
+    plan: openspec/changes/publish-options/proposal.md
+    notes:
+      - 2026-11-10, replaces the `publish` argv override that was removed from the release build pull request because it turned off the crates.io lookup.
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
