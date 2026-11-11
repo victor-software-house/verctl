@@ -15,7 +15,9 @@ use std::collections::btree_map::Entry;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use serde::Serialize;
+use ctl_core::input::Input;
+use serde::de::IgnoredAny;
+use serde::{Deserialize, Serialize};
 
 use crate::assets::{self, MatrixTarget};
 use crate::config::Config;
@@ -140,6 +142,7 @@ struct PackageState {
 /// wrong place as complete would hide it.
 pub fn pending(
     config: &Config,
+    config_path: &Path,
     root: &Path,
     token: &str,
     skip_assets: bool,
@@ -204,7 +207,7 @@ pub fn pending(
         let listed = registry_lists(config, root, spec, entry, release, env)?;
         let head_targets: &[MatrixTarget] = if *index == 0 { &targets } else { &[] };
         let declared = owed(head_targets, &release.assets, || {
-            declared_at(root, &commit.sha)
+            declared_at(root, config_path, &commit.sha)
         })?;
         let state = state_of(entry, commit, listed, release, &declared, &assets_tag);
         let incomplete = !state.complete;
@@ -220,7 +223,9 @@ pub fn pending(
                     })
                 })?;
             for skipped in earlier {
-                let missing_assets = owed(head_targets, &[], || declared_at(root, &skipped.sha))?;
+                let missing_assets = owed(head_targets, &[], || {
+                    declared_at(root, config_path, &skipped.sha)
+                })?;
                 states.push(PackageState {
                     assets_tag: config.tags.render(&skipped.version, name)?,
                     package: PendingPackage {
@@ -264,20 +269,44 @@ fn owed(
         .collect())
 }
 
-/// The asset target ids `.ctl/ver.yaml` declared at commit `sha`, or `None`
-/// when that commit has no config.
-fn declared_at(root: &Path, sha: &str) -> Result<Option<Vec<String>>> {
-    let Some(raw) = git::file_at(root, sha, Path::new(crate::config::FILE))? else {
+/// The asset target ids the config at `path` declared at commit `sha`, or
+/// `None` when that commit has no file there. `path` is the config this run
+/// loaded, so a nested or renamed config is read where it lives.
+fn declared_at(root: &Path, path: &Path, sha: &str) -> Result<Option<Vec<String>>> {
+    let path = path
+        .canonicalize()
+        .with_context(|| format!("resolve {}", path.display()))?;
+    let Some(raw) = git::file_at(root, sha, &path)? else {
         return Ok(None);
     };
-    let config = Config::parse(&raw)
-        .with_context(|| format!("the {} at commit {sha}", crate::config::FILE))?;
+    let declared: DeclaredTargets = Input::new(format!("{} at {sha}", path.display()), &raw)
+        .parse()
+        .with_context(|| format!("the asset targets of {} at commit {sha}", path.display()))?;
     Ok(Some(
-        config
+        declared
             .assets
             .map(|assets| assets.targets.into_keys().collect())
             .unwrap_or_default(),
     ))
+}
+
+/// The asset target ids an old revision of the config holds, and nothing
+/// else. It is read without the current schema: a key that a later verctl
+/// renamed or removed must not stop an old release from being judged. Unknown
+/// keys are ignored here and only here.
+#[derive(Deserialize)]
+struct DeclaredTargets {
+    /// `assets`, when the revision declares any.
+    #[serde(default)]
+    assets: Option<TargetIds>,
+}
+
+/// The `assets` mapping of an old config, reduced to its target ids.
+#[derive(Deserialize)]
+struct TargetIds {
+    /// Each target, by id. Its fields are not read.
+    #[serde(default)]
+    targets: BTreeMap<String, IgnoredAny>,
 }
 
 /// The version `driver` reads from one revision of a manifest, or `None` when
@@ -553,8 +582,8 @@ mod tests {
     use indoc::indoc;
 
     use super::{
-        PackageState, Pending, PendingAsset, PendingPackage, group, members_at, newest_per_tag,
-        owed, state_of, version_released, write_github_output,
+        DeclaredTargets, PackageState, Pending, PendingAsset, PendingPackage, group, members_at,
+        newest_per_tag, owed, state_of, version_released, write_github_output,
     };
     use crate::assets::MatrixTarget;
     use crate::git::VersionCommit;
@@ -757,10 +786,36 @@ mod tests {
         );
     }
 
+    /// An old revision may hold keys the current schema refuses. Only its
+    /// target ids are read, so those keys do not matter.
+    #[test]
+    fn an_old_config_names_its_targets_whatever_else_it_holds() {
+        let declared: DeclaredTargets = ctl_core::input::Input::new(
+            "old.yaml",
+            indoc::indoc! {"
+                drivers: {}
+                a_key_removed_later: true
+                assets:
+                  bin: demo
+                  targets:
+                    linux-x64: {}
+                    darwin-arm64:
+                      runner: arm64
+            "},
+        )
+        .parse()
+        .unwrap();
+        let ids: Vec<String> = declared.assets.unwrap().targets.into_keys().collect();
+        assert_eq!(ids, ["darwin-arm64", "linux-x64"]);
+    }
+
     #[test]
     fn a_commit_with_no_config_owes_no_asset() {
         let targets = [target("linux-x64")];
-        assert!(owed(&targets, &[], || Ok(None)).unwrap().is_empty());
+        assert_eq!(
+            ids(&owed(&targets, &[], || Ok(None)).unwrap()),
+            Vec::<&str>::new()
+        );
     }
 
     /// The old config is read only for a release that lacks an asset, so a

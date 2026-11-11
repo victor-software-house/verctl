@@ -36,7 +36,7 @@ None.
 
 ## Impact
 
-1. Code: `src/pending.rs`, `src/git.rs` (a file at a commit), tests.
+1. Code: `src/pending.rs`, `src/git.rs` (a file at a commit), `src/publish.rs` and `src/main.rs` (the config path reaches `pending`), tests.
 2. Bundle: `verctl instructions` and the operator skill, through their templates.
 3. Callers: none must change. A caller blocked by this bug releases again once it runs the fixed verctl.
 4. Release: a patch.

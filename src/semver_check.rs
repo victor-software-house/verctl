@@ -242,9 +242,10 @@ fn released_mark(
     baseline: Option<&Version>,
 ) -> bool {
     let heading = format!("### {}", release::BREAKING);
-    baseline.is_some_and(|baseline| version > baseline)
-        && release::changelog_section_for(changelog, package, &version.to_string())
-            .is_some_and(|section| section.lines().any(|line| line.trim() == heading))
+    baseline.is_some_and(|baseline| {
+        version > baseline && (version.major, version.minor) == (baseline.major, baseline.minor)
+    }) && release::changelog_section_for(changelog, package, &version.to_string())
+        .is_some_and(|section| section.lines().any(|line| line.trim() == heading))
 }
 
 /// Whether a fragment in `fragments` bumps `package` by `patch!`.
@@ -376,6 +377,19 @@ mod tests {
         ));
         assert!(!released_mark(changelog, "verctl", &v081, Some(&v081)));
         assert!(!released_mark(changelog, "verctl", &v081, None));
+        let minor = indoc! {"
+            ## verctl 0.9.0
+
+            ### Breaking
+
+            - Replace a public field.
+        "};
+        assert!(!released_mark(
+            minor,
+            "verctl",
+            &version("0.9.0"),
+            Some(&version("0.8.0"))
+        ));
         assert!(!released_mark(
             changelog,
             "verctl",
