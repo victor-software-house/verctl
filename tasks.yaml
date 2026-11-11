@@ -59,6 +59,23 @@ queue:
       - Shipping 0.8.0 itself as a candidate first would exercise its publish path, which no run has used yet.
     plan: openspec/changes/release-candidates/proposal.md
 
+  - id: VER-121
+    title: Ship an API break as a patch from its fragment
+    scope: fragment, semver, changelog
+    outcome: >-
+      A fragment marks one package patch!, and that one release ships an API break as
+      a patch with the semver check skipped and the break listed in its changelog,
+      with nothing left to remove afterwards.
+    blocked_by: []
+    acceptance:
+      - 'A fragment that sets `demo: patch!` bumps demo by a patch, and `verctl semver` reports demo as skipped by that fragment.'
+      - The CHANGELOG section of that release lists the entry under a `### Breaking` heading.
+      - '`minor!`, `major!`, and `none!` fail the parse with a message that says what the mark means.'
+      - The next release, with the fragment consumed, checks demo again with no file to delete.
+    plan: openspec/changes/breaking-patch/proposal.md
+    notes:
+      - '2026-11-10, operator: a semver exception belongs in the changeset, as the upstream drift exception does in another repository, instead of a Cargo.toml table that needs a second pull request to remove.'
+
   - id: VER-097
     title: Ship cargo and bun as built-ins, with bun-release in Rust
     scope: verctl cargo and bun providers, npm registry client, mise
