@@ -36,6 +36,12 @@ packages:
   - name: verctl
     path: Cargo.toml
     # driver: cargo           # inferred from the file name
+    # Options of the publisher the manifest implies, here cargo. CI already
+    # packs this crate on every commit to the default branch, so the upload
+    # skips cargo's own verify build. A list instead of a mapping would
+    # replace the whole upload command.
+    publish:
+      verify: false
 
   - name: "@org/pkg"
     path: package.json

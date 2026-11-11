@@ -96,11 +96,7 @@ pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
     for spec in &config.packages {
         let current = spec.current(config, root)?;
         let version = current.version;
-        let (label, noun, argv) = publisher::resolve(config, spec, &current.path)?;
-        let label = match spec.registry.as_deref() {
-            Some(registry) if !registry.is_empty() => format!("{label} {registry}"),
-            _ => label,
-        };
+        let (label, noun, argv) = publisher::resolve(config, spec, root)?;
         packages.push(PublishEntry {
             name: spec.name.clone(),
             version,
