@@ -34,13 +34,13 @@ jobs:
   # Any other pull request gets a notice; the daily run keeps an issue
   # open while the newest tag would change this repository. The shared
   # workflow reads the template with the organization's reader App's key, and
-  # installs its tools through the release mirror with the ci login.
+  # installs its tools through the release mirror with a session token.
   template:
     if: ${{ !github.event.pull_request.draft }}
-    uses: victor-software-house/actions/.github/workflows/template-check.yml@e6e13c808cce87ac8f1faf59cfaf2bab34bda7aa # main, 2026-11-11
+    uses: victor-software-house/actions/.github/workflows/template-check.yml@4168002fe58fd0b310bd2b65f9db2262fc0e21d3 # main, 2026-11-11
     permissions:
       contents: read
-      # The mise action's fallback; it downloads with the mirror's ci login.
+      # The mise action exchanges it for the mirror's session token.
       id-token: write
       issues: write
     with:
@@ -86,5 +86,5 @@ jobs:
         tsdown.config.ts
     secrets:
       RELEASE_MIRROR_URL: ${{ secrets.RELEASE_MIRROR_URL }}
-      RELEASE_MIRROR_CI_PASSWORD: ${{ secrets.RELEASE_MIRROR_CI_PASSWORD }}
+      RELEASE_MIRROR_CI_KEY: ${{ secrets.RELEASE_MIRROR_CI_KEY }}
       TEMPLATES_APP_PRIVATE_KEY: ${{ secrets.TEMPLATES_APP_PRIVATE_KEY }}
