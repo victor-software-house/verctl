@@ -114,7 +114,7 @@ old verb: `version-files`, `derived-version-pr-branch` (the
 `version-pr-proposal`. This change
 carries a MODIFIED delta for each of those requirements too, so it is
 archived after them. `prepare` as an `assets` step key in
-`package-asset-files` is a config key, not the verb, and stays.
+`package-asset-files` is a config key, unrelated to the verb, and stays.
 
 `dependent-ranges`, `package-discovery`, and `release-groups` are built after
 0.8.0, so their deltas already say `version`.

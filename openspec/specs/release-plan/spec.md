@@ -45,7 +45,7 @@ Any other tagged commit SHALL fail the plan, naming the tag, the commit, and the
 - **AND** `demo@0.0.1` is on crates.io with its Release
 - **THEN** `verctl publish --plan` treats `T` as the release commit and reports `nothing to release`
 
-#### Scenario: The merged commit carries another version
+#### Scenario: Another version on the merged commit
 
 - **WHEN** HEAD is merge commit `M` with `demo` at `0.0.1`, and tag `v0.0.1` names its second parent `T`, where `demo` is `0.0.2`
 - **THEN** `verctl publish --plan` exits non-zero and names the tag, `T`, and the version commit

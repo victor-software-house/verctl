@@ -59,7 +59,7 @@ later than the moment docs.rs records it.
 docs.rs can queue a build for a long time, so the check is a job of its own.
 A slow queue never delays the next version commit's publish or the Version PR.
 
-The docs.rs build does not count toward completeness ([release-at-version-commit][ravc]).
+The docs.rs build does not count toward completeness ([`release-at-version-commit`][ravc]).
 
 A failed build cannot be retried for the same version.
 A rerun reports `nothing to release`, and the fix is the next patch release.

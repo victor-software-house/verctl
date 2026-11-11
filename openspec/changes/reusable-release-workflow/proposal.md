@@ -27,8 +27,8 @@ The rest of that change stays paused.
 Queue rows: [VER-066][queue] and [VER-074][queue]. This change holds the workflow and its
 callers. The rest of slice B is split into four changes, each with its own
 proposal. They are [registry-publish-check][rpc],
-[release-at-version-commit][ravc], [docs-build-check][docs], and
-[derived-version-pr-branch][dvpb]. None renames a command or changes
+[`release-at-version-commit`][ravc], [docs-build-check][docs], and
+[`derived-version-pr-branch`][dvpb]. None renames a command or changes
 `.ctl/ver.yaml`.
 
 ## Changes
@@ -73,7 +73,7 @@ None.
 [docs]: ../archive/2026-11-10-docs-build-check/proposal.md
 [dvpb]: ../archive/2026-11-10-derived-version-pr-branch/proposal.md
 [queue]: ../../../tasks.yaml
-[ctc-022]: https://github.com/victor-software-house/ctl-core/blob/main/tasks.yaml
+[ctc-022]: https://github.com/victor-software-house/ctl-core/blob/8a4095fbe4d30b5ea067682f13478be0ba21fbac/tasks.yaml
 [ver-062]: https://github.com/victor-software-house/verctl/pull/153
 [ver-063]: https://github.com/victor-software-house/verctl/pull/154
 [pr-153]: https://github.com/victor-software-house/verctl/pull/153

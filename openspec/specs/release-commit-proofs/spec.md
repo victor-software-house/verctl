@@ -81,7 +81,7 @@ skipped when all of these hold:
 
 - **WHEN** `demo` is tagged at 0.7.4. Commit `aaa1111` sets 0.7.5 and a later commit sets 0.7.6. The next commit reverts it to 0.7.5, and the release commit sets 0.7.7
 - **THEN** 0.7.6 is abandoned, because a later commit took `demo` below it, and `verctl publish --plan` does not list it
-- **AND** `verctl publish` at the release commit refuses only for 0.7.5 at `aaa1111`
+- **AND** `verctl publish` refuses at the release commit only for 0.7.5 at `aaa1111`
 
 #### Scenario: A version first set by a downward change
 
@@ -97,7 +97,7 @@ sets an older v again, and the listing stays at the original version commit.
 #### Scenario: A version skipped before a revert
 
 - **WHEN** `demo` is tagged at 0.7.4. Commit `aaa1111` sets 0.7.5 and a later commit sets 0.7.6. The next commit reverts it to 0.7.5, and the release commit sets 0.7.6 again
-- **THEN** `verctl publish` at the release commit refuses, naming 0.7.5 and `aaa1111`, the commit that first set it, not the revert
+- **THEN** `verctl publish` refuses at the release commit, naming 0.7.5 and `aaa1111`, the commit that first set it instead of the revert
 
 ### Requirement: The workflow passes the allow flags through env
 

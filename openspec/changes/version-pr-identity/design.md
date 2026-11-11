@@ -19,7 +19,7 @@ the race behind queue row [VER-029][ver-029].
 So the identity of a Version PR rests on the two facts that cannot drift, and
 on the base read live on every run:
 
-1. its head repository is the repository itself, not a fork;
+1. its head repository is the repository itself, which rules out a fork;
 2. its head branch is `verctl/release/<base>`;
 3. its current base, read from the pull request at run time, is the release
    branch, and is the `<base>` its head branch names.

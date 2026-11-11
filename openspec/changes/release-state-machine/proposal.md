@@ -81,4 +81,4 @@ what shipped code settled.
 [bb]: ../building-blocks/proposal.md
 [bie]: ../built-in-ecosystems/proposal.md
 [ver-011]: ../../../tasks.yaml
-[ctc-008]: https://github.com/victor-software-house/ctl-core/blob/main/tasks.yaml
+[ctc-008]: https://github.com/victor-software-house/ctl-core/blob/8a4095fbe4d30b5ea067682f13478be0ba21fbac/tasks.yaml

@@ -7,7 +7,7 @@ substrings of its stderr. A rerun after a partial failure works only when the
 registry's wording matches. This change queries the registry instead.
 
 It is one of the parts [reusable-release-workflow][rrw] was split into. The
-release at a version commit is [release-at-version-commit][ravc], and the
+release at a version commit is [`release-at-version-commit`][ravc], and the
 docs.rs check is [docs-build-check][docs].
 
 ## 1. The registry decides "published"
