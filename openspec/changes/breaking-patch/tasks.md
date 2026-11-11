@@ -1,7 +1,7 @@
 # Tasks
 
 The pull request's CI verifies every compile, format, lint, and test task.
-Compile, format, lint, and test tasks that must run before a push run on the build host, not the authoring workstation.
+Compile, format, lint, and test tasks that must run before a push run on the build host instead of the authoring workstation.
 
 ## 1. The mark
 

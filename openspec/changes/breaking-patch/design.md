@@ -115,5 +115,5 @@ Rollback: delete the `!` from the fragment before the Version PR merges.
 [semver]: ../../../src/semver_check.rs
 [release]: ../../../src/release.rs
 [pr-235]: https://github.com/victor-software-house/verctl/pull/235
-[csc-levels]: https://github.com/obi1kenobi/cargo-semver-checks/blob/main/README.md
+[csc-levels]: https://github.com/obi1kenobi/cargo-semver-checks/blob/49125b52e7633e60358f7ecd75bff2948181bc73/README.md
 [cc]: https://www.conventionalcommits.org/en/v1.0.0/
