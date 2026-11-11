@@ -57,6 +57,7 @@ queue:
       - '2026-11-10, verctl main 2665f11 has no prerelease mode: bump.rs line 69 clears the prerelease part of every version, and pins refuse a version or ref with a prerelease part.'
       - Cargo never resolves a requirement such as =0.7.0 or ^0.7 to a prerelease, cargo install takes one only with --version, and the GitHub API /releases/latest skips a prerelease release. Changesets calls the same idea pre mode (changeset pre enter).
       - Shipping 0.8.0 itself as a candidate first would exercise its publish path, which no run has used yet.
+    plan: openspec/changes/release-candidates/proposal.md
 
   - id: VER-097
     title: Ship cargo and bun as built-ins, with bun-release in Rust
