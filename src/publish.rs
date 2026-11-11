@@ -485,21 +485,21 @@ fn open_release(
             .iter()
             .map(|entry| (entry.name.as_str(), entry.version.as_str())),
     );
-    let kind = if tag
+    let stage = if tag
         .packages
         .iter()
         .any(|entry| publisher::prerelease_tag(&entry.version).is_some())
     {
-        github::ReleaseKind::Candidate
+        github::Stage::Candidate
     } else {
-        github::ReleaseKind::Stable
+        github::Stage::Stable
     };
     let release = github::NewRelease {
         tag: &tag.tag,
         name: &tag.title,
         body: &notes,
         sha,
-        kind,
+        stage,
     };
     github::ensure_release_as(token, repo, &release, shipped)
 }

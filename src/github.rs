@@ -345,9 +345,9 @@ pub fn default_branch_of(raw: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// What a new Release is marked as.
+/// Where a Release stands: the stable one, or a candidate before it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReleaseKind {
+pub enum Stage {
     /// A stable version: GitHub's defaults apply, so the Release becomes the
     /// repository's latest.
     Stable,
@@ -370,15 +370,14 @@ pub struct NewRelease<'a> {
     pub body: &'a str,
     /// The commit the tag is created at, and the one an existing tag must name.
     pub sha: &'a str,
-    /// What the Release is marked as.
-    pub kind: ReleaseKind,
+    /// Whether the Release is the stable one or a candidate.
+    pub stage: Stage,
 }
 
 /// Create `tag` at `sha` if it is missing. Returns the release HTML URL.
 ///
-/// A new Release has GitHub's defaults, as [`ReleaseKind::Stable`] says; see
-/// [`ensure_release_as`] to mark one otherwise. An existing release is used as
-/// it is.
+/// A new Release is a [`Stage::Stable`] one, with GitHub's defaults; see
+/// [`ensure_release_as`] for a candidate. An existing release is used as it is.
 ///
 /// An existing release is not trusted: GitHub's `target_commitish` on the
 /// Release object is a branch name more often than a SHA. The git ref is
@@ -409,12 +408,13 @@ pub fn ensure_release(
         name,
         body,
         sha,
-        kind: ReleaseKind::Stable,
+        stage: Stage::Stable,
     };
     ensure_release_as(token, repo, &release, shipped)
 }
 
-/// [`ensure_release`] for a Release marked as `release.kind` says.
+/// [`ensure_release`] for a Release at the given `release.stage`: a candidate
+/// is a prerelease and never the latest.
 ///
 /// # Errors
 ///
@@ -445,7 +445,7 @@ async fn ensure_release_with(
         name,
         body,
         sha,
-        kind,
+        stage,
     } = *release;
     let repos = crab.repos(&repo.owner, &repo.name);
     let releases = repos.releases();
@@ -464,9 +464,9 @@ async fn ensure_release_with(
         .name(name)
         .body(body)
         .target_commitish(sha);
-    let create = match kind {
-        ReleaseKind::Stable => create,
-        ReleaseKind::Candidate => create
+    let create = match stage {
+        Stage::Stable => create,
+        Stage::Candidate => create
             .prerelease(true)
             .make_latest(octocrab::repos::releases::MakeLatest::False),
     };
@@ -1212,7 +1212,7 @@ mod tests {
             name: TAG,
             body: "notes",
             sha: PUBLISHED,
-            kind: super::ReleaseKind::Stable,
+            stage: super::Stage::Stable,
         }
     }
 
@@ -1362,7 +1362,7 @@ mod tests {
             .await;
         lightweight_tag(PUBLISHED).mount(&server).await;
         let candidate = super::NewRelease {
-            kind: super::ReleaseKind::Candidate,
+            stage: super::Stage::Candidate,
             ..stable()
         };
         let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &candidate, true)
