@@ -1,9 +1,9 @@
 ## ADDED Requirements
 
-### Requirement: A release owes the assets declared at the version commit
+### Requirement: A release is checked for the assets declared at the version commit
 
-A release SHALL owe an asset target only when `.ctl/ver.yaml` declares it both at HEAD and at the release's version commit.
-A version commit without `.ctl/ver.yaml` SHALL owe no asset.
+verctl SHALL check a release for an asset target only when `.ctl/ver.yaml` declares it both at HEAD and at the release's version commit.
+verctl SHALL check a release whose version commit has no `.ctl/ver.yaml` for no asset.
 `verctl publish --plan` and `verctl status` SHALL read the config at a version commit only when the release lacks a target that HEAD declares.
 
 #### Scenario: A target added after a release

@@ -126,8 +126,22 @@ pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
 /// # Errors
 ///
 /// Returns an error when [`run_pending`] fails.
-pub fn run(config: &Config, root: &Path, dry_run: bool) -> Result<PublishOutcome> {
-    Ok(run_pending(config, root, dry_run, false, Allow::default(), None)?.published)
+pub fn run(
+    config: &Config,
+    config_path: &Path,
+    root: &Path,
+    dry_run: bool,
+) -> Result<PublishOutcome> {
+    Ok(run_pending(
+        config,
+        config_path,
+        root,
+        dry_run,
+        false,
+        Allow::default(),
+        None,
+    )?
+    .published)
 }
 
 /// The proofs a run may go past, each refused unless the operator allows it.
@@ -265,6 +279,7 @@ pub struct Waiting {
 /// - A publisher, tag, or Release step fails.
 pub fn run_pending(
     config: &Config,
+    config_path: &Path,
     root: &Path,
     dry_run: bool,
     skip_assets: bool,
@@ -278,7 +293,14 @@ pub fn run_pending(
     full_history(root)?;
     let allowed = prove_version_commit(config, root, &planned, allow)?;
     let token = release::resolve_token()?;
-    let pending = pending::pending(config, root, &token, skip_assets, registry_token)?;
+    let pending = pending::pending(
+        config,
+        config_path,
+        root,
+        &token,
+        skip_assets,
+        registry_token,
+    )?;
     if pending.is_empty() {
         return Ok(PublishRun {
             outcome: Outcome::NothingToRelease,

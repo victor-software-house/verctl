@@ -12,10 +12,13 @@
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
+use std::fmt;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use serde::Serialize;
+use ctl_core::input::Input;
+use serde::de::{IgnoredAny, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::assets::{self, MatrixTarget};
 use crate::config::Config;
@@ -140,6 +143,7 @@ struct PackageState {
 /// wrong place as complete would hide it.
 pub fn pending(
     config: &Config,
+    config_path: &Path,
     root: &Path,
     token: &str,
     skip_assets: bool,
@@ -202,8 +206,11 @@ pub fn pending(
             Some(_) | None => commit,
         };
         let listed = registry_lists(config, root, spec, entry, release, env)?;
-        let declared: &[MatrixTarget] = if *index == 0 { &targets } else { &[] };
-        let state = state_of(entry, commit, listed, release, declared, &assets_tag);
+        let head_targets: &[MatrixTarget] = if *index == 0 { &targets } else { &[] };
+        let declared = checked_targets(head_targets, &release.assets, || {
+            declared_at(root, config_path, &commit.sha)
+        })?;
+        let state = state_of(entry, commit, listed, release, &declared, &assets_tag);
         let incomplete = !state.complete;
         states.push(state);
         if incomplete {
@@ -217,6 +224,9 @@ pub fn pending(
                     })
                 })?;
             for skipped in earlier {
+                let missing_assets = checked_targets(head_targets, &[], || {
+                    declared_at(root, config_path, &skipped.sha)
+                })?;
                 states.push(PackageState {
                     assets_tag: config.tags.render(&skipped.version, name)?,
                     package: PendingPackage {
@@ -228,12 +238,99 @@ pub fn pending(
                         depth: skipped.depth,
                     },
                     complete: false,
-                    missing_assets: declared.to_vec(),
+                    missing_assets,
                 });
             }
         }
     }
     Ok(group(states))
+}
+
+/// The asset targets a release is checked for: those in `targets`, which HEAD
+/// declares, that its version commit declared too. A target added after the
+/// release never reopens it.
+///
+/// A release that already holds every target's asset is checked for them all.
+/// `declared` is then never called, so its old config never has to parse.
+/// Otherwise `declared` gives the target ids the version commit's config
+/// declared, and `None` for a commit with no config, which is checked for no
+/// asset.
+fn checked_targets(
+    targets: &[MatrixTarget],
+    assets: &[String],
+    declared: impl FnOnce() -> Result<Option<Vec<String>>>,
+) -> Result<Vec<MatrixTarget>> {
+    if targets.iter().all(|target| assets.contains(&target.asset)) {
+        return Ok(targets.to_vec());
+    }
+    let ids = declared()?.unwrap_or_default();
+    Ok(targets
+        .iter()
+        .filter(|target| ids.contains(&target.id))
+        .cloned()
+        .collect())
+}
+
+/// The asset target ids the config at `path` declared at commit `sha`, or
+/// `None` when that commit has no file there. `path` is the config this run
+/// loaded, so a nested or renamed config is read where it lives.
+fn declared_at(root: &Path, path: &Path, sha: &str) -> Result<Option<Vec<String>>> {
+    let path = path
+        .canonicalize()
+        .with_context(|| format!("resolve {}", path.display()))?;
+    let Some(raw) = git::file_at(root, sha, &path)? else {
+        return Ok(None);
+    };
+    let declared: DeclaredTargets = Input::new(format!("{} at {sha}", path.display()), &raw)
+        .parse()
+        .with_context(|| format!("the asset targets of {} at commit {sha}", path.display()))?;
+    Ok(Some(
+        declared
+            .assets
+            .map(|assets| assets.targets)
+            .unwrap_or_default(),
+    ))
+}
+
+/// The asset target ids an old revision of the config holds, and nothing
+/// else. It is read without the current schema: a key that a later verctl
+/// renamed or removed must not stop an old release from being judged. Unknown
+/// keys are ignored here and only here.
+#[derive(Deserialize)]
+struct DeclaredTargets {
+    /// `assets`, when the revision declares any.
+    #[serde(default)]
+    assets: Option<TargetIds>,
+}
+
+/// The `assets` mapping of an old config, reduced to its target ids.
+#[derive(Deserialize)]
+struct TargetIds {
+    /// The id of each target, in file order. Its fields are not read.
+    #[serde(default, deserialize_with = "mapping_keys")]
+    targets: Vec<String>,
+}
+
+/// The keys of a mapping, each value skipped unread.
+fn mapping_keys<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<String>, D::Error> {
+    struct Keys;
+    impl<'de> Visitor<'de> for Keys {
+        type Value = Vec<String>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a mapping of asset targets")
+        }
+
+        fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
+            let mut keys = Vec::new();
+            while let Some(key) = map.next_key::<String>()? {
+                map.next_value::<IgnoredAny>()?;
+                keys.push(key);
+            }
+            Ok(keys)
+        }
+    }
+    deserializer.deserialize_map(Keys)
 }
 
 /// The version `driver` reads from one revision of a manifest, or `None` when
@@ -509,8 +606,8 @@ mod tests {
     use indoc::indoc;
 
     use super::{
-        PackageState, Pending, PendingAsset, PendingPackage, group, members_at, newest_per_tag,
-        state_of, version_released, write_github_output,
+        DeclaredTargets, PackageState, Pending, PendingAsset, PendingPackage, checked_targets,
+        group, members_at, newest_per_tag, state_of, version_released, write_github_output,
     };
     use crate::assets::MatrixTarget;
     use crate::git::VersionCommit;
@@ -676,6 +773,89 @@ mod tests {
                 tag: "v0.4.6".into(),
             }]
         );
+    }
+
+    fn ids(targets: &[MatrixTarget]) -> Vec<&str> {
+        targets.iter().map(|target| target.id.as_str()).collect()
+    }
+
+    /// A target added after a release leaves that release complete: its
+    /// version commit declared only `linux-x64`, and the Release holds it.
+    #[test]
+    fn a_target_added_after_a_release_does_not_reopen_it() {
+        let targets = [target("linux-x64"), target("darwin-arm64")];
+        let held = ["demo-linux-x64.tar.gz".to_owned()];
+        let checked =
+            checked_targets(&targets, &held, || Ok(Some(vec!["linux-x64".into()]))).unwrap();
+        assert_eq!(ids(&checked), ["linux-x64"]);
+        let release = finished(&["demo-linux-x64.tar.gz"]);
+        let state = state_of(
+            &entry("demo", "0.0.1"),
+            at("aaa", 1),
+            true,
+            &release,
+            &checked,
+            "v0.0.1",
+        );
+        assert!(state.complete);
+    }
+
+    #[test]
+    fn a_target_the_release_commit_declared_is_still_owed() {
+        let targets = [target("linux-x64"), target("darwin-arm64")];
+        let held = ["demo-linux-x64.tar.gz".to_owned()];
+        let declared = || Ok(Some(vec!["linux-x64".into(), "darwin-arm64".into()]));
+        assert_eq!(
+            ids(&checked_targets(&targets, &held, declared).unwrap()),
+            ["linux-x64", "darwin-arm64"]
+        );
+    }
+
+    /// An old revision may hold keys the current schema refuses. Only its
+    /// target ids are read, so those keys do not matter.
+    #[test]
+    fn an_old_config_names_its_targets_whatever_else_it_holds() {
+        let declared: DeclaredTargets = ctl_core::input::Input::new(
+            "old.yaml",
+            indoc::indoc! {"
+                drivers: {}
+                a_key_removed_later: true
+                assets:
+                  bin: demo
+                  targets:
+                    linux-x64: {}
+                    darwin-arm64:
+                      runner: arm64
+            "},
+        )
+        .parse()
+        .unwrap();
+        assert_eq!(
+            declared.assets.unwrap().targets,
+            ["linux-x64", "darwin-arm64"]
+        );
+    }
+
+    #[test]
+    fn a_commit_with_no_config_owes_no_asset() {
+        let targets = [target("linux-x64")];
+        assert_eq!(
+            ids(&checked_targets(&targets, &[], || Ok(None)).unwrap()),
+            Vec::<&str>::new()
+        );
+    }
+
+    /// The old config is read only for a release that lacks an asset, so a
+    /// complete release never needs it to parse.
+    #[test]
+    fn a_complete_release_never_reads_its_old_config() {
+        let targets = [target("linux-x64")];
+        let held = ["demo-linux-x64.tar.gz".to_owned()];
+        let checked = checked_targets(&targets, &held, || {
+            panic!("the old config was read for a complete release")
+        })
+        .unwrap();
+        assert_eq!(ids(&checked), ["linux-x64"]);
     }
 
     #[test]

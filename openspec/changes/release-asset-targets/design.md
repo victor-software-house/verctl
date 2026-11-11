@@ -15,7 +15,7 @@ A target added after a release therefore reopens that release.
 
 **Goals:**
 
-1. A release owes what its own commit declared.
+1. A release is checked for the asset targets its own commit declared.
 2. Nothing new parses for a release that already has every target.
 
 **Non-Goals:**
@@ -25,13 +25,13 @@ A target added after a release therefore reopens that release.
 
 ## Decisions
 
-### 1. Owed targets are HEAD's targets that the release commit also declared
+### 1. A release is checked for the HEAD targets that the release commit also declared
 
-`owed(root, targets, assets, sha)` returns `targets` unchanged when the Release already holds every asset.
+`checked_targets(targets, assets, declared)` returns `targets` unchanged when the Release already holds every asset.
 Otherwise it reads `.ctl/ver.yaml` at `sha` and keeps the targets whose id that config declares under `assets.targets`.
 
 The intersection keeps HEAD's matrix, which holds the runner, triple, and file name each job uses.
-The old commit decides only which ids it owed.
+The old commit decides only which ids are checked.
 
 Alternatives considered:
 
@@ -39,13 +39,24 @@ Alternatives considered:
    An id the old config declared and HEAD dropped has no runner left to build it.
 2. **Compare release dates with the commit that added a target.** It lost because a date is not a fact of the release, and a rerun on another day would change the answer.
 
-### 2. Read the old config only for a release that lacks a target
+### 2. Read only the target ids, and only for a release that lacks a target
 
-A complete release keeps today's path, so a caller whose old configs no longer parse sees no change.
-An incomplete release whose old config does not parse fails with the commit and the parse error.
-That release was already failing.
+A complete release keeps today's path, and its old config is never read.
 
-### 3. No config at the commit owes nothing
+For an incomplete release, the old revision is read for its `assets.targets` ids and nothing else.
+The read ignores unknown keys and runs no validation.
+A key that a later verctl renamed or removed must not stop an old release from being judged.
+Only YAML that does not parse fails, naming the commit.
+
+Alternative considered: parse the old revision with the current `Config`.
+It lost because the current schema refuses unknown keys, so any later rename would fail every incomplete release it touched.
+
+### 3. The old config is the file this run loaded
+
+`pending` takes the path of the config the run loaded, as `release` and `status` resolve it from `-c`.
+The old revision is read at that path, so a nested config such as `crates/demo/.ctl/ver.yaml` or a renamed one is found where it lives.
+
+### 4. A commit with no config is checked for no asset
 
 A commit without `.ctl/ver.yaml` predates the file, so no target was declared there.
 

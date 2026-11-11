@@ -377,6 +377,7 @@ fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
     };
     let run = publish::run_pending(
         &config,
+        &args.config,
         root,
         args.dry_run(),
         args.skip_assets,
@@ -564,18 +565,20 @@ fn unreleased_state(
         None => release::env_token(),
     };
     Ok(match token {
-        Some(token) => match pending::pending(config, root, &token, args.skip_assets, None) {
-            Ok(planned) => {
-                if let Some(path) = &args.github_output {
-                    pending::write_github_output(&planned, path)?;
+        Some(token) => {
+            match pending::pending(config, &args.config, root, &token, args.skip_assets, None) {
+                Ok(planned) => {
+                    if let Some(path) = &args.github_output {
+                        pending::write_github_output(&planned, path)?;
+                    }
+                    (Some(unreleased_rows(&planned)), None)
                 }
-                (Some(unreleased_rows(&planned)), None)
+                Err(error) if args.github_output.is_none() && lookup::is_unavailable(&error) => {
+                    (None, Some(Unchecked::failed(&error)))
+                }
+                Err(error) => return Err(error),
             }
-            Err(error) if args.github_output.is_none() && lookup::is_unavailable(&error) => {
-                (None, Some(Unchecked::failed(&error)))
-            }
-            Err(error) => return Err(error),
-        },
+        }
         None => (None, Some(Unchecked::missing_token())),
     })
 }

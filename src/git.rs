@@ -338,6 +338,24 @@ fn files_of(tree: &gix::Tree<'_>) -> Result<BTreeMap<String, (gix::ObjectId, Ent
         .collect())
 }
 
+/// The text of `path` at commit `sha`, or `None` when that commit holds no
+/// such file.
+///
+/// # Errors
+///
+/// Returns an error when `root` is in no repository, when `path` is outside
+/// it, or when `sha` names no commit in it.
+pub fn file_at(root: &Path, sha: &str, path: &Path) -> Result<Option<String>> {
+    let repo = discover(root).context("reading a file at a commit needs a git repository")?;
+    let rel = git_path(root, path, repo.workdir())
+        .with_context(|| format!("{} is not in the repository", path.display()))?;
+    let id = gix::ObjectId::from_hex(sha.as_bytes()).with_context(|| format!("commit {sha}"))?;
+    let commit = repo
+        .find_commit(id)
+        .with_context(|| format!("commit {sha} is not in the repository"))?;
+    Ok(blob_at(&commit.tree()?, &rel))
+}
+
 fn blob_at(tree: &gix::Tree<'_>, rel: &Path) -> Option<String> {
     let entry = tree.lookup_entry_by_path(rel).ok()??;
     let blob = entry.object().ok()?.try_into_blob().ok()?;
@@ -1949,8 +1967,8 @@ mod tests {
     use indoc::indoc;
 
     use super::{
-        AddedBy, Unreleased, VersionCommit, added_by, origin_url, tagged_commit, unreleased_below,
-        version_commit,
+        AddedBy, Unreleased, VersionCommit, added_by, file_at, origin_url, tagged_commit,
+        unreleased_below, version_commit,
     };
     use crate::test_git::{commit_all, git, init};
 
@@ -2326,6 +2344,25 @@ mod tests {
             .unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn file_at_reads_a_file_at_a_commit_and_nothing_before_it() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        std::fs::write(dir.path().join("README"), "start\n").unwrap();
+        let before = commit_all(dir.path(), "chore: start");
+        std::fs::create_dir_all(dir.path().join(".ctl")).unwrap();
+        std::fs::write(dir.path().join(".ctl/ver.yaml"), "packages: []\n").unwrap();
+        let added = commit_all(dir.path(), "chore: add the config");
+        std::fs::write(dir.path().join(".ctl/ver.yaml"), "packages: [later]\n").unwrap();
+        commit_all(dir.path(), "chore: change the config");
+        let path = Path::new(".ctl/ver.yaml");
+        assert_eq!(
+            file_at(dir.path(), &added, path).unwrap().as_deref(),
+            Some("packages: []\n")
+        );
+        assert_eq!(file_at(dir.path(), &before, path).unwrap(), None);
     }
 
     #[test]
