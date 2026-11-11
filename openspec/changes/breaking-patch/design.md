@@ -16,7 +16,7 @@ See [proposal.md](proposal.md) for why, and the specs for what:
 
 1. The exception lives as long as one release, and nothing remains to delete after it.
 2. It names one package, so a fragment that bumps two packages excuses only the one it marks.
-3. The release says so in its changelog.
+3. The release changelog lists the break.
 
 **Non-Goals:**
 
@@ -88,7 +88,7 @@ The row label is `skipped: patch! fragment`.
 
 ### 4. The changelog lists the entry under `### Breaking`
 
-In the section of a package the fragment marks `patch!`, the entry goes under `### Breaking`, the first heading, whatever `verctl:group` says.
+In the section of a package the fragment marks `patch!`, the entry goes under `### Breaking`, the first heading, whatever its `verctl:group` holds.
 Grouped rendering then applies to that section, so the other entries go under their groups as today.
 In the section of another package the same fragment bumps, the entry renders as any other.
 
