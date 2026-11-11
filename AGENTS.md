@@ -86,8 +86,8 @@ Code that uses a value never looks it up and converts it on the spot.
   Names resolve once at the boundary; an unresolved name, a name listed twice, and a declaration nothing lists all fail the load.
 - A setting that belongs to one tool is a typed option of that tool's
   publisher, read in the one place that names it (`CargoPublish::read`).
-  It is never a field on every package, and never an argv fragment verctl
-  cannot read.
+  It is never a field on every package, and never a piece of argv that
+  verctl cannot check.
 - Vocabulary that a bare number cannot express gets an enum with named variants (`Occurrences::{Once, Many, Never, Exactly, AtLeast}`), never a magic value.
 - Facts about other tools are checked against their documentation, and the reference goes in the doc comment.  
   Git records only `0644`/`0755` for a regular file, so `executable` is the only mode a template may declare.

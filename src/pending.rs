@@ -246,9 +246,9 @@ pub fn pending(
     Ok(group(states))
 }
 
-/// The asset targets a release is checked for: those in `targets`, which HEAD
-/// declares, that its version commit declared too. A target added after the
-/// release never reopens it.
+/// The asset targets a release is checked for. HEAD declares `targets`, and
+/// the release is checked only for those its version commit declared too. A
+/// target added after the release never reopens it.
 ///
 /// A release that already holds every target's asset is checked for them all.
 /// `declared` is then never called, so its old config never has to parse.
