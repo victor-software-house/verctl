@@ -75,7 +75,7 @@ change with its own proposal:
 One file, `.ctl/ver.yaml`, one place per concern. Every struct at every level
 refuses unknown keys. A removed key fails the load and names its replacement.
 
-| Concern | Key | Default when unsaid |
+| Concern | Key | Default when omitted |
 |:--|:--|:--|
 | Release branch | `branch` | `main` |
 | Packages | `packages[].name`, `packages[].path` | required |

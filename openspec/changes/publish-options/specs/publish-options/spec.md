@@ -1,0 +1,87 @@
+## ADDED Requirements
+
+### Requirement: Publisher options on a package
+
+A package's `publish` SHALL take a mapping of options for the publisher the package resolves to.
+A package with such a mapping SHALL keep that publisher's upload command, its registry check, and its tag order.
+
+A list under `publish` SHALL replace the whole upload command.
+Any other value under `publish` SHALL fail the load, and the error SHALL name both shapes it takes.
+
+#### Scenario: Options keep the registry check
+
+- **WHEN** `.ctl/ver.yaml` declares `demo` at `Cargo.toml` with `publish: {verify: false}`, and crates.io lists `demo` `0.4.6`
+- **THEN** `verctl release` at the version commit reads the crates.io index, does not run `cargo publish`, and reports `demo` as `already`
+
+#### Scenario: A list still replaces the command
+
+- **WHEN** `demo` declares `publish: [cargo, publish, --no-verify]`
+- **THEN** `verctl release` runs that command, reads no crates.io index, and creates the tag after the upload
+
+#### Scenario: A value that is neither
+
+- **WHEN** `demo` declares `publish: fast`
+- **THEN** every command that loads `.ctl/ver.yaml` exits non-zero
+- **AND** the error names a mapping of options and a list that is the whole upload command
+
+### Requirement: Options are checked against the publisher at load
+
+The load SHALL fail when a package's `publish` mapping holds a key its publisher has no option for.
+The error SHALL name the package, the publisher, the key, and the options that publisher has.
+An option whose value has the wrong type SHALL fail the load and name the type it takes.
+
+#### Scenario: An option cargo has and verctl does not
+
+- **WHEN** crate `demo` at `Cargo.toml` declares `publish: {allow_dirty: true}`
+- **THEN** `verctl status` exits non-zero and its error names `demo`, `cargo`, `allow_dirty`, and `verify`
+
+#### Scenario: A value of the wrong type
+
+- **WHEN** crate `demo` declares `publish: {verify: "no"}`
+- **THEN** `verctl status` exits non-zero and its error states that `verify` is `true` or `false`
+
+### Requirement: A publisher with no options refuses every option
+
+Three publishers have no options, and any option on them SHALL fail the load:
+
+- a publisher declared under `publishers`;
+- the built-in bun publisher;
+- a built-in publisher whose `publishers` entry replaces its `argv`.
+
+The error SHALL name the package, the publisher, and the setting to remove.
+
+#### Scenario: A cargo option on a bun package
+
+- **WHEN** package `web` at `package.json` declares `publish: {verify: false}`
+- **THEN** `verctl status` exits non-zero, and its error names `web`, `bun`, and `verify` and states that bun has no publish options
+
+#### Scenario: A replaced cargo command has no options
+
+- **WHEN** `.ctl/ver.yaml` declares `publishers.cargo.argv: [cargo, publish]` and crate `demo` declares `publish: {verify: false}`
+- **THEN** `verctl status` exits non-zero and its error states that `publishers.cargo` replaces the upload command, which takes no options
+
+### Requirement: verify controls cargo's build of the packed crate
+
+The built-in cargo publisher SHALL take the option `verify`, `true` when omitted.
+With `verify: false` its upload command SHALL end with `--no-verify`.
+With `verify: true`, or with no `publish` mapping, the upload command SHALL be the one verctl runs today.
+
+#### Scenario: A crate CI already packed
+
+- **WHEN** crate `demo` at `Cargo.toml` declares `publish: {verify: false}` and crates.io does not list its version
+- **THEN** `verctl release` runs `cargo publish --locked --manifest-path Cargo.toml --no-verify`
+
+#### Scenario: Omitted
+
+- **WHEN** crate `demo` declares no `publish`
+- **THEN** `verctl release` runs `cargo publish --locked --manifest-path Cargo.toml`
+
+### Requirement: The plan shows the options in effect
+
+`verctl status` and `verctl release --dry-run` SHALL list a package whose cargo upload skips the verify build as via `cargo, no verify`.
+A package with every option at its default SHALL be listed as before.
+
+#### Scenario: A dry run of a crate that skips verify
+
+- **WHEN** crate `demo` declares `publish: {verify: false}` and has an unreleased version
+- **THEN** `verctl release --dry-run` lists `demo` via `cargo, no verify`
