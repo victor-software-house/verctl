@@ -42,7 +42,7 @@ pub struct PlanEntry {
 /// - a fragment names a package the config does not declare,
 /// - a package's driver or manifest cannot be resolved or read,
 /// - its current version cannot be read, or
-/// - [`crate::bump::apply`] refuses the bump.
+/// - [`crate::bump::apply_with`] refuses the bump.
 pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<PlanEntry>> {
     let mut by_name: BTreeMap<&str, Bump> = BTreeMap::new();
     for fragment in fragments {
@@ -60,7 +60,7 @@ pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<
     for (name, bump) in by_name {
         let spec = config.find(name)?;
         let current = spec.current(config, root)?;
-        let to = bump::apply(
+        let to = bump::apply_with(
             &current.version,
             bump,
             spec.first_minor,

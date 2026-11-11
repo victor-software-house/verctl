@@ -24,8 +24,22 @@ pub fn lower(earlier: &str, later: &str) -> bool {
     )
 }
 
+/// The stable version `bump` moves `current` to: [`apply_with`] for a package
+/// that sets no `prerelease`.
+///
+/// A current prerelease keeps its base when the base already reaches the
+/// bump, so `1.2.3-rc.1` with a patch gives `1.2.3`.
+///
+/// # Errors
+///
+/// Returns an error as [`apply_with`] does without a `prerelease`.
+pub fn apply(current: &str, bump: Bump, first_minor: bool) -> Result<String> {
+    apply_with(current, bump, first_minor, None)
+}
+
 /// The version `bump` moves `current` to, as a stable release or, when the
-/// package sets `prerelease`, as a candidate.
+/// package sets `prerelease`, as a candidate. [`apply`] is this with no
+/// `prerelease`.
 ///
 /// The base is `current` bumped by `bump`, except that a current prerelease
 /// keeps its base when the base already reaches the bump: a patch always, a
@@ -53,7 +67,7 @@ pub fn lower(earlier: &str, later: &str) -> bool {
 /// one of the two refused above, when `prerelease` is set and `current` has a
 /// prerelease that is not `<letters>.<number>`, or when the candidate would
 /// sort below `current`, as `0.8.0-beta.1` does below `0.8.0-rc.2`.
-pub fn apply(
+pub fn apply_with(
     current: &str,
     bump: Bump,
     first_minor: bool,
