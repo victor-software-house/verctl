@@ -419,7 +419,10 @@ Publish uses the `registry-token` secret and the workflow's `GITHUB_TOKEN`, with
 The publisher reads the token as `CARGO_REGISTRY_TOKEN` for crates.io.
 
 A package with `publisher: none` is released on GitHub only: `release` creates its tag and Release, and `release asset` its tarballs, with no registry upload.  
-Use it for private binaries, such as a Cargo package with `publish = false`.
+A manifest that opts out of publishing needs no `publisher: none`: a `Cargo.toml` with `publish = false` or `[]`, or a `package.json` with `"private": true`.
+
+`publish` on a package holds options of its publisher.  
+`publish: {verify: false}` makes cargo upload with `--no-verify`, for a crate CI already packs on every commit to the default branch, and keeps the crates.io check.
 
 ## Operator documents
 

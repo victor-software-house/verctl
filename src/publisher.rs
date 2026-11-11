@@ -1,10 +1,14 @@
-//! How a package is published. Cargo and bun are stock recipes.
+//! How a package is published.
 //!
-//! Override a `publishers` entry or set `publisher` + `argv` on a
-//! package. Placeholders: `{path}` `{dir}` `{registry}` `{config}`, and in a
-//! `query` also `{name}` `{version}`. A placeholder with no value fails
-//! the run instead of dropping its argument. [`RELEASE_ONLY`] publishes to
-//! no registry.
+//! [`Publisher::of`] resolves it once: the built-in cargo or bun upload, a
+//! command the repository wrote, or a release on GitHub only. A built-in
+//! publisher has typed options a package sets under `publish`, such as
+//! [`CargoPublish::verify`], and keeps its registry check. A replaced
+//! command has none of either.
+//!
+//! Placeholders in a `publishers` entry: `{path}` `{dir}` `{registry}`
+//! `{config}`, and in a `query` also `{name}` `{version}`. A placeholder with
+//! no value fails the run instead of dropping its argument.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -12,6 +16,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 
+use crate::config::PublishOptions;
 use crate::members;
 use crate::registry::{self, CargoEnv, CargoTarget, RegistryCheck};
 
@@ -295,57 +300,310 @@ const BUN_QUERY: [&str; 5] = ["bun", "pm", "view", "{name}@{version}", "version"
 /// this mode.
 pub const RELEASE_ONLY: &str = "none";
 
-/// Resolve a package's noun, label, and upload command from config and stock
-/// recipes.
+/// The options of the built-in cargo upload.
+///
+/// This is the one place that names them, their types, and what each means
+/// when omitted. A package writes them under `publish`. They change the
+/// built-in command without replacing it, so the crates.io index check and
+/// the member-by-member upload of a workspace stay.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CargoPublish {
+    /// Whether `cargo publish` builds the packed crate before it uploads.
+    /// `false` adds `--no-verify`. Set it when CI already builds the packed
+    /// crate of every commit the default branch receives, such as a
+    /// `cargo package` step the merge queue requires. When omitted, cargo
+    /// verifies, as the [`cargo publish`] page describes.
+    ///
+    /// [`cargo publish`]: https://doc.rust-lang.org/cargo/commands/cargo-publish.html
+    pub verify: bool,
+}
+
+impl Default for CargoPublish {
+    fn default() -> Self {
+        Self { verify: true }
+    }
+}
+
+impl CargoPublish {
+    /// Every option cargo has, for the error that names them.
+    const OPTIONS: [&'static str; 1] = ["verify"];
+
+    /// The options `package` wrote, over the defaults. The error names what
+    /// to change, in the words of `.ctl/ver.yaml`.
+    fn read(package: &str, written: Option<&PublishOptions>) -> Result<Self, String> {
+        let mut options = Self::default();
+        for (key, value) in written.into_iter().flatten() {
+            match key.as_str() {
+                "verify" => {
+                    options.verify = value.as_bool().ok_or_else(|| {
+                        format!("package {package:?}: publish.verify is true or false")
+                    })?;
+                }
+                _ => {
+                    return Err(format!(
+                        "package {package:?}: cargo has no publish option {key:?}; its options are: {}",
+                        Self::OPTIONS.join(", ")
+                    ));
+                }
+            }
+        }
+        Ok(options)
+    }
+
+    /// The arguments these options add to the upload command.
+    fn args(self) -> &'static [&'static str] {
+        if self.verify { &[] } else { &["--no-verify"] }
+    }
+
+    /// What the plan shows beside the publisher's name: nothing while every
+    /// option is at its default.
+    fn note(self) -> Option<&'static str> {
+        (!self.verify).then_some("no verify")
+    }
+}
+
+/// How one package is published, resolved once from what `.ctl/ver.yaml`
+/// declares and what the package's manifest states.
+///
+/// Every command that uploads, checks a registry, or asks whether a package
+/// publishes reads this, so the answer is decided in one place.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub enum Publisher {
+    /// A tag and a Release, with no registry upload.
+    ReleaseOnly,
+    /// The built-in cargo upload. The crates.io index decides whether a
+    /// version is published, and a virtual workspace uploads member by
+    /// member.
+    Cargo {
+        /// The stock recipe under any `publishers.cargo` fields.
+        recipe: PublisherSpec,
+        /// The package's cargo options.
+        options: CargoPublish,
+    },
+    /// The built-in bun upload, checked by its stock query.
+    Bun {
+        /// The stock recipe under any `publishers.bun` fields.
+        recipe: PublisherSpec,
+    },
+    /// A command the repository wrote: a `publish` list on the package, or a
+    /// `publishers` entry with its own `argv`. Only a `query` it declares
+    /// checks it, because the registry it uploads to cannot be determined
+    /// from the config.
+    Command {
+        /// The `publishers` key, or the package's own name.
+        name: String,
+        /// The recipe that holds the command.
+        recipe: PublisherSpec,
+    },
+}
+
+impl Publisher {
+    /// The publisher of `spec` from `.ctl/ver.yaml` alone, reading no
+    /// manifest. The error names what to change in the file.
+    fn declared(
+        config: &crate::config::Config,
+        spec: &crate::config::PackageSpec,
+    ) -> Result<Self, String> {
+        let name = publisher_name(config, spec);
+        if name == RELEASE_ONLY {
+            return Ok(Self::ReleaseOnly);
+        }
+        let over = config.publishers.get(name);
+        let stock = PublisherSpec::stock(name);
+        let built_in = stock.is_some();
+        let entry_replaces = over.is_some_and(|over| over.argv.is_some());
+        let mut recipe = match (stock, over) {
+            (Some(stock), Some(over)) => stock.merge(over.clone()),
+            (Some(stock), None) => stock,
+            (None, Some(over)) => over.clone(),
+            (None, None) => {
+                if spec.publish_command().is_none() {
+                    return Err(format!(
+                        "package {:?} has no publisher (set publisher / publishers.{name} / argv)",
+                        spec.name
+                    ));
+                }
+                PublisherSpec::default()
+            }
+        };
+        if spec.noun.is_some() {
+            recipe.noun.clone_from(&spec.noun);
+        }
+        if let Some(argv) = spec.publish_command() {
+            recipe.argv = Some(argv.to_vec());
+        }
+        let written = spec.publish_options().filter(|options| !options.is_empty());
+        if built_in && !entry_replaces && spec.publish_command().is_none() {
+            if name == "cargo" {
+                return Ok(Self::Cargo {
+                    recipe,
+                    options: CargoPublish::read(&spec.name, written)?,
+                });
+            }
+            if let Some(options) = written {
+                return Err(no_options(&spec.name, name, options));
+            }
+            return Ok(Self::Bun { recipe });
+        }
+        if let Some(options) = written {
+            return Err(if built_in && entry_replaces {
+                format!(
+                    "package {:?}: publishers.{name} replaces the upload command, which takes no options; remove publish, or the argv",
+                    spec.name
+                )
+            } else {
+                no_options(&spec.name, name, options)
+            });
+        }
+        Ok(Self::Command {
+            name: name.to_owned(),
+            recipe,
+        })
+    }
+
+    /// The publisher of `spec` in the repository at `root`.
+    ///
+    /// A built-in publisher that was inferred from the manifest file name
+    /// becomes [`Publisher::ReleaseOnly`] when that manifest opts out of
+    /// publishing. A publisher the package names, and a command it writes,
+    /// are used as written.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the package has no publisher, or sets an option
+    /// its publisher does not have. It also fails when the manifest cannot be
+    /// read or parsed, or opts out while the package sets `registry` or
+    /// `publish`.
+    pub fn of(
+        config: &crate::config::Config,
+        spec: &crate::config::PackageSpec,
+        root: &Path,
+    ) -> Result<Self> {
+        let (publisher, opted_out) = Self::settle(config, spec, root, root)?;
+        if let Some(reason) = opted_out {
+            ensure!(
+                spec.registry.is_none() && spec.publish.is_none(),
+                "package {:?} does not publish: {reason}; remove its publish and registry, or the manifest key",
+                spec.name
+            );
+        }
+        Ok(publisher)
+    }
+
+    /// Whether `spec` publishes, for a copy of the repository: `tree` is the
+    /// root of the tree `root` is in, and no manifest lookup leaves it.
+    ///
+    /// It answers as [`Publisher::of`] does, apart from one case. A manifest
+    /// that opts out while the package still sets `registry` or `publish`
+    /// gives [`Publisher::ReleaseOnly`] here. The conflict fails the plan, and
+    /// `check` reads a merge-base config that may hold it, such as on the
+    /// pull request that removes the `registry`.
+    pub(crate) fn of_in(
+        config: &crate::config::Config,
+        spec: &crate::config::PackageSpec,
+        root: &Path,
+        tree: &Path,
+    ) -> Result<Self> {
+        Ok(Self::settle(config, spec, root, tree)?.0)
+    }
+
+    /// The publisher of `spec`, and the manifest's reason when its opt-out
+    /// turned an inferred built-in publisher into [`Publisher::ReleaseOnly`].
+    fn settle(
+        config: &crate::config::Config,
+        spec: &crate::config::PackageSpec,
+        root: &Path,
+        tree: &Path,
+    ) -> Result<(Self, Option<&'static str>)> {
+        let declared = Self::declared(config, spec).map_err(anyhow::Error::msg)?;
+        let built_in = matches!(declared, Self::Cargo { .. } | Self::Bun { .. });
+        if spec.publisher.is_some() || !built_in {
+            return Ok((declared, None));
+        }
+        Ok(
+            match crate::opt_out::opt_out(&root.join(&spec.path), tree)? {
+                Some(reason) => (Self::ReleaseOnly, Some(reason)),
+                None => (declared, None),
+            },
+        )
+    }
+}
+
+/// The error for options on a publisher that has none.
+fn no_options(package: &str, publisher: &str, options: &PublishOptions) -> String {
+    let keys: Vec<String> = options.keys().map(|key| format!("publish.{key}")).collect();
+    format!(
+        "package {package:?} publishes with {publisher}, which has no publish options; remove {}",
+        keys.join(", ")
+    )
+}
+
+/// Whether the `publish` options of `spec` belong to its publisher, checked
+/// from `.ctl/ver.yaml` alone so the load can refuse them.
 ///
 /// # Errors
 ///
-/// Returns an error when the package has no publisher: no stock recipe, no
-/// `publishers` entry, and no `publish_argv`. It also fails when the
-/// publisher declares no `argv`, or when the rendered command is empty, which
-/// only `publisher: none` may be.
+/// Returns what to change when an option is unknown to the publisher, has the
+/// wrong type, or sits on a publisher that takes none.
+pub(crate) fn check_options(
+    config: &crate::config::Config,
+    spec: &crate::config::PackageSpec,
+) -> Result<(), String> {
+    if spec.publish_options().is_none() {
+        return Ok(());
+    }
+    Publisher::declared(config, spec).map(|_| ())
+}
+
+/// Resolve a package's label, noun, and upload command.
+///
+/// The label is the plan's `via`: the publisher, then the registry when one
+/// is named, then any option that differs from its default.
+///
+/// # Errors
+///
+/// Returns an error when [`Publisher::of`] fails, when the publisher declares
+/// no `argv`, or when the rendered command is empty, which only
+/// `publisher: none` may be.
 pub fn resolve(
     config: &crate::config::Config,
     spec: &crate::config::PackageSpec,
-    manifest: &Path,
+    root: &Path,
 ) -> Result<(String, String, Vec<String>)> {
-    let name = publisher_name(config, spec);
-    if name == RELEASE_ONLY {
-        let noun = spec.noun.clone().unwrap_or_else(|| "package".into());
-        return Ok(("release only".into(), noun, Vec::new()));
-    }
-    let mut publisher = match (PublisherSpec::stock(name), config.publishers.get(name)) {
-        (Some(stock), Some(over)) => stock.merge(over.clone()),
-        (Some(stock), None) => stock,
-        (None, Some(over)) => over.clone(),
-        (None, None) => {
-            if let Some(argv) = &spec.publish_argv {
-                PublisherSpec {
-                    noun: spec.noun.clone(),
-                    argv: Some(argv.clone()),
-                    ..PublisherSpec::default()
-                }
-            } else {
-                bail!(
-                    "package {:?} has no publisher (set publisher / publishers.{name} / argv)",
-                    spec.name
-                );
-            }
+    let publisher = Publisher::of(config, spec, root)?;
+    let (name, recipe, options) = match &publisher {
+        Publisher::ReleaseOnly => {
+            let noun = spec.noun.clone().unwrap_or_else(|| "package".into());
+            return Ok(("release only".into(), noun, Vec::new()));
         }
+        Publisher::Cargo { recipe, options } => ("cargo", recipe, Some(*options)),
+        Publisher::Bun { recipe } => ("bun", recipe, None),
+        Publisher::Command { name, recipe } => (name.as_str(), recipe, None),
     };
-    if spec.noun.is_some() {
-        publisher.noun.clone_from(&spec.noun);
-    }
-    if spec.publish_argv.is_some() {
-        publisher.argv.clone_from(&spec.publish_argv);
-    }
-    let (noun, argv) = publisher.render(name, manifest, spec.registry.as_deref())?;
+    let manifest = root.join(&spec.path);
+    let (noun, mut argv) = recipe.render(name, &manifest, spec.registry.as_deref())?;
     ensure!(
         !argv.is_empty(),
         "package {:?}: publisher {name:?} renders an empty command; set publisher: none to release without a registry",
         spec.name
     );
-    Ok((name.to_owned(), noun, argv))
+    let mut label = name.to_owned();
+    if let Some(registry) = spec
+        .registry
+        .as_deref()
+        .filter(|registry| !registry.is_empty())
+    {
+        label = format!("{label} {registry}");
+    }
+    if let Some(options) = options {
+        argv.extend(options.args().iter().map(|part| (*part).to_owned()));
+        if let Some(note) = options.note() {
+            label = format!("{label}, {note}");
+        }
+    }
+    Ok((label, noun, argv))
 }
 
 /// The publisher a package names, tried in order.
@@ -369,7 +627,8 @@ pub(crate) fn publisher_name<'a>(
     {
         return stock;
     }
-    let names_its_own = spec.publish_argv.is_some() || config.publishers.contains_key(&spec.name);
+    let names_its_own =
+        spec.publish_command().is_some() || config.publishers.contains_key(&spec.name);
     if !names_its_own && (spec.marker || file_name.is_some_and(releases_on_github_only)) {
         return RELEASE_ONLY;
     }
@@ -387,18 +646,9 @@ fn releases_on_github_only(file_name: &str) -> bool {
 /// registry.
 ///
 /// A package's own `query` wins, then its `publishers` entry's, and an empty
-/// one turns the check off. Otherwise a stock cargo package whose publish
-/// target is crates.io is read from the sparse index, and a stock recipe's
-/// query applies.
-///
-/// A package has no check unless it declares `query` when it has either of
-/// these:
-///
-/// - an overridden command, for any publisher;
-/// - a cargo publish target that cannot be identified.
-///
-/// The directory such a command runs in and the registry it uploads to cannot
-/// be determined from the config.
+/// one turns the check off. Otherwise [`Publisher::Cargo`] bound for crates.io
+/// is read from the sparse index, [`Publisher::Bun`] runs its stock query,
+/// and [`Publisher::Command`] has no check.
 ///
 /// The registry is asked for the name the manifest declares (`package.name`
 /// in `Cargo.toml`, `name` in `package.json`). The label `.ctl/ver.yaml` gives
@@ -410,67 +660,51 @@ fn releases_on_github_only(file_name: &str) -> bool {
 ///
 /// # Errors
 ///
-/// Returns an error when the manifest cannot be read or parsed, or names no
-/// package.
+/// Returns an error when [`Publisher::of`] fails, or when the manifest cannot
+/// be read or parsed, or names no package.
 pub fn registry_check(
     config: &crate::config::Config,
     spec: &crate::config::PackageSpec,
     root: &Path,
     version: &str,
 ) -> Result<RegistryCheck> {
-    let name = publisher_name(config, spec);
-    if name == RELEASE_ONLY {
-        return Ok(RegistryCheck::Unchecked);
-    }
-    let over = config.publishers.get(name);
-    let publisher = match (PublisherSpec::stock(name), over) {
-        (Some(stock), Some(over)) => stock.merge(over.clone()),
-        (Some(stock), None) => stock,
-        (None, Some(over)) => over.clone(),
-        (None, None) => PublisherSpec::default(),
+    let publisher = Publisher::of(config, spec, root)?;
+    let (name, recipe) = match &publisher {
+        Publisher::ReleaseOnly => return Ok(RegistryCheck::Unchecked),
+        Publisher::Cargo { recipe, .. } => ("cargo", recipe),
+        Publisher::Bun { recipe } => ("bun", recipe),
+        Publisher::Command { name, recipe } => (name.as_str(), recipe),
     };
     let manifest = root.join(&spec.path);
-    let declared = spec
-        .query
-        .as_ref()
-        .or_else(|| over.and_then(|over| over.query.as_ref()));
+    let declared = spec.query.as_ref().or_else(|| {
+        config
+            .publishers
+            .get(name)
+            .and_then(|over| over.query.as_ref())
+    });
     if let Some(argv) = declared {
-        return query_check(
-            &publisher,
-            argv,
-            spec,
-            &manifest,
-            version,
-            Appended::Nothing,
-        );
+        return query_check(recipe, argv, spec, &manifest, version, Appended::Nothing);
     }
-    if spec.publish_argv.is_some() || over.is_some_and(|over| over.argv.is_some()) {
-        return Ok(RegistryCheck::Unchecked);
-    }
-    if name == "cargo" {
-        let target = registry::cargo_target(
-            spec.registry.as_deref(),
-            &manifest,
-            root,
-            &CargoEnv::from_env(),
-        )?;
-        return Ok(match target {
-            CargoTarget::CratesIo => RegistryCheck::CratesIo {
-                name: manifest_name(&manifest)?,
-            },
-            CargoTarget::Other | CargoTarget::Unknown => RegistryCheck::Unchecked,
-        });
-    }
-    match publisher.query.clone() {
-        Some(argv) => query_check(
-            &publisher,
-            &argv,
-            spec,
-            &manifest,
-            version,
-            Appended::StockQuery,
-        ),
-        None => Ok(RegistryCheck::Unchecked),
+    match &publisher {
+        Publisher::ReleaseOnly | Publisher::Command { .. } => Ok(RegistryCheck::Unchecked),
+        Publisher::Cargo { .. } => {
+            let target = registry::cargo_target(
+                spec.registry.as_deref(),
+                &manifest,
+                root,
+                &CargoEnv::from_env(),
+            )?;
+            Ok(match target {
+                CargoTarget::CratesIo => RegistryCheck::CratesIo {
+                    name: manifest_name(&manifest)?,
+                },
+                CargoTarget::Other | CargoTarget::Unknown => RegistryCheck::Unchecked,
+            })
+        }
+        Publisher::Bun { recipe } => match &recipe.query {
+            Some(argv) => query_check(recipe, argv, spec, &manifest, version, Appended::StockQuery),
+            None => Ok(RegistryCheck::Unchecked),
+        },
     }
 }
 
@@ -494,8 +728,9 @@ pub struct Upload {
 ///
 /// A workspace package (see [`workspace_members`]) runs one
 /// `cargo publish --package <member>` per member that publishes, in
-/// dependency order, each checked against its own target. Any other package
-/// runs its one upload command under [`registry_check`].
+/// dependency order. Each carries the package's cargo options and is checked
+/// against its own target. Any other package runs its one upload command
+/// under [`registry_check`].
 ///
 /// # Errors
 ///
@@ -507,7 +742,9 @@ pub fn uploads(
     entry: &crate::publish::PublishEntry,
 ) -> Result<Vec<Upload>> {
     let manifest = root.join(&spec.path);
-    let Some(members) = workspace_members(config, spec, root)? else {
+    let Some((recipe, options, members)) =
+        workspace(&Publisher::of(config, spec, root)?, config, spec, root)?
+    else {
         return Ok(vec![Upload {
             name: entry.name.clone(),
             version: entry.version.clone(),
@@ -516,7 +753,8 @@ pub fn uploads(
             argv: entry.argv.clone(),
         }]);
     };
-    let (_, base) = cargo_recipe(config).render("cargo", &manifest, spec.registry.as_deref())?;
+    let (_, mut base) = recipe.render("cargo", &manifest, spec.registry.as_deref())?;
+    base.extend(options.args().iter().map(|part| (*part).to_owned()));
     let env = CargoEnv::from_env();
     Ok(members
         .into_iter()
@@ -551,41 +789,69 @@ pub fn uploads(
 ///
 /// A workspace package:
 ///
-/// - uses the stock cargo publisher;
-/// - overrides neither the upload command nor the `query` on the package or on
-///   `publishers.cargo`;
+/// - resolves to [`Publisher::Cargo`], so nothing replaces its upload command;
+/// - declares no `query`, on the package or on `publishers.cargo`;
 /// - points `path` at a virtual workspace manifest, whose root names no crate
 ///   to publish.
 ///
-/// Declaring `publish` on the package runs that one command instead.
+/// Declaring `publish` as a list on the package runs that one command
+/// instead. `publish` options keep the package a workspace.
 ///
 /// # Errors
 ///
-/// Returns an error when the manifest cannot be read or parsed, or when
-/// [`members::members`] fails.
+/// Returns an error when [`Publisher::of`] fails, when the manifest cannot be
+/// read or parsed, or when [`members::members`] fails.
 pub fn workspace_members(
     config: &crate::config::Config,
     spec: &crate::config::PackageSpec,
     root: &Path,
 ) -> Result<Option<Vec<members::Member>>> {
-    let over = config.publishers.get("cargo");
-    let overridden = spec.publish_argv.is_some()
-        || spec.query.is_some()
-        || over.is_some_and(|over| over.argv.is_some() || over.query.is_some());
-    let manifest = root.join(&spec.path);
-    if publisher_name(config, spec) != "cargo" || overridden || !members::is_virtual(&manifest)? {
-        return Ok(None);
-    }
-    members::members(&manifest).map(Some)
+    Publisher::of(config, spec, root)?.members(config, spec, root)
 }
 
-/// The stock cargo recipe under any `publishers.cargo` entry.
-fn cargo_recipe(config: &crate::config::Config) -> PublisherSpec {
-    let stock = PublisherSpec::stock("cargo").unwrap_or_default();
-    match config.publishers.get("cargo") {
-        Some(over) => stock.merge(over.clone()),
-        None => stock,
+impl Publisher {
+    /// The members this publisher uploads one by one, in publish order, or
+    /// `None` when it uploads the package as one; see [`workspace_members`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the manifest cannot be read or parsed, or when
+    /// [`members::members`] fails.
+    pub fn members(
+        &self,
+        config: &crate::config::Config,
+        spec: &crate::config::PackageSpec,
+        root: &Path,
+    ) -> Result<Option<Vec<members::Member>>> {
+        Ok(workspace(self, config, spec, root)?.map(|(_, _, members)| members))
     }
+}
+
+/// A workspace package's cargo recipe, its options, and its members; see
+/// [`workspace_members`].
+fn workspace(
+    publisher: &Publisher,
+    config: &crate::config::Config,
+    spec: &crate::config::PackageSpec,
+    root: &Path,
+) -> Result<Option<(PublisherSpec, CargoPublish, Vec<members::Member>)>> {
+    let Publisher::Cargo { recipe, options } = publisher else {
+        return Ok(None);
+    };
+    let declares_query = spec.query.is_some()
+        || config
+            .publishers
+            .get("cargo")
+            .is_some_and(|over| over.query.is_some());
+    let manifest = root.join(&spec.path);
+    if declares_query || !members::is_virtual(&manifest)? {
+        return Ok(None);
+    }
+    Ok(Some((
+        recipe.clone(),
+        *options,
+        members::members(&manifest)?,
+    )))
 }
 
 /// A query check whose `{name}` is the name the manifest declares, read only
@@ -656,7 +922,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::path::Path;
 
-    use indoc::indoc;
+    use indoc::{formatdoc, indoc};
 
     use super::{PublisherSpec, expand, registry_check, resolve};
     use crate::registry::RegistryCheck;
@@ -739,11 +1005,11 @@ mod tests {
                 publish: []
         "})
         .unwrap();
-        let manifest = Path::new("Cargo.toml");
-        let (label, _, argv) = resolve(&config, &config.packages[0], manifest).unwrap();
+        let root = Path::new("");
+        let (label, _, argv) = resolve(&config, &config.packages[0], root).unwrap();
         assert_eq!(label, "release only");
         assert_eq!(argv, Vec::<String>::new());
-        let error = resolve(&config, &config.packages[1], manifest).unwrap_err();
+        let error = resolve(&config, &config.packages[1], root).unwrap_err();
         assert!(
             format!("{error:#}").contains("renders an empty command"),
             "{error:#}"
@@ -772,17 +1038,15 @@ mod tests {
                 marker: true
         "})
         .unwrap();
-        let (label, _, _) = resolve(&config, &config.packages[3], Path::new("ci.yml")).unwrap();
+        let (label, _, _) = resolve(&config, &config.packages[3], Path::new("")).unwrap();
         assert_eq!(label, "release only");
-        let (label, _, _) =
-            resolve(&config, &config.packages[4], Path::new("sample/Cargo.toml")).unwrap();
+        let (label, _, _) = resolve(&config, &config.packages[4], Path::new("")).unwrap();
         assert_eq!(label, "release only");
-        let (label, _, argv) = resolve(&config, &config.packages[0], Path::new("go.mod")).unwrap();
+        let (label, _, argv) = resolve(&config, &config.packages[0], Path::new("")).unwrap();
         assert_eq!((label.as_str(), argv.len()), ("release only", 0));
-        let (label, _, argv) = resolve(&config, &config.packages[2], Path::new("VERSION")).unwrap();
+        let (label, _, argv) = resolve(&config, &config.packages[2], Path::new("")).unwrap();
         assert_eq!((label.as_str(), argv.len()), ("release only", 0));
-        let (_, _, argv) =
-            resolve(&config, &config.packages[1], Path::new("tools/go.mod")).unwrap();
+        let (_, _, argv) = resolve(&config, &config.packages[1], Path::new("")).unwrap();
         assert_eq!(argv, ["goreleaser", "release"]);
         assert_eq!(
             registry_check(&config, &config.packages[0], Path::new("."), "0.1.0").unwrap(),
@@ -1024,7 +1288,7 @@ mod tests {
     fn uploads_for(yaml: &str, root: &Path) -> Vec<super::Upload> {
         let config = crate::config::Config::parse(yaml).unwrap();
         let spec = &config.packages[0];
-        let (label, noun, argv) = resolve(&config, spec, &root.join(&spec.path)).unwrap();
+        let (label, noun, argv) = resolve(&config, spec, root).unwrap();
         let entry = crate::publish::PublishEntry {
             name: spec.name.clone(),
             version: "0.0.2".into(),
@@ -1094,5 +1358,258 @@ mod tests {
             .unwrap();
         assert_eq!(noun, "wheel");
         assert_eq!(argv, ["uv", "publish"]);
+    }
+
+    fn cargo_options(json: &str) -> Result<super::CargoPublish, String> {
+        let written: crate::config::PublishOptions = serde_json::from_str(json).unwrap();
+        super::CargoPublish::read("demo", Some(&written))
+    }
+
+    #[test]
+    fn cargo_verifies_unless_told_not_to() {
+        assert!(super::CargoPublish::read("demo", None).unwrap().verify);
+        assert!(cargo_options(r#"{"verify": true}"#).unwrap().verify);
+        assert!(!cargo_options(r#"{"verify": false}"#).unwrap().verify);
+        assert_eq!(
+            cargo_options(r#"{"verify": "no"}"#).unwrap_err(),
+            r#"package "demo": publish.verify is true or false"#
+        );
+        assert_eq!(
+            cargo_options(r#"{"allow_dirty": true}"#).unwrap_err(),
+            r#"package "demo": cargo has no publish option "allow_dirty"; its options are: verify"#
+        );
+    }
+
+    /// One line per publisher, so a table of packages reads as one list.
+    fn shape(publisher: &super::Publisher) -> String {
+        match publisher {
+            super::Publisher::ReleaseOnly => "release only".into(),
+            super::Publisher::Cargo { options, .. } if options.verify => "cargo".into(),
+            super::Publisher::Cargo { .. } => "cargo, no verify".into(),
+            super::Publisher::Bun { .. } => "bun".into(),
+            super::Publisher::Command { name, .. } => format!("command {name}"),
+        }
+    }
+
+    /// A tree whose manifests cover each way a package can publish.
+    fn manifests() -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        let write = |path: &str, text: &str| {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        let crate_toml = |name: &str, publish: &str| {
+            formatdoc! {r#"
+                [package]
+                name = "{name}"
+                version = "0.1.0"
+                {publish}
+            "#}
+        };
+        for name in ["quiet", "demo", "listed"] {
+            write(&format!("{name}/Cargo.toml"), &crate_toml(name, ""));
+        }
+        write("named/Cargo.toml", &crate_toml("named", "publish = false"));
+        write(
+            "private/Cargo.toml",
+            &crate_toml("private", "publish = false"),
+        );
+        write("closed/Cargo.toml", &crate_toml("closed", "publish = []"));
+        write("web/package.json", r#"{"name": "web"}"#);
+        write(
+            "secret/package.json",
+            r#"{"name": "secret", "private": true}"#,
+        );
+        write(
+            "kin/Cargo.toml",
+            indoc! {r#"
+                [workspace]
+                members = ["member"]
+
+                [workspace.package]
+                publish = false
+            "#},
+        );
+        write(
+            "kin/member/Cargo.toml",
+            indoc! {r#"
+                [package]
+                name = "member"
+                version = "0.1.0"
+                publish.workspace = true
+            "#},
+        );
+        root
+    }
+
+    #[test]
+    fn each_resolution_step_picks_one_publisher() {
+        let root = manifests();
+        let config = crate::config::Config::parse(indoc! {"
+            packages:
+              - name: quiet
+                path: quiet/Cargo.toml
+                publisher: none
+              - name: named
+                path: named/Cargo.toml
+                publisher: cargo
+              - name: demo
+                path: demo/Cargo.toml
+                publish:
+                  verify: false
+              - name: web
+                path: web/package.json
+              - name: lib
+                path: go.mod
+              - name: listed
+                path: listed/Cargo.toml
+                publish: [cargo, publish, --workspace]
+              - name: private
+                path: private/Cargo.toml
+              - name: closed
+                path: closed/Cargo.toml
+              - name: member
+                path: kin/member/Cargo.toml
+              - name: secret
+                path: secret/package.json
+        "})
+        .unwrap();
+        let found: Vec<String> = config
+            .packages
+            .iter()
+            .map(|spec| shape(&super::Publisher::of(&config, spec, root.path()).unwrap()))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                "release only",
+                "cargo",
+                "cargo, no verify",
+                "bun",
+                "release only",
+                "command cargo",
+                "release only",
+                "release only",
+                "release only",
+                "release only",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_publishers_entry_with_its_own_argv_is_a_command() {
+        let root = manifests();
+        let config = crate::config::Config::parse(indoc! {"
+            publishers:
+              bun:
+                argv: [npm, publish]
+            packages:
+              - name: web
+                path: web/package.json
+              - name: secret
+                path: secret/package.json
+        "})
+        .unwrap();
+        let found: Vec<String> = config
+            .packages
+            .iter()
+            .map(|spec| shape(&super::Publisher::of(&config, spec, root.path()).unwrap()))
+            .collect();
+        assert_eq!(found, ["command bun", "command bun"]);
+    }
+
+    /// The plan refuses the conflict. `check`, which may read it from a
+    /// merge-base config, still finds that the package does not publish.
+    #[test]
+    fn options_beside_a_manifest_that_opts_out_fail_the_plan_only() {
+        let root = manifests();
+        let config = crate::config::Config::parse(indoc! {"
+            packages:
+              - name: private
+                path: private/Cargo.toml
+                publish:
+                  verify: false
+        "})
+        .unwrap();
+        let error = super::Publisher::of(&config, &config.packages[0], root.path()).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            r#"package "private" does not publish: Cargo.toml sets publish = false; remove its publish and registry, or the manifest key"#
+        );
+        let check = super::Publisher::of_in(&config, &config.packages[0], root.path(), root.path())
+            .unwrap();
+        assert_eq!(shape(&check), "release only");
+    }
+
+    #[test]
+    fn a_crate_ci_already_packed_skips_the_verify_build() {
+        let root = manifests();
+        let config = crate::config::Config::parse(indoc! {"
+            packages:
+              - name: demo
+                path: demo/Cargo.toml
+                publish:
+                  verify: false
+              - name: listed
+                path: listed/Cargo.toml
+                registry: internal
+                publish:
+                  verify: false
+              - name: quiet
+                path: quiet/Cargo.toml
+        "})
+        .unwrap();
+        let (label, _, argv) = resolve(&config, &config.packages[0], root.path()).unwrap();
+        assert_eq!(label, "cargo, no verify");
+        assert_eq!(argv.last().map(String::as_str), Some("--no-verify"));
+        let (label, _, _) = resolve(&config, &config.packages[1], root.path()).unwrap();
+        assert_eq!(label, "cargo internal, no verify");
+        let (label, _, argv) = resolve(&config, &config.packages[2], root.path()).unwrap();
+        assert_eq!(label, "cargo");
+        assert!(!argv.iter().any(|part| part == "--no-verify"), "{argv:?}");
+    }
+
+    #[test]
+    fn options_keep_the_registry_check() {
+        let found = checks(indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publish:
+                  verify: false
+        "});
+        assert_eq!(
+            found,
+            [RegistryCheck::CratesIo {
+                name: "demo".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn options_reach_every_member() {
+        let root = workspace();
+        let found = uploads_for(
+            indoc! {"
+                packages:
+                  - name: demo
+                    path: Cargo.toml
+                    publish:
+                      verify: false
+            "},
+            root.path(),
+        );
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(
+            found[0].check,
+            RegistryCheck::CratesIo {
+                name: "demo-core".into()
+            }
+        );
+        assert_eq!(
+            found[0].argv[found[0].argv.len() - 3..],
+            ["--no-verify", "--package", "demo-core"]
+        );
     }
 }

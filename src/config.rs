@@ -173,9 +173,15 @@ pub struct PackageSpec {
     pub publisher: Option<String>,
     /// Pretty noun (`crate`, `package`, `wheel`). Defaults from the publisher.
     pub noun: Option<String>,
-    /// Override the publisher argv for this package.
-    #[serde(default, rename = "publish")]
-    pub publish_argv: Option<Vec<String>>,
+    /// How the package is published, beyond what its manifest implies.
+    ///
+    /// A mapping holds options of the publisher the package resolves to,
+    /// which keeps its upload command and its registry check: `verify: false`
+    /// for cargo. A list replaces the whole upload command, and the registry
+    /// check goes with it unless `query` is set. When omitted, the publisher
+    /// runs with its defaults.
+    #[serde(default)]
+    pub publish: Option<Publish>,
     /// Fills the publisher's `{registry}` placeholder and is named in the plan.
     /// Empty means none.
     pub registry: Option<String>,
@@ -215,6 +221,24 @@ pub struct PackageSpec {
 }
 
 impl PackageSpec {
+    /// The upload command this package wrote in place of its publisher's.
+    #[must_use]
+    pub fn publish_command(&self) -> Option<&[String]> {
+        match &self.publish {
+            Some(Publish::Command(argv)) => Some(argv),
+            Some(Publish::Options(_)) | None => None,
+        }
+    }
+
+    /// The options this package wrote for its publisher.
+    #[must_use]
+    pub fn publish_options(&self) -> Option<&PublishOptions> {
+        match &self.publish {
+            Some(Publish::Options(options)) => Some(options),
+            Some(Publish::Command(_)) | None => None,
+        }
+    }
+
     /// The package changelog, resolved against `root`.
     #[must_use]
     pub fn changelog_path(&self, root: &Path) -> PathBuf {
@@ -280,6 +304,59 @@ impl PackageSpec {
             raw,
             version,
         })
+    }
+}
+
+/// Publisher options as a package wrote them: each key with its value, not
+/// yet read by the publisher they belong to.
+pub type PublishOptions = BTreeMap<String, serde_json::Value>;
+
+/// What a package wrote under `publish`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Publish {
+    /// Options of the publisher the package resolves to. The publisher reads
+    /// them, so an option another publisher has is an error at load.
+    Options(PublishOptions),
+    /// The whole upload command, run in place of the publisher's.
+    Command(Vec<String>),
+}
+
+/// Untagged reads both shapes and then reports "matched no variant", naming a
+/// type nobody wrote. So the shape is read here and reported in the words a
+/// repo uses.
+const PUBLISH_SHAPES: &str =
+    "a mapping of publisher options, or a list that is the whole upload command";
+
+impl<'de> Deserialize<'de> for Publish {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(PublishVisitor)
+    }
+}
+
+struct PublishVisitor;
+
+impl<'de> serde::de::Visitor<'de> for PublishVisitor {
+    type Value = Publish;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{PUBLISH_SHAPES}")
+    }
+
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut parts: A) -> Result<Publish, A::Error> {
+        let mut argv = Vec::new();
+        while let Some(part) = parts.next_element::<String>()? {
+            argv.push(part);
+        }
+        Ok(Publish::Command(argv))
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut entries: A) -> Result<Publish, A::Error> {
+        let mut options = PublishOptions::new();
+        while let Some((key, value)) = entries.next_entry::<String, serde_json::Value>()? {
+            options.insert(key, value);
+        }
+        Ok(Publish::Options(options))
     }
 }
 
@@ -666,6 +743,7 @@ pub struct Config {
         custom(something_to_release),
         custom(no_unknown_package_keys),
         custom(release_only_names_no_registry),
+        custom(publish_options_fit_the_publisher),
         custom(python_names_its_publisher),
         custom(a_marker_names_no_driver)
     )]
@@ -909,12 +987,24 @@ fn no_unknown_package_keys(packages: &[PackageSpec], _: &Config) -> garde::Resul
 fn release_only_names_no_registry(packages: &[PackageSpec], config: &Config) -> garde::Result {
     for package in packages {
         if crate::publisher::publisher_name(config, package) == crate::publisher::RELEASE_ONLY
-            && (package.registry.is_some() || package.publish_argv.is_some())
+            && (package.registry.is_some() || package.publish.is_some())
         {
             return Err(garde::Error::new(format!(
                 "package {:?} has publisher: none, which uploads to no registry; remove its registry and publish",
                 package.name
             )));
+        }
+    }
+    Ok(())
+}
+
+/// An option belongs to one publisher. One the package's publisher does not
+/// have would be a setting nothing reads, so it fails here, in that
+/// publisher's words.
+fn publish_options_fit_the_publisher(packages: &[PackageSpec], config: &Config) -> garde::Result {
+    for package in packages {
+        if let Err(problem) = crate::publisher::check_options(config, package) {
+            return Err(garde::Error::new(problem));
         }
     }
     Ok(())
@@ -951,7 +1041,7 @@ fn python_names_its_publisher(packages: &[PackageSpec], config: &Config) -> gard
     for package in packages {
         if package.path.file_name() == Some(OsStr::new("pyproject.toml"))
             && package.publisher.is_none()
-            && package.publish_argv.is_none()
+            && package.publish_command().is_none()
             && !config.publishers.contains_key(&package.name)
         {
             return Err(garde::Error::new(format!(
@@ -2610,5 +2700,102 @@ mod tests {
         "})
         .unwrap_err();
         assert!(format!("{error:#}").contains("label"), "{error:#}");
+    }
+
+    #[test]
+    fn publish_reads_options_or_a_whole_command() {
+        let config = load(indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publish:
+                  verify: false
+              - name: tool
+                path: tool/pyproject.toml
+                publish: [uv, publish]
+              - name: quiet
+                path: quiet/Cargo.toml
+                publish: []
+        "})
+        .unwrap();
+        let options = config.packages[0].publish_options().unwrap();
+        assert_eq!(options.get("verify"), Some(&serde_json::Value::Bool(false)));
+        assert_eq!(config.packages[0].publish_command(), None);
+        assert_eq!(
+            config.packages[1].publish_command(),
+            Some(["uv".to_owned(), "publish".to_owned()].as_slice())
+        );
+        assert_eq!(config.packages[2].publish_command(), Some([].as_slice()));
+    }
+
+    #[test]
+    fn publish_of_another_shape_names_both() {
+        let error = load(indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publish: fast
+        "})
+        .unwrap_err();
+        assert!(
+            format!("{error:#}").contains(
+                "a mapping of publisher options, or a list that is the whole upload command"
+            ),
+            "{error:#}"
+        );
+    }
+
+    /// Each option belongs to the publisher the package resolves to from the
+    /// file alone, and the load names what to remove.
+    #[test]
+    fn options_are_checked_against_the_publisher_at_load() {
+        for (yaml, message) in [
+            (
+                indoc! {"
+                    packages:
+                      - name: web
+                        path: package.json
+                        publish:
+                          verify: false
+                "},
+                r#"package "web" publishes with bun, which has no publish options; remove publish.verify"#,
+            ),
+            (
+                indoc! {"
+                    packages:
+                      - name: demo
+                        path: Cargo.toml
+                        publish:
+                          allow_dirty: true
+                "},
+                r#"package "demo": cargo has no publish option "allow_dirty"; its options are: verify"#,
+            ),
+            (
+                indoc! {"
+                    packages:
+                      - name: demo
+                        path: Cargo.toml
+                        publish:
+                          verify: no thanks
+                "},
+                r#"package "demo": publish.verify is true or false"#,
+            ),
+            (
+                indoc! {"
+                    publishers:
+                      cargo:
+                        argv: [cargo, publish, --workspace]
+                    packages:
+                      - name: demo
+                        path: Cargo.toml
+                        publish:
+                          verify: false
+                "},
+                r#"package "demo": publishers.cargo replaces the upload command, which takes no options; remove publish, or the argv"#,
+            ),
+        ] {
+            let error = load(yaml).unwrap_err();
+            assert!(format!("{error:#}").contains(message), "{error:#}");
+        }
     }
 }

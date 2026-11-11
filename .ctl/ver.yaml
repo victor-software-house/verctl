@@ -16,6 +16,11 @@ prepare:
 packages:
   - name: verctl
     path: Cargo.toml
+    # The required verify job runs `cargo package` on every pull request and
+    # merge-queue entry, so the commit a release publishes was already packed
+    # and built. The upload skips cargo's second build of it.
+    publish:
+      verify: false
 
 # GitHub's hosted arm64 Linux runner, free for a public repo. It builds the
 # linux-arm64 tarball natively: the TLS stack (aws-lc-sys, ring) compiles C,

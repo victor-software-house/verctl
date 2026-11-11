@@ -141,6 +141,7 @@ fn the_example_resolves_every_driver_and_publisher_it_declares() {
                     "--locked",
                     "--manifest-path",
                     root.path().join("Cargo.toml").to_str().expect("utf-8"),
+                    "--no-verify",
                 ],
             ),
             // `registry = "github"` is what puts --registry here.
