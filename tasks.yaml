@@ -91,6 +91,21 @@ queue:
     notes:
       - '2026-11-11: a caller that moved to verctl 0.8.0 and added darwin-arm64 in one commit could not release; its 0.0.1 release was reopened for the new target and the publish job at that commit ran the pinned verctl 0.7.4.'
 
+  - id: VER-123
+    title: Release jobs run the verctl that HEAD pins
+    scope: release workflow
+    outcome: >-
+      The publish, asset, and docs jobs at an old version commit run the verctl the
+      plan job checked at HEAD, so a commit that pins an older verctl still releases.
+    blocked_by: []
+    acceptance:
+      - The plan job outputs the verctl version it ran.
+      - The publish, asset, and docs jobs run verctl at that version, whatever the checked-out commit pins.
+      - A run with verctl-artifact keeps running that build.
+    plan: openspec/changes/release-jobs-run-head-verctl/proposal.md
+    notes:
+      - '2026-11-11: a caller whose pending version commit pinned verctl 0.7.4 failed in publish with unrecognized subcommand release; the plan job had checked only HEAD.'
+
   - id: VER-097
     title: Ship cargo and bun as built-ins, with bun-release in Rust
     scope: verctl cargo and bun providers, npm registry client, mise
