@@ -202,8 +202,11 @@ pub fn pending(
             Some(_) | None => commit,
         };
         let listed = registry_lists(config, root, spec, entry, release, env)?;
-        let declared: &[MatrixTarget] = if *index == 0 { &targets } else { &[] };
-        let state = state_of(entry, commit, listed, release, declared, &assets_tag);
+        let head_targets: &[MatrixTarget] = if *index == 0 { &targets } else { &[] };
+        let declared = owed(head_targets, &release.assets, || {
+            declared_at(root, &commit.sha)
+        })?;
+        let state = state_of(entry, commit, listed, release, &declared, &assets_tag);
         let incomplete = !state.complete;
         states.push(state);
         if incomplete {
@@ -217,6 +220,7 @@ pub fn pending(
                     })
                 })?;
             for skipped in earlier {
+                let missing_assets = owed(head_targets, &[], || declared_at(root, &skipped.sha))?;
                 states.push(PackageState {
                     assets_tag: config.tags.render(&skipped.version, name)?,
                     package: PendingPackage {
@@ -228,12 +232,52 @@ pub fn pending(
                         depth: skipped.depth,
                     },
                     complete: false,
-                    missing_assets: declared.to_vec(),
+                    missing_assets,
                 });
             }
         }
     }
     Ok(group(states))
+}
+
+/// The asset targets a release owes: those in `targets`, which HEAD declares,
+/// that its version commit declared too. A target added after the release
+/// never reopens it.
+///
+/// A release that already holds every target's asset owes them all, and
+/// `declared` is never called, so its old config never has to parse.
+/// Otherwise `declared` gives the target ids the version commit's config
+/// declared, and `None` for a commit with no config, which owes nothing.
+fn owed(
+    targets: &[MatrixTarget],
+    assets: &[String],
+    declared: impl FnOnce() -> Result<Option<Vec<String>>>,
+) -> Result<Vec<MatrixTarget>> {
+    if targets.iter().all(|target| assets.contains(&target.asset)) {
+        return Ok(targets.to_vec());
+    }
+    let ids = declared()?.unwrap_or_default();
+    Ok(targets
+        .iter()
+        .filter(|target| ids.contains(&target.id))
+        .cloned()
+        .collect())
+}
+
+/// The asset target ids `.ctl/ver.yaml` declared at commit `sha`, or `None`
+/// when that commit has no config.
+fn declared_at(root: &Path, sha: &str) -> Result<Option<Vec<String>>> {
+    let Some(raw) = git::file_at(root, sha, Path::new(crate::config::FILE))? else {
+        return Ok(None);
+    };
+    let config = Config::parse(&raw)
+        .with_context(|| format!("the {} at commit {sha}", crate::config::FILE))?;
+    Ok(Some(
+        config
+            .assets
+            .map(|assets| assets.targets.into_keys().collect())
+            .unwrap_or_default(),
+    ))
 }
 
 /// The version `driver` reads from one revision of a manifest, or `None` when
@@ -510,7 +554,7 @@ mod tests {
 
     use super::{
         PackageState, Pending, PendingAsset, PendingPackage, group, members_at, newest_per_tag,
-        state_of, version_released, write_github_output,
+        owed, state_of, version_released, write_github_output,
     };
     use crate::assets::MatrixTarget;
     use crate::git::VersionCommit;
@@ -676,6 +720,60 @@ mod tests {
                 tag: "v0.4.6".into(),
             }]
         );
+    }
+
+    fn ids(targets: &[MatrixTarget]) -> Vec<&str> {
+        targets.iter().map(|target| target.id.as_str()).collect()
+    }
+
+    /// A target added after a release leaves that release complete: its
+    /// version commit declared only `linux-x64`, and the Release holds it.
+    #[test]
+    fn a_target_added_after_a_release_does_not_reopen_it() {
+        let targets = [target("linux-x64"), target("darwin-arm64")];
+        let held = ["demo-linux-x64.tar.gz".to_owned()];
+        let owed = owed(&targets, &held, || Ok(Some(vec!["linux-x64".into()]))).unwrap();
+        assert_eq!(ids(&owed), ["linux-x64"]);
+        let release = finished(&["demo-linux-x64.tar.gz"]);
+        let state = state_of(
+            &entry("demo", "0.0.1"),
+            at("aaa", 1),
+            true,
+            &release,
+            &owed,
+            "v0.0.1",
+        );
+        assert!(state.complete);
+    }
+
+    #[test]
+    fn a_target_the_release_commit_declared_is_still_owed() {
+        let targets = [target("linux-x64"), target("darwin-arm64")];
+        let held = ["demo-linux-x64.tar.gz".to_owned()];
+        let declared = || Ok(Some(vec!["linux-x64".into(), "darwin-arm64".into()]));
+        assert_eq!(
+            ids(&owed(&targets, &held, declared).unwrap()),
+            ["linux-x64", "darwin-arm64"]
+        );
+    }
+
+    #[test]
+    fn a_commit_with_no_config_owes_no_asset() {
+        let targets = [target("linux-x64")];
+        assert!(owed(&targets, &[], || Ok(None)).unwrap().is_empty());
+    }
+
+    /// The old config is read only for a release that lacks an asset, so a
+    /// complete release never needs it to parse.
+    #[test]
+    fn a_complete_release_never_reads_its_old_config() {
+        let targets = [target("linux-x64")];
+        let held = ["demo-linux-x64.tar.gz".to_owned()];
+        let owed = owed(&targets, &held, || {
+            panic!("the old config was read for a complete release")
+        })
+        .unwrap();
+        assert_eq!(ids(&owed), ["linux-x64"]);
     }
 
     #[test]
