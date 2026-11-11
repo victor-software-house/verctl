@@ -1,11 +1,12 @@
 ## ADDED Requirements
 
-### Requirement: A package sets options for its publisher
+### Requirement: Publisher options on a package
 
 A package's `publish` SHALL take a mapping of options for the publisher the package resolves to.
 A package with such a mapping SHALL keep that publisher's upload command, its registry check, and its tag order.
+
 A list under `publish` SHALL replace the whole upload command.
-A `publish` that is neither a mapping nor a list SHALL fail the load and say it takes options or a command.
+Any other value under `publish` SHALL fail the load, and the error SHALL name both shapes it takes.
 
 #### Scenario: Options keep the registry check
 
@@ -20,20 +21,14 @@ A `publish` that is neither a mapping nor a list SHALL fail the load and say it 
 #### Scenario: A value that is neither
 
 - **WHEN** `demo` declares `publish: fast`
-- **THEN** every command that loads `.ctl/ver.yaml` exits non-zero and its error says `publish` takes a mapping of options or a list that is the whole upload command
+- **THEN** every command that loads `.ctl/ver.yaml` exits non-zero
+- **AND** the error names a mapping of options and a list that is the whole upload command
 
 ### Requirement: Options are checked against the publisher at load
 
 The load SHALL fail when a package's `publish` mapping holds a key its publisher has no option for.
 The error SHALL name the package, the publisher, the key, and the options that publisher has.
-The load SHALL fail the same way when the publisher has no options at all:
-a publisher declared under `publishers`, the built-in bun publisher, and a built-in publisher whose `publishers` entry replaces its `argv`.
 An option whose value has the wrong type SHALL fail the load and name the type it takes.
-
-#### Scenario: A cargo option on a bun package
-
-- **WHEN** package `web` at `package.json` declares `publish: {verify: false}`
-- **THEN** `verctl status` exits non-zero and its error names `web`, `bun`, and `verify`, and says bun has no publish options
 
 #### Scenario: A misspelt option
 
@@ -43,12 +38,27 @@ An option whose value has the wrong type SHALL fail the load and name the type i
 #### Scenario: A value of the wrong type
 
 - **WHEN** crate `demo` declares `publish: {verify: "no"}`
-- **THEN** `verctl status` exits non-zero and its error says `verify` is `true` or `false`
+- **THEN** `verctl status` exits non-zero and its error states that `verify` is `true` or `false`
+
+### Requirement: A publisher with no options refuses every option
+
+Three publishers have no options, and any option on them SHALL fail the load:
+
+- a publisher declared under `publishers`;
+- the built-in bun publisher;
+- a built-in publisher whose `publishers` entry replaces its `argv`.
+
+The error SHALL name the package, the publisher, and the setting to remove.
+
+#### Scenario: A cargo option on a bun package
+
+- **WHEN** package `web` at `package.json` declares `publish: {verify: false}`
+- **THEN** `verctl status` exits non-zero, and its error names `web`, `bun`, and `verify` and states that bun has no publish options
 
 #### Scenario: A replaced cargo command has no options
 
 - **WHEN** `.ctl/ver.yaml` declares `publishers.cargo.argv: [cargo, publish]` and crate `demo` declares `publish: {verify: false}`
-- **THEN** `verctl status` exits non-zero and its error says `publishers.cargo` replaces the upload command, which takes no options
+- **THEN** `verctl status` exits non-zero and its error states that `publishers.cargo` replaces the upload command, which takes no options
 
 ### Requirement: verify controls cargo's build of the packed crate
 
