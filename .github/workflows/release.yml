@@ -361,14 +361,16 @@ jobs:
           VERCTL_TRUSTED_PUBLISHING_TOKEN: ${{ steps.crates-io.outputs.token }}
           VERCTL_REGISTRY_TOKEN_ENV: ${{ inputs.registry-token-env }}
           PLAN_VERCTL: ${{ needs.plan.outputs.verctl-version && format('github:victor-software-house/verctl@{0}', needs.plan.outputs.verctl-version) || '' }}
-          # The version commit's mise.lock pins its own verctl and lacks the
-          # plan's version: install it past the lockfile, and write none, so
-          # a locked config neither refuses it nor leaves the tree dirty.
-          MISE_LOCKED: "false"
-          MISE_LOCKFILE: "false"
         # The plan's verctl, not the one this commit's served task pins, which
         # may predate this workflow. Empty runs this run's build from PATH.
-        run: mise exec ${PLAN_VERCTL:+"$PLAN_VERCTL"} -- verctl release
+        # The version commit's mise.lock pins its own verctl and lacks the plan's, so
+        # mise installs this one past the lockfile and writes none into the
+        # checkout. env -u drops both settings again, so every mise task verctl
+        # runs is held to the commit's lock.
+        run: >-
+          MISE_LOCKED=false MISE_LOCKFILE=false
+          mise exec ${PLAN_VERCTL:+"$PLAN_VERCTL"} --
+          env -u MISE_LOCKED -u MISE_LOCKFILE verctl release
 
   assets:
     name: ${{ matrix.id }} at ${{ matrix.commit }}
@@ -452,13 +454,15 @@ jobs:
           VERCTL_TARGET: ${{ matrix.id }}
           VERCTL_TAG: ${{ matrix.tag }}
           PLAN_VERCTL: ${{ needs.plan.outputs.verctl-version && format('github:victor-software-house/verctl@{0}', needs.plan.outputs.verctl-version) || '' }}
-          # The version commit's mise.lock pins its own verctl and lacks the
-          # plan's version: install it past the lockfile, and write none, so
-          # a locked config neither refuses it nor leaves the tree dirty.
-          MISE_LOCKED: "false"
-          MISE_LOCKFILE: "false"
         # The plan's verctl, as in publish.
-        run: mise exec ${PLAN_VERCTL:+"$PLAN_VERCTL"} -- verctl release asset
+        # The version commit's mise.lock pins its own verctl and lacks the plan's, so
+        # mise installs this one past the lockfile and writes none into the
+        # checkout. env -u drops both settings again, so every mise task verctl
+        # runs is held to the commit's lock.
+        run: >-
+          MISE_LOCKED=false MISE_LOCKFILE=false
+          mise exec ${PLAN_VERCTL:+"$PLAN_VERCTL"} --
+          env -u MISE_LOCKED -u MISE_LOCKFILE verctl release asset
 
   docs:
     name: docs.rs at ${{ matrix.commit }}
@@ -523,13 +527,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PLAN_VERCTL: ${{ needs.plan.outputs.verctl-version && format('github:victor-software-house/verctl@{0}', needs.plan.outputs.verctl-version) || '' }}
-          # The version commit's mise.lock pins its own verctl and lacks the
-          # plan's version: install it past the lockfile, and write none, so
-          # a locked config neither refuses it nor leaves the tree dirty.
-          MISE_LOCKED: "false"
-          MISE_LOCKFILE: "false"
         # The plan's verctl, as in publish.
-        run: mise exec ${PLAN_VERCTL:+"$PLAN_VERCTL"} -- verctl docs
+        # The version commit's mise.lock pins its own verctl and lacks the plan's, so
+        # mise installs this one past the lockfile and writes none into the
+        # checkout. env -u drops both settings again, so every mise task verctl
+        # runs is held to the commit's lock.
+        run: >-
+          MISE_LOCKED=false MISE_LOCKFILE=false
+          mise exec ${PLAN_VERCTL:+"$PLAN_VERCTL"} --
+          env -u MISE_LOCKED -u MISE_LOCKFILE verctl docs
 
   propose:
     name: Open or update the Version PR

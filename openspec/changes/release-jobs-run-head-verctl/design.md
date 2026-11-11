@@ -48,6 +48,8 @@ Alternatives considered:
 ## Risks / Trade-offs
 
 1. **A caller with `locked = true` and no lockfile entry for that version.** `mise exec` installs a tool the lockfile may not list.
-   Mitigation: the three steps set `MISE_LOCKED: "false"` and `MISE_LOCKFILE: "false"`, so mise installs the version and writes no lockfile into the checkout.
-   The first caller run after this change is the proof, recorded in tasks.
+   Mitigation:
+   - Each of the three steps sets `MISE_LOCKED=false` and `MISE_LOCKFILE=false` for `mise exec` alone, so mise installs the version and writes no lockfile into the checkout.
+   - `env -u` drops both before `verctl` starts, so every mise task it runs is held to the commit's lock.
+   - The first caller run after this change is the proof, recorded in tasks.
 2. **The verctl at HEAD meets an old commit's config.** That is the same pairing [release-asset-targets](../release-asset-targets/proposal.md) handles: an old release is read with HEAD's verctl.
