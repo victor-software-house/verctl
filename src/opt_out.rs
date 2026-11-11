@@ -1,7 +1,7 @@
 //! Whether a manifest opts its package out of publishing.
 //!
 //! The stack's own tool reads this setting from the manifest, so verctl reads
-//! it there too: a package that opts out releases on GitHub only, with no
+//! it there too. A package that opts out releases on GitHub only, with no
 //! `publisher: none` beside it. Nothing here follows a symlink or leaves the
 //! tree it is given.
 

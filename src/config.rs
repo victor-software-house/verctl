@@ -2766,9 +2766,9 @@ mod tests {
                       - name: demo
                         path: Cargo.toml
                         publish:
-                          verfy: false
+                          allow_dirty: true
                 "},
-                r#"package "demo": cargo has no publish option "verfy"; its options are: verify"#,
+                r#"package "demo": cargo has no publish option "allow_dirty"; its options are: verify"#,
             ),
             (
                 indoc! {"
