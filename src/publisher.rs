@@ -574,13 +574,13 @@ pub(crate) fn prerelease_tag(version: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Resolve a package's label, noun, and upload command for `version`.
+/// Resolve a package's label, noun, and upload command.
 ///
 /// The label is the plan's `via`: the publisher, then the registry when one
 /// is named, then any option that differs from its default.
 ///
-/// The stock bun upload of a candidate adds `--tag <prerelease tag>`. cargo
-/// and a command the repository wrote upload as they always do.
+/// This is the command for a stable version. [`resolve_for_version`] adds what
+/// a candidate needs.
 ///
 /// # Errors
 ///
@@ -591,7 +591,33 @@ pub fn resolve(
     config: &crate::config::Config,
     spec: &crate::config::PackageSpec,
     root: &Path,
+) -> Result<(String, String, Vec<String>)> {
+    resolve_tagged(config, spec, root, None)
+}
+
+/// [`resolve`] for the package at `version`.
+///
+/// The stock bun upload of a candidate adds `--tag <prerelease tag>`. cargo
+/// and a command the repository wrote upload as they always do.
+///
+/// # Errors
+///
+/// Returns the errors of [`resolve`].
+pub fn resolve_for_version(
+    config: &crate::config::Config,
+    spec: &crate::config::PackageSpec,
+    root: &Path,
     version: &str,
+) -> Result<(String, String, Vec<String>)> {
+    resolve_tagged(config, spec, root, prerelease_tag(version).as_deref())
+}
+
+/// [`resolve`], with the npm dist-tag the stock bun upload carries, if any.
+fn resolve_tagged(
+    config: &crate::config::Config,
+    spec: &crate::config::PackageSpec,
+    root: &Path,
+    dist_tag: Option<&str>,
 ) -> Result<(String, String, Vec<String>)> {
     let publisher = Publisher::of(config, spec, root)?;
     let (name, recipe, options) = match &publisher {
@@ -625,9 +651,9 @@ pub fn resolve(
         }
     }
     if matches!(publisher, Publisher::Bun { .. })
-        && let Some(tag) = prerelease_tag(version)
+        && let Some(tag) = dist_tag
     {
-        argv.extend(["--tag".to_owned(), tag]);
+        argv.extend(["--tag".to_owned(), tag.to_owned()]);
     }
     Ok((label, noun, argv))
 }
@@ -950,7 +976,7 @@ mod tests {
 
     use indoc::{formatdoc, indoc};
 
-    use super::{PublisherSpec, expand, registry_check, resolve};
+    use super::{PublisherSpec, expand, registry_check, resolve, resolve_for_version};
     use crate::registry::RegistryCheck;
 
     fn words(parts: &[&str]) -> Vec<String> {
@@ -1022,7 +1048,8 @@ mod tests {
     fn upload_at(yaml: &str, version: &str) -> (Vec<String>, String) {
         let root = manifests();
         let config = crate::config::Config::parse(yaml).unwrap();
-        let (_, _, argv) = resolve(&config, &config.packages[0], root.path(), version).unwrap();
+        let (_, _, argv) =
+            resolve_for_version(&config, &config.packages[0], root.path(), version).unwrap();
         (argv, root.path().display().to_string())
     }
 
@@ -1124,10 +1151,10 @@ mod tests {
         "})
         .unwrap();
         let root = Path::new("");
-        let (label, _, argv) = resolve(&config, &config.packages[0], root, "0.0.1").unwrap();
+        let (label, _, argv) = resolve(&config, &config.packages[0], root).unwrap();
         assert_eq!(label, "release only");
         assert_eq!(argv, Vec::<String>::new());
-        let error = resolve(&config, &config.packages[1], root, "0.0.1").unwrap_err();
+        let error = resolve(&config, &config.packages[1], root).unwrap_err();
         assert!(
             format!("{error:#}").contains("renders an empty command"),
             "{error:#}"
@@ -1156,17 +1183,15 @@ mod tests {
                 marker: true
         "})
         .unwrap();
-        let (label, _, _) = resolve(&config, &config.packages[3], Path::new(""), "0.0.1").unwrap();
+        let (label, _, _) = resolve(&config, &config.packages[3], Path::new("")).unwrap();
         assert_eq!(label, "release only");
-        let (label, _, _) = resolve(&config, &config.packages[4], Path::new(""), "0.0.1").unwrap();
+        let (label, _, _) = resolve(&config, &config.packages[4], Path::new("")).unwrap();
         assert_eq!(label, "release only");
-        let (label, _, argv) =
-            resolve(&config, &config.packages[0], Path::new(""), "0.0.1").unwrap();
+        let (label, _, argv) = resolve(&config, &config.packages[0], Path::new("")).unwrap();
         assert_eq!((label.as_str(), argv.len()), ("release only", 0));
-        let (label, _, argv) =
-            resolve(&config, &config.packages[2], Path::new(""), "0.0.1").unwrap();
+        let (label, _, argv) = resolve(&config, &config.packages[2], Path::new("")).unwrap();
         assert_eq!((label.as_str(), argv.len()), ("release only", 0));
-        let (_, _, argv) = resolve(&config, &config.packages[1], Path::new(""), "0.0.1").unwrap();
+        let (_, _, argv) = resolve(&config, &config.packages[1], Path::new("")).unwrap();
         assert_eq!(argv, ["goreleaser", "release"]);
         assert_eq!(
             registry_check(&config, &config.packages[0], Path::new("."), "0.1.0").unwrap(),
@@ -1408,7 +1433,7 @@ mod tests {
     fn uploads_for(yaml: &str, root: &Path) -> Vec<super::Upload> {
         let config = crate::config::Config::parse(yaml).unwrap();
         let spec = &config.packages[0];
-        let (label, noun, argv) = resolve(&config, spec, root, "0.0.2").unwrap();
+        let (label, noun, argv) = resolve(&config, spec, root).unwrap();
         let entry = crate::publish::PublishEntry {
             name: spec.name.clone(),
             version: "0.0.2".into(),
@@ -1680,12 +1705,12 @@ mod tests {
                 path: quiet/Cargo.toml
         "})
         .unwrap();
-        let (label, _, argv) = resolve(&config, &config.packages[0], root.path(), "0.0.1").unwrap();
+        let (label, _, argv) = resolve(&config, &config.packages[0], root.path()).unwrap();
         assert_eq!(label, "cargo, no verify");
         assert_eq!(argv.last().map(String::as_str), Some("--no-verify"));
-        let (label, _, _) = resolve(&config, &config.packages[1], root.path(), "0.0.1").unwrap();
+        let (label, _, _) = resolve(&config, &config.packages[1], root.path()).unwrap();
         assert_eq!(label, "cargo internal, no verify");
-        let (label, _, argv) = resolve(&config, &config.packages[2], root.path(), "0.0.1").unwrap();
+        let (label, _, argv) = resolve(&config, &config.packages[2], root.path()).unwrap();
         assert_eq!(label, "cargo");
         assert!(!argv.iter().any(|part| part == "--no-verify"), "{argv:?}");
     }

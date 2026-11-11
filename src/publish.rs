@@ -96,7 +96,7 @@ pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
     for spec in &config.packages {
         let current = spec.current(config, root)?;
         let version = current.version;
-        let (label, noun, argv) = publisher::resolve(config, spec, root, &version)?;
+        let (label, noun, argv) = publisher::resolve_for_version(config, spec, root, &version)?;
         packages.push(PublishEntry {
             name: spec.name.clone(),
             version,
@@ -501,7 +501,7 @@ fn open_release(
         sha,
         kind,
     };
-    github::ensure_release(token, repo, &release, shipped)
+    github::ensure_release_as(token, repo, &release, shipped)
 }
 
 /// What a dry run would publish: every package not at `0.0.0`, a workspace

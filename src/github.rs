@@ -358,7 +358,7 @@ pub enum ReleaseKind {
     Candidate,
 }
 
-/// The Release `ensure_release` creates when its tag has none.
+/// The Release `ensure_release_as` creates when its tag has none.
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct NewRelease<'a> {
@@ -376,7 +376,8 @@ pub struct NewRelease<'a> {
 
 /// Create `tag` at `sha` if it is missing. Returns the release HTML URL.
 ///
-/// A new Release is marked as `release.kind` says. An existing one is used as
+/// A new Release has GitHub's defaults, as [`ReleaseKind::Stable`] says; see
+/// [`ensure_release_as`] to mark one otherwise. An existing release is used as
 /// it is.
 ///
 /// An existing release is not trusted: GitHub's `target_commitish` on the
@@ -395,6 +396,30 @@ pub struct NewRelease<'a> {
 /// The tag is checked against an existing release only when `shipped` is
 /// true.
 pub fn ensure_release(
+    token: &str,
+    repo: &Repo,
+    tag: &str,
+    name: &str,
+    body: &str,
+    sha: &str,
+    shipped: bool,
+) -> Result<String> {
+    let release = NewRelease {
+        tag,
+        name,
+        body,
+        sha,
+        kind: ReleaseKind::Stable,
+    };
+    ensure_release_as(token, repo, &release, shipped)
+}
+
+/// [`ensure_release`] for a Release marked as `release.kind` says.
+///
+/// # Errors
+///
+/// Returns the errors of [`ensure_release`].
+pub fn ensure_release_as(
     token: &str,
     repo: &Repo,
     release: &NewRelease<'_>,
