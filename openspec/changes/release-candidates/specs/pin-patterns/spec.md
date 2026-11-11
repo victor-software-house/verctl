@@ -43,6 +43,7 @@ The bounded sides that made the refusal safe still keep a pattern from matching 
 
 ### Requirement: A tool pin refuses a prerelease include
 
-**Reason**: Replaced by "A tool pin moves a prerelease include", which keeps the refusal for a ref that starts with a digit and is not a whole version.
+**Reason**: Replaced by "A tool pin moves a prerelease include".
+That requirement keeps the refusal for a ref that starts with a digit and is not a whole version.
 
 **Migration**: None.

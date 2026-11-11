@@ -167,11 +167,13 @@ The stable Version PR renders its CHANGELOG section from two sets of fragments:
 1. the fragments pending now;
 2. the fragments each candidate since the last stable release consumed, for this package.
 
-The second set comes from history.
-verctl walks first-parent commits from `HEAD` back to the package's last stable version commit.
-In each commit's diff against its first parent, a deleted fragment file is read from that first parent.
-The merge queue lands a Version PR as a merge commit, so its deletions show in that diff.
-`git::added_by` gains a start commit, so the origin of a deleted fragment resolves from the parent that still holds it.
+The second set comes from history:
+
+1. verctl walks first-parent commits from `HEAD` back to the package's last stable version commit.
+2. In each commit's diff against its first parent, a deleted fragment file is read from that first parent.
+   The merge queue lands a Version PR as a merge commit, so its deletions show in that diff.
+3. `git::added_by` gains a start commit, so a deleted fragment's origin resolves from the parent that still holds it.
+
 Every job in `release.yml` checks out with `fetch-depth: 0`.
 
 The candidate sections stay in the CHANGELOG.
@@ -179,7 +181,9 @@ Each candidate's Release body is its own section, and the CHANGELOG is never edi
 
 Alternatives considered:
 
-1. **Keep the fragment files during the mode**, as Changesets does. It lost because each later Version PR then needs a record of which files earlier candidates versioned, which is the state file decision 1 ruled out.
+1. **Keep the fragment files during the mode**, as Changesets does.
+   It lost because each later Version PR would need a record of the files earlier candidates versioned.
+   That record is the state file decision 1 ruled out.
 2. **Merge the candidate sections' text.** It lost because rendered Markdown is the template's output.
    Group headings and credits would be parsed back from it.
 3. **Replace the candidate sections with the stable one.** It lost because published candidates would lose the section their Release links to.
@@ -225,7 +229,7 @@ A per-pin switch waits until a pin needs one.
 2. **Between a candidate and the stable release, the default branch names the candidate.**
    A served README or example shows `0.8.0-rc.1` until the stable Version PR merges.
 3. **`prerelease` on a stable package does nothing until a fragment lands.**
-   The instructions say so.
+   `verctl instructions` covers this case.
 4. **A command publisher may need its own tag.**
    verctl adds nothing to a replaced argv. The instructions name the flag for npm and bun.
 

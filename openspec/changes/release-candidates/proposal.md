@@ -48,7 +48,14 @@ Nothing is removed, and no caller must change.
 
 ## Impact
 
-1. Code: `src/config.rs` (the `prerelease` field), `src/bump.rs` (candidate versions), `src/prepare.rs` and `src/pending.rs` (the stable release with no new fragment), `src/release.rs` and `src/git.rs` (fragments a candidate consumed), `src/github.rs` (prerelease Releases), `src/publisher.rs` (the bun tag), `src/pins.rs` (the version pattern), tests.
+1. Code, with tests for each:
+   - `src/config.rs`: the `prerelease` field;
+   - `src/bump.rs`: candidate versions;
+   - `src/prepare.rs` and `src/pending.rs`: the stable release with no new fragment;
+   - `src/release.rs` and `src/git.rs`: fragments a candidate consumed;
+   - `src/github.rs`: prerelease Releases;
+   - `src/publisher.rs`: the bun tag;
+   - `src/pins.rs`: the version pattern.
 2. Bundle: `verctl instructions`, the operator skill, `README.md`, `examples/ver.yaml`, through their templates.
 3. Callers: none must change. A caller that wants to try a candidate pins its exact version, such as `verctl = "0.8.0-rc.1"` in `mise.toml`.
 4. Release: a patch. Every change is an addition.

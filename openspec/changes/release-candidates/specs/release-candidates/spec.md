@@ -20,7 +20,13 @@ When `prerelease` is omitted, the package SHALL release stable versions.
 
 While a package sets `prerelease`, `verctl version` SHALL write `<base>-<tag>.<count>` for it.
 The base SHALL be the current version bumped by the highest pending bump.
-A current prerelease SHALL keep its base when the base already reaches that bump: a patch always, a minor when the patch is 0, and a major when the minor and patch are 0.
+
+A current prerelease SHALL keep its base when the base already reaches that bump:
+
+- a patch always;
+- a minor when the patch is 0;
+- a major when the minor and patch are 0.
+
 The count SHALL be the current count plus 1 when the base and the tag are unchanged, and 1 otherwise.
 
 #### Scenario: The first candidate of a minor
@@ -54,7 +60,7 @@ The error SHALL name the version and the shape verctl writes.
 - **THEN** `verctl version` exits non-zero, naming `0.8.0-rc1` and `0.8.0-rc.2` as the shape it writes
 - **AND** `Cargo.toml` is unchanged
 
-### Requirement: A new tag starts its own count
+### Requirement: A new tag restarts the count
 
 A package whose current version is a prerelease with a tag other than its `prerelease` SHALL be pending with no fragment.
 `verctl version` SHALL write the same base with the new tag and count 1.
@@ -87,7 +93,10 @@ A package whose current version is a prerelease and that omits `prerelease` SHAL
 
 ### Requirement: The stable section lists every candidate's changes
 
-The CHANGELOG section of a stable version that follows candidates SHALL be rendered from the pending fragments and from each fragment a candidate since the last stable release consumed for that package.
+The CHANGELOG section of a stable version that follows candidates SHALL be rendered from two sets of fragments:
+
+- the pending fragments;
+- each fragment that a candidate since the last stable release consumed for that package.
 `verctl version` SHALL read those fragments from the first-parent history.
 The candidate sections SHALL stay in the CHANGELOG.
 
@@ -118,7 +127,7 @@ It SHALL create the Release of a stable version with GitHub's defaults.
 - **WHEN** `verctl release` publishes `verctl` `0.8.0`
 - **THEN** it creates Release `v0.8.0` with `prerelease: false` and sends no `make_latest`
 
-### Requirement: A candidate keeps the npm `latest` tag where it was
+### Requirement: A candidate leaves the npm `latest` tag unmoved
 
 The bun publisher SHALL add `--tag <prerelease tag>` to the upload of a version with a prerelease.
 The cargo publisher and a replaced upload command SHALL upload a candidate with their usual argv.
