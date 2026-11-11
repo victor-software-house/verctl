@@ -25,19 +25,20 @@ name: Release
 # One flow: plan every incomplete version commit, publish each in history
 # order, build the assets its Release lacks, check docs.rs, then open or
 # update the Version PR. Every job is safe to rerun, and every step sets its
-# settings in env and runs `mise run ver <verb>`: the served task execs the
-# verctl the caller pins. verctl's own release passes verctl-artifact instead,
-# so each job runs the verctl that run built once for its platform.
+# settings in env. plan and propose run `mise run ver <verb>` at HEAD, where
+# the served task execs the verctl the caller pins; the jobs at a version
+# commit run that same version. verctl's own release passes verctl-artifact
+# instead, so each job runs the verctl that run built once for its platform.
 #
 # Every other job needs plan, so plan alone checks what they share: the
 # pinned verctl is 0.8.0 or later, and each mise-ignored-config-paths entry
 # is a plain relative path. publish, assets, and docs take the checked paths
 # from plan's outputs.
 #
-# publish, assets, and docs check out the version commit, so they run the
-# verctl that commit pins. A pending version commit that pins verctl older
-# than 0.8.0 fails in publish and assets, because that verctl has no
-# release verb: move its pin together with this workflow's ref.
+# publish, assets, and docs check out the version commit, but they run the
+# verctl plan checked at HEAD through `mise exec`, not the one that commit's
+# served task pins. A released commit cannot move its pin, and an older pin
+# has no release verb.
 
 on:
   workflow_call:
@@ -176,6 +177,9 @@ jobs:
       commits: ${{ steps.plan.outputs.commits }}
       pending: ${{ steps.plan.outputs.pending }}
       assets: ${{ steps.plan.outputs.assets }}
+      # The verctl every later job runs, whatever its checked-out commit pins.
+      # Empty with verctl-artifact: that build is already on each job's PATH.
+      verctl-version: ${{ steps.minimum.outputs.version }}
       mise-ignored-config-paths: ${{ steps.ignored.outputs.paths }}
     steps:
       - name: Check out repository
@@ -230,10 +234,10 @@ jobs:
           chmod +x "${BUILD_DIR}/verctl"
           echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
       - name: Require verctl 0.8.0 or later
-        # The caller's pin chooses verctl, apart from this workflow's ref.
-        # A build from this run already matches the workflow, so it skips.
-        # Every later job needs this one, so it checks once; the header
-        # says what an older pin on a version commit does.
+        id: minimum
+        # The caller's pin at HEAD chooses verctl, apart from this workflow's
+        # ref. A build from this run already matches the workflow, so it skips.
+        # Every later job runs the version this step checked, so it checks once.
         if: inputs.verctl-artifact == ''
         env:
           MINIMUM: 0.8.0
@@ -245,6 +249,7 @@ jobs:
             echo "::error::verctl ${installed} is older than ${MINIMUM}, the minimum this release workflow needs. Move the verctl pin and the workflow ref together."
             exit 1
           fi
+          echo "version=${installed}" >> "${GITHUB_OUTPUT}"
       - name: Plan
         id: plan
         env:
@@ -341,7 +346,10 @@ jobs:
           VERCTL_REGISTRY_TOKEN: ${{ secrets.registry-token }}
           VERCTL_TRUSTED_PUBLISHING_TOKEN: ${{ steps.crates-io.outputs.token }}
           VERCTL_REGISTRY_TOKEN_ENV: ${{ inputs.registry-token-env }}
-        run: mise run ver release
+          PLAN_VERCTL: ${{ needs.plan.outputs.verctl-version && format('github:victor-software-house/verctl@{0}', needs.plan.outputs.verctl-version) || '' }}
+        # The plan's verctl, not the one this commit's served task pins, which
+        # may predate this workflow. Empty runs this run's build from PATH.
+        run: mise exec ${PLAN_VERCTL:+"$PLAN_VERCTL"} -- verctl release
 
   assets:
     name: ${{ matrix.id }} at ${{ matrix.commit }}
@@ -422,7 +430,9 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           VERCTL_TARGET: ${{ matrix.id }}
           VERCTL_TAG: ${{ matrix.tag }}
-        run: mise run ver release asset
+          PLAN_VERCTL: ${{ needs.plan.outputs.verctl-version && format('github:victor-software-house/verctl@{0}', needs.plan.outputs.verctl-version) || '' }}
+        # The plan's verctl, as in publish.
+        run: mise exec ${PLAN_VERCTL:+"$PLAN_VERCTL"} -- verctl release asset
 
   docs:
     name: docs.rs at ${{ matrix.commit }}
@@ -484,7 +494,9 @@ jobs:
       - name: Wait for docs.rs
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: mise run ver docs
+          PLAN_VERCTL: ${{ needs.plan.outputs.verctl-version && format('github:victor-software-house/verctl@{0}', needs.plan.outputs.verctl-version) || '' }}
+        # The plan's verctl, as in publish.
+        run: mise exec ${PLAN_VERCTL:+"$PLAN_VERCTL"} -- verctl docs
 
   propose:
     name: Open or update the Version PR
