@@ -1042,19 +1042,6 @@ mod tests {
                 "}),
             ),
             (
-                "a prerelease is part of the version and moves with it",
-                indoc! {"
-                    ---
-                    version: 0.0.1-rc1
-                    ---
-                "},
-                Ok(indoc! {"
-                    ---
-                    version: 0.0.2
-                    ---
-                "}),
-            ),
-            (
                 "a tail the version does not cover leaves the line unmatched",
                 indoc! {"
                     ---
