@@ -3,12 +3,14 @@ name: Self-release
 # verctl releases through its own reusable workflow, at the same commit, so a
 # change to the workflow is exercised by the release that ships it.
 #
-# verctl is built from source only here, once per platform the release runs
-# on, and every job of the release reuses that build: release.yml's plan,
-# publish, docs, and propose jobs run on ubuntu-latest, and the asset jobs on
-# the machines .ctl/ver.yaml names (macos-latest, ubuntu-latest, and
-# ubuntu-24.04-arm). Each asset job downloads the build of its own runner's
-# OS and architecture, so every runner .ctl/ver.yaml names has a leg here.
+# The build jobs here compile the verctl that runs every job of the release,
+# once per platform the release runs on: release.yml's plan, publish, docs,
+# and propose jobs run on ubuntu-latest, and the asset jobs on the machines
+# .ctl/ver.yaml names (macos-latest, ubuntu-latest, and ubuntu-24.04-arm).
+# Each asset job downloads the build of its own runner's OS and architecture,
+# so every runner .ctl/ver.yaml names has a leg here. The tarballs do not
+# reuse it: each asset job compiles its binary again from the version commit
+# it releases, which can be older than this run's commit.
 
 on:
   push:
