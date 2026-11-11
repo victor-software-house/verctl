@@ -84,8 +84,10 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up mise
-        uses: victor-software-house/actions/mise@e6e13c808cce87ac8f1faf59cfaf2bab34bda7aa # main, 2026-11-11
+        uses: victor-software-house/actions/mise@4168002fe58fd0b310bd2b65f9db2262fc0e21d3 # main, 2026-11-11
         with:
+          mirror-url: ${{ secrets.RELEASE_MIRROR_URL }}
+          mirror-key: ${{ secrets.RELEASE_MIRROR_CI_KEY }}
           version: 2026.11.6
           cache: true
       - run: mise install --locked
@@ -121,8 +123,10 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - name: Set up mise
-        uses: victor-software-house/actions/mise@e6e13c808cce87ac8f1faf59cfaf2bab34bda7aa # main, 2026-11-11
+        uses: victor-software-house/actions/mise@4168002fe58fd0b310bd2b65f9db2262fc0e21d3 # main, 2026-11-11
         with:
+          mirror-url: ${{ secrets.RELEASE_MIRROR_URL }}
+          mirror-key: ${{ secrets.RELEASE_MIRROR_CI_KEY }}
           version: 2026.11.6
           cache: true
       - run: mise install --locked
