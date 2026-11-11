@@ -5,7 +5,7 @@ Compile, format, lint, and test tasks that must run before a push run on the bui
 
 ## 1. The `prerelease` setting
 
-- [ ] 1.1 `PackageSpec.prerelease: Option<Prerelease>`, with a `ctl_core::validate` rule for lowercase ASCII letters.
+- [ ] 1.1 `PackageSpec.prerelease: Option<Prerelease>`, with a garde rule in `src/config.rs` for lowercase ASCII letters. Only this schema uses the rule, so it stays in verctl.
   Verify: a config test loads `prerelease: rc` and fails on `rc1`, `RC`, `rc.1`, and `1`, each naming the package and the field.
 
 ## 2. Candidate versions

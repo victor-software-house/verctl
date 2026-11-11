@@ -100,7 +100,7 @@ Set it to start, change it to move to another tag, remove it to release stable.
 ### 2. A tag is lowercase ASCII letters
 
 `alpha`, `beta`, `rc`, `next`, and `canary` load.
-`rc1`, `RC`, `rc.1`, and `1` fail the load, through a `ctl_core::validate` rule that names the field.
+`rc1`, `RC`, `rc.1`, and `1` fail the load, through a garde rule in `src/config.rs` that names the field.
 
 Letters only keeps three properties:
 
