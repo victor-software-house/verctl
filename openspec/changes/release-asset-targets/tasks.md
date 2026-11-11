@@ -12,7 +12,7 @@ Compile, format, lint, and test tasks that must run before a push run on the bui
 
 ## 2. Bundle
 
-- [ ] 2.1 `verctl instructions` and the operator skill state which assets a release owes, through their templates.
+- [ ] 2.1 `verctl instructions` and the operator skill state which assets a release is checked for, through their templates.
   Verify: `UPDATE_OPERATOR_DOCS=1 cargo test operator_docs` on the build host leaves no diff on a second run.
 - [ ] 2.2 A `.changeset/` patch fragment.
   Verify: `verctl check` in CI passes on the pull request.

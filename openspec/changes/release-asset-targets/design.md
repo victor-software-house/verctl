@@ -15,7 +15,7 @@ A target added after a release therefore reopens that release.
 
 **Goals:**
 
-1. A release owes what its own commit declared.
+1. A release is checked for the asset targets its own commit declared.
 2. Nothing new parses for a release that already has every target.
 
 **Non-Goals:**
@@ -25,13 +25,13 @@ A target added after a release therefore reopens that release.
 
 ## Decisions
 
-### 1. Owed targets are HEAD's targets that the release commit also declared
+### 1. A release is checked for the HEAD targets that the release commit also declared
 
-`owed(root, targets, assets, sha)` returns `targets` unchanged when the Release already holds every asset.
+`checked_targets(targets, assets, declared)` returns `targets` unchanged when the Release already holds every asset.
 Otherwise it reads `.ctl/ver.yaml` at `sha` and keeps the targets whose id that config declares under `assets.targets`.
 
 The intersection keeps HEAD's matrix, which holds the runner, triple, and file name each job uses.
-The old commit decides only which ids it owed.
+The old commit decides only which ids are checked.
 
 Alternatives considered:
 
@@ -56,7 +56,7 @@ It lost because the current schema refuses unknown keys, so any later rename wou
 `pending` takes the path of the config the run loaded, as `release` and `status` resolve it from `-c`.
 The old revision is read at that path, so a nested config such as `crates/demo/.ctl/ver.yaml` or a renamed one is found where it lives.
 
-### 4. No config at the commit owes nothing
+### 4. A commit with no config is checked for no asset
 
 A commit without `.ctl/ver.yaml` predates the file, so no target was declared there.
 

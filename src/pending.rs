@@ -207,7 +207,7 @@ pub fn pending(
         };
         let listed = registry_lists(config, root, spec, entry, release, env)?;
         let head_targets: &[MatrixTarget] = if *index == 0 { &targets } else { &[] };
-        let declared = owed(head_targets, &release.assets, || {
+        let declared = checked_targets(head_targets, &release.assets, || {
             declared_at(root, config_path, &commit.sha)
         })?;
         let state = state_of(entry, commit, listed, release, &declared, &assets_tag);
@@ -224,7 +224,7 @@ pub fn pending(
                     })
                 })?;
             for skipped in earlier {
-                let missing_assets = owed(head_targets, &[], || {
+                let missing_assets = checked_targets(head_targets, &[], || {
                     declared_at(root, config_path, &skipped.sha)
                 })?;
                 states.push(PackageState {
@@ -246,15 +246,16 @@ pub fn pending(
     Ok(group(states))
 }
 
-/// The asset targets a release owes: those in `targets`, which HEAD declares,
-/// that its version commit declared too. A target added after the release
-/// never reopens it.
+/// The asset targets a release is checked for: those in `targets`, which HEAD
+/// declares, that its version commit declared too. A target added after the
+/// release never reopens it.
 ///
-/// A release that already holds every target's asset owes them all, and
-/// `declared` is never called, so its old config never has to parse.
+/// A release that already holds every target's asset is checked for them all.
+/// `declared` is then never called, so its old config never has to parse.
 /// Otherwise `declared` gives the target ids the version commit's config
-/// declared, and `None` for a commit with no config, which owes nothing.
-fn owed(
+/// declared, and `None` for a commit with no config, which is checked for no
+/// asset.
+fn checked_targets(
     targets: &[MatrixTarget],
     assets: &[String],
     declared: impl FnOnce() -> Result<Option<Vec<String>>>,
@@ -605,8 +606,8 @@ mod tests {
     use indoc::indoc;
 
     use super::{
-        DeclaredTargets, PackageState, Pending, PendingAsset, PendingPackage, group, members_at,
-        newest_per_tag, owed, state_of, version_released, write_github_output,
+        DeclaredTargets, PackageState, Pending, PendingAsset, PendingPackage, checked_targets,
+        group, members_at, newest_per_tag, state_of, version_released, write_github_output,
     };
     use crate::assets::MatrixTarget;
     use crate::git::VersionCommit;
@@ -784,15 +785,16 @@ mod tests {
     fn a_target_added_after_a_release_does_not_reopen_it() {
         let targets = [target("linux-x64"), target("darwin-arm64")];
         let held = ["demo-linux-x64.tar.gz".to_owned()];
-        let owed = owed(&targets, &held, || Ok(Some(vec!["linux-x64".into()]))).unwrap();
-        assert_eq!(ids(&owed), ["linux-x64"]);
+        let checked =
+            checked_targets(&targets, &held, || Ok(Some(vec!["linux-x64".into()]))).unwrap();
+        assert_eq!(ids(&checked), ["linux-x64"]);
         let release = finished(&["demo-linux-x64.tar.gz"]);
         let state = state_of(
             &entry("demo", "0.0.1"),
             at("aaa", 1),
             true,
             &release,
-            &owed,
+            &checked,
             "v0.0.1",
         );
         assert!(state.complete);
@@ -804,7 +806,7 @@ mod tests {
         let held = ["demo-linux-x64.tar.gz".to_owned()];
         let declared = || Ok(Some(vec!["linux-x64".into(), "darwin-arm64".into()]));
         assert_eq!(
-            ids(&owed(&targets, &held, declared).unwrap()),
+            ids(&checked_targets(&targets, &held, declared).unwrap()),
             ["linux-x64", "darwin-arm64"]
         );
     }
@@ -838,7 +840,7 @@ mod tests {
     fn a_commit_with_no_config_owes_no_asset() {
         let targets = [target("linux-x64")];
         assert_eq!(
-            ids(&owed(&targets, &[], || Ok(None)).unwrap()),
+            ids(&checked_targets(&targets, &[], || Ok(None)).unwrap()),
             Vec::<&str>::new()
         );
     }
@@ -849,11 +851,11 @@ mod tests {
     fn a_complete_release_never_reads_its_old_config() {
         let targets = [target("linux-x64")];
         let held = ["demo-linux-x64.tar.gz".to_owned()];
-        let owed = owed(&targets, &held, || {
+        let checked = checked_targets(&targets, &held, || {
             panic!("the old config was read for a complete release")
         })
         .unwrap();
-        assert_eq!(ids(&owed), ["linux-x64"]);
+        assert_eq!(ids(&checked), ["linux-x64"]);
     }
 
     #[test]

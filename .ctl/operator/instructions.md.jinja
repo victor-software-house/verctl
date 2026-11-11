@@ -375,7 +375,7 @@ That passes when the package's version there equals its version at HEAD.
 A tag on a commit HEAD does not contain, or at another version, fails.
 
 A release is complete when the registry lists the version and its tag, its Release, and every declared asset exist.  
-A release owes an asset target only when `.ctl/ver.yaml` declares it both at HEAD and at the release's version commit.  
+verctl checks a release for an asset target only when `.ctl/ver.yaml` declares it both at HEAD and at the release's version commit.  
 A target added later never reopens a release.  
 `--skip-assets` (`VERCTL_SKIP_ASSETS`) leaves assets out.
 
