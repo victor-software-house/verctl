@@ -881,13 +881,14 @@ mod tests {
                 .0;
             assert_eq!(ids, ["linux-x64"], "{yaml}");
             seen.extend(
-                Assets::SETTINGS
+                crate::config::Assets::SETTINGS
                     .iter()
+                    .copied()
                     .filter(|key| yaml.contains(&format!("  {key}:"))),
             );
         }
         seen.sort_unstable();
-        let mut settings = Assets::SETTINGS.to_vec();
+        let mut settings = crate::config::Assets::SETTINGS.to_vec();
         settings.sort_unstable();
         assert_eq!(seen, settings, "each setting is exercised once");
     }
