@@ -1173,3 +1173,22 @@ fn prepare_leaves_a_package_with_a_version_that_is_not_semver_alone() {
     let names: Vec<&str> = plan.iter().map(|entry| entry.name.as_str()).collect();
     assert_eq!(names, ["demo"]);
 }
+
+/// `0.0.0` is the placeholder no release carries, so a prerelease of it never
+/// keeps that base: the bump moves it to the first release.
+#[test]
+fn a_prerelease_of_the_placeholder_moves_to_the_first_release() {
+    let rc = Prerelease::new("rc").expect("tag");
+    assert_eq!(
+        apply("0.0.0-alpha.1", Bump::Patch, false).expect("patch"),
+        "0.0.1"
+    );
+    assert_eq!(
+        apply("0.0.0-alpha.1", Bump::Minor, true).expect("first minor"),
+        "0.1.0"
+    );
+    assert_eq!(
+        apply_with("0.0.0-rc.1", Bump::Patch, false, Some(&rc)).expect("candidate"),
+        "0.0.1-rc.1"
+    );
+}
