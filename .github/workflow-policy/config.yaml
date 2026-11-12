@@ -20,11 +20,7 @@ workflow_policy:
   #   allowed: [corp-runner-large]
   # concurrency:
   #   endings: ["${{ github.ref }}"]
-  exceptions:
-    - rule: drafts
-      file: mbx-measure.yml
-      job: measure
-      reason: runs only on a pull request labelled mbx-measure, a check the rule cannot read; removed with the workflow
+  exceptions: []
   # exceptions:
   #   - rule: permissions
   #     file: release.yml
