@@ -4,7 +4,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
-use ctl_core::input::Input;
+use ctl_core::input::{FieldPath, Input};
 use ctl_core::validate::{at_least_one, cannot_be_empty, inside_the_repo};
 use garde::Validate;
 use serde::Deserialize;
@@ -491,6 +491,8 @@ pub struct Assets {
     /// recipe key lands here and fails as an unknown target, loudly. The
     /// map is flattened, so garde names a target's field
     /// `assets.targets.<id>`, though the file has no `targets` key.
+    /// [`Config::from_input`] declares this field to ctl-core as flattened,
+    /// so a problem names `assets.<id>` and lands on that key's line.
     #[serde(flatten)]
     #[garde(dive)]
     pub targets: BTreeMap<String, AssetTarget>,
@@ -1597,7 +1599,7 @@ impl Config {
     /// match the schema, or when validation fails. Each complaint names the
     /// line it comes from.
     pub fn load(path: &Path) -> Result<Self> {
-        Self::from_input(&Input::read(path)?)
+        Self::from_input(Input::read(path)?)
     }
 
     /// A config from text in memory, named as the file a repo writes.
@@ -1607,13 +1609,18 @@ impl Config {
     /// Returns an error when `raw` does not match the schema or fails
     /// validation, as described for [`Config::load`].
     pub fn parse(raw: &str) -> Result<Self> {
-        Self::from_input(&Input::new(".ctl/ver.yaml", raw))
+        Self::from_input(Input::new(".ctl/ver.yaml", raw))
     }
 
     /// The one parse boundary. ctl-core's declared input reads the shape and
     /// validates it once against the whole document, placing each complaint
     /// on its line. A document is therefore read exactly one way.
-    fn from_input(input: &Input) -> Result<Self> {
+    ///
+    /// `assets.targets` is the one flattened map whose entries garde dives
+    /// into, so it is declared here, and a target's problem names the path
+    /// the file holds.
+    fn from_input(input: Input) -> Result<Self> {
+        let input = input.flattened(FieldPath::root().key("assets").key("targets"));
         let mut config: Self = input.parse()?;
         input.check(&config, &config)?;
         config.resolve_patterns();
@@ -2598,7 +2605,7 @@ mod tests {
                       linux-x64:
                         files: [demo]
                 "},
-                "assets.targets.linux-x64.files: must come with assets.dir",
+                "assets.linux-x64.files: must come with assets.dir",
             ),
             (
                 "an empty target list",
@@ -2609,7 +2616,7 @@ mod tests {
                       linux-x64:
                         files: []
                 "},
-                "assets.targets.linux-x64.files: must declare at least one file",
+                "assets.linux-x64.files: must declare at least one file",
             ),
             (
                 "binary beside target files",
@@ -2630,7 +2637,7 @@ mod tests {
                       linux-x64:
                         files: [../secret]
                 "},
-                "assets.targets.linux-x64.files[0]: must stay inside the repository",
+                "assets.linux-x64.files[0]: must stay inside the repository",
             ),
             (
                 "dir with a target that lists no files",
@@ -2651,6 +2658,24 @@ mod tests {
                 "{scenario}: {error:#}"
             );
         }
+    }
+
+    /// The targets map is flattened under `assets`, so the file has no
+    /// `targets` key. The problem names the path the file holds and sits on
+    /// the line of `files`, the sixth after the three package lines.
+    #[test]
+    fn an_asset_target_problem_sits_on_its_own_line() {
+        let error = load(&assets(indoc! {"
+            assets:
+              linux-x64:
+                files: [demo]
+        "}))
+        .expect_err("target files without dir");
+        assert!(
+            format!("{error:#}")
+                .contains(".ctl/ver.yaml:6:12: assets.linux-x64.files: must come with assets.dir"),
+            "{error:#}"
+        );
     }
 
     const ONE_PACKAGE: &str = indoc! {"
