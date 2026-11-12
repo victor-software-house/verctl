@@ -37,7 +37,7 @@ Compile, format, lint, and test tasks that must run before a push run on the bui
 
 ## 5. Pins
 
-- [x] 5.1 The pin version pattern matches a whole semver version, prerelease and build included. A tool pin's ref uses the same pattern.
+- [x] 5.1 The pin version pattern matches a version verctl writes: a stable one, or a candidate `<tag>.<count>`. A tool pin's ref uses the same pattern.
   Verify: `a_prerelease_pin_fails_instead_of_half_rewriting` and `an_include_with_a_prerelease_ref_fails_instead_of_half_rewriting` become tests that the version moves.
   A new test keeps the failure for `?ref=v1.2.3_local`.
 

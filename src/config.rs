@@ -866,8 +866,8 @@ fn every_pattern_says_where_the_version_goes(
 }
 
 /// Where the version starts and ends, as the pattern declares it.
-/// `{version}` is a whole semver version: digits and dots, then an optional
-/// prerelease after `-` and build after `+`. Without literal text on each side
+/// `{version}` is a version verctl writes: digits and dots, then an optional
+/// candidate prerelease `-<tag>.<count>`. Without literal text on each side
 /// that a version cannot hold, the pattern could end a version early or start
 /// it late.
 ///

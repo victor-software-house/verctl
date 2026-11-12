@@ -686,7 +686,8 @@ Under `whole_line: true`, the line start or end bounds the side, unless the lite
 The character next to `{version}` must not be a digit, or a `.` with a digit beyond it: `v{version}.5x` would read `v1.2.3.5x` as 1.2.3.
 
 Loading `.ctl/ver.yaml` refuses a pattern with an open side, naming it and the side.
-`{version}` matches a whole semver version, prerelease and build included, so `0.8.2-rc.1` moves to `0.8.2-rc.2` or to `0.8.2` whole.
+`{version}` matches a version verctl writes, stable or a candidate `<tag>.<count>`, so `0.8.2-rc.1` moves to `0.8.2-rc.2` or to `0.8.2` whole.  
+A version verctl never writes, such as `1.2.3-linux` or `1.0.0+build.5`, matches nothing, so the pin fails instead of dropping part of it.
 
 An include whose `?ref=v…` holds a whole version moves the same way.
 One that starts with a digit and is not a whole version, such as `?ref=v1.2.3_local`, fails, naming the file, instead of having its numeric head rewritten.

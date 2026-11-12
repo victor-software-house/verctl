@@ -202,12 +202,13 @@ fn a_file_with_two_owners_is_refused_before_any_write() {
     assert_eq!(read(&root, "tools.toml"), "demo@0.1.0\n");
 }
 
-/// A prerelease where a pin's version goes is a whole version, so `version`
-/// moves it with the manifest and the pinned file holds the new version.
+/// A candidate where a pin's version goes is a version verctl wrote, so
+/// `version` moves it with the manifest and the pinned file holds the new
+/// version.
 #[test]
 fn a_prerelease_pin_moves_with_the_version() {
     let root = repo();
-    write(root.path(), "tools.toml", "demo@0.1.0-rc1\n");
+    write(root.path(), "tools.toml", "demo@0.1.0-rc.1\n");
     common::git(root.path(), &["commit", "-qam", "prerelease"]);
     write(
         root.path(),

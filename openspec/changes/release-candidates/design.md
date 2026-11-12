@@ -214,10 +214,14 @@ An existing Release is used as it is, as today.
 
 ### 8. A pin reads and writes a whole version
 
-The pin pattern's version becomes `[0-9]+(?:\.[0-9]+)*(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?`.
+The pin pattern's version becomes `[0-9]+(?:\.[0-9]+)*(?:-[a-z]+\.[0-9]+)?`: a stable version, or a candidate in the shape verctl writes.
 The rule that each side of `{version}` is bounded stays, so a pattern still matches the whole token.
 A tool pin's `?ref=v` value matches the same pattern.
-A ref that starts with a digit and is not a whole version still fails.
+A ref that starts with a digit and is not such a version still fails.
+
+Alternative considered: any semver prerelease and build, `(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?`.
+It lost because a letter-bounded literal after `{version}` no longer ends the version: `tool-{version}-x64` read `tool-1.2.3-linux-x64` as version `1.2.3-linux`, and the rewrite dropped `-linux`.
+A pin names a version verctl wrote, so the narrow shape loses nothing.
 
 Pins move on every Version PR, candidates included.
 A pin names the version of the commit that holds it.
