@@ -46,7 +46,7 @@ It SHALL treat a run of three or more backticks or tildes as a fence, and a line
 
 When the last kept line is a heading, `verctl version --pr` SHALL drop that heading, and any heading that then ends the kept text, before it adds the note.
 
-#### Scenario: The budget ends just after a heading
+#### Scenario: The budget ends after a heading
 
 - **WHEN** the lines `- one`, a blank line, and `### Late heading` come before a line past the budget
 - **THEN** the kept text is `- one`

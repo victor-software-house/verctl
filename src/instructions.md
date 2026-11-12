@@ -320,9 +320,13 @@ It runs the lockfile's owner in the lockfile's directory:
 `--pr` also opens or force-updates `verctl/release/<base>`, where `<base>` is the branch the PR targets.  
 The PR body is the changelog.  
 GitHub accepts at most 65,536 characters in a PR body.  
-A longer changelog is cut after the last line that fits, never inside a fenced code block.  
-A heading that would end the cut body is dropped with it.  
-The body then ends with a line that points at the changelog files in the PR's diff.  
+A longer changelog is cut:
+
+- after the last line that fits;
+- never inside a fenced code block;
+- with a heading that would end the kept text dropped;
+- followed by a line that points at the changelog files in the PR's diff.
+
 The PR targets `GITHUB_REF_NAME`, else `VERCTL_DEFAULT_BRANCH`, else the branch `origin/HEAD` names.  
 With none of them, `--pr` fails rather than guess `main`.
 
