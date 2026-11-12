@@ -609,6 +609,7 @@ pub fn write_github_output(pending: &Pending, path: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use ctl_core::input::Input;
     use indoc::indoc;
 
     use super::{
@@ -616,6 +617,7 @@ mod tests {
         group, members_at, newest_per_tag, state_of, version_released, write_github_output,
     };
     use crate::assets::MatrixTarget;
+    use crate::config::{Assets, Config};
     use crate::git::VersionCommit;
     use crate::github::ReleaseState;
     use crate::publish::PublishEntry;
@@ -824,9 +826,9 @@ mod tests {
     /// holds, and so released with no assets.
     #[test]
     fn an_old_config_names_its_targets_whatever_else_it_holds() {
-        let declared: DeclaredTargets = ctl_core::input::Input::new(
+        let declared: DeclaredTargets = Input::new(
             "old.yaml",
-            indoc::indoc! {"
+            indoc! {"
                 drivers: {}
                 a_key_removed_later: true
                 assets:
@@ -848,7 +850,7 @@ mod tests {
     /// none of them can be read as a target.
     #[test]
     fn the_asset_settings_match_the_schema() {
-        let packed = indoc::indoc! {"
+        let packed = indoc! {"
             packages:
               - name: demo
                 path: Cargo.toml
@@ -860,7 +862,7 @@ mod tests {
               files: [demo]
               linux-x64: {}
         "};
-        let single = indoc::indoc! {"
+        let single = indoc! {"
             packages:
               - name: demo
                 path: Cargo.toml
@@ -870,10 +872,10 @@ mod tests {
         "};
         let mut seen = Vec::new();
         for yaml in [packed, single] {
-            let config = crate::config::Config::parse(yaml).unwrap();
+            let config = Config::parse(yaml).unwrap();
             let assets = config.assets.unwrap();
             assert_eq!(assets.targets.keys().collect::<Vec<_>>(), ["linux-x64"]);
-            let ids = ctl_core::input::Input::new("config.yaml", yaml)
+            let ids = Input::new("config.yaml", yaml)
                 .parse::<DeclaredTargets>()
                 .unwrap()
                 .assets
@@ -881,14 +883,14 @@ mod tests {
                 .0;
             assert_eq!(ids, ["linux-x64"], "{yaml}");
             seen.extend(
-                crate::config::Assets::SETTINGS
+                Assets::SETTINGS
                     .iter()
                     .copied()
                     .filter(|key| yaml.contains(&format!("  {key}:"))),
             );
         }
         seen.sort_unstable();
-        let mut settings = crate::config::Assets::SETTINGS.to_vec();
+        let mut settings = Assets::SETTINGS.to_vec();
         settings.sort_unstable();
         assert_eq!(seen, settings, "each setting is exercised once");
     }
