@@ -156,6 +156,42 @@ fn a_new_tag_with_no_fragment_lists_the_earlier_candidates() {
     );
 }
 
+/// A pending fragment that reuses the file name of one a candidate consumed
+/// keeps its own link, and so does the consumed one.
+#[test]
+fn a_reused_fragment_name_links_each_entry_to_its_own_pull_request() {
+    let repo = released_repo("prerelease: rc");
+    let root = repo.path();
+    common::git(
+        root,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/acme/demo.git",
+        ],
+    );
+    fragment(root, "fix.md", "Fix the old bug.");
+    common::commit_all(root, "fix: the old bug (#1)");
+    release(root, "chore: release demo 0.8.2-rc.1 (#2)");
+    configure(root, "");
+    fragment(root, "fix.md", "Fix the new bug.");
+    common::commit_all(root, "fix: the new bug (#3)");
+    release(root, "chore: release demo 0.8.2 (#4)");
+    assert!(
+        read(root, "CHANGELOG.md").starts_with(indoc! {"
+            # Changelog
+
+            ## demo 0.8.2
+
+            - Fix the old bug ([#1](https://github.com/acme/demo/pull/1)).
+            - Fix the new bug ([#3](https://github.com/acme/demo/pull/3)).
+        "}),
+        "{}",
+        read(root, "CHANGELOG.md")
+    );
+}
+
 /// A shallow clone that ends before a candidate's Version PR would build a
 /// short stable section, so `version` fails, naming the commit, and writes
 /// nothing.
