@@ -111,7 +111,7 @@ The key does nothing once the package has released.
 ### Release candidates
 
 `prerelease: <tag>` on a package makes each Version PR write a candidate, `<base>-<tag>.<count>`, such as `0.8.2-rc.1`.
-The tag is lowercase ASCII letters only, such as `rc`, `beta` or `next`.
+The tag is lowercase ASCII letters only, such as `rc`, `beta` or `next`, and never `x` or `latest`, which npm reads as a version range and as the default install.
 Removing the key makes the next Version PR write the stable version, even with no fragment pending.
 
 The base follows the highest pending bump:
