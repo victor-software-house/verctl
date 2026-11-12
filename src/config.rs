@@ -866,11 +866,13 @@ fn every_pattern_says_where_the_version_goes(
 }
 
 /// Where the version starts and ends, as the pattern declares it.
-/// `{version}` is digits and dots. Without literal text on each side that a
-/// version cannot hold, a longer version matches by its numeric head.
+/// `{version}` is a whole semver version: digits and dots, then an optional
+/// prerelease after `-` and build after `+`. Without literal text on each side
+/// that a version cannot hold, the pattern could end a version early or start
+/// it late.
 ///
-/// For example, `version: {version}` reads `version: 0.1.1-rc1` as 0.1.1 and
-/// keeps `-rc1` after the new version. The file cannot settle it, because
+/// For example, `v{version}.5x` reads `v1.2.3.5x` as 1.2.3 and keeps `.5x`
+/// after the new version. The file cannot settle it, because
 /// `download/v{version}-linux` against `download/v1.2.3-linux-x64.tar.gz` is a
 /// correct pin of 1.2.3.
 fn every_pattern_bounds_the_version(
@@ -1362,7 +1364,7 @@ pub struct PinPattern {
     /// neighbour into `match`, which then breaks when the neighbour moves.
     ///
     /// The flag also makes a partial version fail instead of rewriting,
-    /// because a line ending in `0.1.1-rc1` does not end where the version
+    /// because a line ending in `0.1.1_local` does not end where the version
     /// does.
     #[serde(default)]
     pub whole_line: bool,
