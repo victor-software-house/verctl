@@ -35,7 +35,7 @@
 //! 1. [`config::Config`] is the parsed and validated `.ctl/ver.yaml`.
 //! 2. [`fragment::load_dir`] reads the pending fragments, and [`prepare::plan`]
 //!    turns them into one [`prepare::PlanEntry`] per package, with the next
-//!    version from [`bump::apply`].
+//!    version from [`bump::apply_with`].
 //! 3. [`prepare::apply_plan`] writes each version through its [`driver`],
 //!    [`release::write_changelogs`] renders the changelog sections,
 //!    [`prepare::run_steps`] runs each lockfile's owner and `prepare.after`,

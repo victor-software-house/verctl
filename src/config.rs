@@ -196,6 +196,11 @@ pub struct PackageSpec {
     /// `patch` and first releases `0.0.1`. Inert once the package has released.
     #[serde(default)]
     pub first_minor: bool,
+    /// The tag of the candidate versions this package releases, such as `rc`:
+    /// `verctl version` writes `<base>-<tag>.<count>` while it is set. When
+    /// omitted, the package releases stable versions, and a current prerelease
+    /// version becomes the stable one.
+    pub prerelease: Option<Prerelease>,
     /// The version is on one marker line of the file, such as
     /// `# version: 1.2.0`, `// version: 1.2.0`, or `<!-- version: 1.2.0 -->`.
     /// So a file of any type can be a package, such as one reusable workflow
@@ -218,6 +223,45 @@ pub struct PackageSpec {
         reason = "the keys are all that is read, and serde has no set to flatten into"
     )]
     unknown: BTreeMap<String, serde::de::IgnoredAny>,
+}
+
+/// The tag of a candidate version: lowercase ASCII letters.
+///
+/// Letters keep `<tag>.<count>` a valid semver prerelease with a separate
+/// numeric count, keep the tag a valid npm dist-tag, and make tags compare in
+/// semver order as words do (`alpha < beta < rc`). A package's rule in
+/// `a_prerelease_is_lowercase_letters` refuses any other tag at load, so a
+/// tag read from a loaded config always passes [`Prerelease::is_valid`].
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(transparent)]
+pub struct Prerelease(String);
+
+impl Prerelease {
+    /// A tag, or the reason `tag` is not one.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `tag` is empty or holds anything but lowercase
+    /// ASCII letters.
+    pub fn new(tag: &str) -> Result<Self> {
+        let tag = Self(tag.to_owned());
+        ensure!(tag.is_valid(), "{}", Self::RULE);
+        Ok(tag)
+    }
+
+    /// The tag as written.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Whether the tag is one or more lowercase ASCII letters.
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
+        !self.0.is_empty() && self.0.bytes().all(|byte| byte.is_ascii_lowercase())
+    }
+
+    const RULE: &'static str = "a prerelease tag is lowercase ASCII letters only, such as rc, beta, or next; remove digits, dots, and capitals";
 }
 
 impl PackageSpec {
@@ -745,7 +789,8 @@ pub struct Config {
         custom(release_only_names_no_registry),
         custom(publish_options_fit_the_publisher),
         custom(python_names_its_publisher),
-        custom(a_marker_names_no_driver)
+        custom(a_marker_names_no_driver),
+        custom(a_prerelease_is_lowercase_letters)
     )]
     pub packages: Vec<PackageSpec>,
     /// Publish recipes by name, for a package's `publisher` to select.
@@ -975,6 +1020,23 @@ fn no_unknown_package_keys(packages: &[PackageSpec], _: &Config) -> garde::Resul
                 package.name,
                 if keys.len() == 1 { "a key" } else { "keys" },
                 keys.join(", ")
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// A candidate tag that is not lowercase ASCII letters. `rc1` would make the
+/// version `0.8.0-rc1.1`, which counts on no further, and `rc.1` would hide
+/// the count inside the tag.
+fn a_prerelease_is_lowercase_letters(packages: &[PackageSpec], _: &Config) -> garde::Result {
+    for package in packages {
+        if let Some(tag) = package.prerelease.as_ref().filter(|tag| !tag.is_valid()) {
+            return Err(garde::Error::new(format!(
+                "package {:?} has prerelease {:?}, which is not a tag; {}",
+                package.name,
+                tag.as_str(),
+                Prerelease::RULE
             )));
         }
     }
@@ -1658,6 +1720,38 @@ mod tests {
             assert!(
                 format!("{error:#}").contains("has publisher: none"),
                 "{extra}: {error:#}"
+            );
+        }
+    }
+
+    /// A candidate tag is lowercase letters. Another spelling fails the load,
+    /// naming the package and the field.
+    #[test]
+    fn a_prerelease_is_lowercase_letters() {
+        for tag in ["rc", "alpha", "beta", "next", "canary"] {
+            let config = load(&formatdoc! {"
+                packages:
+                  - name: demo
+                    path: Cargo.toml
+                    prerelease: {tag}
+            "})
+            .expect(tag);
+            let spec = config.find("demo").expect("demo");
+            assert_eq!(spec.prerelease.as_ref().map(Prerelease::as_str), Some(tag));
+        }
+        for tag in ["rc1", "RC", "rc.1", "1", "\"\""] {
+            let error = load(&formatdoc! {"
+                packages:
+                  - name: demo
+                    path: Cargo.toml
+                    prerelease: {tag}
+            "})
+            .expect_err(tag);
+            let message = format!("{error:#}");
+            assert!(
+                message.contains("package \"demo\" has prerelease")
+                    && message.contains("lowercase ASCII letters"),
+                "{tag}: {message}"
             );
         }
     }

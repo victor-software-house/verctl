@@ -176,7 +176,7 @@ fn version_report(args: &VersionArgs) -> Result<VersionReport> {
     let fragments = fragment::load_dir(&args.dir)?;
     let root = &config::root_of(&args.config);
     let plan = prepare::plan(&config, &fragments, root)?;
-    if release::contributing_fragments(&plan, &fragments).is_empty() {
+    if plan.is_empty() && release::contributing_fragments(&plan, &fragments).is_empty() {
         return Ok(VersionReport {
             bumps: Vec::new(),
             changelog: String::new(),
