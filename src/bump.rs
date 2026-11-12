@@ -41,10 +41,10 @@ pub fn apply(current: &str, bump: Bump, first_minor: bool) -> Result<String> {
 /// package sets `prerelease`, as a candidate. [`apply`] is this with no
 /// `prerelease`.
 ///
-/// The base is `current` bumped by `bump`, except that a current prerelease
-/// keeps its base when the base already reaches the bump: a patch always, a
-/// minor when the patch is 0, a major when the minor and patch are 0. That is
-/// what node-semver's `inc` does, and Changesets versions through it.
+/// The base is `current` bumped by `bump`. A current prerelease keeps its
+/// base when the base already reaches the bump: a patch always, a minor when
+/// the patch is 0, a major when the minor and patch are 0. That is what
+/// node-semver's `inc` does, and Changesets versions through it.
 ///
 /// With `prerelease`, the version is `<base>-<tag>.<count>`. The count is the
 /// current count plus 1 when the base and the tag are unchanged, and 1
@@ -63,10 +63,14 @@ pub fn apply(current: &str, bump: Bump, first_minor: bool) -> Result<String> {
 ///
 /// # Errors
 ///
-/// Returns an error when `current` is not a semver version, when the bump is
-/// one of the two refused above, when `prerelease` is set and `current` has a
-/// prerelease that is not `<letters>.<number>`, or when the candidate would
-/// sort below `current`, as `0.8.0-beta.1` does below `0.8.0-rc.2`.
+/// Returns an error in these cases:
+///
+/// - `current` is not a semver version;
+/// - the bump is one of the two refused above;
+/// - `prerelease` is set, and `current` has a prerelease that is not
+///   `<letters>.<number>`;
+/// - the candidate would sort below `current`, as `0.8.0-beta.1` does below
+///   `0.8.0-rc.2`.
 pub fn apply_with(
     current: &str,
     bump: Bump,
