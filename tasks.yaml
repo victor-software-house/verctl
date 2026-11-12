@@ -442,6 +442,20 @@ queue:
     notes:
       - 2026-11-11, ctl-core 0.7.3 ships Input::flattened (ctl-core PR 284), and verctl main pins ctl-core 0.7.0, so a target's problem names assets.targets.<id> and lands on the assets line.
 
+  - id: VER-126
+    title: Cap the Version PR body at GitHub's limit
+    scope: "release: Version PR"
+    outcome: >-
+      A Version PR opens at any changelog size, so a repository with many pending
+      fragments still releases.
+    blocked_by: []
+    acceptance:
+      - A changelog of at most 65,536 characters gives the same Version PR body as before.
+      - A longer changelog gives a body of at most 65,536 characters that keeps every whole line that fits, never cuts inside a fenced code block, never ends on a heading, and ends with a note that points at the changelog files in the diff.
+    plan: openspec/changes/version-pr-body-cap/proposal.md
+    notes:
+      - "2026-11-12: nishiki Release run 43146966330 failed to open the Version PR with body is too long (maximum is 65536 characters), with 275 pending fragments."
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all

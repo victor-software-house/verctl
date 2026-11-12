@@ -327,17 +327,42 @@ fn pr_body_at_the_limit_is_unchanged() {
 }
 
 #[test]
-fn pr_body_over_the_limit_is_cut_before_the_last_heading_that_fits() {
-    let notes = sections(
-        1_000,
-        "a change worth a line of its own, written at some length",
-    );
+fn pr_body_over_the_limit_keeps_the_bullets_that_fit() {
+    let bullets = (1..=2_000)
+        .map(|n| format!("- change {n}, written at some length"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let notes = formatdoc! {"
+        ## demo 1.0.1
+
+        ### Patch Changes
+
+        {bullets}
+    "};
     assert!(notes.chars().count() > release::PR_BODY_LIMIT);
     let body = release::pr_body(&notes);
     assert!(body.chars().count() <= release::PR_BODY_LIMIT);
     let kept = kept_before_note(&body);
+    assert!(kept.starts_with("## demo 1.0.1\n\n### Patch Changes\n\n- change 1,"));
     assert!(notes.starts_with(kept));
-    assert!(notes[kept.len()..].starts_with("\n\n## demo 1.0."));
+    assert!(notes[kept.len()..].starts_with("\n- change "));
+    assert!(kept.chars().count() > release::PR_BODY_LIMIT - 200);
+}
+
+#[test]
+fn pr_body_cut_drops_a_heading_left_at_the_end() {
+    let notes = format!(
+        "{}{}",
+        indoc! {"
+            - one
+
+            ### Late heading
+
+            - "},
+        "a".repeat(release::PR_BODY_LIMIT)
+    );
+    let body = release::pr_body(&notes);
+    assert_eq!(kept_before_note(&body), "- one");
 }
 
 #[test]

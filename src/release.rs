@@ -768,8 +768,8 @@ const CUT_BUDGET: usize = PR_BODY_LIMIT - CUT_SEPARATOR.len() - CUT_NOTE.len();
 ///
 /// A changelog longer than [`PR_BODY_LIMIT`] is cut at a line boundary and
 /// ends with a line that points at the changelog files in the diff. The cut
-/// falls before the last heading that fits, or before the last line that
-/// fits when no heading does, and never inside a fenced code block.
+/// keeps every whole line that fits, never cuts inside a fenced code block,
+/// and drops a heading that would end the body with nothing under it.
 #[must_use]
 pub fn pr_body(changelog: &str) -> String {
     let body = changelog.trim();
@@ -794,31 +794,30 @@ pub fn pr_body(changelog: &str) -> String {
 /// The byte offset at which to cut `body` so that what stays is whole lines
 /// ending at or before `budget_end`, or `0` when no line boundary is safe.
 ///
-/// A boundary is safe when no fenced code block is open there. The last
-/// heading that starts within the budget wins over the last line.
+/// The cut is the start of the last line that begins within the budget with no
+/// fenced code block open. A heading left as the last line then goes too, so
+/// the body never ends on a heading with nothing under it.
 fn cut_point(body: &str, budget_end: usize) -> usize {
     let mut fence = None;
-    let mut last_line = 0;
-    let mut last_heading = 0;
+    let mut cut = 0;
     let mut start = 0;
     for line in body.split_inclusive('\n') {
         if start > budget_end {
             break;
         }
         if start > 0 && fence.is_none() {
-            last_line = start;
-            if is_heading(line) {
-                last_heading = start;
-            }
+            cut = start;
         }
         fence = fence_after(fence, line);
         start += line.len();
     }
-    if last_heading > 0 {
-        last_heading
-    } else {
-        last_line
+    while let Some(last) = body[..cut].trim_end().lines().next_back() {
+        if !is_heading(last) {
+            break;
+        }
+        cut = body[..cut].trim_end().len() - last.len();
     }
+    cut
 }
 
 /// Whether `line` is an ATX heading: one to six `#`, then a space or the end
