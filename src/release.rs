@@ -741,14 +741,124 @@ pub fn open_or_update_pr(
     }))
 }
 
+/// The most characters GitHub accepts in a pull request body.
+///
+/// A longer body fails with "body is too long (maximum is 65536 characters)"
+/// when the pull request is created or updated, as in the REST API's
+/// `POST /repos/{owner}/{repo}/pulls`.
+pub const PR_BODY_LIMIT: usize = 65_536;
+
+/// The line a cut body ends with, so a reader knows where the rest is.
+///
+/// A Version PR's changelog is one section per package, and each package
+/// keeps its own changelog file, so the line names no single file.
+const CUT_NOTE: &str = "The rest of the changelog is in the changelog files in this pull \
+                        request's diff.";
+
+/// What separates the kept changelog from [`CUT_NOTE`].
+const CUT_SEPARATOR: &str = "\n\n";
+
+/// The characters of changelog a cut body keeps, leaving room for the note.
+///
+/// `len` counts bytes, and a byte count is never below a character count, so
+/// the budget only errs towards keeping less.
+const CUT_BUDGET: usize = PR_BODY_LIMIT - CUT_SEPARATOR.len() - CUT_NOTE.len();
+
 /// The PR body: the changelog, trimmed, or a stock line when it is empty.
+///
+/// A changelog longer than [`PR_BODY_LIMIT`] is cut at a line boundary and
+/// ends with a line that points at the changelog files in the diff. The cut
+/// keeps every whole line that fits, never cuts inside a fenced code block,
+/// and drops a heading that would end the body with nothing under it.
 #[must_use]
 pub fn pr_body(changelog: &str) -> String {
     let body = changelog.trim();
     if body.is_empty() {
-        "Prepared by verctl.".into()
+        return "Prepared by verctl.".into();
+    }
+    if body.chars().count() <= PR_BODY_LIMIT {
+        return body.to_owned();
+    }
+    let budget_end = body
+        .char_indices()
+        .nth(CUT_BUDGET)
+        .map_or(body.len(), |(index, _)| index);
+    let kept = body[..cut_point(body, budget_end)].trim_end();
+    if kept.is_empty() {
+        CUT_NOTE.to_owned()
     } else {
-        body.to_owned()
+        format!("{kept}{CUT_SEPARATOR}{CUT_NOTE}")
+    }
+}
+
+/// The byte offset at which to cut `body` so that what stays is whole lines
+/// ending at or before `budget_end`, or `0` when no line boundary is safe.
+///
+/// The cut is the start of the last line that begins within the budget with no
+/// fenced code block open. A heading left as the last line then goes too, so
+/// the body never ends on a heading with nothing under it.
+fn cut_point(body: &str, budget_end: usize) -> usize {
+    let mut fence = None;
+    let mut cut = 0;
+    let mut start = 0;
+    for line in body.split_inclusive('\n') {
+        if start > budget_end {
+            break;
+        }
+        if start > 0 && fence.is_none() {
+            cut = start;
+        }
+        fence = fence_after(fence, line);
+        start += line.len();
+    }
+    while let Some(last) = body[..cut].trim_end().lines().next_back() {
+        if !is_heading(last) {
+            break;
+        }
+        cut = body[..cut].trim_end().len() - last.len();
+    }
+    cut
+}
+
+/// Whether `line` is an ATX heading: one to six `#`, then a space or the end
+/// of the line, indented by at most three spaces.
+fn is_heading(line: &str) -> bool {
+    let line = line.trim_end();
+    let text = line.trim_start_matches(' ');
+    if line.len() - text.len() > 3 {
+        return false;
+    }
+    let hashes = text.chars().take_while(|&c| c == '#').count();
+    (1..=6).contains(&hashes)
+        && text[hashes..]
+            .chars()
+            .next()
+            .is_none_or(char::is_whitespace)
+}
+
+/// An open fenced code block: its fence character and the fence's length.
+type Fence = (char, usize);
+
+/// The fenced code block that is open after `line`, given the one open before
+/// it.
+///
+/// A fence is a run of three or more backticks or tildes. A backtick fence's
+/// opening line has no other backtick. A closing fence uses the same
+/// character, is at least as long, and has nothing after it. Indentation is
+/// ignored, so a fence nested in a list item counts.
+fn fence_after(open: Option<Fence>, line: &str) -> Option<Fence> {
+    let text = line.trim();
+    let Some(marker) = text.chars().next().filter(|&c| c == '`' || c == '~') else {
+        return open;
+    };
+    let run = text.chars().take_while(|&c| c == marker).count();
+    let after = &text[run..];
+    match open {
+        None => (run >= 3 && !(marker == '`' && after.contains('`'))).then_some((marker, run)),
+        Some((open_marker, open_run)) => {
+            let closes = marker == open_marker && run >= open_run && after.is_empty();
+            if closes { None } else { open }
+        }
     }
 }
 
