@@ -564,15 +564,15 @@ pub(crate) fn check_options(
 /// A registry that gets a prerelease with no tag files it under `latest`, which
 /// would hand the candidate to every consumer that names no version.
 ///
-/// A first identifier that cannot serve as a candidate's dist-tag gives
-/// `next`, the dist-tag npm's docs use for upcoming versions:
+/// The first identifier is the tag only when it passes the rule a
+/// `prerelease` setting passes ([`Prerelease::is_valid`]): lowercase letters,
+/// never `x` or `latest`. npm refuses a dist-tag that parses as a version
+/// range, such as `0`, `x` or `v1`, and every plain install resolves
+/// `latest`. Any other first identifier gives `next`, the dist-tag npm's docs
+/// use for upcoming versions. Only a hand-written version, such as `1.0.0-0`
+/// or `1.0.0-v1.1`, has one.
 ///
-/// - one made only of digits, or the wildcard `x` or `X`, because npm refuses a
-///   dist-tag that parses as a version range;
-/// - `latest`, because every plain install resolves it.
-///
-/// Only a hand-written version such as `1.0.0-0` or `1.0.0-latest.1` has
-/// one: the `prerelease` setting refuses those tags.
+/// [`Prerelease::is_valid`]: crate::config::Prerelease::is_valid
 pub(crate) fn prerelease_tag(version: &str) -> Option<String> {
     let version = semver::Version::parse(version).ok()?;
     let first = version
@@ -581,10 +581,7 @@ pub(crate) fn prerelease_tag(version: &str) -> Option<String> {
         .split('.')
         .next()
         .filter(|tag| !tag.is_empty())?;
-    let unusable = first.eq_ignore_ascii_case("x")
-        || first.eq_ignore_ascii_case("latest")
-        || first.bytes().all(|byte| byte.is_ascii_digit());
-    if unusable {
+    if crate::config::Prerelease::new(first).is_err() {
         return Some("next".to_owned());
     }
     Some(first.to_owned())
@@ -1152,18 +1149,26 @@ mod tests {
         assert_eq!(super::prerelease_tag("not a version"), None);
     }
 
-    /// npm refuses a dist-tag that parses as a version range, so a numeric
-    /// first identifier never becomes the tag.
+    /// A first identifier the `prerelease` setting would refuse never becomes
+    /// the tag: npm refuses a range such as `0`, `x` or `v1`, and `latest` is
+    /// every plain install's.
     #[test]
-    fn a_numeric_prerelease_uploads_under_next() {
-        assert_eq!(super::prerelease_tag("1.0.0-0").as_deref(), Some("next"));
-        assert_eq!(super::prerelease_tag("2.0.0-1.rc").as_deref(), Some("next"));
-        assert_eq!(super::prerelease_tag("1.0.0-x.1").as_deref(), Some("next"));
-        assert_eq!(super::prerelease_tag("1.0.0-X.1").as_deref(), Some("next"));
-        assert_eq!(
-            super::prerelease_tag("1.0.0-latest.1").as_deref(),
-            Some("next")
-        );
+    fn a_prerelease_with_an_unusable_tag_uploads_under_next() {
+        for version in [
+            "1.0.0-0",
+            "2.0.0-1.rc",
+            "1.0.0-x.1",
+            "1.0.0-X.1",
+            "1.0.0-latest.1",
+            "1.0.0-v1.1",
+            "1.0.0-RC.1",
+        ] {
+            assert_eq!(
+                super::prerelease_tag(version).as_deref(),
+                Some("next"),
+                "{version}"
+            );
+        }
     }
 
     /// An empty upload command means release-only, so only `publisher: none`
