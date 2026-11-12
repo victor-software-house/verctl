@@ -228,6 +228,9 @@ fn version_report(args: &VersionArgs) -> Result<VersionReport> {
         };
         return preview_report(root, &plan, &fragments, &recovered, preview);
     }
+    let origins = release::origins_with(root, token, &config.changelog, &fragments, &recovered)?;
+    let shown = shown_fragments(&recovered, &fragments);
+    let changelog = release::changelog_sections_with(&plan, &shown, &origins)?;
     prepare::apply_plan(&plan)?;
     // The tag names the merge commit, so a pin that lands after publish
     // never reaches the tree consumers fetch by ref. Rewrite them here,
@@ -243,9 +246,6 @@ fn version_report(args: &VersionArgs) -> Result<VersionReport> {
         &served,
     )?);
     let consumed = release::contributing_fragments(&plan, &fragments);
-    let origins = release::origins_with(root, token, &config.changelog, &fragments, &recovered)?;
-    let shown = shown_fragments(&recovered, &fragments);
-    let changelog = release::changelog_sections_with(&plan, &shown, &origins)?;
     let changelogs = release::write_changelogs_with(&config, root, &plan, &shown, &origins)?;
     prepare::run_steps(&steps)?;
     let consume = file_names(&consumed);

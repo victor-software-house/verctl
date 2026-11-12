@@ -28,15 +28,18 @@ pub struct PlanEntry {
 /// Fold the fragments into one bump per package, and leave out each package
 /// whose version stays.
 ///
-/// A package no fragment bumps still moves in two cases, because its
-/// manifest and the config say so. Only a version that parses as semver and
-/// holds a prerelease is looked at, so a package whose version is not semver
-/// never fails the plan unless a fragment names it. The cases are: its
-/// version is a prerelease and
-/// `prerelease` is omitted (the stable release), or its version is a
-/// prerelease of another tag than `prerelease` (the first candidate of the
-/// new tag). Such an entry has [`Bump::None`] and a `to` that differs from
-/// its `from`.
+/// A package no fragment bumps still moves in two cases, both read from its
+/// manifest and the config:
+///
+/// - its version is a prerelease and `prerelease` is omitted: the stable
+///   release;
+/// - its version is a prerelease of another tag than `prerelease`: the first
+///   candidate of the new tag.
+///
+/// Such an entry has [`Bump::None`] and a `to` that differs from its `from`.
+/// Only a version that parses as semver and holds a prerelease is read this
+/// way, so a package whose version is not semver fails the plan only when a
+/// fragment names it.
 ///
 /// # Errors
 ///
