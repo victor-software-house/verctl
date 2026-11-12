@@ -564,10 +564,10 @@ pub(crate) fn check_options(
 /// A registry that gets a prerelease with no tag files it under `latest`, which
 /// would hand the candidate to every consumer that names no version.
 ///
-/// A dist-tag that parses as a version range is refused by npm, so a first
-/// identifier made only of digits, or the wildcard `x`, as in a hand-written
-/// `1.0.0-0` or `1.0.0-x.1`, gives `next`, the dist-tag npm's docs use for
-/// upcoming versions.
+/// npm refuses a dist-tag that parses as a version range. So a first
+/// identifier made only of digits, or the wildcard `x`, gives `next`, the
+/// dist-tag npm's docs use for upcoming versions. Only a hand-written version
+/// such as `1.0.0-0` or `1.0.0-x.1` has one.
 pub(crate) fn prerelease_tag(version: &str) -> Option<String> {
     let version = semver::Version::parse(version).ok()?;
     let first = version
