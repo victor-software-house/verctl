@@ -312,7 +312,9 @@ fn sections(count: usize, entry: &str) -> String {
 }
 
 fn kept_before_note(body: &str) -> &str {
-    let (kept, note) = body.rsplit_once("\n\n").unwrap();
+    let Some((kept, note)) = body.rsplit_once("\n\n") else {
+        panic!("a cut body ends with the note, got: {body}");
+    };
     assert!(note.ends_with(CUT_NOTE_END), "{note}");
     kept
 }
