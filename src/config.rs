@@ -491,7 +491,7 @@ pub struct Assets {
     /// recipe key lands here and fails as an unknown target, loudly. The
     /// map is flattened, so garde names a target's field
     /// `assets.targets.<id>`, though the file has no `targets` key.
-    /// [`Config::from_input`] declares this field to ctl-core as flattened,
+    /// [`Config::load`] declares this field to ctl-core as flattened,
     /// so a problem names `assets.<id>` and lands on that key's line.
     #[serde(flatten)]
     #[garde(dive)]
