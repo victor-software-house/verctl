@@ -255,13 +255,15 @@ impl Prerelease {
         &self.0
     }
 
-    /// Whether the tag is one or more lowercase ASCII letters.
+    /// Whether the tag is one or more lowercase ASCII letters, and not `x`.
     #[must_use]
     pub fn is_valid(&self) -> bool {
-        !self.0.is_empty() && self.0.bytes().all(|byte| byte.is_ascii_lowercase())
+        !self.0.is_empty() && self.0 != "x" && self.0.bytes().all(|byte| byte.is_ascii_lowercase())
     }
 
-    const RULE: &'static str = "a prerelease tag is lowercase ASCII letters only, such as rc, beta, or next; remove digits, dots, and capitals";
+    /// `x` alone is refused too: npm reads it as the version range "any", and
+    /// refuses a dist-tag that parses as a range.
+    const RULE: &'static str = "a prerelease tag is lowercase ASCII letters only, such as rc, beta, or next, and never x alone, which npm reads as a version range; remove digits, dots, and capitals";
 }
 
 impl PackageSpec {
@@ -1741,7 +1743,7 @@ mod tests {
             let spec = config.find("demo").expect("demo");
             assert_eq!(spec.prerelease.as_ref().map(Prerelease::as_str), Some(tag));
         }
-        for tag in ["rc1", "RC", "rc.1", "1", "\"\""] {
+        for tag in ["rc1", "RC", "rc.1", "1", "x", "\"\""] {
             let error = load(&formatdoc! {"
                 packages:
                   - name: demo

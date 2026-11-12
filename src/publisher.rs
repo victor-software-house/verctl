@@ -565,8 +565,9 @@ pub(crate) fn check_options(
 /// would hand the candidate to every consumer that names no version.
 ///
 /// A dist-tag that parses as a version range is refused by npm, so a first
-/// identifier made only of digits, as in a hand-written `1.0.0-0`, gives
-/// `next`, the dist-tag npm's docs use for upcoming versions.
+/// identifier made only of digits, or the wildcard `x`, as in a hand-written
+/// `1.0.0-0` or `1.0.0-x.1`, gives `next`, the dist-tag npm's docs use for
+/// upcoming versions.
 pub(crate) fn prerelease_tag(version: &str) -> Option<String> {
     let version = semver::Version::parse(version).ok()?;
     let first = version
@@ -575,7 +576,7 @@ pub(crate) fn prerelease_tag(version: &str) -> Option<String> {
         .split('.')
         .next()
         .filter(|tag| !tag.is_empty())?;
-    if first.bytes().all(|byte| byte.is_ascii_digit()) {
+    if first == "x" || first.bytes().all(|byte| byte.is_ascii_digit()) {
         return Some("next".to_owned());
     }
     Some(first.to_owned())
@@ -1149,6 +1150,7 @@ mod tests {
     fn a_numeric_prerelease_uploads_under_next() {
         assert_eq!(super::prerelease_tag("1.0.0-0").as_deref(), Some("next"));
         assert_eq!(super::prerelease_tag("2.0.0-1.rc").as_deref(), Some("next"));
+        assert_eq!(super::prerelease_tag("1.0.0-x.1").as_deref(), Some("next"));
     }
 
     /// An empty upload command means release-only, so only `publisher: none`
