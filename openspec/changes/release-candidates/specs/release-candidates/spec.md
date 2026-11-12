@@ -134,7 +134,7 @@ It SHALL create the Release of a stable version with GitHub's defaults.
 #### Scenario: The stable Release
 
 - **WHEN** `verctl release` publishes `verctl` `0.8.0`
-- **THEN** it creates Release `v0.8.0` with `prerelease: false` and sends no `make_latest`
+- **THEN** it creates Release `v0.8.0` and sends neither `prerelease` nor `make_latest`, so GitHub's defaults make it the latest
 
 ### Requirement: A candidate leaves the npm `latest` tag unmoved
 
