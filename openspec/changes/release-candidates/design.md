@@ -173,6 +173,11 @@ The second set comes from history:
 2. In each commit's diff against its first parent, a deleted fragment file is read from that first parent.
    The merge queue lands a Version PR as a merge commit, so its deletions show in that diff.
 3. `git::added_by` gains a start commit, so a deleted fragment's origin resolves from the parent that still holds it.
+   The function is `git::added_by_from`, so the public `added_by` keeps its signature.
+4. Only a commit that set the package's version counts. A pull request that deletes a stray fragment adds nothing.
+
+The first candidate under a new tag, with no fragment pending, renders from the second set alone.
+`0.8.0-rc.1` after `0.8.0-beta.2` then lists what the beta candidates carried, instead of an empty section.
 
 Every job in `release.yml` checks out with `fetch-depth: 0`.
 

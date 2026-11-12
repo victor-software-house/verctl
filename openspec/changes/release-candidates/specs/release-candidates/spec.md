@@ -112,6 +112,15 @@ The candidate sections SHALL stay in the CHANGELOG.
 - **THEN** `verctl version` exits non-zero, naming the commit it could not read
 - **AND** no manifest or CHANGELOG is changed
 
+### Requirement: A new tag's first candidate lists the earlier candidates' changes
+
+The first candidate under a new tag, with no fragment pending, SHALL be rendered from the fragments each candidate since the last stable release consumed for that package.
+
+#### Scenario: A new tag with no fragment pending
+
+- **WHEN** Version PRs `0.8.0-beta.1` and `0.8.0-beta.2` consumed one fragment each, nothing is pending, and the package sets `prerelease: rc`
+- **THEN** `verctl version` prepends `## verctl 0.8.0-rc.1` with the entries of both fragments
+
 ### Requirement: A candidate's GitHub Release is a prerelease
 
 For a version with a prerelease, `verctl release` SHALL create the Release with `prerelease: true` and `make_latest: false`.

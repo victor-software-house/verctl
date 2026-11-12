@@ -130,11 +130,17 @@ pub fn apply_with(
 }
 
 /// Whether a prerelease `version` already holds the base `bump` would reach.
+///
+/// A base of `0.0.0` holds no release bump, because `0.0.0` is the
+/// placeholder no release ever carries ([`unreleased`]): `0.0.0-alpha.1`
+/// with a patch reaches `0.0.1`.
 fn reaches(version: &Version, bump: Bump) -> bool {
+    let placeholder = (version.major, version.minor, version.patch) == (0, 0, 0);
     match bump {
-        Bump::None | Bump::Patch => true,
-        Bump::Minor => version.patch == 0,
-        Bump::Major => version.minor == 0 && version.patch == 0,
+        Bump::None => true,
+        Bump::Patch => !placeholder,
+        Bump::Minor => !placeholder && version.patch == 0,
+        Bump::Major => !placeholder && version.minor == 0 && version.patch == 0,
     }
 }
 

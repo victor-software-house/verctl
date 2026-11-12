@@ -187,6 +187,7 @@ fn version_report(args: &VersionArgs) -> Result<VersionReport> {
             dry_run,
         });
     }
+    let recovered = release::recovered_fragments(root, &args.dir, &plan, &fragments)?;
     let target = version_pr_target(args, &config, root)?;
     let token = target.as_ref().map(|(token, _)| token.as_str());
     let bumps: Vec<VersionBump> = plan
@@ -225,8 +226,11 @@ fn version_report(args: &VersionArgs) -> Result<VersionReport> {
             after,
             open_pr: args.open_pr(),
         };
-        return preview_report(root, &plan, &fragments, preview);
+        return preview_report(root, &plan, &fragments, &recovered, preview);
     }
+    let origins = release::origins_with(root, token, &config.changelog, &fragments, &recovered)?;
+    let shown = shown_fragments(&recovered, &fragments);
+    let changelog = release::changelog_sections_with(&plan, &shown, &origins)?;
     prepare::apply_plan(&plan)?;
     // The tag names the merge commit, so a pin that lands after publish
     // never reaches the tree consumers fetch by ref. Rewrite them here,
@@ -242,9 +246,7 @@ fn version_report(args: &VersionArgs) -> Result<VersionReport> {
         &served,
     )?);
     let consumed = release::contributing_fragments(&plan, &fragments);
-    let origins = release::origins(root, token, &config.changelog, &fragments)?;
-    let changelog = release::changelog_sections_with(&plan, &fragments, &origins)?;
-    let changelogs = release::write_changelogs_with(&config, root, &plan, &fragments, &origins)?;
+    let changelogs = release::write_changelogs_with(&config, root, &plan, &shown, &origins)?;
     prepare::run_steps(&steps)?;
     let consume = file_names(&consumed);
     let mut paths: Vec<std::path::PathBuf> = plan.iter().map(|entry| entry.path.clone()).collect();
@@ -274,6 +276,19 @@ fn version_report(args: &VersionArgs) -> Result<VersionReport> {
         dry_run: false,
         bumps,
     })
+}
+
+/// What a section renders from: the fragments earlier candidates consumed,
+/// oldest first, then the pending ones. Only the pending ones are consumed.
+fn shown_fragments(
+    recovered: &[release::Recovered],
+    pending: &[fragment::Fragment],
+) -> Vec<fragment::Fragment> {
+    recovered
+        .iter()
+        .map(|recovered| recovered.fragment.clone())
+        .chain(pending.iter().cloned())
+        .collect()
 }
 
 /// The file name of each consumed fragment, as the report lists it.
@@ -310,6 +325,7 @@ fn preview_report(
     root: &Path,
     plan: &[prepare::PlanEntry],
     fragments: &[fragment::Fragment],
+    recovered: &[release::Recovered],
     preview: Preview,
 ) -> Result<VersionReport> {
     let Preview {
@@ -318,8 +334,15 @@ fn preview_report(
         after,
         open_pr,
     } = preview;
-    let origins = release::origins(root, None, &config::Changelog::default(), fragments)?;
-    let changelog = release::changelog_sections_with(plan, fragments, &origins)?;
+    let origins = release::origins_with(
+        root,
+        None,
+        &config::Changelog::default(),
+        fragments,
+        recovered,
+    )?;
+    let changelog =
+        release::changelog_sections_with(plan, &shown_fragments(recovered, fragments), &origins)?;
     let consume = if open_pr {
         fragments
             .iter()

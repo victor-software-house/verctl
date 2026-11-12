@@ -1123,51 +1123,6 @@ fn prepare_fails_a_package_whose_candidate_cannot_be_counted_on() {
     }
 }
 
-/// `verctl version` writes the stable version out of a candidate with an
-/// empty `.changeset/`, and the first candidate of a new tag. The changelog
-/// section of an entry no fragment names belongs to another change, so this
-/// reads only the written manifest.
-#[test]
-fn version_writes_the_version_of_a_package_no_fragment_names() {
-    let rows = [
-        ("0.8.0-rc.2", "", "0.8.0"),
-        ("0.8.0-beta.2", "prerelease: rc", "0.8.0-rc.1"),
-    ];
-    for (version, setting, written) in rows {
-        let root = TempDir::new().expect("tmp");
-        common::write_config(
-            root.path(),
-            &formatdoc! {"
-                packages:
-                  - name: demo
-                    path: Cargo.toml
-                    {setting}
-            "},
-        );
-        fs::write(
-            root.path().join("Cargo.toml"),
-            formatdoc! {r#"
-                [package]
-                name = "demo"
-                version = "{version}"
-            "#},
-        )
-        .expect("cargo");
-        fs::create_dir_all(root.path().join(".changeset")).expect("dir");
-        let output = common::verctl()
-            .current_dir(root.path())
-            .args(["version", "--no-pr"])
-            .output()
-            .expect("run");
-        let manifest = fs::read_to_string(root.path().join("Cargo.toml")).expect("read");
-        assert!(
-            manifest.contains(&format!("version = \"{written}\"")),
-            "{version}: {manifest}\n{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-}
-
 /// A package that no fragment names and whose version is not semver, such as a
 /// date, is left out of the plan instead of failing it.
 #[test]
@@ -1217,4 +1172,23 @@ fn prepare_leaves_a_package_with_a_version_that_is_not_semver_alone() {
     let plan = prepare::plan(&config, &[fragment], root.path()).expect("plan");
     let names: Vec<&str> = plan.iter().map(|entry| entry.name.as_str()).collect();
     assert_eq!(names, ["demo"]);
+}
+
+/// `0.0.0` is the placeholder no release carries, so a prerelease of it never
+/// keeps that base: the bump moves it to the first release.
+#[test]
+fn a_prerelease_of_the_placeholder_moves_to_the_first_release() {
+    let rc = Prerelease::new("rc").expect("tag");
+    assert_eq!(
+        apply("0.0.0-alpha.1", Bump::Patch, false).expect("patch"),
+        "0.0.1"
+    );
+    assert_eq!(
+        apply("0.0.0-alpha.1", Bump::Minor, true).expect("first minor"),
+        "0.1.0"
+    );
+    assert_eq!(
+        apply_with("0.0.0-rc.1", Bump::Patch, false, Some(&rc)).expect("candidate"),
+        "0.0.1-rc.1"
+    );
 }

@@ -95,10 +95,17 @@ pub fn files_on_merge_base(
 /// `rel` as a path inside the repository. A relative path joins the
 /// canonical root without being canonicalized itself. A file deleted from the
 /// working tree still resolves to its committed copy this way. The version
-/// guard has to see a manifest that a pull request removed.
+/// guard has to see a manifest that a pull request removed. An absolute path
+/// to a file that is gone resolves through its canonical directory, so a
+/// fragment a commit deleted still names its committed copy.
 fn git_path(root: &Path, rel: &Path, workdir: Option<&Path>) -> Option<PathBuf> {
     let abs = if rel.is_absolute() {
-        rel.canonicalize().ok()?
+        rel.canonicalize().ok().or_else(|| {
+            rel.parent()?
+                .canonicalize()
+                .ok()
+                .map(|dir| dir.join(rel.file_name().unwrap_or_default()))
+        })?
     } else {
         let inside: PathBuf = rel
             .components()
@@ -419,10 +426,41 @@ pub fn added_by(root: &Path, path: &Path) -> Result<Option<AddedBy>> {
     let Ok(repo) = discover(root) else {
         return Ok(None);
     };
-    let Some(rel) = git_path(root, path, repo.workdir()) else {
+    let Ok(head) = repo.head_commit() else {
         return Ok(None);
     };
-    let Ok(head) = repo.head_commit() else {
+    added_from(&repo, root, path, head)
+}
+
+/// [`added_by`] from `start` instead of HEAD.
+///
+/// A fragment a candidate's Version PR deleted is gone from HEAD, so its
+/// origin is found from a commit that still holds it: the first parent of the
+/// commit that deleted it.
+///
+/// # Errors
+///
+/// Returns an error when `start` names no commit in the repository, and under
+/// the conditions of [`added_by`].
+pub fn added_by_from(root: &Path, path: &Path, start: &str) -> Result<Option<AddedBy>> {
+    let Ok(repo) = discover(root) else {
+        return Ok(None);
+    };
+    let id =
+        gix::ObjectId::from_hex(start.as_bytes()).with_context(|| format!("commit {start}"))?;
+    let commit = repo
+        .find_commit(id)
+        .with_context(|| format!("commit {start} is not in the repository"))?;
+    added_from(&repo, root, path, commit)
+}
+
+fn added_from(
+    repo: &gix::Repository,
+    root: &Path,
+    path: &Path,
+    head: gix::Commit<'_>,
+) -> Result<Option<AddedBy>> {
+    let Some(rel) = git_path(root, path, repo.workdir()) else {
         return Ok(None);
     };
     if !has_path(&head, &rel)? {
@@ -465,6 +503,130 @@ pub fn added_by(root: &Path, path: &Path) -> Result<Option<AddedBy>> {
         }
         commit = parent;
     }
+}
+
+/// A file a commit deleted, as its first parent held it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Deleted {
+    /// The file: `dir` as the caller gave it, joined with the file name.
+    pub path: PathBuf,
+    /// Its text in the first parent.
+    pub text: String,
+    /// Full hex SHA of the first parent: the newest commit that holds the
+    /// file.
+    pub parent: String,
+}
+
+/// The files under `dir` that each candidate's Version PR deleted since the
+/// version in `manifest` was last stable, newest first.
+///
+/// The walk follows HEAD's first parents. A commit whose first parent holds
+/// another version in `manifest` set a version. The first such commit that set
+/// a version with no prerelease ends the walk, and its own deletions are left
+/// out: they belong to that stable release. Every other commit that set a
+/// version is a candidate's Version PR, and each file under `dir` its first
+/// parent holds and it does not is listed. The merge queue lands a Version PR
+/// as a merge commit, so the fragments it consumed show in that diff. A
+/// commit that set no version deleted no fragment a release consumed, so its
+/// deletions are skipped. With no stable version on the history, the walk
+/// reads to the root commit.
+///
+/// `read` returns `None` when a revision of the file holds no version, which
+/// counts as a different version.
+///
+/// # Errors
+///
+/// Returns an error when `root` is in no repository, when `manifest` or `dir`
+/// is outside it, or when a commit or tree cannot be read. It returns a
+/// [`lookup::Unavailable`] error naming the commit when the walk reaches a
+/// shallow clone's boundary first, because a stable section built without
+/// the rest would leave changes out.
+pub fn candidate_deletions(
+    root: &Path,
+    manifest: &Path,
+    read: &dyn Fn(&str) -> Option<String>,
+    dir: &Path,
+) -> Result<Vec<Deleted>> {
+    let repo = discover(root).context("reading earlier candidates needs a git repository")?;
+    let workdir = repo.workdir().map(Path::to_path_buf);
+    let manifest_rel = git_path(root, manifest, workdir.as_deref())
+        .with_context(|| format!("{} is not in the repository", manifest.display()))?;
+    let dir_rel = git_path(root, dir, workdir.as_deref())
+        .with_context(|| format!("{} is not in the repository", dir.display()))?;
+    let version_at = |commit: &gix::Commit<'_>| -> Result<Option<String>> {
+        Ok(blob_at(&commit.tree()?, &manifest_rel).and_then(|raw| read(&raw)))
+    };
+    let boundary: Vec<gix::ObjectId> = repo
+        .shallow_commits()?
+        .map(|commits| commits.iter().copied().collect())
+        .unwrap_or_default();
+    let mut commit = repo
+        .head_commit()
+        .context("reading earlier candidates needs HEAD")?;
+    let mut deleted = Vec::new();
+    loop {
+        let version = version_at(&commit)?;
+        if boundary.contains(&commit.id().detach()) {
+            return Err(lookup::unavailable(anyhow!(
+                "cannot read the candidates before commit {}: the clone is shallow; fetch the full history{}",
+                commit.id(),
+                shallow_hint()
+            )));
+        }
+        let Some(parent) = commit.parent_ids().next() else {
+            break;
+        };
+        let parent = repo.find_commit(parent.detach())?;
+        if version_at(&parent)? != version {
+            if version.as_deref().is_some_and(stable) {
+                break;
+            }
+            let held = files_under(&parent, &dir_rel)?;
+            let kept = files_under(&commit, &dir_rel)?;
+            for (name, text) in held {
+                if !kept.contains_key(&name) {
+                    deleted.push(Deleted {
+                        path: dir.join(&name),
+                        text,
+                        parent: parent.id().to_string(),
+                    });
+                }
+            }
+        }
+        commit = parent;
+    }
+    Ok(deleted)
+}
+
+/// Whether `version` is semver with no prerelease.
+fn stable(version: &str) -> bool {
+    Version::parse(version).is_ok_and(|version| version.pre.is_empty())
+}
+
+/// Each file directly under `dir` in `commit`, by its file name, with its
+/// text. `dir` is the directory's path in the repository.
+fn files_under(commit: &gix::Commit<'_>, dir: &Path) -> Result<BTreeMap<PathBuf, String>> {
+    let tree = commit.tree()?;
+    let Some(entry) = tree.lookup_entry_by_path(dir)? else {
+        return Ok(BTreeMap::new());
+    };
+    let Ok(subtree) = entry.object()?.try_into_tree() else {
+        return Ok(BTreeMap::new());
+    };
+    let mut files = BTreeMap::new();
+    for entry in subtree.iter() {
+        let entry = entry?;
+        if !entry.mode().is_blob() {
+            continue;
+        }
+        let blob = entry.object()?.try_into_blob()?;
+        files.insert(
+            PathBuf::from(entry.filename().to_str_lossy().as_ref()),
+            String::from_utf8_lossy(&blob.data).into_owned(),
+        );
+    }
+    Ok(files)
 }
 
 /// The commit that set a package's version, and how far it sits below HEAD.
@@ -1967,10 +2129,146 @@ mod tests {
     use indoc::indoc;
 
     use super::{
-        AddedBy, Unreleased, VersionCommit, added_by, file_at, origin_url, tagged_commit,
-        unreleased_below, version_commit,
+        AddedBy, Unreleased, VersionCommit, added_by, added_by_from, candidate_deletions, file_at,
+        origin_url, tagged_commit, unreleased_below, version_commit,
     };
     use crate::test_git::{commit_all, git, init};
+
+    /// The version a `VERSION` fixture holds, or `None` for an empty file.
+    fn version_file(raw: &str) -> Option<String> {
+        let version = raw.trim();
+        (!version.is_empty()).then(|| version.to_owned())
+    }
+
+    /// A fragment that bumps `demo` by `bump`, with `summary` as its body.
+    fn fragment(bump: &str, summary: &str) -> String {
+        indoc::formatdoc! {"
+            ---
+            demo: {bump}
+            ---
+
+            {summary}
+        "}
+    }
+
+    /// A stable release, then two candidates that each consume one fragment,
+    /// with a stray fragment added and deleted between them by commits that
+    /// set no version. Returns the commit that added `one.md` and the first
+    /// candidate's parent.
+    fn two_candidates(dir: &Path) -> (String, String) {
+        init(dir);
+        std::fs::create_dir(dir.join(".changeset")).unwrap();
+        std::fs::write(dir.join("VERSION"), "0.8.0\n").unwrap();
+        std::fs::write(dir.join(".changeset/old.md"), fragment("patch", "Old.")).unwrap();
+        commit_all(dir, "chore: start");
+        std::fs::write(dir.join("VERSION"), "0.8.1\n").unwrap();
+        std::fs::remove_file(dir.join(".changeset/old.md")).unwrap();
+        commit_all(dir, "chore: release demo 0.8.1 (#1)");
+        std::fs::write(dir.join(".changeset/one.md"), fragment("patch", "One.")).unwrap();
+        let added = commit_all(dir, "fix: one (#2)");
+        std::fs::write(dir.join("VERSION"), "0.8.2-rc.1\n").unwrap();
+        std::fs::remove_file(dir.join(".changeset/one.md")).unwrap();
+        commit_all(dir, "chore: release demo 0.8.2-rc.1 (#3)");
+        let first_parent = git(dir, &["rev-parse", "HEAD~1"]);
+        std::fs::write(dir.join(".changeset/stray.md"), fragment("patch", "Stray.")).unwrap();
+        commit_all(dir, "docs: stray (#4)");
+        std::fs::remove_file(dir.join(".changeset/stray.md")).unwrap();
+        commit_all(dir, "docs: drop stray (#5)");
+        std::fs::write(dir.join(".changeset/two.md"), fragment("minor", "Two.")).unwrap();
+        commit_all(dir, "feat: two (#6)");
+        std::fs::write(dir.join("VERSION"), "0.8.2-rc.2\n").unwrap();
+        std::fs::remove_file(dir.join(".changeset/two.md")).unwrap();
+        commit_all(dir, "chore: release demo 0.8.2-rc.2 (#7)");
+        (added, first_parent)
+    }
+
+    #[test]
+    fn candidate_deletions_lists_what_each_candidate_consumed_since_stable() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let (_, first_parent) = two_candidates(dir.path());
+        let deleted = candidate_deletions(
+            dir.path(),
+            &dir.path().join("VERSION"),
+            &version_file,
+            &dir.path().join(".changeset"),
+        )
+        .unwrap();
+        let names: Vec<(String, String)> = deleted
+            .iter()
+            .map(|file| {
+                (
+                    file.path
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned(),
+                    file.text.clone(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            names,
+            [
+                ("two.md".to_owned(), fragment("minor", "Two.")),
+                ("one.md".to_owned(), fragment("patch", "One.")),
+            ]
+        );
+        assert_eq!(deleted[1].parent, first_parent);
+        assert_eq!(deleted[1].path, dir.path().join(".changeset/one.md"));
+    }
+
+    #[test]
+    fn candidate_deletions_is_empty_on_a_stable_head() {
+        let dir = tempfile::TempDir::new().unwrap();
+        two_candidates(dir.path());
+        std::fs::write(dir.path().join("VERSION"), "0.8.2\n").unwrap();
+        commit_all(dir.path(), "chore: release demo 0.8.2 (#8)");
+        assert_eq!(
+            candidate_deletions(
+                dir.path(),
+                &dir.path().join("VERSION"),
+                &version_file,
+                &dir.path().join(".changeset"),
+            )
+            .unwrap(),
+            []
+        );
+    }
+
+    #[test]
+    fn added_by_from_resolves_a_fragment_deleted_at_head() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let (added, first_parent) = two_candidates(dir.path());
+        let path = dir.path().join(".changeset/one.md");
+        assert_eq!(added_by(dir.path(), &path).unwrap(), None);
+        assert_eq!(
+            added_by_from(dir.path(), &path, &first_parent).unwrap(),
+            Some(AddedBy {
+                sha: added,
+                subject: "fix: one (#2)".to_owned(),
+            })
+        );
+    }
+
+    /// A stable section built from a shallow clone would leave out the
+    /// candidates below its boundary, so the walk fails and names the commit.
+    #[test]
+    fn candidate_deletions_fails_at_a_shallow_boundary() {
+        let dir = tempfile::TempDir::new().unwrap();
+        two_candidates(dir.path());
+        let boundary = git(dir.path(), &["rev-parse", "HEAD~2"]);
+        std::fs::write(dir.path().join(".git/shallow"), format!("{boundary}\n")).unwrap();
+        let error = candidate_deletions(
+            dir.path(),
+            &dir.path().join("VERSION"),
+            &version_file,
+            &dir.path().join(".changeset"),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains(&boundary), "{error}");
+        assert!(error.contains("shallow"), "{error}");
+    }
 
     /// The paths of every blob in the commit `sha`.
     fn tree_names(dir: &Path, sha: &str) -> Vec<String> {
