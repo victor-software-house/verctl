@@ -50,7 +50,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up mise
-        uses: victor-software-house/actions/mise@4168002fe58fd0b310bd2b65f9db2262fc0e21d3 # main, 2026-11-11
+        uses: victor-software-house/actions/mise@bead5c01b61e14ecf1e923a5bcff97e8c421f151 # main, 2026-11-11
         with:
           mirror-url: ${{ secrets.RELEASE_MIRROR_URL }}
           mirror-key: ${{ secrets.RELEASE_MIRROR_CI_KEY }}
