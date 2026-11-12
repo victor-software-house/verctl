@@ -30,9 +30,10 @@ env:
 concurrency:
   # Every merge queue entry shares one group, so a newer entry's run cancels the
   # runs of the entries ahead of it: the queue merges on the newest entry's
-  # result, whose merge-group commit holds every entry ahead of it. Outside the
-  # queue, a draft run gets a group of its own, so it never cancels the ready
-  # run.
+  # result, whose merge-group commit holds every entry ahead of it. That holds
+  # only while the queue groups HEADGREEN; under ALLGREEN a cancelled entry
+  # fails. Outside the queue, a draft run gets a group of its own, so it never
+  # cancels the ready run.
   group: >-
     ci-${{ github.workflow }}-${{ github.event_name == 'merge_group' && format('queue-{0}',
     github.event.merge_group.base_ref) || format('{0}-{1}{2}', github.event_name,
@@ -44,7 +45,7 @@ jobs:
   refresh:
     if: github.event_name == 'schedule'
     # One API call on the runner chosen when this repository was rendered.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
     permissions:
       actions: write
@@ -84,7 +85,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up mise
-        uses: victor-software-house/actions/mise@4168002fe58fd0b310bd2b65f9db2262fc0e21d3 # main, 2026-11-11
+        uses: victor-software-house/actions/mise@bead5c01b61e14ecf1e923a5bcff97e8c421f151 # main, 2026-11-11
         with:
           mirror-url: ${{ secrets.RELEASE_MIRROR_URL }}
           mirror-key: ${{ secrets.RELEASE_MIRROR_CI_KEY }}
@@ -123,7 +124,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - name: Set up mise
-        uses: victor-software-house/actions/mise@4168002fe58fd0b310bd2b65f9db2262fc0e21d3 # main, 2026-11-11
+        uses: victor-software-house/actions/mise@bead5c01b61e14ecf1e923a5bcff97e8c421f151 # main, 2026-11-11
         with:
           mirror-url: ${{ secrets.RELEASE_MIRROR_URL }}
           mirror-key: ${{ secrets.RELEASE_MIRROR_CI_KEY }}

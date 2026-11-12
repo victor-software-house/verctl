@@ -222,7 +222,7 @@ jobs:
           echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
           echo "paths=${IGNORED}" >> "${GITHUB_OUTPUT}"
       - name: Set up mise
-        uses: victor-software-house/actions/mise@4168002fe58fd0b310bd2b65f9db2262fc0e21d3 # main, 2026-11-11
+        uses: victor-software-house/actions/mise@bead5c01b61e14ecf1e923a5bcff97e8c421f151 # main, 2026-11-11
         with:
           mirror-url: ${{ secrets.release-mirror-url }}
           mirror-key: ${{ secrets.release-mirror-ci-key }}
@@ -314,7 +314,7 @@ jobs:
           IGNORED: ${{ needs.plan.outputs.mise-ignored-config-paths }}
         run: echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
       - name: Set up mise
-        uses: victor-software-house/actions/mise@4168002fe58fd0b310bd2b65f9db2262fc0e21d3 # main, 2026-11-11
+        uses: victor-software-house/actions/mise@bead5c01b61e14ecf1e923a5bcff97e8c421f151 # main, 2026-11-11
         with:
           mirror-url: ${{ secrets.release-mirror-url }}
           mirror-key: ${{ secrets.release-mirror-ci-key }}
@@ -415,7 +415,7 @@ jobs:
           IGNORED: ${{ needs.plan.outputs.mise-ignored-config-paths }}
         run: echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
       - name: Set up mise
-        uses: victor-software-house/actions/mise@4168002fe58fd0b310bd2b65f9db2262fc0e21d3 # main, 2026-11-11
+        uses: victor-software-house/actions/mise@bead5c01b61e14ecf1e923a5bcff97e8c421f151 # main, 2026-11-11
         with:
           mirror-url: ${{ secrets.release-mirror-url }}
           mirror-key: ${{ secrets.release-mirror-ci-key }}
@@ -500,7 +500,7 @@ jobs:
           IGNORED: ${{ needs.plan.outputs.mise-ignored-config-paths }}
         run: echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
       - name: Set up mise
-        uses: victor-software-house/actions/mise@4168002fe58fd0b310bd2b65f9db2262fc0e21d3 # main, 2026-11-11
+        uses: victor-software-house/actions/mise@bead5c01b61e14ecf1e923a5bcff97e8c421f151 # main, 2026-11-11
         with:
           mirror-url: ${{ secrets.release-mirror-url }}
           mirror-key: ${{ secrets.release-mirror-ci-key }}
@@ -568,7 +568,7 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
       - name: Set up mise
-        uses: victor-software-house/actions/mise@4168002fe58fd0b310bd2b65f9db2262fc0e21d3 # main, 2026-11-11
+        uses: victor-software-house/actions/mise@bead5c01b61e14ecf1e923a5bcff97e8c421f151 # main, 2026-11-11
         with:
           mirror-url: ${{ secrets.release-mirror-url }}
           mirror-key: ${{ secrets.release-mirror-ci-key }}
