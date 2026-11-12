@@ -5,7 +5,7 @@ mod common;
 
 use std::fs;
 
-use indoc::indoc;
+use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
 use verctl::fragment::{self, Bump, Fragment, Group, PackageBump};
 use verctl::prepare::PlanEntry;
@@ -294,6 +294,97 @@ fn pr_body_is_the_changelog() {
         - Patch.
     "};
     assert_eq!(release::pr_body(notes), notes.trim());
+}
+
+const CUT_NOTE_END: &str = "in this pull request's diff.";
+
+fn sections(count: usize, entry: &str) -> String {
+    (1..=count)
+        .map(|n| {
+            formatdoc! {"
+                ## demo 1.0.{n}
+
+                - {entry}
+            "}
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn kept_before_note(body: &str) -> &str {
+    let (kept, note) = body.rsplit_once("\n\n").unwrap();
+    assert!(note.ends_with(CUT_NOTE_END), "{note}");
+    kept
+}
+
+#[test]
+fn pr_body_at_the_limit_is_unchanged() {
+    let heading = "## demo 1.0.1 ";
+    let pad = release::PR_BODY_LIMIT - heading.chars().count();
+    let notes = format!("{heading}{}", "é".repeat(pad));
+    assert_eq!(notes.chars().count(), release::PR_BODY_LIMIT);
+    assert_eq!(release::pr_body(&notes), notes);
+}
+
+#[test]
+fn pr_body_over_the_limit_is_cut_before_the_last_heading_that_fits() {
+    let notes = sections(
+        1_000,
+        "a change worth a line of its own, written at some length",
+    );
+    assert!(notes.chars().count() > release::PR_BODY_LIMIT);
+    let body = release::pr_body(&notes);
+    assert!(body.chars().count() <= release::PR_BODY_LIMIT);
+    let kept = kept_before_note(&body);
+    assert!(notes.starts_with(kept));
+    assert!(notes[kept.len()..].starts_with("\n\n## demo 1.0."));
+}
+
+#[test]
+fn pr_body_cut_keeps_whole_multibyte_characters() {
+    let notes = sections(2_000, "日本語のメモ 🦀 é ü, written at some length");
+    assert!(notes.chars().count() > release::PR_BODY_LIMIT);
+    let body = release::pr_body(&notes);
+    assert!(body.chars().count() <= release::PR_BODY_LIMIT);
+    let kept = kept_before_note(&body);
+    assert!(notes.starts_with(kept));
+    assert!(kept.ends_with("written at some length"));
+}
+
+#[test]
+fn pr_body_cut_never_lands_inside_a_fenced_code_block() {
+    let code = formatdoc! {"
+        # not a heading
+        let kept = false;
+    "}
+    .repeat(release::PR_BODY_LIMIT / 20);
+    let notes = formatdoc! {"
+        ## demo 1.0.2
+
+        - Patch.
+
+        ## demo 1.0.1
+
+        ```
+        {code}```
+    "};
+    let body = release::pr_body(&notes);
+    assert!(body.chars().count() <= release::PR_BODY_LIMIT);
+    assert_eq!(
+        kept_before_note(&body),
+        indoc! {"
+            ## demo 1.0.2
+
+            - Patch."}
+    );
+}
+
+#[test]
+fn pr_body_with_no_safe_cut_is_only_the_note() {
+    let notes = "a".repeat(release::PR_BODY_LIMIT + 1);
+    let body = release::pr_body(&notes);
+    assert!(body.starts_with("The rest of the changelog"), "{body}");
+    assert!(body.ends_with(CUT_NOTE_END), "{body}");
 }
 
 #[test]
