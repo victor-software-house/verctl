@@ -25,5 +25,5 @@ A problem in a target SHALL name the path the file holds, `assets.<target>.<fiel
 
 #### Scenario: A target's problem on its own line
 
-- **WHEN** `.ctl/ver.yaml` declares one package, then `assets:`, `  linux-x64:`, and `    files: [demo]` on lines 4 to 6, with no `dir`
+- **WHEN** `.ctl/ver.yaml` declares one package on lines 1 to 3, then `assets.linux-x64.files: [demo]` as block mappings on lines 4 to 6, with no `dir`
 - **THEN** loading it fails with `.ctl/ver.yaml:6:12: assets.linux-x64.files: must come with assets.dir`
