@@ -39,7 +39,9 @@ pub struct PlanEntry {
 /// Such an entry has [`Bump::None`] and a `to` that differs from its `from`.
 /// Only a version that parses as semver and holds a prerelease is read this
 /// way, so a package whose version is not semver fails the plan only when a
-/// fragment names it.
+/// fragment names it. A prerelease of `0.0.0`, such as `0.0.0-dev`, is the
+/// placeholder of a package that has not released ([`bump::unreleased`]), so
+/// it moves only when a fragment names it.
 ///
 /// # Errors
 ///
@@ -67,8 +69,9 @@ pub fn plan(config: &Config, fragments: &[Fragment], root: &Path) -> Result<Vec<
         let spec = config.find(name)?;
         let current = spec.current(config, root)?;
         if bump == Bump::None
-            && !semver::Version::parse(&current.version)
-                .is_ok_and(|version| !version.pre.is_empty())
+            && (bump::unreleased(&current.version)
+                || !semver::Version::parse(&current.version)
+                    .is_ok_and(|version| !version.pre.is_empty()))
         {
             continue;
         }

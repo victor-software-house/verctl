@@ -9,10 +9,14 @@ use toml_edit::{DocumentMut, Formatted, Item, Value};
 
 use crate::config::{Config, PLACEHOLDER, Pin, PinPattern};
 
-/// A whole semver version as every pin site spells one: digits and dots, then
-/// an optional prerelease after `-` and build after `+`. A release candidate
-/// is a version, so a pin that names one moves like any other.
-const VERSION: &str = r"[0-9]+(?:\.[0-9]+)*(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?";
+/// A version as verctl writes one: digits and dots, then an optional
+/// candidate prerelease, `-<tag>.<count>`, such as `0.8.2-rc.1`.
+///
+/// A pin names a version verctl wrote, so the pattern holds no other
+/// prerelease or build. A wider one would read `tool-1.2.3-linux-x64` against
+/// `tool-{version}-x64` as version `1.2.3-linux`, and the rewrite would drop
+/// `-linux`; this one matches nothing there, so the pin fails instead.
+const VERSION: &str = r"[0-9]+(?:\.[0-9]+)*(?:-[a-z]+\.[0-9]+)?";
 
 /// Current declared versions of every configured package.
 ///
@@ -202,8 +206,8 @@ fn set_string(held: &mut Value, version: &str) -> Result<()> {
 /// YAML value all rewrite the same way, with nothing assumed about the file.
 ///
 /// `Config::load` refuses a pattern with nothing marking where the version
-/// starts and ends. So the pattern matches the whole token, prerelease and
-/// build included, and never a numeric head with its tail kept.
+/// starts and ends. So the pattern matches the whole token, a candidate's
+/// prerelease included, and never a numeric head with its tail kept.
 ///
 /// The file must hold the version exactly as often as declared. The count is
 /// never inferred. A count off in either direction stops the release. Too few
@@ -589,8 +593,34 @@ mod tests {
         }
     }
 
-    /// A candidate is a version, so its whole spelling moves to the next
-    /// version, prerelease included, and a stable one drops the tail.
+    /// A version verctl never writes, with a `-linux` part or build metadata,
+    /// matches nothing, so the pin fails before it half-rewrites one.
+    #[test]
+    fn a_version_verctl_never_writes_fails_the_pin() {
+        for (before, pattern) in [
+            (
+                "Get tool-1.2.3-linux-x64 today.\n",
+                "tool-{version}-x64 today",
+            ),
+            (
+                "Install verctl@1.0.0+build.5 today.\n",
+                "verctl@{version} today",
+            ),
+        ] {
+            let root = TempDir::new().unwrap();
+            let path = write_file(&root, DOC, before);
+            let pins = [pattern_pin(DOC, &[(pattern, Occurrences::Once)])];
+            let error = write(root.path(), &pins, &versions("1.3.0")).unwrap_err();
+            assert!(
+                format!("{error:#}").contains("matches 0 times"),
+                "{error:#}"
+            );
+            assert_eq!(fs::read_to_string(&path).unwrap(), before);
+        }
+    }
+
+    /// A candidate moves whole to the next version, prerelease included, and
+    /// a stable one drops the tail.
     #[test]
     fn a_prerelease_pin_moves_whole_to_the_next_version() {
         for (before, next, after) in [
@@ -603,11 +633,6 @@ mod tests {
                 "Install verctl@1.0.0-rc.2 today.\n",
                 "1.0.0",
                 "Install verctl@1.0.0 today.\n",
-            ),
-            (
-                "Install verctl@1.0.0+build.5 today.\n",
-                "1.0.1",
-                "Install verctl@1.0.1 today.\n",
             ),
         ] {
             let root = TempDir::new().unwrap();

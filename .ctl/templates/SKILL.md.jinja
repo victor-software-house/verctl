@@ -67,6 +67,13 @@ Moving to `0.1.0` or `1.0.0` is a separate operator decision, never the first fr
 Only the operator sets a package's `first_minor: true` in `.ctl/ver.yaml`, which opens the package at `0.1.0`.  
 `release` and `status` leave a package at `0.0.0` out, so a repo can adopt the release workflow before its first release.
 
+### Release candidates
+
+Only the operator sets a package's `prerelease: <tag>` in `.ctl/ver.yaml`, such as `prerelease: rc`.
+While it is set, each Version PR writes a candidate such as `0.8.2-rc.1`, published and released so that only a consumer who names it receives it.
+Removing the key makes the next Version PR write the stable version, whose section lists every candidate's changes.
+`verctl instructions` holds the version rules and what each publisher does with a candidate.
+
 ## Changelog
 
 Each entry links the pull request or commit that added its fragment.  

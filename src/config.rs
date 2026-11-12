@@ -255,13 +255,20 @@ impl Prerelease {
         &self.0
     }
 
-    /// Whether the tag is one or more lowercase ASCII letters.
+    /// Whether the tag is one or more lowercase ASCII letters, and neither `x`
+    /// nor `latest`.
     #[must_use]
     pub fn is_valid(&self) -> bool {
-        !self.0.is_empty() && self.0.bytes().all(|byte| byte.is_ascii_lowercase())
+        !self.0.is_empty()
+            && !matches!(self.0.as_str(), "x" | "latest")
+            && self.0.bytes().all(|byte| byte.is_ascii_lowercase())
     }
 
-    const RULE: &'static str = "a prerelease tag is lowercase ASCII letters only, such as rc, beta, or next; remove digits, dots, and capitals";
+    /// Two words are refused besides the letter rule. npm reads `x` alone as
+    /// the version range "any" and refuses it as a dist-tag. `latest` is the
+    /// dist-tag every plain install resolves, so a candidate under it would
+    /// reach every consumer.
+    const RULE: &'static str = "a prerelease tag is lowercase ASCII letters only, such as rc, beta, or next; never x, which npm reads as a version range, and never latest, which every plain install resolves; remove digits, dots, and capitals";
 }
 
 impl PackageSpec {
@@ -866,8 +873,8 @@ fn every_pattern_says_where_the_version_goes(
 }
 
 /// Where the version starts and ends, as the pattern declares it.
-/// `{version}` is a whole semver version: digits and dots, then an optional
-/// prerelease after `-` and build after `+`. Without literal text on each side
+/// `{version}` is a version verctl writes: digits and dots, then an optional
+/// candidate prerelease `-<tag>.<count>`. Without literal text on each side
 /// that a version cannot hold, the pattern could end a version early or start
 /// it late.
 ///
@@ -1741,7 +1748,7 @@ mod tests {
             let spec = config.find("demo").expect("demo");
             assert_eq!(spec.prerelease.as_ref().map(Prerelease::as_str), Some(tag));
         }
-        for tag in ["rc1", "RC", "rc.1", "1", "\"\""] {
+        for tag in ["rc1", "RC", "rc.1", "1", "x", "latest", "\"\""] {
             let error = load(&formatdoc! {"
                 packages:
                   - name: demo

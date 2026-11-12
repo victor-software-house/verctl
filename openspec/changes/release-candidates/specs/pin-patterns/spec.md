@@ -2,7 +2,7 @@
 
 ### Requirement: A pin reads and writes a prerelease version
 
-A bounded pattern's `{version}` SHALL match a whole semver version, its prerelease and build included.
+A bounded pattern's `{version}` SHALL match a version verctl writes: a stable version, or a candidate `<tag>.<count>`.
 `verctl version` SHALL rewrite that whole version to the new one.
 
 #### Scenario: From a candidate to the next
@@ -17,7 +17,7 @@ A bounded pattern's `{version}` SHALL match a whole semver version, its prerelea
 
 ### Requirement: A tool pin moves a prerelease include
 
-A `tool` pin SHALL move each include of the tool's own repository whose `?ref=v` value is a whole semver version, prerelease included.
+A `tool` pin SHALL move each include of the tool's own repository whose `?ref=v` value is a version verctl writes, a candidate included.
 A `?ref=v` value that starts with a digit and is not a whole version SHALL fail the pin and leave its file unchanged.
 
 When a `?ref=v` value does not start with a digit, it SHALL stay unchanged and SHALL NOT fail the pin.

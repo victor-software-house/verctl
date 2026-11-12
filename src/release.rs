@@ -204,13 +204,16 @@ pub fn origins_with(
     let mut authors: BTreeMap<u64, Option<String>> = BTreeMap::new();
     let mut by_path = BTreeMap::new();
     let pending = fragments.iter().map(|fragment| (fragment, None));
-    let earlier = recovered
-        .iter()
-        .map(|recovered| (&recovered.fragment, Some(recovered.parent.as_str())));
-    for (fragment, start) in pending.chain(earlier) {
-        let added = match start {
+    let earlier = recovered.iter().map(|recovered| {
+        (
+            &recovered.fragment,
+            Some((recovered.file.as_path(), recovered.parent.as_str())),
+        )
+    });
+    for (fragment, held) in pending.chain(earlier) {
+        let added = match held {
             None => git::added_by(root, &fragment.path)?,
-            Some(start) => git::added_by_from(root, &fragment.path, start)?,
+            Some((file, start)) => git::added_by_from(root, file, start)?,
         };
         let Some(added) = added else {
             continue;
@@ -252,7 +255,14 @@ pub fn origins_with(
 pub struct Recovered {
     /// The fragment, reduced to the one package whose section it feeds, so it
     /// adds nothing to another package's section.
+    ///
+    /// Its `path` is the file followed by `@` and the commit that held it,
+    /// such as `.changeset/fix.md@1a2b3c4d5e6f`. A pending fragment may reuse
+    /// the file name, and the origins of the two are looked up by path, so the
+    /// commit keeps them apart.
     pub fragment: Fragment,
+    /// The file, where the working tree held it.
+    pub file: PathBuf,
     /// Full hex SHA of a commit that still holds the file.
     pub parent: String,
 }
@@ -315,8 +325,11 @@ pub fn recovered_fragments(
             if fragment.packages.is_empty() {
                 continue;
             }
+            let short = file.parent.get(..12).unwrap_or(&file.parent);
+            fragment.path = PathBuf::from(format!("{}@{short}", file.path.display()));
             recovered.push(Recovered {
                 fragment,
+                file: file.path,
                 parent: file.parent,
             });
         }

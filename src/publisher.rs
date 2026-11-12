@@ -563,15 +563,28 @@ pub(crate) fn check_options(
 ///
 /// A registry that gets a prerelease with no tag files it under `latest`, which
 /// would hand the candidate to every consumer that names no version.
+///
+/// The first identifier is the tag only when it passes the rule a
+/// `prerelease` setting passes ([`Prerelease::is_valid`]): lowercase letters,
+/// never `x` or `latest`. npm refuses a dist-tag that parses as a version
+/// range, such as `0`, `x` or `v1`, and every plain install resolves
+/// `latest`. Any other first identifier gives `next`, the dist-tag npm's docs
+/// use for upcoming versions. Only a hand-written version, such as `1.0.0-0`
+/// or `1.0.0-v1.1`, has one.
+///
+/// [`Prerelease::is_valid`]: crate::config::Prerelease::is_valid
 pub(crate) fn prerelease_tag(version: &str) -> Option<String> {
     let version = semver::Version::parse(version).ok()?;
-    version
+    let first = version
         .pre
         .as_str()
         .split('.')
         .next()
-        .filter(|tag| !tag.is_empty())
-        .map(str::to_owned)
+        .filter(|tag| !tag.is_empty())?;
+    if crate::config::Prerelease::new(first).is_err() {
+        return Some("next".to_owned());
+    }
+    Some(first.to_owned())
 }
 
 /// Resolve a package's label, noun, and upload command.
@@ -1134,6 +1147,28 @@ mod tests {
         assert_eq!(super::prerelease_tag("1.0.0-beta").as_deref(), Some("beta"));
         assert_eq!(super::prerelease_tag("0.8.2"), None);
         assert_eq!(super::prerelease_tag("not a version"), None);
+    }
+
+    /// A first identifier the `prerelease` setting would refuse never becomes
+    /// the tag: npm refuses a range such as `0`, `x` or `v1`, and `latest` is
+    /// every plain install's.
+    #[test]
+    fn a_prerelease_with_an_unusable_tag_uploads_under_next() {
+        for version in [
+            "1.0.0-0",
+            "2.0.0-1.rc",
+            "1.0.0-x.1",
+            "1.0.0-X.1",
+            "1.0.0-latest.1",
+            "1.0.0-v1.1",
+            "1.0.0-RC.1",
+        ] {
+            assert_eq!(
+                super::prerelease_tag(version).as_deref(),
+                Some("next"),
+                "{version}"
+            );
+        }
     }
 
     /// An empty upload command means release-only, so only `publisher: none`

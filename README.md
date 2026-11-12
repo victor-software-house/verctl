@@ -75,6 +75,12 @@ To open at `0.1.0` on purpose, set `first_minor: true` on the package in `.ctl/v
 
 `release` and `status` leave a package at `0.0.0` out, so a repo can adopt the release workflow before its first release.
 
+## Release candidates
+
+Set `prerelease: rc` on a package to release candidates: each Version PR then writes a version such as `0.8.2-rc.1`, then `0.8.2-rc.2`.  
+A candidate reaches crates.io, npm and GitHub as a prerelease, so only a consumer who names its exact version receives it.  
+Remove the key, and the next Version PR writes `0.8.2`, whose CHANGELOG section lists every change the candidates carried.
+
 ## Changelog
 
 Rendered with [minijinja](https://crates.io/crates/minijinja) 2.x from these defaults (override either path):

@@ -38,7 +38,7 @@ A parse error under `--format json` is a JSON error even when the bad argument c
 
 | Key | Section |
 |:--|:--|
-| `packages`, `drivers` | [Version files](#version-files), and `first_minor` under [The first release](#the-first-release) |
+| `packages`, `drivers` | [Version files](#version-files), `first_minor` under [The first release](#the-first-release), and `prerelease` under [Release candidates](#release-candidates) |
 | `changelog` | [Changelog](#changelog) |
 | `prepare`, `proposal` | [Version PR](#version-pr) |
 | `publishers` | [Publishers](#publishers) |
@@ -87,8 +87,37 @@ It is never the first fragment's bump.
 So a repo can adopt the release workflow before its first release.
 
 `version` and `check` refuse a `minor` or `major` fragment on a package at `0.0.0`, including its pre-releases and builds, naming the package.  
-To open at `0.1.0` on purpose, the operator sets `first_minor: true` on that package in `.ctl/ver.yaml`.  
+To open at `0.1.0` on purpose, the operator sets `first_minor: true` on that package in `.ctl/ver.yaml`.
 The key does nothing once the package has released.
+
+### Release candidates
+
+`prerelease: <tag>` on a package makes each Version PR write a candidate, `<base>-<tag>.<count>`, such as `0.8.2-rc.1`.
+The tag is lowercase ASCII letters only, such as `rc`, `beta` or `next`, and never `x` or `latest`, which npm reads as a version range and as the default install.
+Removing the key makes the next Version PR write the stable version, even with no fragment pending.
+
+The base follows the highest pending bump:
+
+1. A stable version bumps as without the key: `0.8.1` with a patch gives `0.8.2-rc.1`.
+2. A candidate keeps its base when the base already holds the bump: `0.8.2-rc.1` with a patch gives `0.8.2-rc.2`.
+   A patch always does, a minor when the patch is 0, and a major when the minor and patch are 0.
+3. Otherwise the base bumps again, and the count starts at 1: `1.2.4-rc.1` with a minor gives `1.3.0-rc.1`.
+
+Changing the tag starts the count at 1, and the new tag must sort above the current one: `rc` after `beta`, never `beta` after `rc`.
+A current prerelease that is not `<tag>.<count>`, such as `0.8.2-rc1`, fails the plan, naming the version and the shape verctl writes.
+
+A candidate is versioned, published, tagged and released by the same path a stable version takes:
+
+- cargo uploads it unchanged; crates.io and Cargo never pick a prerelease unless a consumer names it.
+- The stock bun upload adds `--tag <tag>`, so `latest` stays the stable version.
+  A `publish` command a repository writes gets nothing added, so it names its own `--tag`.
+- Its GitHub Release is a prerelease that never becomes the repository's latest.
+- Pins move to it, so its served tasks and actions run the candidate's own binary.
+
+The stable version after candidates renders its CHANGELOG section from the pending fragments and from every fragment the candidates since the last stable version consumed.
+The first candidate under a new tag, with no fragment pending, lists what the earlier candidates consumed.
+verctl reads those fragments from the first-parent history, so a shallow clone that ends before them fails the plan, naming the commit, before any file changes.
+The candidate sections stay in the CHANGELOG below the stable one.
 
 ### Validation
 
@@ -546,7 +575,10 @@ A template with `{name}` names one tag and one Release per package.
 Each Release body is that package's own CHANGELOG section, from `packages[].changelog` (default `CHANGELOG.md` beside the manifest).  
 A template that would render the same tag for two packages fails at plan time.
 
-Each Release is created at HEAD (`target_commitish` is that SHA).  
+A Release whose version has a prerelease is created with `prerelease: true` and `make_latest: false`, so the repository's latest stays the stable one.
+A stable Release keeps GitHub's defaults.
+
+Each Release is created at HEAD (`target_commitish` is that SHA).
 After create, and when a Release already exists, the tag is re-read, and the run fails if it names another commit.  
 A retry at the same commit is a no-op.
 
@@ -653,10 +685,12 @@ Under `whole_line: true`, the line start or end bounds the side, unless the lite
 
 The character next to `{version}` must not be a digit, or a `.` with a digit beyond it: `v{version}.5x` would read `v1.2.3.5x` as 1.2.3.
 
-Loading `.ctl/ver.yaml` refuses a pattern with an open side, naming it and the side.  
-A prerelease such as `0.1.1-rc1` then fails to match instead of having its numeric head rewritten.
+Loading `.ctl/ver.yaml` refuses a pattern with an open side, naming it and the side.
+`{version}` matches a version verctl writes, stable or a candidate `<tag>.<count>`, so `0.8.2-rc.1` moves to `0.8.2-rc.2` or to `0.8.2` whole.  
+A version verctl never writes, such as `1.2.3-linux` or `1.0.0+build.5`, matches nothing, so the pin fails instead of dropping part of it.
 
-An include whose `?ref=v…` starts with a version and goes on fails the same way.
+An include whose `?ref=v…` holds a whole version moves the same way.
+One that starts with a digit and is not a whole version, such as `?ref=v1.2.3_local`, fails, naming the file, instead of having its numeric head rewritten.
 
 ### Served templates
 
@@ -739,4 +773,4 @@ Stop and ask in any of these cases:
 - a `major` fragment lands on a 0.x package;
 - verctl refuses a `0.0.0` package's bump.
 
-`first_minor` is the operator's to set.
+`first_minor` and `prerelease` are the operator's to set.
