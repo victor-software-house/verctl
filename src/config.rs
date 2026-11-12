@@ -498,6 +498,14 @@ pub struct Assets {
     pub targets: BTreeMap<String, AssetTarget>,
 }
 
+impl Assets {
+    /// The keys under `assets` that are settings, every other key being a
+    /// target id. A reader that takes only the target ids of an old config
+    /// leaves these out.
+    pub(crate) const SETTINGS: [&'static str; 6] =
+        ["bin", "prepare", "build", "binary", "dir", "files"];
+}
+
 /// One build target: the platform it produces and the single machine that
 /// builds it. One tarball, one machine, so `runner` is not a list.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default, Validate)]

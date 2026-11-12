@@ -21,7 +21,7 @@ use serde::de::{IgnoredAny, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::assets::{self, MatrixTarget};
-use crate::config::Config;
+use crate::config::{Assets, Config};
 use crate::driver::Driver;
 use crate::git::{self, VersionCommit};
 use crate::github::{self, ReleaseState};
@@ -285,10 +285,7 @@ fn declared_at(root: &Path, path: &Path, sha: &str) -> Result<Option<Vec<String>
         .parse()
         .with_context(|| format!("the asset targets of {} at commit {sha}", path.display()))?;
     Ok(Some(
-        declared
-            .assets
-            .map(|assets| assets.targets)
-            .unwrap_or_default(),
+        declared.assets.map(|assets| assets.0).unwrap_or_default(),
     ))
 }
 
@@ -303,12 +300,21 @@ struct DeclaredTargets {
     assets: Option<TargetIds>,
 }
 
-/// The `assets` mapping of an old config, reduced to its target ids.
-#[derive(Deserialize)]
-struct TargetIds {
-    /// The id of each target, in file order. Its fields are not read.
-    #[serde(default, deserialize_with = "mapping_keys")]
-    targets: Vec<String>,
+/// The `assets` mapping of an old config, reduced to its target ids, in file
+/// order. A target sits directly under `assets`, beside the settings
+/// ([`Assets::SETTINGS`]), so every key that is not a setting is a target.
+/// The fields of a target are not read.
+struct TargetIds(Vec<String>);
+
+impl<'de> Deserialize<'de> for TargetIds {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let keys = mapping_keys(deserializer)?;
+        Ok(Self(
+            keys.into_iter()
+                .filter(|key| !Assets::SETTINGS.contains(&key.as_str()))
+                .collect(),
+        ))
+    }
 }
 
 /// The keys of a mapping, each value skipped unread.
@@ -603,6 +609,7 @@ pub fn write_github_output(pending: &Pending, path: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use ctl_core::input::Input;
     use indoc::indoc;
 
     use super::{
@@ -610,6 +617,7 @@ mod tests {
         group, members_at, newest_per_tag, state_of, version_released, write_github_output,
     };
     use crate::assets::MatrixTarget;
+    use crate::config::{Assets, Config};
     use crate::git::VersionCommit;
     use crate::github::ReleaseState;
     use crate::publish::PublishEntry;
@@ -812,28 +820,79 @@ mod tests {
     }
 
     /// An old revision may hold keys the current schema refuses. Only its
-    /// target ids are read, so those keys do not matter.
+    /// target ids are read, so those keys do not matter. A target sits
+    /// directly under `assets`, beside the settings, as verctl's own
+    /// `.ctl/ver.yaml` writes it; 0.8.1 read an `assets.targets` key no config
+    /// holds, and so released with no assets.
     #[test]
     fn an_old_config_names_its_targets_whatever_else_it_holds() {
-        let declared: DeclaredTargets = ctl_core::input::Input::new(
+        let declared: DeclaredTargets = Input::new(
             "old.yaml",
-            indoc::indoc! {"
+            indoc! {"
                 drivers: {}
                 a_key_removed_later: true
                 assets:
                   bin: demo
-                  targets:
-                    linux-x64: {}
-                    darwin-arm64:
-                      runner: arm64
+                  prepare: [true]
+                  build: [true]
+                  binary: target/{triple}/release/{bin}
+                  linux-x64: {}
+                  darwin-arm64:
+                    runner: arm64
             "},
         )
         .parse()
         .unwrap();
-        assert_eq!(
-            declared.assets.unwrap().targets,
-            ["linux-x64", "darwin-arm64"]
-        );
+        assert_eq!(declared.assets.unwrap().0, ["linux-x64", "darwin-arm64"]);
+    }
+
+    /// Every setting [`Assets::SETTINGS`] names is a field of the schema, so
+    /// none of them can be read as a target.
+    #[test]
+    fn the_asset_settings_match_the_schema() {
+        let packed = indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+            assets:
+              bin: demo
+              prepare: [rustup]
+              build: [cargo]
+              dir: dist
+              files: [demo]
+              linux-x64: {}
+        "};
+        let single = indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+            assets:
+              binary: target/{triple}/release/{bin}
+              linux-x64: {}
+        "};
+        let mut seen = Vec::new();
+        for yaml in [packed, single] {
+            let config = Config::parse(yaml).unwrap();
+            let assets = config.assets.unwrap();
+            assert_eq!(assets.targets.keys().collect::<Vec<_>>(), ["linux-x64"]);
+            let ids = Input::new("config.yaml", yaml)
+                .parse::<DeclaredTargets>()
+                .unwrap()
+                .assets
+                .unwrap()
+                .0;
+            assert_eq!(ids, ["linux-x64"], "{yaml}");
+            seen.extend(
+                Assets::SETTINGS
+                    .iter()
+                    .copied()
+                    .filter(|key| yaml.contains(&format!("  {key}:"))),
+            );
+        }
+        seen.sort_unstable();
+        let mut settings = Assets::SETTINGS.to_vec();
+        settings.sort_unstable();
+        assert_eq!(seen, settings, "each setting is exercised once");
     }
 
     #[test]
