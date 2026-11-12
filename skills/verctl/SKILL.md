@@ -22,8 +22,9 @@ mise run ver check
 mise run ver version --pr
 ```
 
-Never `mise run ver --`. The `--` in `#USAGE mount` is mise's
-completion bootstrap.
+Never `mise run ver --`.
+
+The `--` in `#USAGE mount` is mise's completion bootstrap.
 
 ## Commands
 

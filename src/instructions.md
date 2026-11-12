@@ -10,8 +10,9 @@ mise run ver status
 mise run ver instructions
 ```
 
-Never `mise run ver --`. The `--` in `#USAGE mount` is mise's
-completion bootstrap.
+Never `mise run ver --`.
+
+The `--` in `#USAGE mount` is mise's completion bootstrap.
 
 ## Commands
 

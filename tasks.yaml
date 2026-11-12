@@ -428,6 +428,20 @@ queue:
       - "2026-11-11, hakkiri lead: hakkiri v0.0.3 has no linux-x64 tarball because its version commit's prepare.sh runs apt-get, which failed on GitHub's runners from 14:21 UTC; hakkiri PR 85 fixed the recipe on main, but the asset job builds from the old commit's tree, so every push to main replans v0.0.3 and reruns the broken job (state_of, src/pending.rs:400-422)."
       - "2026-11-11, hakkiri lead: run 43053358185 on 3535fb8 (v0.0.4) planned only hakkiri 0.0.4, so v0.0.3's missing linux-x64 dropped out; pending() checks only the current version's completeness, and earlier versions enter only through git::unreleased_below, which lists untagged ones."
 
+  - id: VER-125
+    title: Place an asset target's problems on its own line
+    scope: "config: assets"
+    outcome: >-
+      A problem in a target under assets names the path the file holds and lands on
+      that line.
+    blocked_by: []
+    acceptance:
+      - A bad files list under assets.linux-x64 fails the load at the line of that list, and the message names assets.linux-x64.files with no targets segment.
+      - Every other problem in .ctl/ver.yaml prints and lands exactly as before.
+    plan: openspec/changes/flattened-asset-errors/proposal.md
+    notes:
+      - 2026-11-11, ctl-core 0.7.3 ships Input::flattened (ctl-core PR 284), and verctl main pins ctl-core 0.7.0, so a target's problem names assets.targets.<id> and lands on the assets line.
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
