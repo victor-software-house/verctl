@@ -36,9 +36,10 @@ on:
 # A newer push to the same pull request cancels its older run. A run on main
 # never cancels the running one, but GitHub keeps one pending run per group and
 # drops an older pending one, so start each measurement only after the last
-# one ends.
+# one ends. Adding any other label starts a run that skips every job, so that
+# run takes a group of its own and cannot cancel a measurement.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}
+  group: ${{ github.workflow }}-${{ (github.event.action == 'labeled' && github.event.label.name != 'mbx-measure') && format('ignored-{0}-', github.run_id) || '' }}${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
