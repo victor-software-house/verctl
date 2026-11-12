@@ -345,7 +345,39 @@ pub fn default_branch_of(raw: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// Where a Release stands: the stable one, or a candidate before it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stage {
+    /// A stable version: GitHub's defaults apply, so the Release becomes the
+    /// repository's latest.
+    Stable,
+    /// A candidate: a prerelease that never becomes the latest Release, so
+    /// the repository's latest stays the stable one ([create a release]).
+    ///
+    /// [create a release]: https://docs.github.com/en/rest/releases/releases#create-a-release
+    Candidate,
+}
+
+/// The Release `ensure_release_as` creates when its tag has none.
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct NewRelease<'a> {
+    /// The tag the Release is for.
+    pub tag: &'a str,
+    /// The Release title.
+    pub name: &'a str,
+    /// The Release notes.
+    pub body: &'a str,
+    /// The commit the tag is created at, and the one an existing tag must name.
+    pub sha: &'a str,
+    /// Whether the Release is the stable one or a candidate.
+    pub stage: Stage,
+}
+
 /// Create `tag` at `sha` if it is missing. Returns the release HTML URL.
+///
+/// A new Release is a [`Stage::Stable`] one, with GitHub's defaults; see
+/// [`ensure_release_as`] for a candidate. An existing release is used as it is.
 ///
 /// An existing release is not trusted: GitHub's `target_commitish` on the
 /// Release object is a branch name more often than a SHA. The git ref is
@@ -371,9 +403,31 @@ pub fn ensure_release(
     sha: &str,
     shipped: bool,
 ) -> Result<String> {
+    let release = NewRelease {
+        tag,
+        name,
+        body,
+        sha,
+        stage: Stage::Stable,
+    };
+    ensure_release_as(token, repo, &release, shipped)
+}
+
+/// [`ensure_release`] for a Release at the given `release.stage`: a candidate
+/// is a prerelease and never the latest.
+///
+/// # Errors
+///
+/// Returns the errors of [`ensure_release`].
+pub fn ensure_release_as(
+    token: &str,
+    repo: &Repo,
+    release: &NewRelease<'_>,
+    shipped: bool,
+) -> Result<String> {
     block(async {
         let crab = client(token)?;
-        ensure_release_with(&crab, repo, tag, name, body, sha, shipped).await
+        ensure_release_with(&crab, repo, release, shipped).await
     })
 }
 
@@ -383,12 +437,16 @@ pub fn ensure_release(
 async fn ensure_release_with(
     crab: &Octocrab,
     repo: &Repo,
-    tag: &str,
-    name: &str,
-    body: &str,
-    sha: &str,
+    release: &NewRelease<'_>,
     shipped: bool,
 ) -> Result<String> {
+    let NewRelease {
+        tag,
+        name,
+        body,
+        sha,
+        stage,
+    } = *release;
     let repos = crab.repos(&repo.owner, &repo.name);
     let releases = repos.releases();
     match releases.get_by_tag(tag).await {
@@ -401,11 +459,18 @@ async fn ensure_release_with(
         Err(octocrab::Error::GitHub { source, .. }) if source.status_code.as_u16() == 404 => {}
         Err(error) => return Err(error).context("get release by tag"),
     }
-    let release = releases
+    let create = releases
         .create(tag)
         .name(name)
         .body(body)
-        .target_commitish(sha)
+        .target_commitish(sha);
+    let create = match stage {
+        Stage::Stable => create,
+        Stage::Candidate => create
+            .prerelease(true)
+            .make_latest(octocrab::repos::releases::MakeLatest::False),
+    };
+    let release = create
         .send()
         .await
         .map_err(|error| release_error(error, tag, sha))?;
@@ -1141,6 +1206,16 @@ mod tests {
             .respond_with(ResponseTemplate::new(201).set_body_json(release_json("main")))
     }
 
+    fn stable() -> super::NewRelease<'static> {
+        super::NewRelease {
+            tag: TAG,
+            name: TAG,
+            body: "notes",
+            sha: PUBLISHED,
+            stage: super::Stage::Stable,
+        }
+    }
+
     fn lightweight_tag(sha: &str) -> Mock {
         Mock::given(method("GET"))
             .and(path(format!("/repos/{OWNER}/{NAME}/git/ref/tags/{TAG}")))
@@ -1265,17 +1340,54 @@ mod tests {
         missing_release().mount(&server).await;
         create_at_published_sha().mount(&server).await;
         lightweight_tag(PUBLISHED).mount(&server).await;
-        let url = super::ensure_release_with(
-            &crab(&server.uri()),
-            &repo(),
-            TAG,
-            TAG,
-            "notes",
-            PUBLISHED,
-            true,
-        )
-        .await
-        .unwrap();
+        let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), true)
+            .await
+            .unwrap();
+        assert!(url.contains(TAG), "{url}");
+    }
+
+    #[tokio::test]
+    async fn a_candidate_release_is_a_prerelease_that_is_never_the_latest() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        Mock::given(method("POST"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases")))
+            .and(body_partial_json(serde_json::json!({
+                "tag_name": TAG,
+                "prerelease": true,
+                "make_latest": "false"
+            })))
+            .respond_with(ResponseTemplate::new(201).set_body_json(release_json("main")))
+            .mount(&server)
+            .await;
+        lightweight_tag(PUBLISHED).mount(&server).await;
+        let candidate = super::NewRelease {
+            stage: super::Stage::Candidate,
+            ..stable()
+        };
+        let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &candidate, true)
+            .await
+            .unwrap();
+        assert!(url.contains(TAG), "{url}");
+    }
+
+    #[tokio::test]
+    async fn a_stable_release_sets_neither_prerelease_nor_latest() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        Mock::given(method("POST"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases")))
+            .and(|request: &wiremock::Request| {
+                let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                body.get("prerelease").is_none() && body.get("make_latest").is_none()
+            })
+            .respond_with(ResponseTemplate::new(201).set_body_json(release_json("main")))
+            .mount(&server)
+            .await;
+        lightweight_tag(PUBLISHED).mount(&server).await;
+        let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), true)
+            .await
+            .unwrap();
         assert!(url.contains(TAG), "{url}");
     }
 
@@ -1291,17 +1403,9 @@ mod tests {
             })))
             .mount(&server)
             .await;
-        let error = super::ensure_release_with(
-            &crab(&server.uri()),
-            &repo(),
-            TAG,
-            TAG,
-            "notes",
-            PUBLISHED,
-            true,
-        )
-        .await
-        .unwrap_err();
+        let error = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), true)
+            .await
+            .unwrap_err();
         let message = format!("{error:#}");
         assert!(message.contains("workflows: write"), "{message}");
         assert!(message.contains(PUBLISHED), "{message}");
@@ -1314,17 +1418,9 @@ mod tests {
         missing_release().mount(&server).await;
         create_at_published_sha().mount(&server).await;
         lightweight_tag(OTHER).mount(&server).await;
-        let error = super::ensure_release_with(
-            &crab(&server.uri()),
-            &repo(),
-            TAG,
-            TAG,
-            "notes",
-            PUBLISHED,
-            true,
-        )
-        .await
-        .unwrap_err();
+        let error = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), true)
+            .await
+            .unwrap_err();
         let message = format!("{error:#}");
         assert!(message.contains(OTHER), "{message}");
         assert!(message.contains(PUBLISHED), "{message}");
@@ -1335,17 +1431,9 @@ mod tests {
         let server = MockServer::start().await;
         existing_release().mount(&server).await;
         lightweight_tag(PUBLISHED).mount(&server).await;
-        let url = super::ensure_release_with(
-            &crab(&server.uri()),
-            &repo(),
-            TAG,
-            TAG,
-            "notes",
-            PUBLISHED,
-            true,
-        )
-        .await
-        .unwrap();
+        let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), true)
+            .await
+            .unwrap();
         assert!(url.contains(TAG), "{url}");
     }
 
@@ -1354,17 +1442,9 @@ mod tests {
         let server = MockServer::start().await;
         existing_release().mount(&server).await;
         lightweight_tag(OTHER).mount(&server).await;
-        let error = super::ensure_release_with(
-            &crab(&server.uri()),
-            &repo(),
-            TAG,
-            TAG,
-            "notes",
-            PUBLISHED,
-            true,
-        )
-        .await
-        .unwrap_err();
+        let error = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), true)
+            .await
+            .unwrap_err();
         let message = format!("{error:#}");
         assert!(message.contains(OTHER), "{message}");
         assert!(message.contains(PUBLISHED), "{message}");
@@ -1375,17 +1455,9 @@ mod tests {
         let server = MockServer::start().await;
         existing_release().mount(&server).await;
         lightweight_tag(OTHER).mount(&server).await;
-        let url = super::ensure_release_with(
-            &crab(&server.uri()),
-            &repo(),
-            TAG,
-            TAG,
-            "notes",
-            PUBLISHED,
-            false,
-        )
-        .await
-        .unwrap();
+        let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), false)
+            .await
+            .unwrap();
         assert!(url.contains(TAG), "{url}");
     }
 
@@ -1395,17 +1467,9 @@ mod tests {
         existing_release().mount(&server).await;
         annotated_tag().mount(&server).await;
         peeled_tag_object(PUBLISHED).mount(&server).await;
-        let url = super::ensure_release_with(
-            &crab(&server.uri()),
-            &repo(),
-            TAG,
-            TAG,
-            "notes",
-            PUBLISHED,
-            true,
-        )
-        .await
-        .unwrap();
+        let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), true)
+            .await
+            .unwrap();
         assert!(url.contains(TAG), "{url}");
     }
 

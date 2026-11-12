@@ -557,10 +557,30 @@ pub(crate) fn check_options(
     Publisher::declared(config, spec).map(|_| ())
 }
 
+/// The npm dist-tag of a candidate: the first identifier of the prerelease of
+/// `version`, so `0.8.2-rc.1` gives `rc`. A stable version, and one that is not
+/// semver, give none.
+///
+/// A registry that gets a prerelease with no tag files it under `latest`, which
+/// would hand the candidate to every consumer that names no version.
+pub(crate) fn prerelease_tag(version: &str) -> Option<String> {
+    let version = semver::Version::parse(version).ok()?;
+    version
+        .pre
+        .as_str()
+        .split('.')
+        .next()
+        .filter(|tag| !tag.is_empty())
+        .map(str::to_owned)
+}
+
 /// Resolve a package's label, noun, and upload command.
 ///
 /// The label is the plan's `via`: the publisher, then the registry when one
 /// is named, then any option that differs from its default.
+///
+/// This is the command for a stable version. [`resolve_for_version`] adds what
+/// a candidate needs.
 ///
 /// # Errors
 ///
@@ -571,6 +591,33 @@ pub fn resolve(
     config: &crate::config::Config,
     spec: &crate::config::PackageSpec,
     root: &Path,
+) -> Result<(String, String, Vec<String>)> {
+    resolve_tagged(config, spec, root, None)
+}
+
+/// [`resolve`] for the package at `version`.
+///
+/// The stock bun upload of a candidate adds `--tag <prerelease tag>`. cargo
+/// and a command the repository wrote upload as they always do.
+///
+/// # Errors
+///
+/// Returns the errors of [`resolve`].
+pub fn resolve_for_version(
+    config: &crate::config::Config,
+    spec: &crate::config::PackageSpec,
+    root: &Path,
+    version: &str,
+) -> Result<(String, String, Vec<String>)> {
+    resolve_tagged(config, spec, root, prerelease_tag(version).as_deref())
+}
+
+/// [`resolve`], with the npm dist-tag the stock bun upload carries, if any.
+fn resolve_tagged(
+    config: &crate::config::Config,
+    spec: &crate::config::PackageSpec,
+    root: &Path,
+    dist_tag: Option<&str>,
 ) -> Result<(String, String, Vec<String>)> {
     let publisher = Publisher::of(config, spec, root)?;
     let (name, recipe, options) = match &publisher {
@@ -602,6 +649,11 @@ pub fn resolve(
         if let Some(note) = options.note() {
             label = format!("{label}, {note}");
         }
+    }
+    if matches!(publisher, Publisher::Bun { .. })
+        && let Some(tag) = dist_tag
+    {
+        argv.extend(["--tag".to_owned(), tag.to_owned()]);
     }
     Ok((label, noun, argv))
 }
@@ -924,7 +976,7 @@ mod tests {
 
     use indoc::{formatdoc, indoc};
 
-    use super::{PublisherSpec, expand, registry_check, resolve};
+    use super::{PublisherSpec, expand, registry_check, resolve, resolve_for_version};
     use crate::registry::RegistryCheck;
 
     fn words(parts: &[&str]) -> Vec<String> {
@@ -989,6 +1041,99 @@ mod tests {
                 "public",
             ]
         );
+    }
+
+    /// Resolves the upload of the first package of `yaml` at `version`, in
+    /// the tree `manifests` builds, with the root a placeholder renders into.
+    fn upload_at(yaml: &str, version: &str) -> (Vec<String>, String) {
+        let root = manifests();
+        let config = crate::config::Config::parse(yaml).unwrap();
+        let (_, _, argv) =
+            resolve_for_version(&config, &config.packages[0], root.path(), version).unwrap();
+        (argv, root.path().display().to_string())
+    }
+
+    #[test]
+    fn a_bun_candidate_uploads_under_its_prerelease_tag() {
+        let (argv, root) = upload_at(
+            indoc! {"
+                packages:
+                  - name: web
+                    path: web/package.json
+            "},
+            "1.3.0-rc.1",
+        );
+        assert_eq!(
+            argv,
+            [
+                "bun",
+                "publish",
+                "--tolerate-republish",
+                "--cwd",
+                &format!("{root}/web"),
+                "--access",
+                "public",
+                "--tag",
+                "rc",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_cargo_candidate_uploads_with_its_usual_argv() {
+        let (argv, root) = upload_at(
+            indoc! {"
+                packages:
+                  - name: demo
+                    path: demo/Cargo.toml
+            "},
+            "0.8.0-rc.1",
+        );
+        assert_eq!(
+            argv,
+            [
+                "cargo",
+                "publish",
+                "--locked",
+                "--manifest-path",
+                &format!("{root}/demo/Cargo.toml"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_command_candidate_uploads_with_its_usual_argv() {
+        let (argv, _) = upload_at(
+            indoc! {"
+                packages:
+                  - name: demo
+                    path: demo/Cargo.toml
+                    publish: [goreleaser, release]
+            "},
+            "0.8.0-rc.1",
+        );
+        assert_eq!(argv, ["goreleaser", "release"]);
+    }
+
+    #[test]
+    fn a_stable_bun_version_has_no_tag() {
+        let (argv, _) = upload_at(
+            indoc! {"
+                packages:
+                  - name: web
+                    path: web/package.json
+            "},
+            "1.3.0",
+        );
+        assert!(!argv.iter().any(|part| part == "--tag"), "{argv:?}");
+    }
+
+    #[test]
+    fn the_tag_is_the_first_prerelease_identifier() {
+        assert_eq!(super::prerelease_tag("0.8.2-rc.1").as_deref(), Some("rc"));
+        assert_eq!(super::prerelease_tag("1.0.0-beta").as_deref(), Some("beta"));
+        assert_eq!(super::prerelease_tag("0.8.2"), None);
+        assert_eq!(super::prerelease_tag("not a version"), None);
     }
 
     /// An empty upload command means release-only, so only `publisher: none`
