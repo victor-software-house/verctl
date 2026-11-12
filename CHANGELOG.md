@@ -1,5 +1,12 @@
 # Changelog
 
+## verctl 0.8.3
+
+### Fixed
+
+- A Version PR opens when its changelog is longer than GitHub's 65,536-character body limit.
+  The body keeps every whole line that fits, drops a heading left at the end, and ends with a line that points at the changelog files in the PR's diff ([#351](https://github.com/victor-software-house/verctl/pull/351)).
+
 ## verctl 0.8.2
 
 ### Fixed
