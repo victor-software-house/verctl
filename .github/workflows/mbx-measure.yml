@@ -33,8 +33,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, labeled]
 
-# A newer push to the same pull request cancels its older run. Runs on main
-# queue instead, so measurements never overlap or cancel one another.
+# A newer push to the same pull request cancels its older run. A run on main
+# never cancels the running one, but GitHub keeps one pending run per group and
+# drops an older pending one, so start each measurement only after the last
+# one ends.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -45,7 +47,9 @@ permissions:
 jobs:
   measure:
     name: ${{ matrix.build.name }} on ${{ matrix.build.runner }}, arm ${{ matrix.arm }}
-    if: ${{ !github.event.pull_request.draft && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'mbx-measure')) }}
+    # On a pull request, only the mbx-measure label counts, and adding any
+    # other label starts nothing.
+    if: ${{ !github.event.pull_request.draft && (github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'mbx-measure') && (github.event.action != 'labeled' || github.event.label.name == 'mbx-measure'))) }}
     strategy:
       fail-fast: false
       matrix:
