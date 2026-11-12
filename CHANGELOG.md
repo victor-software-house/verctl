@@ -1,5 +1,42 @@
 # Changelog
 
+## verctl 0.8.1
+
+### Breaking
+
+- The library API changes, and the `verctl` command does not.
+  `config::PackageSpec::publish_argv` becomes `PackageSpec::publish`, which holds publisher options or the whole upload command.
+  `fragment::PackageBump` gains `breaking`, and `semver_check::Decision` gains `BreakingPatch`.
+  `pending::pending`, `publish::run`, and `publish::run_pending` take the path of the loaded config after the config ([#328](https://github.com/victor-software-house/verctl/pull/328)).
+
+### Added
+
+- A fragment may bump a package by `patch!`: a patch that breaks the package's API on purpose.
+  While the fragment is pending, `verctl semver` skips the package, and the changelog lists the entry under `### Breaking`.
+  The Version PR consumes the fragment, so the next release is checked again ([#328](https://github.com/victor-software-house/verctl/pull/328)).
+- A package's `publish` key now also takes a mapping of options for its publisher.
+  `publish: {verify: false}` makes cargo upload with `--no-verify` and keeps the crates.io check and the member-by-member workspace upload.
+  An option the publisher does not have fails the load.
+  A `Cargo.toml` with `publish = false` or `[]`, and a `package.json` with `"private": true`, now release on GitHub only with no `publisher: none` ([#321](https://github.com/victor-software-house/verctl/pull/321)).
+- A package that sets `prerelease: <tag>` in `.ctl/ver.yaml` releases candidates, such as `0.8.2-rc.1`, then `0.8.2-rc.2`.  
+  A candidate is published and released as a prerelease: the stock bun upload adds `--tag <tag>`, and its GitHub Release never becomes the latest.  
+  Pins move to a candidate, because `{version}` and a tool pin's `?ref=v` match a version verctl writes, candidates included.  
+  Removing the key makes the next Version PR write the stable version, and its CHANGELOG section lists every change the candidates carried ([#343](https://github.com/victor-software-house/verctl/pull/343)).
+
+### Changed
+
+- release.yml's asset jobs cache compiled objects with mbx between releases.  
+  A tarball build then compiles only what changed since the last release on that runner.  
+  A repository with no `Cargo.toml` skips the step ([#320](https://github.com/victor-software-house/verctl/pull/320)).
+
+### Fixed
+
+- Adding an asset target leaves earlier releases complete.
+  verctl checks a release only for the targets `.ctl/ver.yaml` declared at its own version commit.
+  A release made before a target existed therefore stays complete, and the Version PR opens ([#330](https://github.com/victor-software-house/verctl/pull/330)).
+- The publish, asset, and docs jobs of the reusable `release.yml` run the verctl the plan job checked at HEAD.
+  A pending version commit that pins an older verctl, such as 0.7.4 with no `release` verb, still releases ([#332](https://github.com/victor-software-house/verctl/pull/332)).
+
 ## verctl 0.8.0
 
 ### Added
