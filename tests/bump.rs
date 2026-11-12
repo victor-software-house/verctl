@@ -1192,3 +1192,33 @@ fn a_prerelease_of_the_placeholder_moves_to_the_first_release() {
         "0.0.1-rc.1"
     );
 }
+
+/// A prerelease of `0.0.0` that no fragment names is a package that has not
+/// released, with or without `prerelease`, so the plan leaves it alone.
+#[test]
+fn prepare_leaves_an_unnamed_placeholder_alone() {
+    for setting in ["", "prerelease: rc"] {
+        let root = TempDir::new().expect("tmp");
+        let path = common::write_config(
+            root.path(),
+            &formatdoc! {"
+                packages:
+                  - name: demo
+                    path: Cargo.toml
+                    {setting}
+            "},
+        );
+        fs::write(
+            root.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                name = "demo"
+                version = "0.0.0-dev"
+            "#},
+        )
+        .expect("cargo");
+        let config = Config::load(&path).expect("config");
+        let plan = prepare::plan(&config, &[], root.path()).expect("plan");
+        assert!(plan.is_empty(), "{setting:?}: {plan:?}");
+    }
+}
