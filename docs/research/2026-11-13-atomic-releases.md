@@ -10,8 +10,8 @@ No spec changes until section 9 is answered.
 - [2. What verctl does today](#2-what-verctl-does-today)
 - [3. What the registries make impossible](#3-what-the-registries-make-impossible)
 - [4. Decided](#4-decided)
-- [5. Rate limits and resuming a partial release](#5-rate-limits-and-resuming-a-partial-release)
-- [6. The merge queue](#6-the-merge-queue)
+- [5. Releases that land whole](#5-releases-that-land-whole)
+- [6. Rate limits and resuming a partial release](#6-rate-limits-and-resuming-a-partial-release)
 - [7. What other release tools do](#7-what-other-release-tools-do)
 - [8. Checks on pull requests](#8-checks-on-pull-requests)
 - [9. Open decisions](#9-open-decisions)
@@ -95,12 +95,55 @@ The operator decided these on 2026-11-13.
    Releasing a skipped version later is opt-in and separate, and Releases are immutable by default.
 5. **The Version PR's merge is the signal.**
    The release starts on the push that lands it, with no manual step.
+6. **A bump lands only with its release.**
+   If a release cannot happen, nothing is bumped; section 5 is the mechanism.
+7. **A new crate's first version comes from `verctl bootstrap`.**
+   The operator runs it locally with a crates.io token, as the first publish of an npm package with OIDC works (section 5, item 5).
 
 The decision on HEAD drops `refuse_skipped_versions` and the oldest-first plan of section 2.
 It also leaves `VER-129`, the draft about tools at old version commits, without a reason to exist: no run checks out an old commit.
-Section 9, item 1, settles what a retry does when HEAD has moved past the version commit.
 
-## 5. Rate limits and resuming a partial release
+## 5. Releases that land whole
+
+A version bump reaches the default branch only with its release, and nothing lands between the two.
+
+1. **The queue proves the release before the bump lands.**
+   The Version PR merges only through the merge queue.
+   A required check, `release:check`, runs on each merge-group commit that holds unreleased versions, and proves:
+   1. the replay of `version` matches, so no pull request merged since the Version PR was prepared changes what it releases;
+   2. every crate exists on crates.io and lists the repository's workflow as a trusted publisher, or the check names `verctl bootstrap`;
+   3. the crates.io owners of every crate include the publishing identity;
+   4. `cargo publish --workspace --dry-run` packages and builds every crate;
+   5. every asset builds and uploads to a draft Release for that commit.
+
+   A failure takes the Version PR out of the queue, so nothing is bumped.
+   Every failure shrub met in 0.7.0 is caught here.
+2. **The push that lands it publishes at once.**
+   1. With the `MERGE` method the commit that lands is the merge-group commit the check tested, and it is HEAD.
+   2. The release uploads to the registries by trusted publishing, which meets no rate limit (section 6).
+   3. It then publishes the draft Release, and that creates the tag.
+   4. The assets are already in the draft, so the release builds nothing.
+3. **The default branch freezes until the release completes.**
+   1. While the default branch holds a version whose release is incomplete, `release:check` fails every other merge group and names the pending release.
+   2. So HEAD never moves past an unreleased version commit, and a retry always runs at the version commit.
+   3. The check first waits for the running release to finish, within its timeout.
+      A pull request queued during a normal release then stays in the queue.
+4. **A failure after the landing.**
+   1. Only an external failure is left, such as a registry outage.
+   2. The default branch stays frozen, `status` reports the partial release, and a rerun resumes it.
+   3. A release that can never finish, such as one whose crate name someone else took, ends only by an operator act.
+      The operator labels a pull request `verctl: unfreeze`, and `release:check` lets that one through.
+5. **`verctl bootstrap`.**
+   1. Run locally with the operator's crates.io token, it publishes a placeholder `0.0.0` for each publishable crate crates.io lacks, to claim the name.
+   2. It registers the repository's release workflow as the crate's trusted publisher, through `POST /api/v1/trusted_publishing/github_configs` ([create.rs][cio-trustpub-create]).
+   3. It waits on `Retry-After` past the 5-crate burst.
+   4. The crate's real version then ships through the release like every other, with its changelog.
+
+Publishing inside the queue would remove the freeze, but GitHub can still drop a group after its last check passed, as when an entry is removed by hand.
+A registry upload made in that group could not be undone ([pulp 089d712][pulp]).
+The freeze gives the same result, a bump and its release with nothing between them, without that window.
+
+## 6. Rate limits and resuming a partial release
 
 crates.io limits each user, keyed by user id and action, not by token or crate ([rate_limiter.rs][cio-rate-limiter]):
 
@@ -119,23 +162,15 @@ crates.io limits each user, keyed by user id and action, not by token or crate (
 4. cargo does not retry a publish upload on a 429, with or without `--workspace`.
    It stops, and the crates already uploaded stay live.
 
-The resume follows from that:
+What follows for the design:
 
-1. The plan counts the new crates, so before the first upload it shows whether the release can meet a limit.
-2. On a 429, `release` waits until `Retry-After` when that time falls inside the job's timeout, then uploads again.
-3. A later time stops the run as a partial release, with the resume time in `status` and in the job summary.
-   A rerun after that time, by dispatch or by "Re-run failed jobs", skips every crate the index lists.
-4. The same holds for any other external failure, such as an outage: the run stops as a partial release, and a rerun resumes it.
-
-## 6. The merge queue
-
-1. A merge-group job can publish, but a group can be evicted or rebuilt after its jobs ran.
-   A job that already published has then shipped a commit that never lands ([pulp 089d712][pulp]).
-2. So the queue proves the release and does not run it.
-   A required check runs `release --dry-run`, with every check of section 4, item 1, on each merge-group commit whose versions are unreleased.
-3. Where the Version PR sits in its group does not matter.
-   Under `HEADGREEN` the top entry's run decides the merge, and its commit is the one that becomes HEAD, so it holds the version bump.
-4. Any failure in the group stops the merge, and so the release, because the release starts only on the push that lands.
+1. The release creates no crate, since `verctl bootstrap` does that first, so a release by trusted publishing meets no rate limit.
+2. Only `bootstrap` meets one.
+   On a 429 it waits until `Retry-After`, then uploads again, so one run creates any number of crates.
+3. A release that still stops on an external failure, such as an outage, is a partial release.
+   `status` and the job summary name it, and a rerun, by dispatch or by "Re-run failed jobs", skips every crate the index lists.
+4. Where the Version PR sits in its merge group does not matter.
+   Under `HEADGREEN` the top entry's run decides the merge, and its commit becomes HEAD, so `release:check` there covers the version bump.
 
 ## 7. What other release tools do
 
@@ -164,11 +199,12 @@ The resume follows from that:
 
 ## 9. Open decisions
 
-1. **A retry after HEAD moved on.**
-   When a release fails and HEAD has newer commits, does the retry publish HEAD's code under the old version, or publish only the packages HEAD has not changed since their version commit, leaving the others for the next version?
-2. **The first version of a new crate.**
-   Does the plan stop and ask for a by-hand first publish, or does the workflow take an optional token used only for new crates?
-3. **Checks joining `verify` by name:** queue a templates row for `check:*` patterns in `verify`?
+1. **The mechanism of section 5:** the queue check, the publish on landing, the freeze, the unfreeze label, and `bootstrap`.
+2. **shrub, once it ships.**
+   shrub's `main` already moved 24 commits past 0.7.0, which the freeze would have prevented.
+   The plan for it: run `verctl bootstrap` for `shrub-process`, let the next Version PR consume the 3 pending fragments into a new version, and leave 0.7.0 skipped, with `shrub-parser` 0.7.0 yanked.
+
+`check:*` in `verify` is queued as templates `TPL-052`, and one-command setup of a ctl CLI as ctl-core `CTC-058`.
 
 ## 10. Sources
 
@@ -178,6 +214,7 @@ The resume follows from that:
 - crates.io deletion: [RFC 3660][rfc-3660]
 - no server dry run: [crates.io#1515][cratesio-1515]
 - new crates refused to trusted publishing: [publish.rs][cio-publish-new]
+- trusted publisher configs by API: [create.rs][cio-trustpub-create]
 - rate limits: [crates.io docs][cratesio-rates], [rate_limiter.rs][cio-rate-limiter], [the limit only for a user][cio-publish-limit], [crates.io#11685][cio-11685]
 - npm unpublish: [npm policy][npm-unpublish]
 - npm staged publishing: [npm docs][npm-staged]
@@ -205,6 +242,7 @@ The resume follows from that:
 [gh-immutable]: https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases
 [gh-queue]: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue
 [pulp]: https://github.com/Generous-Corp/pulp/commit/089d7121ecbd49af80991c3d88062fc4a3f690bf
+[cio-trustpub-create]: https://github.com/rust-lang/crates.io/blob/6e5f2e47f6c3cf34fd7ccad959975c52e15fe4d2/src/controllers/trustpub/github_configs/create.rs#L24-L36
 [rplz-release]: https://github.com/release-plz/release-plz/blob/0f401ecb1f8b629b335011f9abbbf14acc5dbc3a/crates/release_plz_core/src/command/release.rs#L691-L705
 [rplz-config]: https://github.com/release-plz/release-plz/blob/0f401ecb1f8b629b335011f9abbbf14acc5dbc3a/website/docs/config.md#L700-L740
 [cs-action]: https://github.com/changesets/action/blob/615034bb14e5d240e559f941ce9769beb5e14fb0/src/run.ts
