@@ -37,7 +37,6 @@ The `--` in `#USAGE mount` is mise's completion bootstrap.
 | `release` | — | Release the versions on HEAD: publish with cargo or bun, and create the GitHub Release. `release asset <target>` builds one asset |
 | `render` | — | Rewrite pins and render served templates at the versions on HEAD |
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
-| `docs` | — | Wait for docs.rs to build each crates.io crate released at HEAD |
 | `semver` | — | Check the API of each crates.io crate whose next release is a patch |
 
 Every long option also reads `VERCTL_<LONG>` (`VERCTL_CONFIG`, `VERCTL_DRY_RUN`, `VERCTL_FORMAT`).  
@@ -268,13 +267,12 @@ An `assets` target takes a single `runner`, because one tarball is one machine.
 Only `labels` reach `runs-on`; a name resolves against `runners` or fails.
 
 verctl decides how many jobs there are; the workflow file decides where a fixed job runs.  
-The release workflow's `plan`, `publish`, `docs`, and `propose` jobs run on its `runner` input, a JSON label list that defaults to `["ubuntu-26.04"]`.  
+The release workflow's `plan`, `publish`, and `propose` jobs run on its `runner` input, a JSON label list that defaults to `["ubuntu-26.04"]`.  
 It is never a `.ctl/ver.yaml` key, and there is no `release` runner section.
 
 ## Docs and semver
 
-`docs` waits for docs.rs to build each crates.io library crate released at HEAD.  
-It fails on a build that failed or never arrived (`--timeout`, minutes, default 60).
+verctl waits for no docs.rs build: a repository checks its docs build in pull request CI, before the release.
 
 `semver` runs `cargo semver-checks --release-type minor` on each crates.io crate whose next release is a patch, so only an API break fails.  
 It skips a crate with a pending `minor`, `major`, or `patch!` fragment, or a minor the Version PR already moved.  

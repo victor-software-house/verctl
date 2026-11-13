@@ -1,6 +1,6 @@
 # Design
 
-## 1. Check the docs build before the release, not after it
+## 1. The docs build check before the release
 
 **Decision.**
 verctl waits for no docs.rs build.

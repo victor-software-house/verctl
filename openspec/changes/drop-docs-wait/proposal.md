@@ -3,7 +3,7 @@
 ## Motivation
 
 The release workflow's `docs` job holds a runner after every crates.io publish while `verctl docs` polls docs.rs, three minutes or more per release, and prints nothing until it ends.
-No other release tool waits for docs.rs: release-plz, cargo-release and cargo-dist publish and stop.
+release-plz, cargo-release and cargo-dist publish and stop, with no docs.rs wait.
 docs.rs builds every crates.io release on its own, and its guide checks a build before the release instead, with `cargo docs-rs` in CI ([docs.rs builds]).
 This repository's `doc` task already builds rustdoc on nightly with the docs.rs metadata on every pull request.
 A docs.rs build that still fails shows on docs.rs, and a crate owner can rebuild it from crates.io.

@@ -66,7 +66,6 @@ pub mod cli;
 pub mod config;
 pub mod content;
 pub mod detect;
-pub mod docsrs;
 /// Reading and writing a version in a manifest.
 pub mod driver;
 /// Changeset fragments.

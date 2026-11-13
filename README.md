@@ -208,7 +208,7 @@ Two sections take runners and no others, because of what config is for here:
 To declare N jobs, a static workflow has to hold N, and only the repo's config holds it.  
 That fan-out is what `ci` and `assets` buy; the machine rides along on it.  
 No other job's machine is a config key.  
-The release workflow's `plan`, `publish`, `docs`, and `propose` jobs run on its `runner` input, a JSON label list that defaults to `["ubuntu-26.04"]`.
+The release workflow's `plan`, `publish`, and `propose` jobs run on its `runner` input, a JSON label list that defaults to `["ubuntu-26.04"]`.
 
 A CI `plan` job's `runs-on` is one literal in a workflow you own and already copied from `examples/`:
 
@@ -355,8 +355,9 @@ It triggers on push to the default branch and on `workflow_dispatch`, and runs o
 1. `plan` runs `verctl status --github-output`, which lists every version HEAD holds whose release is incomplete.
 2. `assets` runs `verctl release asset`, which builds each tarball the draft Release lacks and uploads nothing.
 3. `publish` runs `verctl release --assets-dir`, which uploads the tarballs to the draft, publishes to the registries, and publishes the draft last, which creates the tag.
-4. `docs` waits for docs.rs to build each released crate.
-5. `propose` opens or updates the Version PR.
+4. `propose` opens or updates the Version PR.
+
+No job waits for docs.rs, which builds every crates.io release on its own; a repository checks its docs build in pull request CI.
 
 Every job is safe to rerun.  
 A run with nothing pending reports `nothing to release`.  
