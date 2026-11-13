@@ -26,6 +26,22 @@ A run that finds the tag and a published Release SHALL create neither, and SHALL
 - **WHEN** tag `v0.4.0` names HEAD, its Release is published, the crates.io index lists `core` and `app` at `0.4.0`, and `verctl release` runs
 - **THEN** it creates no tag and no Release, and reports `nothing to release`
 
+### Requirement: The tag proof waits for GitHub to serve a tag the run created
+
+After publishing the draft, `verctl release` SHALL read the new tag to prove it names HEAD.
+When that read returns 404, it SHALL read again with a bounded backoff, at most 5 reads within 30 seconds.
+Any other error, and a 404 on a tag the run did not create, SHALL fail at once.
+
+#### Scenario: GitHub serves the new tag late
+
+- **WHEN** publishing the draft creates tag `v0.0.3`, the first read of `v0.0.3` returns 404, and the second returns a ref that names HEAD
+- **THEN** the run proves the tag and completes, with no rerun needed
+
+#### Scenario: The tag never appears
+
+- **WHEN** publishing the draft succeeds and every read of the new tag within 30 seconds returns 404
+- **THEN** the run fails naming the tag and the reads it made, and a rerun resumes at the proof
+
 ## REMOVED Requirements
 
 ### Requirement: A registry-checked package is tagged before the uploads
