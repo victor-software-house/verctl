@@ -18,8 +18,9 @@ Queue row: [VER-135][ver-135].
 
 1. **Named checks.**
    `verctl check [CHECK]...` runs `fragments`, `served`, `versions`, `registry` and `trust`, as `cargo deny check` runs its named checks.
-   Bare `check` runs `fragments` and `served`, offline; `--all` runs every check.
-   `check --versions` is removed.
+   Bare `check` runs `fragments` and `served`, offline; `--all` (`-a`) runs every check.
+   `check --versions` is removed, with no hidden flag.
+   The hidden renamed verbs `prepare`, `pin`, `publish` and `assets`, and the hidden `release --plan`, go too; each then fails as an unknown command.
 2. **The `registry` check** needs no token: each crate exists, has its expected owners, and its latest version shows whether it came through trusted publishing.
    The `trust` check needs an owner's token and proves the trusted publisher entry.
 3. **The `owners` key** lists the expected owners once, with a per-package override.
@@ -31,5 +32,11 @@ Queue row: [VER-135][ver-135].
 6. **Enforcement tiers.**
    `status` names the tier the default branch's rules give: a merge queue, rulesets without a queue, or neither.
 
+## Release
+
+A breaking patch, through a `patch!` fragment listed under `### Breaking` (operator, 2026-11-13): `check --versions`, the hidden verbs and `release --plan` go, and a check that passed may now fail.
+Streaming progress and diagnostics are queue row [VER-138][ver-138], outside this change.
+
 [release-order]: ../release-order/proposal.md
 [ver-135]: ../../../tasks.yaml
+[ver-138]: ../../../tasks.yaml

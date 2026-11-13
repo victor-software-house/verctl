@@ -6,6 +6,7 @@
 - [ ] 1.2 Remove `--versions` and its `CheckArgs` field, with no hidden flag. Proof: a CI test that `check --versions` exits 2, and `rg -- '--versions' src tests` finds nothing.
 - [ ] 1.3 Move every reader of `check --versions` in this repository to `check versions`: `src/cli.rs` and its test, `src/main.rs`, `tests/versions.rs`, the doc comments in `src/content.rs` and `src/pull_request.rs`, `src/instructions.md`, `.ctl/operator/instructions.md.jinja`, `.ctl/templates/SKILL.md.jinja`, `skills/verctl/SKILL.md`, `AGENTS.md`, `README.md`, and the comment in `mise-tasks/release.toml`. Proof: `rg 'check --versions'` outside `CHANGELOG.md` and archived changes finds nothing.
   - Outside this repository: the actions repository's `check:versions` task in `tasks/rust.toml` runs `mise run ver check --versions`, and every repository on the templates repository's `verify` runs it. The open changes `derived-release-state`, `release-state-machine` and `version-pr-identity` also name the flag.
+- [ ] 1.4 Remove the hidden verbs `prepare`, `pin`, `publish` and `assets`, and the hidden `release --plan`: the `Removed` enum, `REMOVED` and `moved_plan` in `src/cli.rs`. Proof: `rg 'Removed|moved_plan' src` finds nothing, and the cli tests assert that each old verb and `--plan` exits 2 as unknown.
 
 ## 2. Registry and trust
 
@@ -17,7 +18,7 @@
 
 - [ ] 3.1 `release --dry-run` runs the checks, `cargo publish --workspace --dry-run`, the `version` replay and the asset builds, and uploads nothing. Proof: CI tests, and a dry run on this repository's own Version PR.
 - [ ] 3.2 `release` runs the same proof before its first upload. Proof: a CI test where a missing crate stops the run with no upload.
-- [ ] 3.3 Streaming output: pending a lead decision.
+- [ ] 3.3 Streaming progress and diagnostics are the queue row [VER-138][queue], outside this change. Proof: `mise run q show VER-138` lists it.
 
 ## 4. Freeze and tiers
 
@@ -28,3 +29,6 @@
 ## 5. Documents
 
 - [ ] 5.1 Update AGENTS.md, the instructions, the operator skill and the README for the named checks, the release proof, the freeze and the tiers. Proof: `UPDATE_OPERATOR_DOCS=1 cargo test operator_docs` leaves no diff in CI.
+- [ ] 5.2 A `patch!` fragment for verctl lists the removed flag, verbs and `--plan` under `### Breaking`. Proof: `verctl version --dry-run` shows the entry under that heading.
+
+[queue]: ../../../tasks.yaml

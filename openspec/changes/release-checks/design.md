@@ -21,17 +21,22 @@ It lost because `--versions` today replaces the run instead of adding to it, and
 `cargo deny check [advisories bans licenses sources]` is the prior art for the names.
 
 **Disable.**
-A repository runs only the names it wants; bare `check` stays offline.
+A repository runs only the checks it lists; bare `check` stays offline.
 
-## 2. `--versions` goes, with no hidden flag
+## 2. `--versions` and the hidden verbs go, with no hidden flag
 
 **Decision.**
 `check --versions` is removed, and `check versions` replaces it.
 No hidden flag or rename message stays behind.
+The same rule removes the hidden renamed verbs `prepare`, `pin`, `publish` and `assets`, and the hidden `release --plan`, which the 0.8.0 renames kept (operator, 2026-11-09).
+Each then fails as an unknown command or flag.
+
+A person types a short form for each flag: `-a` for `--all`, and the shared `-n` for `--dry-run`.
+A flag only CI sets through `VERCTL_*` stays long-only, and the queue row [VER-137][queue] gives the existing hand-typed flags their short forms.
 
 **Alternative.**
 Keep `--versions` hidden, failing with a message that names `check versions`, as the renamed verbs `publish` and `pin` do.
-It lost to the operator's rule of no hidden compatibility flags (operator, 2026-11-13).
+It lost to the operator's rule of no hidden compatibility flags or commands (operator, 2026-11-13).
 
 **Migration.**
 The shared `check:versions` task of the actions repository, which every repository on the template runs in `verify`, switches to `check versions` in the release that ships this change.
@@ -45,7 +50,7 @@ crates.io serves a crate's trusted publisher entries only to an owner's token.
 2. It reports, as evidence, whether the latest version came through trusted publishing from the repository.
 3. The `trust` check, with an owner's token, proves the entry.
 
-A missing entry can then come only from its removal, because `release --new` registers it ([`first-publish`][first-publish]).
+A missing entry can then come only from its removal, because `release bootstrap` registers it ([`first-publish`][first-publish]).
 
 **Alternative.**
 Require an owner's token on every pull request.
