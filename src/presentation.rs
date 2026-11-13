@@ -291,7 +291,9 @@ pub(super) struct StatusReport {
 #[derive(Serialize)]
 pub(super) struct PartialRow {
     pub(super) tag: String,
-    pub(super) live: usize,
+    /// `null` when a registry lookup failed, so the live uploads were not
+    /// counted.
+    pub(super) live: Option<usize>,
     pub(super) total: usize,
     /// What the uploads are, plural, such as `crates`.
     pub(super) noun: String,
@@ -304,15 +306,21 @@ impl PartialRow {
     /// One `partial` row, and one `stopped` row when the draft holds a stop
     /// record.
     fn rows(&self, fields: Fields) -> Fields {
-        let fields = fields.row(
-            "partial",
-            format!(
-                "{tag}: partially published: {live} of {total} {noun} live",
-                tag = self.tag,
-                live = self.live,
+        let count = match self.live {
+            Some(live) => format!(
+                "{live} of {total} {noun} live",
                 total = self.total,
                 noun = self.noun
             ),
+            None => format!(
+                "{total} {noun}, live ones not counted (a registry lookup failed)",
+                total = self.total,
+                noun = self.noun
+            ),
+        };
+        let fields = fields.row(
+            "partial",
+            format!("{tag}: partially published: {count}", tag = self.tag),
         );
         match &self.stop {
             stop::Record::Absent => fields,
@@ -1089,7 +1097,7 @@ mod tests {
             unreleased_unchecked: None,
             partial: Some(vec![PartialRow {
                 tag: "v0.4.0".into(),
-                live: 1,
+                live: Some(1),
                 total: 3,
                 noun: "crates".into(),
                 stop: stop::Record::Read(stop::Stop::new(
@@ -1157,7 +1165,7 @@ mod tests {
             unreleased_unchecked: None,
             partial: Some(vec![PartialRow {
                 tag: "v0.4.0".into(),
-                live: 2,
+                live: Some(2),
                 total: 3,
                 noun: "packages".into(),
                 stop: stop::Record::Unreadable,
