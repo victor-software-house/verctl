@@ -6,7 +6,7 @@ name: Self-release
 # The build jobs here compile the verctl that runs every job of the release,
 # once per platform the release runs on: release.yml's plan, publish, docs,
 # and propose jobs run on ubuntu-26.04, and the asset jobs on the machines
-# .ctl/ver.yaml names (macos-latest, ubuntu-26.04, and ubuntu-26.04-arm).
+# .ctl/ver.yaml names (xcode-27, ubuntu-26.04, and ubuntu-26.04-arm).
 # Each asset job downloads the build of its own runner's OS and architecture,
 # so every runner .ctl/ver.yaml names has a leg here. The tarballs reuse it
 # when the version commit they release is this run's commit. An older version
@@ -34,7 +34,7 @@ jobs:
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     strategy:
       matrix:
-        runner: [ubuntu-26.04, macos-latest, ubuntu-26.04-arm]
+        runner: [ubuntu-26.04, xcode-27, ubuntu-26.04-arm]
     runs-on: ${{ matrix.runner }}
     # Recent runs take under 7 minutes; a cold cache, as on a new runner, takes
     # longer.

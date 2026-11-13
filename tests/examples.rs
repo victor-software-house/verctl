@@ -234,7 +234,7 @@ fn the_example_assets_table_plans_the_targets_it_documents() {
         [
             (
                 "darwin-arm64",
-                "macos-latest".to_owned(),
+                "xcode-27".to_owned(),
                 "verctl_4.5.6_macos_arm64.tar.gz",
                 "aarch64-apple-darwin"
             ),
