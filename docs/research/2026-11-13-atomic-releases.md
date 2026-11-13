@@ -1,18 +1,21 @@
 # Atomic, idempotent releases: analysis
 
-Status: analysis for the operator to decide on, 2026-11-13.  
-Nothing here is decided, and no spec changes until the operator chooses.
+Status: analysis, 2026-11-13.  
+Section 4 holds what the operator decided; section 9 holds what is still open.  
+No spec changes until section 9 is answered.
 
 ## Contents
 
 - [1. What failed in shrub 0.7.0](#1-what-failed-in-shrub-070)
 - [2. What verctl does today](#2-what-verctl-does-today)
 - [3. What the registries make impossible](#3-what-the-registries-make-impossible)
-- [4. The closest sound release](#4-the-closest-sound-release)
-- [5. Releasing from the merge queue](#5-releasing-from-the-merge-queue)
-- [6. Drift between the merge and the release](#6-drift-between-the-merge-and-the-release)
-- [7. Decisions for the operator](#7-decisions-for-the-operator)
-- [8. Sources](#8-sources)
+- [4. Decided](#4-decided)
+- [5. Rate limits and resuming a partial release](#5-rate-limits-and-resuming-a-partial-release)
+- [6. The merge queue](#6-the-merge-queue)
+- [7. What other release tools do](#7-what-other-release-tools-do)
+- [8. Checks on pull requests](#8-checks-on-pull-requests)
+- [9. Open decisions](#9-open-decisions)
+- [10. Sources](#10-sources)
 
 ## 1. What failed in shrub 0.7.0
 
@@ -25,19 +28,26 @@ Nothing here is decided, and no spec changes until the operator chooses.
 5. Each later push retried the release at the version commit `1ecc0b5`.
    From 2026-11-11, each retry failed earlier, at `mise install --locked`, because mise 2026.11.6 refuses a locked download without a checksum, and that commit's lock has none for taplo.
 6. verctl refuses to release a newer version while an older one is unreleased, so shrub can release nothing until 0.7.0 completes.
+7. On 2026-11-13, shrub's `main` still holds 0.7.0, 24 commits past the version commit, with 3 fragments pending.
 
 The first failure was knowable before any upload: the crate did not exist, and the run used trusted publishing.
 
 ## 2. What verctl does today
 
-1. The plan job runs at HEAD and lists every version commit whose release is incomplete, oldest first.
+1. A repository's caller runs the reusable `release.yml` on every push to the default branch and on `workflow_dispatch`.
+   One run plans, publishes, builds assets, publishes the draft Releases, and then opens or updates the Version PR.
+   So merging the Version PR starts its release with no further step; a dispatch only retries.
+2. The plan job runs at HEAD and lists every version commit whose release is incomplete, oldest first.
    A release is complete when the registry lists each package's version, and its tag and its published Release exist with every declared asset (`src/pending.rs`).
-2. A publish job checks out each listed version commit and runs `verctl release` there.
-3. `release` uploads each package in order.
+3. A publish job checks out each listed version commit and runs `verctl release` there.
+4. `release` uploads each package in order.
    A version the registry already lists is skipped, so a rerun resumes where the last run stopped.
-4. Tags and Releases follow the uploads.
+   A 429 stops the run before any tag, naming the crate and the time the registry gives.
+5. Tags and Releases follow the uploads.
    A Release with declared assets stays a draft, and the `finalize` job publishes it once every asset job has uploaded.
-5. `refuse_skipped_versions` stops a newer version of a package while an older version of it is unreleased, because publishing past it would leave a gap no later run fills (`src/publish.rs`).
+6. `refuse_skipped_versions` stops a newer version of a package while an older version of it is unreleased (`src/publish.rs`).
+7. `release --dry-run` prints the tags and packages it would create (`dry_run_plan` in `src/publish.rs`).
+   It runs no `cargo publish --dry-run`, no registry check and no ownership check.
 
 So a release is already idempotent: every step checks a fact first, and a rerun does only what is missing.
 It is not all-or-nothing: nothing checks, before the first upload, that every upload can succeed.
@@ -52,117 +62,151 @@ It is not all-or-nothing: nothing checks, before the first upload, that every up
    A whole crate can be deleted only within 72 hours of publishing, or when it has one owner, few downloads and no reverse dependencies ([RFC 3660][rfc-3660]).
 3. crates.io has no server-side dry run ([crates.io#1515][cratesio-1515]).
    `cargo publish --dry-run` checks the package and the build, never ownership, rate limits or server policy.
-4. crates.io limits each user: 5 new crates in a burst, then 1 every 10 minutes, and 30 new versions in a burst, then 1 a minute.
-   A larger release fails mid-way with HTTP 429.
+4. Trusted publishing cannot create a crate ([publish.rs][cio-publish-new]).
+   The first version of every crate needs an API token.
 5. npm refuses to republish a version, and unpublishing is limited to 72 hours with no dependents.
    Its staged publishing needs a human 2FA approval, and its batch approval is not atomic either.
 
 So a release across several packages cannot be atomic on any registry we use.
 Once one package is live, the only ways out are to finish the release, or to yank and ship a new version.
 
-## 4. The closest sound release
+GitHub is not part of that problem.
+verctl only creates a tag and a Release with assets, and a draft Release can be changed or deleted until it is published.
 
-A release can still get close to all-or-nothing: prove every upload will pass before the first irreversible step, and make every irreversible step last and resumable.
+## 4. Decided
+
+The operator decided these on 2026-11-13.
 
 1. **Check everything first, and fail closed.**
    Before any upload, the run proves:
-   1. every crate already exists on the registry, or the run holds a credential that may create a crate, since trusted publishing cannot;
+   1. every crate already exists on the registry, or the run holds a credential that may create it;
    2. the publishing identity owns every crate, through the crates.io owners API;
-   3. the release fits the rate limits, or the plan spaces the uploads to fit them;
-   4. every package packages and builds, through `cargo publish --workspace --dry-run` or `cargo package --workspace`;
+   3. the new crates fit the rate limit, or the plan waits for it (section 5);
+   4. every package packages and builds, through `cargo publish --workspace --dry-run`;
    5. every declared asset builds.
-2. **Do the reversible work first.**
-   Build the assets, create the Release as a draft, and upload every asset to the draft.
-   A draft can still be changed or deleted, and its tag does not exist until it is published.
-3. **Publish to the registries next, in dependency order.**
-   Each upload skips a version the registry already lists, as today, so a rerun resumes.
-4. **Publish the Release and its tag last.**
-   An immutable Release then locks a tag whose packages are all live.
-5. **Name a partial release as its own state.**
-   `status` reports "partially published: 1 of 9 crates live" with the cause, in place of a plain incomplete release.
-   The two ways forward are a resumed run once the cause is fixed, or a yank and a new version.
+2. **Order.**
+   Build the assets and upload them to a draft Release, then publish to the registries in dependency order, then publish the tag and the Release last.
+3. **A partial release is its own state.**
+   `status` reports, for example, "partially published: 1 of 9 crates live", with the cause and the resume time when there is one.
+   A rerun resumes it once the cause is gone.
+4. **HEAD is the release reference.**
+   A run releases the versions HEAD's manifests hold, from HEAD.
+   It never releases an older version, before a new one or in the same run.
+   Releasing a skipped version later is opt-in and separate, and Releases are immutable by default.
+5. **The Version PR's merge is the signal.**
+   The release starts on the push that lands it, with no manual step.
 
-Limits that stay:
+The decision on HEAD drops `refuse_skipped_versions` and the oldest-first plan of section 2.
+It also leaves `VER-129`, the draft about tools at old version commits, without a reason to exist: no run checks out an old commit.
+Section 9, item 1, settles what a retry does when HEAD has moved past the version commit.
 
-1. A registry can still fail after the checks pass, such as an outage or a policy change.
-   The release then waits half-published until a rerun, and `status` reports that state.
-2. A skipped version must be identical to the one the registry holds.
-   Cargo cannot compare them, so verctl trusts the version number, as today.
+## 5. Rate limits and resuming a partial release
 
-## 5. Releasing from the merge queue
+crates.io limits each user, keyed by user id and action, not by token or crate ([rate_limiter.rs][cio-rate-limiter]):
 
-The Version PR's merge is the signal that its commit is ready to release.
-Releasing from the queue would mean the published commit is exactly the one the queue tested.
+| Upload | Burst | Then |
+|:--|:--|:--|
+| A new crate | 5 | 1 every 10 minutes |
+| A new version of an existing crate | 30 | 1 a minute |
 
-1. A `merge_group` job can publish, and `GITHUB_SHA` is the group's commit.
-2. GitHub merges the group only after its required checks pass.
-   With the `MERGE` method, the commit that lands is the one the queue tested.
-   Every queue in the organization uses `MERGE`.
-3. A group can still be evicted or rebuilt after a job in it ran.
-   Three things rebuild the later groups: a failing check of an earlier entry, a timeout, or a manual removal.
-   A job that already published has then shipped a commit that never lands.
-4. One project shipped production from such a commit, and fixed it by naming the events allowed to deploy ([pulp 089d712][pulp]).
-5. A registry upload cannot be undone, so a publish inside the queue cannot be retracted when the group fails.
+1. A trusted-publishing upload counts against neither bucket.
+   Its token has no user, and the limit runs only for a user ([publish.rs][cio-publish-limit]).
+   A crates.io maintainer confirmed it has no hard limit ([crates.io#11685][cio-11685]).
+   So with trusted publishing, a release of new versions is never rate limited.
+2. Only a new crate meets a limit, because its first version needs a user's token.
+   A release with more than 5 new crates, or one whose user created other crates minutes before, gets a 429.
+3. The 429 carries a `Retry-After` header with an HTTP date, and the same time in its message ([rate_limiter.rs][cio-retry-after]).
+4. cargo does not retry a publish upload on a 429, with or without `--workspace`.
+   It stops, and the crates already uploaded stay live.
 
-The closest sound use:
+The resume follows from that:
 
-1. **In the queue, run the whole release in dry-run mode, as a required check of the Version PR.**
-   That covers every check of section 4, item 1, against the commit the queue will land.
-2. **After the merge, release at once from the landed commit.**
-   A `push` to the default branch whose commit is the Version PR's merge starts the release, which runs the same checks again and then publishes.
-3. **Queue the Version PR at the top of its group, or alone.**
-   With `HEADGREEN`, only the top entry's run must pass, so a Version PR inside a group could land with only part of its checks proven.
+1. The plan counts the new crates, so before the first upload it shows whether the release can meet a limit.
+2. On a 429, `release` waits until `Retry-After` when that time falls inside the job's timeout, then uploads again.
+3. A later time stops the run as a partial release, with the resume time in `status` and in the job summary.
+   A rerun after that time, by dispatch or by "Re-run failed jobs", skips every crate the index lists.
+4. The same holds for any other external failure, such as an outage: the run stops as a partial release, and a rerun resumes it.
 
-## 6. Drift between the merge and the release
+## 6. The merge queue
 
-The checks the queue ran can go stale between the merge and the release.
-That happens when the release starts long after the merge, as shrub's retries did, or when something outside the repository changes in between.
-Examples are a registry rule, a mise rule, or a crate that someone else claims.
+1. A merge-group job can publish, but a group can be evicted or rebuilt after its jobs ran.
+   A job that already published has then shipped a commit that never lands ([pulp 089d712][pulp]).
+2. So the queue proves the release and does not run it.
+   A required check runs `release --dry-run`, with every check of section 4, item 1, on each merge-group commit whose versions are unreleased.
+3. Where the Version PR sits in its group does not matter.
+   Under `HEADGREEN` the top entry's run decides the merge, and its commit is the one that becomes HEAD, so it holds the version bump.
+4. Any failure in the group stops the merge, and so the release, because the release starts only on the push that lands.
 
-1. Running the checks again at release time detects any drift, since they are cheap.
-2. A failed check names what changed, and the run stops before the first upload.
-3. A run long after the merge is a retry by definition.
-   A retry that fails only because the version commit's environment broke, as with shrub's lock, needs an explicit way to move that environment.
-   One option is an input naming a commit whose mise files the release jobs install from.
-   The default stays the version commit's own environment.
+## 7. What other release tools do
 
-## 7. Decisions for the operator
+| Tool | Publishes from | Decides what is pending by | An older unpublished version | Commits on top of the release PR |
+|:--|:--|:--|:--|:--|
+| changesets/action | HEAD, on a push with no pending changesets | an `npm info` per package | ignored | with changesets pending, it updates the version PR and publishes nothing |
+| release-plz | the release PR's last commit (`release_always = false`), or HEAD | a git tag, then `cargo info` per package | ignored | released with HEAD when `release_always = true` |
+| release-please | does not publish; tags the release PR's merge commit | merged PRs labelled `autorelease: pending` | each merged release PR gets its own release | left for the next release PR |
+| cargo-dist | the pushed tag | the tag alone | not applicable | not applicable |
 
-1. **Checks before the first upload:** add the checks of section 4, item 1, and fail closed?
-2. **Order:** assets and draft first, then registries, then tag and Release last?
-3. **Partial release:** report it as its own state with its two ways forward?
-4. **Merge queue:** run the release dry run as a required check on the Version PR, and release right after the merge from the landed commit?
-   Or publish inside the queue, and accept that an evicted group can leave a published version that never lands?
-5. **Version PR in the queue:** require it at the top of its group, or alone?
-6. **A broken old environment:** add an opt-in way to take a version commit's tools from another commit, and what to call it?
-7. **Which pending versions a run releases:** keep every incomplete version, oldest first, as `refuse_skipped_versions` requires today, or change that rule?
+1. No tool is atomic, and none checks every upload before the first.
+2. release-plz publishes one crate at a time, stops at the first failure, and has no handling for a 429.
+   A crate that went live without its tag is skipped on rerun and never gets the tag.
+3. Each tool checks only the current versions on every push, which costs one registry lookup per package.
 
-Two rows wait on these answers: `VER-129`, the draft about installing only the release tools, and `VER-130`, the research row on which commit and which versions a run releases.
+## 8. Checks on pull requests
 
-## 8. Sources
+1. `check:versions` runs in `verify` on every pull request.
+   It fails any version change, up or down, outside the Version PR, and on the Version PR it replays `version` and compares.
+   So a version goes down only through a change that skips the pull request checks.
+2. The plan can still guard that case cheaply: HEAD's version below the highest the registry lists fails the plan.
+3. Nothing runs a release dry run on a pull request today (section 2, item 7).
+4. A mise task cannot make itself a dependency of another task.
+   `depends` takes patterns, and an `optional = true` entry matches nothing without failing ([mise docs][mise-depends]), so `verify` could depend on `check:*` and every catalog task with that prefix would join it.
+   Not checked against the pinned mise 2026.11.6.
+
+## 9. Open decisions
+
+1. **A retry after HEAD moved on.**
+   When a release fails and HEAD has newer commits, does the retry publish HEAD's code under the old version, or publish only the packages HEAD has not changed since their version commit, leaving the others for the next version?
+2. **The first version of a new crate.**
+   Does the plan stop and ask for a by-hand first publish, or does the workflow take an optional token used only for new crates?
+3. **Checks joining `verify` by name:** queue a templates row for `check:*` patterns in `verify`?
+
+## 10. Sources
 
 - shrub's failed 0.7.0 release: [run 40251818311][shrub-070]
 - `cargo publish --workspace` stabilization: [cargo#15636][cargo-15636]
 - idempotent publish: [cargo#13397][cargo-13397]
-- ownership not checked first: [cargo#16181][cargo-16181]
 - crates.io deletion: [RFC 3660][rfc-3660]
 - no server dry run: [crates.io#1515][cratesio-1515]
-- rate limits: [crates.io docs][cratesio-rates]
+- new crates refused to trusted publishing: [publish.rs][cio-publish-new]
+- rate limits: [crates.io docs][cratesio-rates], [rate_limiter.rs][cio-rate-limiter], [the limit only for a user][cio-publish-limit], [crates.io#11685][cio-11685]
 - npm unpublish: [npm policy][npm-unpublish]
 - npm staged publishing: [npm docs][npm-staged]
 - GitHub immutable releases: [GitHub docs][gh-immutable]
 - merge queue: [GitHub docs][gh-queue]
-- A deploy from an evicted merge group: [pulp 089d712][pulp]
+- a deploy from an evicted merge group: [pulp 089d712][pulp]
+- release-plz: [release.rs][rplz-release], [`release_always`][rplz-config]
+- changesets/action: [run.ts][cs-action]
+- release-please: [design.md][rp-design]
+- mise `depends`: [task configuration][mise-depends]
 
 [shrub-070]: https://github.com/victor-software-house/shrub/actions/runs/40251818311
 [cargo-13397]: https://github.com/rust-lang/cargo/issues/13397
 [cargo-15636]: https://github.com/rust-lang/cargo/pull/15636
-[cargo-16181]: https://github.com/rust-lang/cargo/issues/16181
 [rfc-3660]: https://rust-lang.github.io/rfcs/3660-crates-io-crate-deletions.html
 [cratesio-1515]: https://github.com/rust-lang/crates.io/issues/1515
 [cratesio-rates]: https://crates.io/docs/rate-limits
+[cio-publish-new]: https://github.com/rust-lang/crates.io/blob/6e5f2e47f6c3cf34fd7ccad959975c52e15fe4d2/src/controllers/krate/publish.rs#L205-L211
+[cio-publish-limit]: https://github.com/rust-lang/crates.io/blob/6e5f2e47f6c3cf34fd7ccad959975c52e15fe4d2/src/controllers/krate/publish.rs#L262-L273
+[cio-rate-limiter]: https://github.com/rust-lang/crates.io/blob/6e5f2e47f6c3cf34fd7ccad959975c52e15fe4d2/src/rate_limiter.rs#L130-L160
+[cio-retry-after]: https://github.com/rust-lang/crates.io/blob/6e5f2e47f6c3cf34fd7ccad959975c52e15fe4d2/src/rate_limiter.rs#L75-L95
+[cio-11685]: https://github.com/rust-lang/crates.io/issues/11685
 [npm-unpublish]: https://docs.npmjs.com/policies/unpublish
 [npm-staged]: https://docs.npmjs.com/staged-publishing
 [gh-immutable]: https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases
 [gh-queue]: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue
 [pulp]: https://github.com/Generous-Corp/pulp/commit/089d7121ecbd49af80991c3d88062fc4a3f690bf
+[rplz-release]: https://github.com/release-plz/release-plz/blob/0f401ecb1f8b629b335011f9abbbf14acc5dbc3a/crates/release_plz_core/src/command/release.rs#L691-L705
+[rplz-config]: https://github.com/release-plz/release-plz/blob/0f401ecb1f8b629b335011f9abbbf14acc5dbc3a/website/docs/config.md#L700-L740
+[cs-action]: https://github.com/changesets/action/blob/615034bb14e5d240e559f941ce9769beb5e14fb0/src/run.ts
+[rp-design]: https://github.com/googleapis/release-please/blob/ea20bc261acd75149f0be90890bb9c90e681eea7/docs/design.md#L99-L106
+[mise-depends]: https://github.com/jdx/mise/blob/a4a1996f49779db556570678c81f658e5a28fe19/docs/tasks/task-configuration.md#depends
