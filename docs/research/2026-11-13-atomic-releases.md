@@ -175,6 +175,7 @@ The freeze gives the same result, a bump and its release with nothing between th
 The design adds no git hook (operator, 2026-11-13).
 A hook runs only in the clone that pushes, `--no-verify` skips it, and a merge through GitHub's button or API runs none.
 A repository may also use another hook manager, or none, and may never push to its default branch.
+
 So in tier 3 the operator dispatches `check --release` before merging the Version PR.
 
 ## 6. Rate limits and resuming a partial release
