@@ -275,6 +275,9 @@ fn trust_details(report: &registry_check::TrustReport, document: Document) -> Do
                         ),
                         registry_check::TrustState::Missing => ("missing", "-".to_owned()),
                         registry_check::TrustState::New => ("new", "-".to_owned()),
+                        registry_check::TrustState::Refused { detail } => {
+                            ("refused", detail.clone())
+                        }
                     };
                     table.row([row.name.clone(), state.to_owned(), entries])
                 },

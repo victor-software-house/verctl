@@ -23,7 +23,7 @@ use toml_edit::{DocumentMut, Item};
 
 use crate::config::Config;
 use crate::github::{self, Repo};
-use crate::registry::{self, GithubConfig, RegistryCheck, TrustedUpload};
+use crate::registry::{self, GithubConfig, RegistryCheck, TrustedPublishers, TrustedUpload};
 use crate::registry_token::SECRET;
 use crate::{git, publish, publisher};
 
@@ -204,7 +204,8 @@ pub fn trust(config: &Config, root: &Path, api: &str, token: Option<&str>) -> Re
 
 /// The `trust` proof of each of `crates`: an entry must name `repository`
 /// and `workflow`. A crate crates.io lacks is judged as `registry` judges
-/// it, and its entries are not read.
+/// it, and its entries are not read. A crate whose entries crates.io refuses
+/// to the token fails alone, and the other crates are still checked.
 ///
 /// # Errors
 ///
@@ -223,17 +224,17 @@ pub fn prove_trust(
         let state = match registry::crates_io_user_owners(api, &listed.name)? {
             None if listed.held => TrustState::Missing,
             None => TrustState::New,
-            Some(_) => {
-                let entries = registry::crates_io_github_configs(api, &listed.name, token)?;
-                if entries
-                    .iter()
-                    .any(|entry| names(entry, repository, workflow))
+            Some(_) => match registry::crates_io_github_configs(api, &listed.name, token)? {
+                TrustedPublishers::Listed(entries)
+                    if entries
+                        .iter()
+                        .any(|entry| names(entry, repository, workflow)) =>
                 {
                     TrustState::Trusted
-                } else {
-                    TrustState::Untrusted { entries }
                 }
-            }
+                TrustedPublishers::Listed(entries) => TrustState::Untrusted { entries },
+                TrustedPublishers::Refused { detail } => TrustState::Refused { detail },
+            },
         };
         rows.push(TrustRow {
             name: listed.name.clone(),
@@ -473,12 +474,16 @@ impl TrustReport {
                 crates,
             } => crates
                 .iter()
-                .filter_map(|row| match row.state {
+                .filter_map(|row| match &row.state {
                     TrustState::Missing => Some(bootstrap_fix(&row.name)),
                     TrustState::Untrusted { .. } => Some(format!(
                         "{name}: lacks a trusted publisher for {workflow} in {repository}; add one on crates.io that names this repository and workflow file",
                         name = row.name,
                         repository = repository.as_deref().unwrap_or("this repository"),
+                    )),
+                    TrustState::Refused { detail } => Some(format!(
+                        "{name}: crates.io refused to list its trusted publishers ({detail}); the token's user must be an owner of the crate",
+                        name = row.name,
                     )),
                     TrustState::New | TrustState::Trusted => None,
                 })
@@ -532,4 +537,10 @@ pub enum TrustState {
     /// crates.io lacks a crate only the checked commit adds: the check
     /// passes, and the crate needs its bootstrap once it lands.
     New,
+    /// crates.io refused to list the entries to the token, because its user
+    /// does not own the crate: the check fails for this crate alone.
+    Refused {
+        /// crates.io's reason.
+        detail: String,
+    },
 }
