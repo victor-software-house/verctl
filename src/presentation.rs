@@ -233,6 +233,17 @@ pub(super) struct StatusReport {
     pub(super) unreleased: Option<Vec<ReleaseRow>>,
     /// Why `unreleased` was not checked, or `null` when it was.
     pub(super) unreleased_unchecked: Option<Unchecked>,
+    /// One warning per published, immutable Release that lacks declared
+    /// assets.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) notices: Vec<String>,
+}
+
+/// `document` with one warning per notice.
+fn with_warnings(document: Document, notices: &[String]) -> Document {
+    notices.iter().fold(document, |document, notice| {
+        document.notice(Notice::new(NoticeLevel::Warning, notice.clone()))
+    })
 }
 
 /// Why `status` did not check for unreleased version commits. The human view
@@ -384,7 +395,7 @@ impl Present for StatusReport {
                 ),
             ),
         };
-        document.fields(fields)
+        with_warnings(document.fields(fields), &self.notices)
     }
 }
 
@@ -474,6 +485,10 @@ pub(super) struct ReleaseReport {
     /// The proofs the operator allowed this run to go past.
     pub(super) allowed: Vec<publish::Allowed>,
     pub(super) dry_run: bool,
+    /// One warning per published, immutable Release that lacks declared
+    /// assets.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) notices: Vec<String>,
 }
 
 impl ReleaseReport {
@@ -524,13 +539,20 @@ impl Present for ReleaseReport {
     fn present(&self) -> Document {
         match self.outcome {
             publish::Outcome::NothingToRelease => {
-                return Document::new()
-                    .fields(self.allowed_rows(Fields::new().row("outcome", "nothing to release")));
+                return with_warnings(
+                    Document::new().fields(
+                        self.allowed_rows(Fields::new().row("outcome", "nothing to release")),
+                    ),
+                    &self.notices,
+                );
             }
             publish::Outcome::Released => {}
         }
         if self.packages.is_empty() && self.releases.is_empty() {
-            return Document::new().fields(Fields::new().row("no-op", "nothing to publish"));
+            return with_warnings(
+                Document::new().fields(Fields::new().row("no-op", "nothing to publish")),
+                &self.notices,
+            );
         }
         let with_notes = self.packages.iter().any(|entry| entry.note.is_some());
         let headers = if with_notes {
@@ -564,9 +586,9 @@ impl Present for ReleaseReport {
             document = document.table(release_rows(&self.waiting));
         }
         if fields.is_empty() {
-            document
+            with_warnings(document, &self.notices)
         } else {
-            document.fields(fields)
+            with_warnings(document.fields(fields), &self.notices)
         }
     }
 }
@@ -689,6 +711,7 @@ mod tests {
             waiting: Vec::new(),
             allowed: Vec::new(),
             dry_run: false,
+            notices: Vec::new(),
         })
     }
 
@@ -707,6 +730,7 @@ mod tests {
                     .into(),
             }],
             dry_run: false,
+            notices: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
             .width(120)
@@ -809,6 +833,7 @@ mod tests {
             waiting: Vec::new(),
             allowed: Vec::new(),
             dry_run: false,
+            notices: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
             .width(80)
@@ -830,6 +855,7 @@ mod tests {
             waiting: Vec::new(),
             allowed: Vec::new(),
             dry_run: false,
+            notices: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
             .width(80)
@@ -863,6 +889,7 @@ mod tests {
                 commit: "aaa".into(),
             }]),
             unreleased_unchecked: None,
+            notices: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
             .width(80)
@@ -920,6 +947,7 @@ mod tests {
             assets: None,
             unreleased: None,
             unreleased_unchecked: Some(Unchecked::missing_token()),
+            notices: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
             .width(80)
@@ -954,6 +982,7 @@ mod tests {
             assets: None,
             unreleased: None,
             unreleased_unchecked: Some(Unchecked::failed(&error)),
+            notices: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
             .width(80)

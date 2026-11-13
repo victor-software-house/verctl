@@ -18,7 +18,8 @@ A run that passes `verctl-artifact` SHALL run that build in every job.
 
 ### Requirement: The plan's verctl installs from HEAD's lock
 
-The publish, asset, and docs jobs SHALL install the plan's verctl with `mise -C .verctl-head install --locked`, where `.verctl-head` is a checkout of HEAD's `mise.toml`, `mise.*.toml`, `mise.lock`, `mise.*.lock`, and `.miserc.toml`.
+The publish, asset, and docs jobs SHALL install the plan's verctl with `mise -C .verctl-head install --locked`, where `.verctl-head` is a checkout of HEAD's mise config files, locks, and `.miserc.toml`.
+The step SHALL fail when the installed binary is missing or does not run `--version`.
 No job SHALL set `MISE_LOCKED` or `MISE_LOCKFILE`, and none SHALL write a lock into the version commit's checkout.
 
 #### Scenario: A caller that locks every tool

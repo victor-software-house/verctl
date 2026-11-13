@@ -129,7 +129,7 @@ It also fails when it changes whether a package publishes without a fragment tha
 ### Version commits
 
 `release` acts on version commits: the commit that set each package's version.  
-`status` lists every one whose release is incomplete (registry, tag, Release, assets unless `--skip-assets`), oldest first, under `unreleased`.  
+`status` lists every one whose release is incomplete (registry, tag, published Release, assets unless `--skip-assets`), oldest first, under `unreleased`.  
 It needs `GITHUB_TOKEN` or `GH_TOKEN`.  
 Without one, or when a lookup cannot run, it reports `unreleased` as not checked.
 
@@ -137,6 +137,9 @@ Without one, or when a lookup cannot run, it reports `unreleased` as not checked
 `release --plan` fails and names it.
 
 `release` releases only the packages whose version commit is HEAD, and reports `nothing to release` when every release is complete.  
+A Release with declared assets is a draft until every asset is uploaded, and `release` run again at its commit publishes it.  
+A hand-written workflow that runs `actions/publish` and then `actions/asset` runs `verctl release` again after its uploads.  
+`--skip-assets` also publishes an existing draft without its assets.  
 A release tag on a commit HEAD holds only through a merge passes when the version there matches HEAD's.
 
 ### Proofs and refusals

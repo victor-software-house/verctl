@@ -16,7 +16,7 @@ use crate::config::{Config, NAME_PLACEHOLDER};
 use crate::publisher::Upload;
 use crate::registry::{self, RegistryCheck};
 use crate::registry_token::RegistryToken;
-use crate::{bump, git, github, pending, process, publisher, release};
+use crate::{assets, bump, git, github, pending, process, publisher, release};
 
 /// How long one package upload may run.
 pub const PUBLISH_TIMEOUT: Duration = Duration::from_mins(10);
@@ -137,7 +137,7 @@ pub fn run(
         config_path,
         root,
         dry_run,
-        false,
+        &Scope::default(),
         Allow::default(),
         None,
     )?
@@ -157,6 +157,44 @@ pub struct Allow {
     pub workflow_change: bool,
     /// Publish from a commit the default branch does not contain.
     pub off_default_branch: bool,
+}
+
+/// What a `release` run covers, beyond the packages whose version commit is
+/// HEAD.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Scope {
+    /// Leave declared assets out of the completeness check and out of the
+    /// Release's draft, so a Release is published at once, and a draft found is
+    /// published without them.
+    pub skip_assets: bool,
+    /// The asset file names the release workflow's plan expects at this version
+    /// commit. The run declares exactly these.
+    /// Empty declares the targets this commit's own config names.
+    pub declared_assets: Vec<String>,
+    /// Create and publish tags and Releases only. The run starts no publisher
+    /// and refuses a package the registry does not list.
+    pub releases_only: bool,
+}
+
+/// A Release left a draft because it lacks declared assets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Draft {
+    /// The draft's URL.
+    pub url: String,
+    /// The file names of the declared assets it lacks.
+    pub lacks: Vec<String>,
+}
+
+impl std::fmt::Display for Draft {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "draft {url} lacks {lacks}",
+            url = self.url,
+            lacks = self.lacks.join(", ")
+        )
+    }
 }
 
 /// A proof that would have refused the run, which the operator allowed.
@@ -227,6 +265,11 @@ pub struct PublishRun {
     pub waiting: Vec<Waiting>,
     /// The proofs the operator allowed this run to go past.
     pub allowed: Vec<Allowed>,
+    /// Published, immutable Releases that lack declared assets and can take
+    /// none.
+    pub shortfalls: Vec<pending::Shortfall>,
+    /// The Releases left a draft, each with the assets it lacks.
+    pub drafts: Vec<Draft>,
 }
 
 /// An incomplete package left for the run at its own version commit.
@@ -239,6 +282,10 @@ pub struct Waiting {
     pub version: String,
     /// The version commit that releases it.
     pub commit: String,
+    /// Whether the registry already lists the version, so only its Release or
+    /// assets wait, and releasing a later version skips nothing.
+    #[serde(skip)]
+    pub listed: bool,
 }
 
 /// Release the packages whose version commit is HEAD and whose release is
@@ -252,7 +299,9 @@ pub struct Waiting {
 /// effect and names the version commits.
 /// A later commit can therefore never tag a version that was never published.
 ///
-/// With `skip_assets`, declared assets do not count toward completeness.
+/// With `scope.skip_assets`, declared assets do not count toward completeness.
+/// `scope.declared_assets` names the assets the run declares, and
+/// `scope.releases_only` keeps every publisher from starting.
 /// A package at `0.0.0` is never released and needs no changelog section.
 /// A dry run plans every other package and queries no registry.
 ///
@@ -282,13 +331,14 @@ pub fn run_pending(
     config_path: &Path,
     root: &Path,
     dry_run: bool,
-    skip_assets: bool,
+    scope: &Scope,
     allow: Allow,
     registry_token: Option<&RegistryToken>,
 ) -> Result<PublishRun> {
     let planned = plan(config, root)?;
+    let declared = declared_assets(config, root, scope)?;
     if dry_run {
-        return dry_run_plan(config, root, &planned);
+        return dry_run_plan(config, root, &planned, &declared);
     }
     full_history(root)?;
     let allowed = prove_version_commit(config, root, &planned, allow)?;
@@ -298,22 +348,18 @@ pub fn run_pending(
         config_path,
         root,
         &token,
-        skip_assets,
+        scope.skip_assets,
+        &scope.declared_assets,
         registry_token,
     )?;
     if pending.is_empty() {
-        return Ok(PublishRun {
-            outcome: Outcome::NothingToRelease,
-            published: PublishOutcome {
-                packages: Vec::new(),
-                releases: Vec::new(),
-            },
-            waiting: Vec::new(),
-            allowed,
-        });
+        return Ok(nothing_to_release(Vec::new(), allowed, pending.shortfalls));
     }
     let head = git::head_sha(root)?;
     let (here, waiting) = at_head(&pending, &head)?;
+    let Some(here) = here else {
+        return Ok(nothing_to_release(waiting, allowed, pending.shortfalls));
+    };
     refuse_skipped_versions(here, &waiting, &head)?;
     let selected: Vec<(&crate::config::PackageSpec, &PublishEntry)> = config
         .packages
@@ -336,8 +382,82 @@ pub fn run_pending(
             })
         })
         .collect();
+    let (uploads, already) =
+        gather_uploads(config, root, here, &selected, scope.releases_only, &head)?;
+    let (before, after): (Vec<&TagPlan>, Vec<&TagPlan>) = tags
+        .into_iter()
+        .partition(|tag| tags_before_upload(tag, &uploads));
+    let repo = github::repo(root)?;
+    let (mut ensured, refused) =
+        open_early(config, root, &token, &repo, &before, &head, &declared)?;
+    let rest = run_uploads(uploads, registry_token).and_then(|(packages, shipped_packages)| {
+        for tag in after {
+            let shipped = tag
+                .packages
+                .iter()
+                .any(|entry| shipped_packages.contains(&entry.name));
+            ensured.push(open_release(
+                config, root, &token, &repo, tag, &head, shipped, &declared,
+            )?);
+        }
+        Ok(packages)
+    });
+    let packages = match (rest, refused) {
+        (Ok(packages), None) => already.into_iter().chain(packages).collect(),
+        (Ok(_), Some(early)) => return Err(early),
+        (Err(later), early) => return Err(after_refusal(later, early)),
+    };
+    let drafts = ensured
+        .iter()
+        .filter(|release| !release.lacks.is_empty())
+        .map(|release| Draft {
+            url: release.url.clone(),
+            lacks: release.lacks.clone(),
+        })
+        .collect();
+    let releases = ensured.into_iter().map(|release| release.url).collect();
+    Ok(PublishRun {
+        outcome: Outcome::Released,
+        published: PublishOutcome { packages, releases },
+        waiting,
+        allowed,
+        shortfalls: pending.shortfalls,
+        drafts,
+    })
+}
+
+/// The uploads of each package at HEAD, and the lines of those already listed.
+type Gathered<'a> = (Vec<(&'a PublishEntry, Vec<Upload>)>, Vec<PublishLine>);
+
+/// The uploads of the packages at HEAD, and a line for each one the registry
+/// already lists, which runs no upload again.
+///
+/// With `releases_only`, a package that still needs an upload fails the run
+/// before any publisher starts.
+fn gather_uploads<'a>(
+    config: &Config,
+    root: &Path,
+    here: &pending::PendingCommit,
+    selected: &[(&crate::config::PackageSpec, &'a PublishEntry)],
+    releases_only: bool,
+    head: &str,
+) -> Result<Gathered<'a>> {
     let mut uploads = Vec::new();
-    for (spec, entry) in &selected {
+    let mut already = Vec::new();
+    for (spec, entry) in selected {
+        if !entry.argv.is_empty() && listed(here, &entry.name) {
+            already.push(PublishLine {
+                note: Some("already".to_owned()),
+                ..PublishLine::from(*entry)
+            });
+            continue;
+        }
+        ensure!(
+            !releases_only || entry.argv.is_empty(),
+            "{name} {version} is not on its registry, and --releases-only starts no publisher; run verctl release without it at {head}",
+            name = entry.name,
+            version = entry.version,
+        );
         let runs = if entry.argv.is_empty() {
             Vec::new()
         } else {
@@ -345,34 +465,35 @@ pub fn run_pending(
         };
         uploads.push((*entry, runs));
     }
-    let (before, after): (Vec<&TagPlan>, Vec<&TagPlan>) = tags
-        .into_iter()
-        .partition(|tag| tags_before_upload(tag, &uploads));
-    let repo = github::repo(root)?;
-    let (mut releases, refused) = open_early(config, root, &token, &repo, &before, &head)?;
-    let rest = run_uploads(uploads, registry_token).and_then(|(packages, shipped_packages)| {
-        for tag in after {
-            let shipped = tag
-                .packages
-                .iter()
-                .any(|entry| shipped_packages.contains(&entry.name));
-            releases.push(open_release(
-                config, root, &token, &repo, tag, &head, shipped,
-            )?);
-        }
-        Ok(packages)
-    });
-    let packages = match (rest, refused) {
-        (Ok(packages), None) => packages,
-        (Ok(_), Some(early)) => return Err(early),
-        (Err(later), early) => return Err(after_refusal(later, early)),
-    };
-    Ok(PublishRun {
-        outcome: Outcome::Released,
-        published: PublishOutcome { packages, releases },
+    Ok((uploads, already))
+}
+
+/// A run that found nothing to release.
+fn nothing_to_release(
+    waiting: Vec<Waiting>,
+    allowed: Vec<Allowed>,
+    shortfalls: Vec<pending::Shortfall>,
+) -> PublishRun {
+    PublishRun {
+        outcome: Outcome::NothingToRelease,
+        published: PublishOutcome {
+            packages: Vec::new(),
+            releases: Vec::new(),
+        },
         waiting,
         allowed,
-    })
+        shortfalls,
+        drafts: Vec::new(),
+    }
+}
+
+/// Whether `pending` found the version of `name` already uploaded, so a run
+/// that only has the Release or its assets left, such as a draft to publish,
+/// runs no upload for it.
+fn listed(here: &pending::PendingCommit, name: &str) -> bool {
+    here.packages
+        .iter()
+        .any(|package| package.name == name && package.listed)
 }
 
 /// Open, at `head`, the Releases of the tags that exist before the uploads.
@@ -392,12 +513,13 @@ fn open_early(
     repo: &github::Repo,
     tags: &[&TagPlan],
     head: &str,
-) -> Result<(Vec<String>, Option<anyhow::Error>)> {
+    declared: &DeclaredAssets,
+) -> Result<(Vec<github::EnsuredRelease>, Option<anyhow::Error>)> {
     let mut releases = Vec::new();
     let mut refused = None;
     for tag in tags {
-        match open_release(config, root, token, repo, tag, head, true) {
-            Ok(url) => releases.push(url),
+        match open_release(config, root, token, repo, tag, head, true, declared) {
+            Ok(ensured) => releases.push(ensured),
             Err(error) if github::is_release_refused(&error) => {
                 refused.get_or_insert(error);
             }
@@ -467,8 +589,50 @@ fn tags_before_upload(tag: &TagPlan, uploads: &[(&PublishEntry, Vec<Upload>)]) -
     })
 }
 
+/// The tag that carries the declared assets, and their file names.
+/// `None` when no asset target is declared or `--skip-assets` leaves them out.
+type DeclaredAssets = Option<(String, Vec<String>)>;
+
+/// The declared assets, which belong to the first package's tag, as
+/// [`assets::plan`] resolves it.
+/// The names are `scope.declared_assets` when the plan gave any, so a leg
+/// declares what the plan scheduled, and otherwise every target this
+/// commit's config names.
+fn declared_assets(config: &Config, root: &Path, scope: &Scope) -> Result<DeclaredAssets> {
+    if scope.skip_assets || config.assets.is_none() || config.packages.is_empty() {
+        return Ok(None);
+    }
+    let planned = assets::plan(config, root)?;
+    let names: Vec<String> = if scope.declared_assets.is_empty() {
+        planned
+            .matrix
+            .include
+            .iter()
+            .map(|target| target.asset.clone())
+            .collect()
+    } else {
+        scope.declared_assets.clone()
+    };
+    Ok((!names.is_empty()).then_some((planned.tag, names)))
+}
+
+/// The asset names the Release for `tag` must hold before it is published.
+fn assets_of<'a>(declared: &'a DeclaredAssets, tag: &str) -> &'a [String] {
+    match declared {
+        Some((carrier, names)) if carrier == tag => names,
+        Some(_) | None => &[],
+    }
+}
+
 /// Create the GitHub Release for `tag` at `sha`, or confirm it exists, with
 /// the CHANGELOG sections of its packages as the body.
+/// With declared assets it is a draft until they are all uploaded, and a draft
+/// found is published once they are (see [`github::ensure_release_as`]).
+/// Returns the Release URL and the assets a draft still lacks.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is one fact of the release; a struct would be built once per call"
+)]
 fn open_release(
     config: &Config,
     root: &Path,
@@ -477,7 +641,8 @@ fn open_release(
     tag: &TagPlan,
     sha: &str,
     shipped: bool,
-) -> Result<String> {
+    declared: &DeclaredAssets,
+) -> Result<github::EnsuredRelease> {
     let notes = release::notes_for(
         config,
         root,
@@ -500,6 +665,7 @@ fn open_release(
         body: &notes,
         sha,
         stage,
+        assets: assets_of(declared, &tag.tag),
     };
     github::ensure_release_as(token, repo, &release, shipped)
 }
@@ -508,11 +674,22 @@ fn open_release(
 /// package as its members in publish order, and every tag.
 /// It queries no registry.
 /// With every package at `0.0.0`, there is nothing to release.
-fn dry_run_plan(config: &Config, root: &Path, planned: &PublishPlan) -> Result<PublishRun> {
+fn dry_run_plan(
+    config: &Config,
+    root: &Path,
+    planned: &PublishPlan,
+    declared: &DeclaredAssets,
+) -> Result<PublishRun> {
     let releases = planned
         .tags
         .iter()
-        .map(|tag| formatdoc!("would create {tag}", tag = tag.tag))
+        .map(|tag| {
+            if assets_of(declared, &tag.tag).is_empty() {
+                formatdoc!("would create {tag}", tag = tag.tag)
+            } else {
+                formatdoc!("would create draft {tag}", tag = tag.tag)
+            }
+        })
         .collect();
     let mut packages = Vec::new();
     for (spec, entry) in config.packages.iter().zip(&planned.packages) {
@@ -539,16 +716,20 @@ fn dry_run_plan(config: &Config, root: &Path, planned: &PublishPlan) -> Result<P
         published: PublishOutcome { packages, releases },
         waiting: Vec::new(),
         allowed: Vec::new(),
+        shortfalls: Vec::new(),
+        drafts: Vec::new(),
     })
 }
 
 /// The pending commit at `head`, and every incomplete package left for another
-/// version commit. A `head` that releases nothing fails, naming the commits
-/// that do, before anything is published.
+/// version commit. The commit is `None` when `head` is a version commit whose
+/// releases are all done, as when a `finalize` leg runs after another leg
+/// finished its Release. Any other `head` that releases nothing fails, naming
+/// the commits that do, before anything is published.
 fn at_head<'a>(
     pending: &'a pending::Pending,
     head: &str,
-) -> Result<(&'a pending::PendingCommit, Vec<Waiting>)> {
+) -> Result<(Option<&'a pending::PendingCommit>, Vec<Waiting>)> {
     let waiting: Vec<Waiting> = pending
         .commits
         .iter()
@@ -558,9 +739,13 @@ fn at_head<'a>(
                 name: package.name.clone(),
                 version: package.version.clone(),
                 commit: commit.sha.clone(),
+                listed: package.listed,
             })
         })
         .collect();
+    if pending.is_finished(head) {
+        return Ok((None, waiting));
+    }
     let Some(here) = pending.at(head) else {
         let named: Vec<String> = waiting
             .iter()
@@ -571,7 +756,7 @@ fn at_head<'a>(
             named.join(", ")
         );
     };
-    Ok((here, waiting))
+    Ok((Some(here), waiting))
 }
 
 /// Run one upload under its registry check, and return `already` when the
@@ -735,13 +920,18 @@ fn prove_version_commit(
 /// later.
 /// `waiting` holds those versions, oldest first, because the plan lists each
 /// one at the commit that set it.
+/// A version the registry already lists is not skipped: only its draft Release
+/// waits for assets, and the `finalize` job publishes it after every leg.
 fn refuse_skipped_versions(
     here: &pending::PendingCommit,
     waiting: &[Waiting],
     head: &str,
 ) -> Result<()> {
     for package in &here.packages {
-        if let Some(skipped) = waiting.iter().find(|left| left.name == package.name) {
+        if let Some(skipped) = waiting
+            .iter()
+            .find(|left| left.name == package.name && !left.listed)
+        {
             bail!(
                 "{name} {version} was never released: {sha} set it, and releasing {name} {current} at {head} would skip it; run `verctl status --github-output`, which lists {sha} first, and release that commit before this one",
                 name = package.name,
@@ -857,19 +1047,24 @@ mod tests {
             let package = |name: &str, version: &str| PendingPackage {
                 name: name.into(),
                 version: version.into(),
+                listed: false,
             };
             Pending {
                 commits: vec![
                     PendingCommit {
                         sha: "aaa".into(),
                         packages: vec![package("core", "0.3.1")],
+                        declared: Vec::new(),
                     },
                     PendingCommit {
                         sha: "ccc".into(),
                         packages: vec![package("app", "0.2.1")],
+                        declared: Vec::new(),
                     },
                 ],
                 assets: Vec::new(),
+                shortfalls: Vec::new(),
+                finished: vec!["ddd".into()],
             }
         }
 
@@ -885,10 +1080,54 @@ mod tests {
         fn another_package_pending_at_an_older_commit_waits() {
             let pending = pending();
             let (here, waiting) = at_head(&pending, "ccc").unwrap();
-            assert_eq!(here.packages[0].name, "app");
+            assert_eq!(here.unwrap().packages[0].name, "app");
             assert_eq!(waiting.len(), 1);
             assert_eq!(waiting[0].name, "core");
             assert_eq!(waiting[0].commit, "aaa");
+        }
+
+        /// A finalize leg at a commit whose release another leg finished does
+        /// nothing, while an older release still waits.
+        #[test]
+        fn a_finished_version_commit_has_nothing_to_release() {
+            let pending = pending();
+            let (here, waiting) = at_head(&pending, "ddd").unwrap();
+            assert!(here.is_none());
+            assert_eq!(waiting.len(), 2);
+        }
+
+        /// An older version the registry lists waits only for its draft Release
+        /// to be published, so releasing a newer one skips nothing.
+        #[test]
+        fn an_older_draft_is_not_a_skipped_version() {
+            let listed = |version: &str| PendingPackage {
+                name: "demo".into(),
+                version: version.into(),
+                listed: true,
+            };
+            let pending = Pending {
+                commits: vec![
+                    PendingCommit {
+                        sha: "aaa1111".into(),
+                        packages: vec![listed("0.7.5")],
+                        declared: Vec::new(),
+                    },
+                    PendingCommit {
+                        sha: "bbb2222".into(),
+                        packages: vec![PendingPackage {
+                            name: "demo".into(),
+                            version: "0.7.6".into(),
+                            listed: false,
+                        }],
+                        declared: Vec::new(),
+                    },
+                ],
+                assets: Vec::new(),
+                shortfalls: Vec::new(),
+                finished: Vec::new(),
+            };
+            let (here, waiting) = at_head(&pending, "bbb2222").unwrap();
+            refuse_skipped_versions(here.unwrap(), &waiting, "bbb2222").unwrap();
         }
 
         /// Another package waiting is not a skip; the same package waiting
@@ -897,7 +1136,7 @@ mod tests {
         fn a_skipped_version_of_the_same_package_refuses() {
             let pending = pending();
             let (here, waiting) = at_head(&pending, "ccc").unwrap();
-            refuse_skipped_versions(here, &waiting, "ccc").unwrap();
+            refuse_skipped_versions(here.unwrap(), &waiting, "ccc").unwrap();
 
             let skipped = Pending {
                 commits: vec![
@@ -906,20 +1145,26 @@ mod tests {
                         packages: vec![PendingPackage {
                             name: "demo".into(),
                             version: "0.7.5".into(),
+                            listed: false,
                         }],
+                        declared: Vec::new(),
                     },
                     PendingCommit {
                         sha: "bbb2222".into(),
                         packages: vec![PendingPackage {
                             name: "demo".into(),
                             version: "0.7.6".into(),
+                            listed: false,
                         }],
+                        declared: Vec::new(),
                     },
                 ],
                 assets: Vec::new(),
+                shortfalls: Vec::new(),
+                finished: Vec::new(),
             };
             let (here, waiting) = at_head(&skipped, "bbb2222").unwrap();
-            let error = refuse_skipped_versions(here, &waiting, "bbb2222").unwrap_err();
+            let error = refuse_skipped_versions(here.unwrap(), &waiting, "bbb2222").unwrap_err();
             let message = format!("{error:#}");
             assert!(
                 message.contains("demo 0.7.5 was never released"),
@@ -929,6 +1174,104 @@ mod tests {
             assert!(
                 message.contains("verctl status --github-output"),
                 "{message}"
+            );
+        }
+    }
+
+    /// A draft that waits for assets is reported as a warning in this form,
+    /// and the report's `releases` keep only its URL.
+    #[test]
+    fn a_draft_names_its_url_and_what_it_lacks() {
+        let draft = super::Draft {
+            url: "https://example.test/releases/tag/v1.2.0".into(),
+            lacks: vec!["a.tar.gz".into(), "b.tar.gz".into()],
+        };
+        assert_eq!(
+            draft.to_string(),
+            "draft https://example.test/releases/tag/v1.2.0 lacks a.tar.gz, b.tar.gz"
+        );
+    }
+
+    /// Which tag a run drafts, and which assets it declares for it.
+    mod declared {
+        use indoc::indoc;
+
+        use super::super::{Scope, assets_of, declared_assets};
+        use crate::config::Config;
+
+        fn demo(yaml: &str) -> (tempfile::TempDir, Config) {
+            let dir = tempfile::TempDir::new().unwrap();
+            std::fs::write(
+                dir.path().join("Cargo.toml"),
+                indoc! {r#"
+                    [package]
+                    name = "demo"
+                    version = "1.2.0"
+                "#},
+            )
+            .unwrap();
+            (dir, Config::parse(yaml).unwrap())
+        }
+
+        const TARGETS: &str = indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publisher: none
+            assets:
+              darwin-arm64: {}
+              linux-x64: {}
+        "};
+
+        const NO_TARGETS: &str = indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publisher: none
+        "};
+
+        /// The declared assets belong to the first package's tag. Another tag
+        /// of the same run, and a run with no target, are published at once.
+        #[test]
+        fn only_the_carrier_tag_is_drafted() {
+            let (dir, config) = demo(TARGETS);
+            let declared = declared_assets(&config, dir.path(), &Scope::default()).unwrap();
+            let names = [
+                "demo_1.2.0_macos_arm64.tar.gz".to_owned(),
+                "demo_1.2.0_linux_x64.tar.gz".to_owned(),
+            ];
+            assert_eq!(assets_of(&declared, "v1.2.0"), names);
+            assert_eq!(assets_of(&declared, "other@1.2.0"), Vec::<String>::new());
+
+            let (dir, config) = demo(NO_TARGETS);
+            let none = declared_assets(&config, dir.path(), &Scope::default()).unwrap();
+            assert_eq!(assets_of(&none, "v1.2.0"), Vec::<String>::new());
+        }
+
+        #[test]
+        fn assets_skipped_declare_nothing() {
+            let (dir, config) = demo(TARGETS);
+            let scope = Scope {
+                skip_assets: true,
+                ..Scope::default()
+            };
+            let declared = declared_assets(&config, dir.path(), &scope).unwrap();
+            assert_eq!(assets_of(&declared, "v1.2.0"), Vec::<String>::new());
+        }
+
+        /// A leg declares the plan's set instead of the targets its own config
+        /// names.
+        #[test]
+        fn the_plans_assets_replace_the_commits_own() {
+            let (dir, config) = demo(TARGETS);
+            let scope = Scope {
+                declared_assets: vec!["demo_1.2.0_linux_x64.tar.gz".to_owned()],
+                ..Scope::default()
+            };
+            let declared = declared_assets(&config, dir.path(), &scope).unwrap();
+            assert_eq!(
+                assets_of(&declared, "v1.2.0"),
+                ["demo_1.2.0_linux_x64.tar.gz".to_owned()]
             );
         }
     }

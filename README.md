@@ -348,23 +348,34 @@ It triggers on push to the default branch and on `workflow_dispatch`, and runs o
 1. `plan` runs `verctl status --github-output`, which lists every version commit whose release is incomplete.
 2. `publish` runs `verctl release` at each, oldest first.
 3. `assets` runs `verctl release asset` for the tarballs each Release lacks.
-4. `docs` waits for docs.rs to build each released crate.
-5. `propose` opens or updates the Version PR.
+4. `finalize` runs `verctl release` again at each, which publishes a draft Release once every asset is uploaded.
+5. `docs` waits for docs.rs to build each released crate.
+6. `propose` opens or updates the Version PR.
 
 Every job is safe to rerun.  
 A run with nothing pending reports `nothing to release`.  
 Every input is optional and defaults to verctl's, so a caller passes only what differs.  
 Steps set `env:` and run `mise run ver <verb>`, so the caller serves the `ver` task and pins verctl in its mise config.  
-`plan` alone checks that the pinned verctl is 0.8.0 or later, and checks each `mise-ignored-config-paths` entry.
+`plan` alone checks that the pinned verctl is 0.8.4 or later, and checks each `mise-ignored-config-paths` entry.
 
 Every job requests `id-token: write`, so the caller grants it.  
 The publish job uses it for crates.io trusted publishing.  
 Every job uses it to download tools through the release mirror of `victor-software-house/actions/mise`.  
 A job without the grant downloads from GitHub and logs a notice.
 
+The `plan` job needs `contents: write`, as `publish`, `assets`, and `finalize` do.  
+GitHub lists a draft Release only to a token with push access, and without it `plan` cannot see a draft.  
+A caller grants `contents: write` to the whole called workflow.
+
+A Release with declared asset targets is a draft until every asset is uploaded, so it works with GitHub immutable Releases, which take no asset once published.  
+`publish` creates the tag, then the draft.  
+`assets` uploads to it, and `finalize` publishes it.  
+`--skip-assets` publishes the Release at once, and publishes an existing draft without its assets.  
+A hand-written workflow that runs `actions/publish` and then `actions/asset` runs `verctl release` again at the version commit after its uploads, which publishes the draft.
+
 A registry token stored in a GitHub environment that admits only the default branch is out of reach of every other branch.  
 Pass `environment: <name>`, and map the token by its stored name: `registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}`.  
-Only the `publish` job runs in the environment, and it receives the environment's value.
+Only the `publish` and `finalize` jobs run in the environment, and they receive the environment's value.
 
 The workflow reads no secret by a computed name, so a caller never passes `secrets: inherit`.  
 The App secrets stay in the same `secrets:` map.  
@@ -374,7 +385,8 @@ A crate's first publish maps the token and turns `crates-io-trusted-publishing` 
 The publish step sets `VERCTL_REGISTRY_TOKEN` from the secret and `VERCTL_TRUSTED_PUBLISHING_TOKEN` from trusted publishing.  
 `verctl release` fails when both are set.  
 It gives the token to each publisher and its registry `query` under `--registry-token-env` (`VERCTL_REGISTRY_TOKEN_ENV`).  
-No other command it starts gets either variable.
+No other command it starts gets either variable.  
+The finalize step sets only `VERCTL_REGISTRY_TOKEN`, which `release --releases-only` uses for the registry query and never to upload.
 
 To migrate from `version-pr.yml` and `publish.yml`, do it in one pull request:
 
@@ -386,7 +398,7 @@ The first push after the merge opens the Version PR from `verctl/release/<base>`
 
 Adopt the caller when no release is pending, or merge the adoption before the Version PR.  
 Each release runs at its version commit, and an older version commit lacks the `ver` task the reusable workflow runs.  
-A pending version commit that pins verctl older than 0.8.0 fails on the `release` verb, so move its pin with the workflow ref.
+The later jobs still run the verctl the plan job checked at HEAD, installed from HEAD's lock, so a pending version commit that pins an older verctl releases.
 
 GitHub refuses a Release at a commit whose `.github/workflows` differs from the default branch unless the token holds `workflows: write`, which `GITHUB_TOKEN` cannot.  
 So some packages get their tag and Release before their uploads, in the run that merged the Version PR.

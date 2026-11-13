@@ -26,7 +26,7 @@ The version commit's `mise.lock` lists the verctl that commit pins, and HEAD's l
 
 ### 1. The plan job outputs the checked verctl version
 
-The "Require verctl 0.8.0 or later" step already reads `mise run --quiet ver --version` at HEAD, under the caller's locks.
+The "Require verctl 0.8.4 or later" step already reads `mise run --quiet ver --version` at HEAD, under the caller's locks.
 It writes the version to a step output, and the job exposes it as `verctl-version`.
 A run with `verctl-artifact` leaves it empty, because that build is already the run's verctl.
 
@@ -34,12 +34,15 @@ A run with `verctl-artifact` leaves it empty, because that build is already the 
 
 Each of the publish, asset, and docs jobs adds two steps after the version commit's checkout, only when `verctl-artifact` is empty and `verctl-version` is not:
 
-1. `actions/checkout` of `${{ github.sha }}` into `.verctl-head`, a sparse, non-cone checkout of `mise.toml`, `mise.*.toml`, `mise.lock`, `mise.*.lock`, and `.miserc.toml`, with `persist-credentials: false`.
+1. `actions/checkout` of `${{ github.sha }}` into `.verctl-head`, a sparse, non-cone checkout of the places mise reads its config and locks (`mise.toml`, `.mise.toml`, `.config/mise.toml`, `.config/mise/`, `.mise/`, `mise/`, their `*.toml` and `*.lock` variants, and `.miserc.toml`), with `persist-credentials: false`.
 2. A step that runs, under the workflow's `MISE_ENV`:
 
    ```sh
    mise -C .verctl-head install --locked "github:victor-software-house/verctl@<version>"
-   echo "VERCTL_BIN=$(mise -C .verctl-head which verctl --tool="github:victor-software-house/verctl@<version>")" >> "$GITHUB_ENV"
+   bin=$(mise -C .verctl-head which verctl --tool="github:victor-software-house/verctl@<version>")
+   test -x "$bin"
+   "$bin" --version
+   echo "VERCTL_BIN=$bin" >> "$GITHUB_ENV"
    ```
 
 The job then runs `mise exec -- "${VERCTL_BIN:-verctl}" <verb>`.

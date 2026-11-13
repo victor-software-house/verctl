@@ -18,8 +18,7 @@ State notes are from the code on `main` at [cb1be28][main], read on 2026-11-09 (
     Remaining:
     - the `release` verb
     - one atomic tag push
-    - a draft Release until every asset is uploaded (PR 228, closed, is the reusable start)
-    - finalize
+    - ~~a draft Release until every asset is uploaded~~ and ~~finalize~~, shipped by [draft-release-assets](../draft-release-assets/tasks.md) on 2026-11-13
     - `released` steps
 
 [main]: https://github.com/victor-software-house/verctl/commit/cb1be28

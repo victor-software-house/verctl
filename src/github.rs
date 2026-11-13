@@ -372,6 +372,14 @@ pub struct NewRelease<'a> {
     pub sha: &'a str,
     /// Whether the Release is the stable one or a candidate.
     pub stage: Stage,
+    /// The asset names the Release must hold before it is published.
+    /// Empty, the Release is published at once. Otherwise it is created as a
+    /// draft, because an immutable Release takes no asset once published
+    /// ([immutable releases]), and a draft found later is published once every
+    /// name is uploaded on it.
+    ///
+    /// [immutable releases]: https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/immutable-releases
+    pub assets: &'a [String],
 }
 
 /// Create `tag` at `sha` if it is missing. Returns the release HTML URL.
@@ -409,22 +417,52 @@ pub fn ensure_release(
         body,
         sha,
         stage: Stage::Stable,
+        assets: &[],
     };
-    ensure_release_as(token, repo, &release, shipped)
+    ensure_release_as(token, repo, &release, shipped).map(|ensured| ensured.url)
+}
+
+/// What [`ensure_release_as`] left on GitHub for a tag.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct EnsuredRelease {
+    /// The Release's HTML URL.
+    pub url: String,
+    /// The declared assets the Release still lacks. Empty when the Release is
+    /// published. Otherwise it is a draft that waits for these.
+    pub lacks: Vec<String>,
 }
 
 /// [`ensure_release`] for a Release at the given `release.stage`: a candidate
 /// is a prerelease and never the latest.
 ///
+/// With `release.assets` empty, a missing Release is created published at
+/// `release.sha`, as [`ensure_release`] does.
+/// With declared assets, the tag is created first through the git refs API,
+/// then the Release on it as a draft.
+/// A draft does not create its tag until it is published, and an immutable
+/// Release takes no asset once published.
+/// A draft found is published when every declared asset is `uploaded` on it.
+/// Otherwise it stays a draft, and [`EnsuredRelease::lacks`] names what it
+/// lacks.
+/// verctl creates the tag before the draft, so a tag that does not exist has
+/// no draft of verctl's: the lookup skips the Releases list and the Release is
+/// created.
+/// A draft whose tag names another commit fails.
+/// Publishing sends the Release's title and notes again, so a draft someone
+/// created by hand reads as this run would have written it.
+///
 /// # Errors
 ///
 /// Returns the errors of [`ensure_release`].
+/// It also returns one when the tag cannot be created or a draft cannot be
+/// published.
 pub fn ensure_release_as(
     token: &str,
     repo: &Repo,
     release: &NewRelease<'_>,
     shipped: bool,
-) -> Result<String> {
+) -> Result<EnsuredRelease> {
     block(async {
         let crab = client(token)?;
         ensure_release_with(&crab, repo, release, shipped).await
@@ -432,50 +470,166 @@ pub fn ensure_release_as(
 }
 
 /// `shipped` says this run published a package under the tag. When nothing
-/// under it shipped, an existing release belongs to the run that did, and
-/// its tag may name that earlier commit.
+/// under it shipped, an existing published release belongs to the run that
+/// did, and its tag may name that earlier commit. A draft's tag is always
+/// checked, because only a run at the version commit creates one.
 async fn ensure_release_with(
     crab: &Octocrab,
     repo: &Repo,
     release: &NewRelease<'_>,
     shipped: bool,
-) -> Result<String> {
+) -> Result<EnsuredRelease> {
     let NewRelease {
         tag,
         name,
         body,
         sha,
         stage,
+        assets,
     } = *release;
-    let repos = crab.repos(&repo.owner, &repo.name);
-    let releases = repos.releases();
-    match releases.get_by_tag(tag).await {
-        Ok(release) => {
+    let existing = if tag_exists(crab, repo, tag).await? {
+        find_release(crab, repo, tag).await?
+    } else {
+        None
+    };
+    match existing {
+        Some(found) if !found.draft => {
             if shipped {
                 require_tag_at(crab, repo, tag, sha).await?;
             }
-            return Ok(release.html_url.to_string());
+            return Ok(EnsuredRelease {
+                url: found.html_url,
+                lacks: Vec::new(),
+            });
         }
-        Err(octocrab::Error::GitHub { source, .. }) if source.status_code.as_u16() == 404 => {}
-        Err(error) => return Err(error).context("get release by tag"),
+        Some(draft) => {
+            require_tag_at(crab, repo, tag, sha).await?;
+            return finalize(crab, repo, release, &draft).await;
+        }
+        None => {}
     }
-    let create = releases
-        .create(tag)
-        .name(name)
-        .body(body)
-        .target_commitish(sha);
+    let repos = crab.repos(&repo.owner, &repo.name);
+    let releases = repos.releases();
+    let create = releases.create(tag).name(name).body(body);
     let create = match stage {
         Stage::Stable => create,
         Stage::Candidate => create
             .prerelease(true)
             .make_latest(octocrab::repos::releases::MakeLatest::False),
     };
-    let release = create
+    if assets.is_empty() {
+        let created = create
+            .target_commitish(sha)
+            .send()
+            .await
+            .map_err(|error| release_error(error, tag, sha))?;
+        require_tag_at(crab, repo, tag, sha).await?;
+        return Ok(EnsuredRelease {
+            url: created.html_url.to_string(),
+            lacks: Vec::new(),
+        });
+    }
+    ensure_tag(crab, repo, tag, sha).await?;
+    let created = create
+        .draft(true)
         .send()
         .await
         .map_err(|error| release_error(error, tag, sha))?;
-    require_tag_at(crab, repo, tag, sha).await?;
-    Ok(release.html_url.to_string())
+    let draft = ForgeRelease {
+        id: created.id.into_inner(),
+        html_url: created.html_url.to_string(),
+        tag_name: created.tag_name,
+        draft: true,
+        immutable: false,
+        assets: Vec::new(),
+    };
+    finalize(crab, repo, release, &draft).await
+}
+
+/// Whether the tag `tag` exists.
+async fn tag_exists(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<bool> {
+    match crab
+        .repos(&repo.owner, &repo.name)
+        .get_ref(&octocrab::params::repos::Reference::Tag(tag.to_owned()))
+        .await
+    {
+        Ok(_) => Ok(true),
+        Err(error) if is_not_found(&error) => Ok(false),
+        Err(error) => Err(lookup_failed(error, format!("read tag {tag}"))),
+    }
+}
+
+/// Create the lightweight tag `tag` at `sha` through the git refs API
+/// ([create a reference]), or require an existing one to name `sha`.
+///
+/// [create a reference]: https://docs.github.com/en/rest/git/refs#create-a-reference
+async fn ensure_tag(crab: &Octocrab, repo: &Repo, tag: &str, sha: &str) -> Result<()> {
+    let repos = crab.repos(&repo.owner, &repo.name);
+    let reference = octocrab::params::repos::Reference::Tag(tag.to_owned());
+    match repos.get_ref(&reference).await {
+        Ok(_) => {}
+        Err(error) if is_not_found(&error) => {
+            repos
+                .create_ref(&reference, sha)
+                .await
+                .map_err(|error| release_error(error, tag, sha))?;
+        }
+        Err(error) => return Err(lookup_failed(error, format!("read tag {tag}"))),
+    }
+    require_tag_at(crab, repo, tag, sha).await
+}
+
+/// Publish `draft` when every asset `release` declares is `uploaded` on it,
+/// and otherwise report what it lacks.
+///
+/// The update sends the title and notes this run holds, and the settings its
+/// stage sets.
+/// A candidate stays a prerelease and never becomes the latest.
+/// A stable one sends `make_latest: legacy`, so GitHub decides by date and
+/// version, and an older version published late does not take the latest from
+/// a newer one ([update a release]).
+///
+/// [update a release]: https://docs.github.com/en/rest/releases/releases#update-a-release
+async fn finalize(
+    crab: &Octocrab,
+    repo: &Repo,
+    release: &NewRelease<'_>,
+    draft: &ForgeRelease,
+) -> Result<EnsuredRelease> {
+    let uploaded = draft.uploaded();
+    let missing: Vec<&str> = release
+        .assets
+        .iter()
+        .map(String::as_str)
+        .filter(|name| !uploaded.contains(name))
+        .collect();
+    if !missing.is_empty() {
+        return Ok(EnsuredRelease {
+            url: draft.html_url.clone(),
+            lacks: missing.into_iter().map(str::to_owned).collect(),
+        });
+    }
+    let repos = crab.repos(&repo.owner, &repo.name);
+    let releases = repos.releases();
+    let update = releases
+        .update(draft.id)
+        .name(release.name)
+        .body(release.body)
+        .draft(false);
+    let update = match release.stage {
+        Stage::Stable => update.make_latest(octocrab::repos::releases::MakeLatest::Legacy),
+        Stage::Candidate => update
+            .prerelease(true)
+            .make_latest(octocrab::repos::releases::MakeLatest::False),
+    };
+    let published = update
+        .send()
+        .await
+        .with_context(|| format!("publish the draft release {}", draft.tag_name))?;
+    Ok(EnsuredRelease {
+        url: published.html_url.to_string(),
+        lacks: Vec::new(),
+    })
 }
 
 /// The Release for a vendored set's `tag`, created at `sha` when the tag has
@@ -697,9 +851,16 @@ pub struct ReleaseState {
     /// The commit the tag names, peeled through an annotated tag. `None` when
     /// the tag does not exist.
     pub tag: Option<String>,
-    /// Whether a Release exists for the tag.
+    /// Whether a Release exists for the tag, draft or published.
     pub release: bool,
-    /// The file names of the Release's assets.
+    /// Whether that Release is a draft, still waiting for its assets.
+    pub draft: bool,
+    /// Whether GitHub holds that Release immutable: once published, its
+    /// assets and tag cannot change ([immutable releases]).
+    ///
+    /// [immutable releases]: https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/immutable-releases
+    pub immutable: bool,
+    /// The file names of the Release's assets whose upload completed.
     pub assets: Vec<String>,
 }
 
@@ -733,28 +894,20 @@ async fn release_state_with(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<R
         Err(error) if is_not_found(&error) => None,
         Err(error) => return Err(lookup_failed(error, format!("read tag {tag}"))),
     };
-    let release: Result<ReleaseAssets, _> = crab
-        .get(
-            format!(
-                "/repos/{owner}/{name}/releases/tags/{tag}",
-                owner = repo.owner,
-                name = repo.name
-            ),
-            None::<&()>,
-        )
-        .await;
-    let (release, assets) = match release {
-        Ok(found) => (
-            true,
-            found.assets.into_iter().map(|asset| asset.name).collect(),
-        ),
-        Err(error) if is_not_found(&error) => (false, Vec::new()),
-        Err(error) => return Err(lookup_failed(error, format!("get release {tag}"))),
+    let release = if tag_sha.is_some() {
+        find_release(crab, repo, tag).await?
+    } else {
+        None
     };
     Ok(ReleaseState {
         tag: tag_sha,
-        release,
-        assets,
+        release: release.is_some(),
+        draft: release.as_ref().is_some_and(|release| release.draft),
+        immutable: release.as_ref().is_some_and(|release| release.immutable),
+        assets: release
+            .as_ref()
+            .map(|release| release.uploaded().into_iter().map(str::to_owned).collect())
+            .unwrap_or_default(),
     })
 }
 
@@ -806,15 +959,109 @@ fn is_not_found(error: &octocrab::Error) -> bool {
     matches!(error, octocrab::Error::GitHub { source, .. } if source.status_code.as_u16() == 404)
 }
 
-/// The part of a Release a plan reads.
-#[derive(serde::Deserialize)]
-struct ReleaseAssets {
-    assets: Vec<AssetName>,
+/// The part of a Release verctl reads, draft or published.
+#[derive(Debug, serde::Deserialize)]
+struct ForgeRelease {
+    id: u64,
+    html_url: String,
+    tag_name: String,
+    draft: bool,
+    /// Reported by GitHub for every Release. A server that does not report
+    /// it holds the Release mutable.
+    #[serde(default)]
+    immutable: bool,
+    assets: Vec<ForgeAsset>,
 }
 
-#[derive(serde::Deserialize)]
-struct AssetName {
+impl ForgeRelease {
+    /// The names of the assets whose upload completed.
+    fn uploaded(&self) -> Vec<&str> {
+        self.assets
+            .iter()
+            .filter(|asset| asset.state == "uploaded")
+            .map(|asset| asset.name.as_str())
+            .collect()
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ForgeAsset {
     name: String,
+    /// `uploaded` once GitHub holds the whole file; an upload that broke off
+    /// leaves the asset in another state.
+    state: String,
+    /// `sha256:<hex>` of the stored file. GitHub reports `null` for an asset
+    /// it holds no digest for.
+    #[serde(default)]
+    digest: Option<String>,
+}
+
+/// Releases read per page; GitHub's maximum.
+const RELEASES_PER_PAGE: usize = 100;
+
+/// Pages of Releases a lookup reads before it gives up, so a repository with
+/// thousands of Releases costs ten requests instead of one per page.
+/// A draft verctl creates is the newest Release, so it is on the first page.
+const MAX_RELEASE_PAGES: u32 = 10;
+
+/// The Release for `tag`, draft or published, or `None`.
+///
+/// `GET /releases/tags/{tag}` answers for a published Release in one request.
+/// It returns 404 for a draft ([get a release by tag name]).
+/// Only then is the tag looked up in `GET /releases`, which lists drafts to a
+/// token with push access ([list releases]).
+/// The list is newest first, so a draft created a moment ago is on the first
+/// page.
+/// A caller looks a Release up only for a tag that exists, because verctl
+/// creates the tag before a draft.
+/// A tag with no Release at all reads every page, up to [`MAX_RELEASE_PAGES`],
+/// and then the lookup fails and names the tag.
+///
+/// [get a release by tag name]: https://docs.github.com/en/rest/releases/releases#get-a-release-by-tag-name
+/// [list releases]: https://docs.github.com/en/rest/releases/releases#list-releases
+async fn find_release(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<Option<ForgeRelease>> {
+    let published: Result<ForgeRelease, _> = crab
+        .get(
+            format!(
+                "/repos/{owner}/{name}/releases/tags/{tag}",
+                owner = repo.owner,
+                name = repo.name
+            ),
+            None::<&()>,
+        )
+        .await;
+    match published {
+        Ok(found) => return Ok(Some(found)),
+        Err(error) if is_not_found(&error) => {}
+        Err(error) => return Err(lookup_failed(error, format!("get release {tag}"))),
+    }
+    let mut page = 1_u32;
+    loop {
+        let releases: Vec<ForgeRelease> = crab
+            .get(
+                format!(
+                    "/repos/{owner}/{name}/releases?per_page={RELEASES_PER_PAGE}&page={page}",
+                    owner = repo.owner,
+                    name = repo.name
+                ),
+                None::<&()>,
+            )
+            .await
+            .map_err(|error| lookup_failed(error, format!("list releases for {tag}")))?;
+        let last = releases.len() < RELEASES_PER_PAGE;
+        if let Some(found) = releases.into_iter().find(|release| release.tag_name == tag) {
+            return Ok(Some(found));
+        }
+        if last {
+            return Ok(None);
+        }
+        ensure!(
+            page < MAX_RELEASE_PAGES,
+            "tag {tag} exists but no Release for it was found in the newest {newest} Releases",
+            newest = usize::try_from(MAX_RELEASE_PAGES).unwrap_or(usize::MAX) * RELEASES_PER_PAGE
+        );
+        page += 1;
+    }
 }
 
 /// Attach `tarball` to the release for `tag`.
@@ -854,36 +1101,12 @@ pub fn upload_release_asset(token: &str, repo: &Repo, tag: &str, tarball: &Path)
 /// minute covers a run that lost the race while the winner was still sending.
 const UPLOAD_SETTLE_DELAYS: [std::time::Duration; 12] = [std::time::Duration::from_secs(5); 12];
 
-/// The part of a Release an upload reads.
-#[derive(serde::Deserialize)]
-struct UploadTarget {
-    id: u64,
-    assets: Vec<UploadedAsset>,
-}
-
-#[derive(serde::Deserialize)]
-struct UploadedAsset {
-    name: String,
-    /// `uploaded` once GitHub holds the whole file; an upload that broke off
-    /// leaves the asset in another state.
-    state: String,
-    /// `sha256:<hex>` of the stored file. GitHub reports `null` for an asset
-    /// it holds no digest for.
-    #[serde(default)]
-    digest: Option<String>,
-}
-
-async fn upload_target(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<UploadTarget> {
-    crab.get(
-        format!(
-            "/repos/{owner}/{name}/releases/tags/{tag}",
-            owner = repo.owner,
-            name = repo.name
-        ),
-        None::<&()>,
-    )
-    .await
-    .with_context(|| format!("read release {tag}"))
+/// The Release for `tag`, draft or published, that an upload or a checksum
+/// reads.
+async fn upload_target(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<ForgeRelease> {
+    find_release(crab, repo, tag)
+        .await?
+        .with_context(|| format!("release {tag} does not exist"))
 }
 
 async fn upload_release_asset_with(
@@ -895,6 +1118,9 @@ async fn upload_release_asset_with(
     settle: &[std::time::Duration],
 ) -> Result<String> {
     let release = upload_target(crab, repo, tag).await?;
+    if release.uploaded().contains(&name) {
+        return Ok(format!("already {name}"));
+    }
     let uploaded = crab
         .repos(&repo.owner, &repo.name)
         .releases()
@@ -1044,7 +1270,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use wiremock::matchers::{body_partial_json, method, path};
+    use wiremock::matchers::{body_partial_json, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{Octocrab, parse_remote, parse_slug};
@@ -1190,10 +1416,85 @@ mod tests {
             })))
     }
 
+    /// `GET /releases`, the only listing that shows drafts. The lookup reads
+    /// it when `GET /releases/tags/{tag}` answers 404.
+    fn listed_releases(listed: serde_json::Value) -> Mock {
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(listed))
+    }
+
+    fn no_releases_listed() -> Mock {
+        listed_releases(serde_json::json!([]))
+    }
+
     fn existing_release() -> Mock {
         Mock::given(method("GET"))
             .and(path(format!("/repos/{OWNER}/{NAME}/releases/tags/{TAG}")))
             .respond_with(ResponseTemplate::new(200).set_body_json(release_json("main")))
+    }
+
+    /// A draft that holds `assets`, each a name and the state GitHub reports.
+    fn draft_json(assets: &[(&str, &str)]) -> serde_json::Value {
+        let mut json = release_json(PUBLISHED);
+        json["draft"] = true.into();
+        json["html_url"] =
+            format!("https://github.com/{OWNER}/{NAME}/releases/tag/untagged-1").into();
+        json["assets"] = assets
+            .iter()
+            .map(|(name, state)| serde_json::json!({ "name": name, "state": state }))
+            .collect();
+        json
+    }
+
+    fn declared() -> Vec<String> {
+        vec![
+            "app.pkg".to_owned(),
+            "app_1.0.0_linux_x64.tar.gz".to_owned(),
+        ]
+    }
+
+    /// `stable()` with the assets `declared()` names.
+    fn with_assets(declared: &[String]) -> super::NewRelease<'_> {
+        super::NewRelease {
+            assets: declared,
+            ..stable()
+        }
+    }
+
+    fn create_tag_ref() -> Mock {
+        Mock::given(method("POST"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/git/refs")))
+            .and(body_partial_json(serde_json::json!({
+                "ref": format!("refs/tags/{TAG}"),
+                "sha": PUBLISHED
+            })))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+                "ref": format!("refs/tags/{TAG}"),
+                "node_id": "R",
+                "url": format!("https://api.github.com/repos/{OWNER}/{NAME}/git/refs/tags/{TAG}"),
+                "object": {
+                    "type": "commit",
+                    "sha": PUBLISHED,
+                    "url": format!("https://api.github.com/repos/{OWNER}/{NAME}/git/commits/{PUBLISHED}")
+                }
+            })))
+    }
+
+    fn create_draft() -> Mock {
+        Mock::given(method("POST"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases")))
+            .and(body_partial_json(serde_json::json!({
+                "tag_name": TAG,
+                "draft": true
+            })))
+            .respond_with(ResponseTemplate::new(201).set_body_json(draft_json(&[])))
+    }
+
+    fn publish_draft() -> wiremock::MockBuilder {
+        Mock::given(method("PATCH"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases/1")))
+            .and(body_partial_json(serde_json::json!({ "draft": false })))
     }
 
     fn create_at_published_sha() -> Mock {
@@ -1213,6 +1514,7 @@ mod tests {
             body: "notes",
             sha: PUBLISHED,
             stage: super::Stage::Stable,
+            assets: &[],
         }
     }
 
@@ -1285,11 +1587,11 @@ mod tests {
         })
     }
 
-    fn release_with_assets(names: &[&str]) -> Mock {
+    fn release_with_assets(assets: &[(&str, &str)]) -> Mock {
         let mut json = release_json("main");
-        json["assets"] = names
+        json["assets"] = assets
             .iter()
-            .map(|name| serde_json::json!({"name": name}))
+            .map(|(name, state)| serde_json::json!({ "name": name, "state": state }))
             .collect();
         Mock::given(method("GET"))
             .and(path(format!("/repos/{OWNER}/{NAME}/releases/tags/{TAG}")))
@@ -1309,7 +1611,8 @@ mod tests {
     async fn a_release_never_made_has_no_tag_and_no_release() {
         let server = MockServer::start().await;
         missing_tag().mount(&server).await;
-        missing_release().mount(&server).await;
+        missing_release().expect(0).mount(&server).await;
+        no_releases_listed().expect(0).mount(&server).await;
         let state = super::release_state_with(&crab(&server.uri()), &repo(), TAG)
             .await
             .unwrap();
@@ -1320,14 +1623,19 @@ mod tests {
     async fn a_finished_release_names_its_commit_and_assets() {
         let server = MockServer::start().await;
         lightweight_tag(PUBLISHED).mount(&server).await;
-        release_with_assets(&["app-darwin-arm64.tar.gz", "app-linux-x64.tar.gz"])
-            .mount(&server)
-            .await;
+        release_with_assets(&[
+            ("app-darwin-arm64.tar.gz", "uploaded"),
+            ("app-linux-x64.tar.gz", "uploaded"),
+            ("app.pkg", "starter"),
+        ])
+        .mount(&server)
+        .await;
         let state = super::release_state_with(&crab(&server.uri()), &repo(), TAG)
             .await
             .unwrap();
         assert_eq!(state.tag.as_deref(), Some(PUBLISHED));
         assert!(state.release);
+        assert!(!state.draft);
         assert_eq!(
             state.assets,
             ["app-darwin-arm64.tar.gz", "app-linux-x64.tar.gz"]
@@ -1335,14 +1643,364 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_immutable_release_is_read_as_immutable() {
+        let server = MockServer::start().await;
+        lightweight_tag(PUBLISHED).mount(&server).await;
+        let mut json = release_json("main");
+        json["immutable"] = true.into();
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases/tags/{TAG}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json))
+            .mount(&server)
+            .await;
+        let state = super::release_state_with(&crab(&server.uri()), &repo(), TAG)
+            .await
+            .unwrap();
+        assert!(
+            state.release && !state.draft && state.immutable,
+            "{state:?}"
+        );
+    }
+
+    /// `GET /releases/tags/{tag}` answers 404 for a draft, so the lookup reads
+    /// the list, and only an asset in state `uploaded` counts.
+    #[tokio::test]
+    async fn a_draft_is_found_through_the_release_list() {
+        let server = MockServer::start().await;
+        lightweight_tag(PUBLISHED).mount(&server).await;
+        missing_release().mount(&server).await;
+        let mut other = release_json("main");
+        other["tag_name"] = "v0.9.0".into();
+        listed_releases(serde_json::json!([
+            other,
+            draft_json(&[
+                ("app.pkg", "uploaded"),
+                ("app_1.0.0_linux_x64.tar.gz", "starter")
+            ])
+        ]))
+        .mount(&server)
+        .await;
+        let state = super::release_state_with(&crab(&server.uri()), &repo(), TAG)
+            .await
+            .unwrap();
+        assert!(
+            state.release && state.draft && !state.immutable,
+            "{state:?}"
+        );
+        assert_eq!(state.assets, ["app.pkg"]);
+    }
+
+    #[tokio::test]
+    async fn a_draft_is_created_with_its_tag_when_assets_are_declared() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        no_releases_listed().mount(&server).await;
+        missing_tag().up_to_n_times(2).mount(&server).await;
+        lightweight_tag(PUBLISHED).mount(&server).await;
+        create_tag_ref().expect(1).mount(&server).await;
+        create_draft().expect(1).mount(&server).await;
+        publish_draft()
+            .respond_with(ResponseTemplate::new(500))
+            .expect(0)
+            .mount(&server)
+            .await;
+        let declared = declared();
+        let reported = super::ensure_release_with(
+            &crab(&server.uri()),
+            &repo(),
+            &with_assets(&declared),
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(reported.lacks, declared);
+    }
+
+    #[tokio::test]
+    async fn a_release_with_no_assets_is_published_at_once() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        no_releases_listed().mount(&server).await;
+        lightweight_tag(PUBLISHED).mount(&server).await;
+        Mock::given(method("POST"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases")))
+            .and(body_partial_json(serde_json::json!({
+                "tag_name": TAG,
+                "target_commitish": PUBLISHED
+            })))
+            .and(|request: &wiremock::Request| {
+                let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                body.get("draft").is_none()
+            })
+            .respond_with(ResponseTemplate::new(201).set_body_json(release_json("main")))
+            .expect(1)
+            .mount(&server)
+            .await;
+        create_tag_ref().expect(0).mount(&server).await;
+        let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), true)
+            .await
+            .unwrap()
+            .url;
+        assert!(!url.starts_with("draft "), "{url}");
+    }
+
+    #[tokio::test]
+    async fn a_draft_with_every_asset_uploaded_is_published() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        lightweight_tag(PUBLISHED).mount(&server).await;
+        listed_releases(serde_json::json!([draft_json(&[
+            ("app.pkg", "uploaded"),
+            ("app_1.0.0_linux_x64.tar.gz", "uploaded")
+        ])]))
+        .mount(&server)
+        .await;
+        publish_draft()
+            .and(body_partial_json(serde_json::json!({
+                "name": TAG,
+                "body": "notes",
+                "make_latest": "legacy"
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(release_json(PUBLISHED)))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let declared = declared();
+        let url = super::ensure_release_with(
+            &crab(&server.uri()),
+            &repo(),
+            &with_assets(&declared),
+            false,
+        )
+        .await
+        .unwrap()
+        .url;
+        assert_eq!(
+            url,
+            format!("https://github.com/{OWNER}/{NAME}/releases/tag/{TAG}")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_candidate_draft_is_published_as_a_prerelease_that_is_never_the_latest() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        lightweight_tag(PUBLISHED).mount(&server).await;
+        listed_releases(serde_json::json!([draft_json(&[("app.pkg", "uploaded")])]))
+            .mount(&server)
+            .await;
+        Mock::given(method("PATCH"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases/1")))
+            .and(body_partial_json(serde_json::json!({
+                "draft": false,
+                "prerelease": true,
+                "make_latest": "false"
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(release_json(PUBLISHED)))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let declared = ["app.pkg".to_owned()];
+        let candidate = super::NewRelease {
+            stage: super::Stage::Candidate,
+            ..with_assets(&declared)
+        };
+        super::ensure_release_with(&crab(&server.uri()), &repo(), &candidate, false)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_draft_missing_an_asset_stays_a_draft_and_names_what_it_lacks() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        lightweight_tag(PUBLISHED).mount(&server).await;
+        listed_releases(serde_json::json!([draft_json(&[
+            ("app.pkg", "uploaded"),
+            ("app_1.0.0_linux_x64.tar.gz", "starter")
+        ])]))
+        .mount(&server)
+        .await;
+        publish_draft()
+            .respond_with(ResponseTemplate::new(500))
+            .expect(0)
+            .mount(&server)
+            .await;
+        let declared = declared();
+        let reported = super::ensure_release_with(
+            &crab(&server.uri()),
+            &repo(),
+            &with_assets(&declared),
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            reported.url,
+            format!("https://github.com/{OWNER}/{NAME}/releases/tag/untagged-1")
+        );
+        assert_eq!(reported.lacks, ["app_1.0.0_linux_x64.tar.gz"]);
+    }
+
+    /// The update sends this run's title and notes, so a draft someone edited
+    /// reads as this run would have written it.
+    #[tokio::test]
+    async fn a_found_draft_is_published_with_this_runs_title_and_notes() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        lightweight_tag(PUBLISHED).mount(&server).await;
+        listed_releases(serde_json::json!([draft_json(&[
+            ("app.pkg", "uploaded"),
+            ("app_1.0.0_linux_x64.tar.gz", "uploaded")
+        ])]))
+        .mount(&server)
+        .await;
+        publish_draft()
+            .and(body_partial_json(serde_json::json!({
+                "name": TAG,
+                "body": "notes"
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(release_json(PUBLISHED)))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let declared = declared();
+        super::ensure_release_with(
+            &crab(&server.uri()),
+            &repo(),
+            &with_assets(&declared),
+            false,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_draft_whose_tag_names_another_commit_is_not_published() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        lightweight_tag(OTHER).mount(&server).await;
+        listed_releases(serde_json::json!([draft_json(&[
+            ("app.pkg", "uploaded"),
+            ("app_1.0.0_linux_x64.tar.gz", "uploaded")
+        ])]))
+        .mount(&server)
+        .await;
+        publish_draft()
+            .respond_with(ResponseTemplate::new(500))
+            .expect(0)
+            .mount(&server)
+            .await;
+        let declared = declared();
+        let error = super::ensure_release_with(
+            &crab(&server.uri()),
+            &repo(),
+            &with_assets(&declared),
+            false,
+        )
+        .await
+        .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains(OTHER), "{message}");
+        assert!(message.contains(PUBLISHED), "{message}");
+    }
+
+    fn other_releases(count: usize) -> Vec<serde_json::Value> {
+        (0..count)
+            .map(|n| {
+                let mut json = release_json("main");
+                json["tag_name"] = format!("v0.0.{n}").into();
+                json
+            })
+            .collect()
+    }
+
+    /// The list is read a page at a time, 100 to a page, until a Release has
+    /// the tag. Each mock answers only its own page.
+    #[tokio::test]
+    async fn the_release_list_is_read_page_by_page_until_the_tag_is_found() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases")))
+            .and(query_param("per_page", "100"))
+            .and(query_param("page", "1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(other_releases(100)))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases")))
+            .and(query_param("per_page", "100"))
+            .and(query_param("page", "2"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!([draft_json(&[])])),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let found = super::find_release(&crab(&server.uri()), &repo(), TAG)
+            .await
+            .unwrap()
+            .expect("the draft on page 2");
+        assert!(found.draft);
+    }
+
+    /// verctl creates the tag before a draft, so a tag that does not exist has
+    /// no draft of verctl's: neither the tag endpoint nor the list is read.
+    #[tokio::test]
+    async fn a_missing_tag_skips_every_release_lookup() {
+        let server = MockServer::start().await;
+        missing_release().expect(0).mount(&server).await;
+        no_releases_listed().expect(0).mount(&server).await;
+        missing_tag().up_to_n_times(2).mount(&server).await;
+        lightweight_tag(PUBLISHED).mount(&server).await;
+        create_tag_ref().expect(1).mount(&server).await;
+        create_draft().expect(1).mount(&server).await;
+        let declared = declared();
+        let created = super::ensure_release_with(
+            &crab(&server.uri()),
+            &repo(),
+            &with_assets(&declared),
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(created.lacks, declared);
+    }
+
+    /// A tag that exists with no Release in a repository with many reads ten
+    /// pages, then fails and names the tag, instead of one request per page
+    /// forever.
+    #[tokio::test]
+    async fn the_release_list_is_read_for_ten_pages_at_most() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(other_releases(100)))
+            .expect(10)
+            .mount(&server)
+            .await;
+        let error = super::find_release(&crab(&server.uri()), &repo(), TAG)
+            .await
+            .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains(&format!("tag {TAG} exists")), "{message}");
+        assert!(message.contains("newest 1000"), "{message}");
+    }
+
+    #[tokio::test]
     async fn create_tags_the_published_commit_not_the_default_branch() {
         let server = MockServer::start().await;
         missing_release().mount(&server).await;
+        no_releases_listed().mount(&server).await;
         create_at_published_sha().mount(&server).await;
         lightweight_tag(PUBLISHED).mount(&server).await;
         let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), true)
             .await
-            .unwrap();
+            .unwrap()
+            .url;
         assert!(url.contains(TAG), "{url}");
     }
 
@@ -1350,6 +2008,7 @@ mod tests {
     async fn a_candidate_release_is_a_prerelease_that_is_never_the_latest() {
         let server = MockServer::start().await;
         missing_release().mount(&server).await;
+        no_releases_listed().mount(&server).await;
         Mock::given(method("POST"))
             .and(path(format!("/repos/{OWNER}/{NAME}/releases")))
             .and(body_partial_json(serde_json::json!({
@@ -1367,7 +2026,8 @@ mod tests {
         };
         let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &candidate, true)
             .await
-            .unwrap();
+            .unwrap()
+            .url;
         assert!(url.contains(TAG), "{url}");
     }
 
@@ -1375,6 +2035,7 @@ mod tests {
     async fn a_stable_release_sets_neither_prerelease_nor_latest() {
         let server = MockServer::start().await;
         missing_release().mount(&server).await;
+        no_releases_listed().mount(&server).await;
         Mock::given(method("POST"))
             .and(path(format!("/repos/{OWNER}/{NAME}/releases")))
             .and(|request: &wiremock::Request| {
@@ -1387,7 +2048,8 @@ mod tests {
         lightweight_tag(PUBLISHED).mount(&server).await;
         let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), true)
             .await
-            .unwrap();
+            .unwrap()
+            .url;
         assert!(url.contains(TAG), "{url}");
     }
 
@@ -1395,6 +2057,7 @@ mod tests {
     async fn a_forbidden_release_names_the_workflows_permission() {
         let server = MockServer::start().await;
         missing_release().mount(&server).await;
+        no_releases_listed().mount(&server).await;
         Mock::given(method("POST"))
             .and(path(format!("/repos/{OWNER}/{NAME}/releases")))
             .respond_with(ResponseTemplate::new(403).set_body_json(serde_json::json!({
@@ -1416,6 +2079,7 @@ mod tests {
     async fn create_fails_when_the_tag_lands_elsewhere() {
         let server = MockServer::start().await;
         missing_release().mount(&server).await;
+        no_releases_listed().mount(&server).await;
         create_at_published_sha().mount(&server).await;
         lightweight_tag(OTHER).mount(&server).await;
         let error = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), true)
@@ -1433,7 +2097,8 @@ mod tests {
         lightweight_tag(PUBLISHED).mount(&server).await;
         let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), true)
             .await
-            .unwrap();
+            .unwrap()
+            .url;
         assert!(url.contains(TAG), "{url}");
     }
 
@@ -1457,7 +2122,8 @@ mod tests {
         lightweight_tag(OTHER).mount(&server).await;
         let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), false)
             .await
-            .unwrap();
+            .unwrap()
+            .url;
         assert!(url.contains(TAG), "{url}");
     }
 
@@ -1469,17 +2135,17 @@ mod tests {
         peeled_tag_object(PUBLISHED).mount(&server).await;
         let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), true)
             .await
-            .unwrap();
+            .unwrap()
+            .url;
         assert!(url.contains(TAG), "{url}");
     }
 
     fn upload_target_json(assets: &serde_json::Value) -> Mock {
+        let mut json = release_json("main");
+        json["assets"] = assets.clone();
         Mock::given(method("GET"))
             .and(path(format!("/repos/{OWNER}/{NAME}/releases/tags/{TAG}")))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(serde_json::json!({ "id": 1, "assets": assets })),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(json))
     }
 
     /// The release octocrab reads before an upload, pointing uploads at `uri`.
@@ -1529,7 +2195,10 @@ mod tests {
         .mount(&server)
         .await;
         release_by_id(&server.uri()).mount(&server).await;
-        upload_refused(422, already_exists()).mount(&server).await;
+        upload_refused(422, already_exists())
+            .expect(0)
+            .mount(&server)
+            .await;
         assert_eq!(
             upload(&server).await.unwrap(),
             "already app_1.0.0_linux_x64.tar.gz"

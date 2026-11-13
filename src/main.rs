@@ -398,15 +398,26 @@ fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
         workflow_change: args.allow.allow_workflow_change,
         off_default_branch: args.allow.allow_off_default_branch,
     };
+    let scope = publish::Scope {
+        skip_assets: args.skip_assets,
+        declared_assets: args.declared_assets.clone(),
+        releases_only: args.releases_only,
+    };
     let run = publish::run_pending(
         &config,
         &args.config,
         root,
         args.dry_run(),
-        args.skip_assets,
+        &scope,
         allow,
         registry_token.as_ref(),
     )?;
+    let notices: Vec<String> = run
+        .shortfalls
+        .iter()
+        .map(ToString::to_string)
+        .chain(run.drafts.iter().map(ToString::to_string))
+        .collect();
     Ok(ReleaseReport {
         outcome: run.outcome,
         packages: run.published.packages,
@@ -414,6 +425,7 @@ fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
         waiting: run.waiting.iter().map(ReleaseRow::from).collect(),
         allowed: run.allowed,
         dry_run: args.dry_run(),
+        notices,
     })
 }
 
@@ -535,8 +547,12 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
             .has_assets
             .then_some(StatusAssets::Packages(planned))
     };
-    let (unreleased, unreleased_unchecked) = if args.vendored.is_some() {
-        (None, Some(Unchecked::vendored()))
+    let Unreleased {
+        rows: unreleased,
+        unchecked: unreleased_unchecked,
+        notices,
+    } = if args.vendored.is_some() {
+        Unreleased::unchecked(Unchecked::vendored())
     } else {
         unreleased_state(args, &config, root)?
     };
@@ -571,15 +587,34 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
         assets,
         unreleased,
         unreleased_unchecked,
+        notices,
     })
 }
 
+/// What `status` found about the version commits that still need a release.
+struct Unreleased {
+    /// Every package at an incomplete version commit, or `None` when not
+    /// checked.
+    rows: Option<Vec<ReleaseRow>>,
+    /// Why `rows` was not checked.
+    unchecked: Option<Unchecked>,
+    /// One warning per published, immutable Release that lacks declared
+    /// assets.
+    notices: Vec<String>,
+}
+
+impl Unreleased {
+    fn unchecked(reason: Unchecked) -> Self {
+        Self {
+            rows: None,
+            unchecked: Some(reason),
+            notices: Vec::new(),
+        }
+    }
+}
+
 /// The incomplete version commits, or why they were not checked.
-fn unreleased_state(
-    args: &StatusArgs,
-    config: &Config,
-    root: &Path,
-) -> Result<(Option<Vec<ReleaseRow>>, Option<Unchecked>)> {
+fn unreleased_state(args: &StatusArgs, config: &Config, root: &Path) -> Result<Unreleased> {
     let token = match &args.github_output {
         Some(_) => {
             publish::full_history(root)?;
@@ -589,20 +624,32 @@ fn unreleased_state(
     };
     Ok(match token {
         Some(token) => {
-            match pending::pending(config, &args.config, root, &token, args.skip_assets, None) {
+            match pending::pending(
+                config,
+                &args.config,
+                root,
+                &token,
+                args.skip_assets,
+                &[],
+                None,
+            ) {
                 Ok(planned) => {
                     if let Some(path) = &args.github_output {
                         pending::write_github_output(&planned, path)?;
                     }
-                    (Some(unreleased_rows(&planned)), None)
+                    Unreleased {
+                        rows: Some(unreleased_rows(&planned)),
+                        unchecked: None,
+                        notices: planned.shortfalls.iter().map(ToString::to_string).collect(),
+                    }
                 }
                 Err(error) if args.github_output.is_none() && lookup::is_unavailable(&error) => {
-                    (None, Some(Unchecked::failed(&error)))
+                    Unreleased::unchecked(Unchecked::failed(&error))
                 }
                 Err(error) => return Err(error),
             }
         }
-        None => (None, Some(Unchecked::missing_token())),
+        None => Unreleased::unchecked(Unchecked::missing_token()),
     })
 }
 

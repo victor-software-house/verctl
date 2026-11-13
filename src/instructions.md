@@ -202,7 +202,7 @@ The rest are `pull_request`, `commit`, `summary_has_terminal`, `dependencies`, a
 Releases run through verctl's reusable workflow, `victor-software-house/verctl/.github/workflows/release.yml`.  
 A thin caller (`examples/workflows/release.yml`) calls it on push to the default branch and on `workflow_dispatch`.  
 It plans every incomplete version commit and publishes each in history order.  
-Then it builds the assets each Release lacks, waits for docs.rs, and opens or updates the Version PR.
+Then it builds the assets each Release lacks, publishes each draft Release whose assets are all uploaded, waits for docs.rs, and opens or updates the Version PR.
 
 ### Inputs and secrets
 
@@ -215,12 +215,12 @@ Every input is optional and defaults to verctl's:
 
 The secrets are `app-client-id`, `app-private-key`, and `registry-token`.
 
-The plan job first requires verctl 0.8.0 or later, unless `verctl-artifact` is set.  
+The plan job first requires verctl 0.8.4 or later, unless `verctl-artifact` is set.  
 The caller's pin chooses verctl apart from the workflow ref, so move both together.
 
-The later jobs check out each version commit and run the verctl it pins.  
-So a pending version commit that pins verctl older than 0.8.0 fails on the `release` verb.  
-Finish every pending release before moving the workflow ref to 0.8.0.
+The later jobs check out each version commit, but they run the verctl the plan job checked at HEAD.  
+Each installs that version with `mise install --locked` from a second checkout of HEAD's mise files, so no lock is switched off.  
+A pending version commit that pins an older verctl, even one with no `release` verb, still releases.
 
 `mise-ignored-config-paths` takes colon-separated config paths relative to the repository root, such as `mise.toml`.  
 Every job but propose ignores them, so they install only the release tools.  
@@ -232,12 +232,13 @@ The plan job checks the paths once.
 `crates-io-trusted-publishing: true` replaces the `registry-token` secret with a trusted-publishing token for crates.io.  
 Each crate lists the caller's repository and workflow file as its trusted publisher.
 
-`environment` names a GitHub environment for the publish job, the only job that reads a registry token.  
+`environment` names a GitHub environment for the publish and finalize jobs, the only jobs that read a registry token.  
 So the token can live only in an environment that admits the default branch.  
-Empty runs publish in no environment.
+Empty runs both in no environment.
 
 The caller maps the token's stored name, such as `CARGO_REGISTRY_TOKEN`, to the `registry-token` secret.  
-Only the publish job receives the environment's value.  
+Only the publish and finalize jobs receive the environment's value.  
+The finalize job uses it only for the registry query that lists versions, and never uploads.  
 The workflow reads no secret by a computed name, so a caller never passes `secrets: inherit`.  
 `registry-token-env` names only the variable the publisher reads the token from.
 
@@ -249,6 +250,10 @@ Every job requests `id-token: write`, so every caller grants it.
 The publish job needs it for trusted publishing.  
 Every job needs it for `victor-software-house/actions/mise`, which downloads tools through the organization's release mirror.  
 A job without the grant downloads from GitHub and logs a notice.
+
+The plan job needs `contents: write`, beside the publish, assets, and finalize jobs.  
+GitHub lists a draft Release only to a token with push access, and without it the plan cannot see a draft.  
+A caller grants `contents: write` to the whole called workflow.
 
 Steps set `env:` and run `mise run ver <verb>`, so a caller serves the `ver` task.  
 Without the App secrets the Version PR is opened with `GITHUB_TOKEN`.  
@@ -430,10 +435,32 @@ An example is a forkctl append publish on a merge's second parent.
 That passes when the package's version there equals its version at HEAD.  
 A tag on a commit HEAD does not contain, or at another version, fails.
 
-A release is complete when the registry lists the version and its tag, its Release, and every declared asset exist.  
+A release is complete when the registry lists the version, its tag and published Release exist, and the Release holds every declared asset.  
 verctl checks a release for an asset target only when `.ctl/ver.yaml` declares it both at HEAD and at the release's version commit.  
 A target added later never reopens a release.  
 `--skip-assets` (`VERCTL_SKIP_ASSETS`) leaves assets out.
+
+A Release with a declared asset target is a draft until every asset is uploaded, because an immutable Release takes no asset once published.  
+`release` creates the tag, then the draft, and `release asset` uploads to it.  
+`release` run again at that commit publishes the draft once every asset is uploaded.  
+While one is missing it prints the warning `draft <url> lacks <names>` and exits zero.  
+The workflow's `finalize` job does that after the asset jobs.  
+A draft is incomplete even when it holds every asset.
+
+`--skip-assets` also publishes an existing draft, without waiting for its assets.  
+`--declared-assets` (`VERCTL_DECLARED_ASSETS`) names the asset files a run declares, comma separated.  
+The workflow sets it from the plan, so a leg declares what the plan scheduled.  
+Without it, `release` declares the targets the version commit's own config names.  
+`--releases-only` (`VERCTL_RELEASES_ONLY`) creates and publishes tags and Releases and starts no publisher.  
+It refuses a package whose version the registry does not list, and the `finalize` job runs with it.
+
+A hand-written workflow that runs `actions/publish` and then `actions/asset` must run `verctl release` again at the version commit after its uploads.  
+That run publishes the draft, and without it the Release stays a draft.  
+A vendored set's Release is still created published, so immutable Releases are not yet safe for a repository with vendored sets.
+
+A published Release that lacks a declared asset stays incomplete, and only the missing targets are planned, unless GitHub holds it immutable.  
+An immutable Release can take no asset, so it counts complete and plans no asset job.  
+`status` and `release` then warn, naming the tag and the missing assets, that a later version must ship them.
 
 ### Status
 
@@ -457,7 +484,7 @@ Any other error, such as a release tag on the wrong commit or a 401 from a bad t
 
 `release --plan` fails and names `status --github-output`.  
 `release` releases only the packages whose version commit is HEAD, and names the others.  
-It fails before any side effect on a commit that releases nothing.  
+It fails before any side effect on a commit that releases nothing, unless that commit is a version commit whose releases are all complete, where it reports `nothing to release`.  
 When every release is complete, `release` reports `nothing to release` and exits zero.  
 Its JSON report's `outcome` is `nothing-to-release` or `released`.
 
@@ -609,6 +636,11 @@ Each Release is created at HEAD (`target_commitish` is that SHA).
 After create, and when a Release already exists, the tag is re-read, and the run fails if it names another commit.  
 A retry at the same commit is a no-op.
 
+A Release with declared assets is created differently.  
+The tag is created first at that SHA through the git refs API, then the Release with `draft: true`, which creates no tag of its own.  
+Every lookup of a Release for a tag that exists also reads drafts, which GitHub lists only to a token with push access.  
+`release` publishes the draft with `draft: false`, keeping the prerelease and latest settings above.
+
 ## Assets
 
 ### Package tarballs
@@ -618,7 +650,7 @@ A hand-written workflow uses `victor-software-house/verctl/actions/publish` inst
 Native tarballs are the `assets` matrix, only when an `assets` target is declared.  
 `verctl status` shows the matrix.
 
-`verctl release asset <target>` (`VERCTL_TARGET`) builds the tarball and uploads it, as `actions/asset` does.  
+`verctl release asset <target>` (`VERCTL_TARGET`) builds the tarball and uploads it to the Release for the tag, a draft or a published one, as `actions/asset` does.  
 `--dry-run` builds it and uploads nothing.  
 A tarball holds the one `binary` (default `target/{triple}/release/{bin}`), packed as `bin`.
 

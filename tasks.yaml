@@ -37,7 +37,24 @@ queue:
       - 2026-11-09, operator, every pending minor change ships together in one minor release, queued with the rest of the minor backlog, not one release per change.
       - 2026-11-09, the operator ruled that patch releases go out as soon as they are ready; only a minor waits, so that one minor carries every breaking change. verctl 0.7.3 released on that rule.
       - 2026-11-09, breaking-change audit against main at cb1be28 recorded in the change as audit.md, with each breaking item, its state, what it breaks, and the decision it waits on. The target minor moves from 0.4.0 to 0.8.0; decision 8 (0.4.0 from next) is contradicted by what shipped. A first publish beside crates.io trusted publishing is task 6.5, not a new row, because the open stack already holds VER-085 to VER-089.
+      - '2026-11-13: the drafted and finalize slice is built as VER-127, the OpenSpec change draft-release-assets, from PR 228 on the 0.8 verbs. The plan job now needs contents: write, so it lists drafts. assets.files and --file uploads stay out.'
     plan: openspec/changes/release-state-machine/proposal.md
+
+  - id: VER-127
+    title: Keep a Release with assets a draft until its assets are uploaded
+    scope: release, github, pending, release workflow
+    outcome: >-
+      A Release with declared asset targets is published only after every asset is
+      uploaded, so a repository can turn on immutable Releases and still ship every
+      tarball.
+    blocked_by: []
+    acceptance:
+      - A Release with a declared asset target is created as a draft after its tag, and release run again publishes it once every declared asset is uploaded.
+      - A draft is incomplete, a mutable published Release plans only its missing targets, and an immutable one counts complete with a warning.
+      - 'The plan job lists drafts with contents: write, and a finalize job publishes each draft after the assets.'
+    plan: openspec/changes/draft-release-assets/proposal.md
+    notes:
+      - '2026-11-13, split from release-state-machine (VER-011): the drafted and finalize slice, built from the closed PR 228 on the 0.8 verbs. Its assets.files key and --file uploads stay out, because VER-081 gives assets.files another meaning.'
 
   - id: VER-117
     title: Release candidates that never move latest
@@ -90,6 +107,7 @@ queue:
     plan: openspec/changes/release-asset-targets/proposal.md
     notes:
       - '2026-11-11: a caller that moved to verctl 0.8.0 and added darwin-arm64 in one commit could not release; its 0.0.1 release was reopened for the new target and the publish job at that commit ran the pinned verctl 0.7.4.'
+      - '2026-11-13: the rule now depends on immutability. A published Release that lacks a target its commit declared stays pending with only that target planned when GitHub holds it mutable. When GitHub holds it immutable it counts complete with no asset job, because it can take no asset, and status and release warn that a later version must ship it.'
 
   - id: VER-123
     title: Release jobs run the verctl that HEAD pins
@@ -776,6 +794,7 @@ horizon:
       - 2026-11-09, the research and five proposals are in openspec/changes/version-files/research.md and the version-files, package-discovery, release-groups, dependent-ranges, and release-immutability changes.
       - '2026-11-09, the operator chose all four new version sources for the first slice: VERSION, the marker line, pyproject.toml, and go.mod, besides Cargo.toml and package.json.'
       - '2026-11-09, cargo-semver-checks failed the slice-1 stack: the library Driver enum gained a Text variant. The operator ruled it ships in the next minor with the rest of the minor backlog, and the Version PR is held until then; every public enum that can grow is sealed in the same release.'
+      - '2026-11-13: the draft Release slice of VER-011 that release-immutability waited on is built in the OpenSpec change draft-release-assets, so a Release with declared assets can be published as immutable. This row is unblocked on that point.'
     plan: openspec/changes/archive/2026-11-10-version-files/research.md
 
   - id: VER-085
