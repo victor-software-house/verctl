@@ -82,9 +82,9 @@ The operator decided these on 2026-11-13.
 1. **Check everything first, and fail closed.**
    Before any upload, the run proves:
    1. every crate already exists on the registry and lists the repository's workflow as a trusted publisher, or the run holds a token that may create it;
-   2. every crate has the owners the `owners` key lists, through the crates.io owners API;
-   3. every package packages and builds, through `cargo publish --workspace --dry-run`;
-   4. every declared asset builds.
+   2. every crate has the owners the `owners` key lists, through the crates.io owners API.
+
+   That packages build is proven by `cargo package` in CI, that tarballs build by the release workflow's asset matrix, and that the Version PR matches a replay of `version` by `check versions`, so the release proves none of them again.
 2. **Order.**
    Build the assets and upload them to a draft Release, then publish to the registries in dependency order, then publish the tag and the Release last.
 3. **A partial release is its own state.**
@@ -103,7 +103,7 @@ The operator decided these on 2026-11-13.
    2. `check registry` runs on every pull request with no token: each crate exists, has the owners the `owners` key lists, and shows whether its latest version came through trusted publishing.
       It needs the network, so it is a CI step of its own, like `deny:advisories`, and a rerun repeats it whatever the pull request's state.
    3. `check trust` proves the trusted publisher entry with an owner's token.
-   4. `verctl release --dry-run` adds the package build, the replay of `version` and the asset builds, uploads nothing, and runs where the Version PR is proven (section 5).
+   4. `verctl release` runs `registry`, and `trust` with an owner's token, before its first upload, and `release --dry-run` prints the plan and runs the same checks; `release_checks` names them.
    5. `check --versions` goes, with no hidden flag; `check versions` replaces it.
       The hidden renamed verbs `prepare`, `pin`, `publish` and `assets`, and the hidden `release --plan`, go too, reversing that part of the 2026-11-09 renames.
    6. A person types a short form for each flag, such as `-a` for `--all` and `-n` for `--dry-run`; a flag only CI sets through `VERCTL_*` stays long-only.
@@ -133,10 +133,9 @@ It also replaces the first draft of `VER-129`, about tools at old version commit
 A version bump reaches the default branch only with its release, and nothing lands between the two.
 
 1. **The Version PR is proven before it lands.**
-   1. `verctl release --dry-run` runs on the commit that will land and holds unreleased versions.
+   1. `verctl check registry` runs on the commit that will land, and `check versions` replays `version` on the Version PR.
    2. A failure keeps the Version PR out, so nothing is bumped.
       Every failure shrub met in 0.7.0 is caught here.
-   3. It also proves that the replay of `version` matches, so no pull request merged since the Version PR was prepared changes what it releases.
 2. **The push that lands it publishes at once.**
    1. The release runs from HEAD, the commit the check proved.
    2. It builds the assets and uploads them to a draft Release, which it can still delete.
@@ -161,15 +160,14 @@ What it can enforce depends on the plan (section 10):
 
 1. **Tier 1, a merge queue.**
    Organization public repositories have it, and private ones on Enterprise Cloud.
-   1. The `release --dry-run` job is a required check on the merge-group commit, which is the commit that lands with the `MERGE` method.
-   2. `check registry` is required on every merge group, which enforces the freeze.
+   1. The job that runs `check registry` is a required check on the merge-group commit, which is the commit that lands with the `MERGE` method.
+      It enforces the freeze, and `check versions` in the same CI proves the Version PR.
 2. **Tier 2, rulesets without a queue.**
    Public repositories on every plan have them, and private ones on Pro or Team.
-   1. The `release --dry-run` job is required on the Version PR, with "require branches to be up to date".
+   1. The job that runs `check registry` is required on every pull request, with "require branches to be up to date".
       The tested head then holds the default branch's tip, and the merge commit has the same tree.
       The release on the landing push runs at the merge commit (`github.sha`), so its draft and its tag name that commit, never the Version PR's head.
-   2. `check registry` is required on every pull request.
-      The up-to-date rule makes each one run again after the Version PR lands, which enforces the freeze.
+   2. The up-to-date rule makes each pull request run it again after the Version PR lands, which enforces the freeze.
 3. **Tier 3, neither.**
    Private repositories on Free.
    1. The operator runs `release --dry-run` by dispatch before merging the Version PR (section 5.2).
@@ -216,7 +214,7 @@ What follows for the design:
 3. A release that still stops on an external failure, such as an outage, is a partial release.
    `status` and the job summary name it, and a rerun, by dispatch or by "Re-run failed jobs", skips every crate the index lists.
 4. Where the Version PR sits in its merge group does not matter.
-   Under `HEADGREEN` the top entry's run decides the merge, and its commit becomes HEAD, so `release --dry-run` there covers the version bump.
+   Under `HEADGREEN` the top entry's run decides the merge, and its commit becomes HEAD, so the checks there cover the version bump.
 
 ## 7. What other release tools do
 

@@ -25,7 +25,7 @@ Queue row: [VER-135][ver-135].
 2. **The `registry` check** needs no token: each crate exists, has its expected owners, and its latest version shows whether it came through trusted publishing.
    The `trust` check needs an owner's token and proves the trusted publisher entry.
 3. **The `owners` key** lists the expected owners once, with a per-package override.
-4. **`release --dry-run`** runs the checks, `cargo publish --workspace --dry-run`, the replay of `version`, and the asset builds, and uploads nothing.
+4. **`release`** runs the registry checks `release_checks` names before its first upload, and `release --dry-run` prints the plan and runs the same checks; nothing another gate already proves runs again.
    `release` runs the same proof before its first upload.
 5. **The freeze.**
    While the default branch holds a version whose release is incomplete, the `registry` check fails every other pull request or merge group.

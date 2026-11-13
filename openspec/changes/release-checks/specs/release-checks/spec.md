@@ -22,8 +22,8 @@ An unknown name SHALL fail the parse and list the known names.
 
 #### Scenario: Every check
 
-- **WHEN** `verctl check --all` runs with no owner's token in `VERCTL_REGISTRY_TOKEN`
-- **THEN** it runs all five checks, and `trust` fails naming `VERCTL_REGISTRY_TOKEN`
+- **WHEN** `verctl check --all` runs with no owner's token in `VERCTL_OWNER_TOKEN`
+- **THEN** it runs all five checks, and `trust` fails naming `VERCTL_OWNER_TOKEN`
 
 #### Scenario: An unknown name
 
@@ -70,47 +70,66 @@ A rerun SHALL repeat every request whatever the state of the pull request.
 
 ### Requirement: The `trust` check proves the trusted publisher with an owner's token
 
-`verctl check trust` SHALL read `VERCTL_REGISTRY_TOKEN`, an owner's token with the `trusted-publishing` scope, and SHALL prove for each crate that a trusted publisher entry names the repository and the workflow file `release_workflow` names.
+`verctl check trust` SHALL read `VERCTL_OWNER_TOKEN`, an owner's token with the `trusted-publishing` scope, and SHALL prove for each crate that a trusted publisher entry names the repository and the workflow file `release_workflow` names.
 Without the token it SHALL fail and name the variable.
 
 #### Scenario: A missing entry
 
-- **WHEN** `VERCTL_REGISTRY_TOKEN` holds an owner's token, and crate `demo` has no trusted publisher entry naming `release.yml`
+- **WHEN** `VERCTL_OWNER_TOKEN` holds an owner's token, and crate `demo` has no trusted publisher entry naming `release.yml`
 - **THEN** `verctl check trust` exits non-zero and names `demo` as lacking a trusted publisher for `release.yml`
 
 #### Scenario: No token
 
-- **WHEN** `VERCTL_REGISTRY_TOKEN` is unset and `verctl check trust` runs
-- **THEN** it exits non-zero, names `VERCTL_REGISTRY_TOKEN`, and sends no request to `/api/v1/trusted_publishing/github_configs`
+- **WHEN** `VERCTL_OWNER_TOKEN` is unset and `verctl check trust` runs
+- **THEN** it exits non-zero, names `VERCTL_OWNER_TOKEN`, and sends no request to `/api/v1/trusted_publishing/github_configs`
 
-### Requirement: `release --dry-run` proves a release and uploads nothing
+### Requirement: `release` runs the registry checks before its first upload
 
-`verctl release --dry-run` (`-n`) SHALL run the `fragments`, `served`, `versions` and `registry` checks, and `trust` when `VERCTL_REGISTRY_TOKEN` holds a token.
-It SHALL also run `cargo publish --workspace --dry-run`, replay `verctl version` and compare the result with the commit, and build every declared asset.
-It SHALL upload nothing, and change no registry and no Release.
-
-#### Scenario: The Version PR in a merge group
-
-- **WHEN** the Version PR's merge-group commit holds `demo` `0.4.0` and `verctl release --dry-run` runs on it
-- **THEN** it runs the checks, `cargo publish --workspace --dry-run`, the replay of `verctl version`, and each asset build
-- **AND** it exits zero when all of them pass, and creates no draft Release
-
-#### Scenario: A pull request changed what the Version PR releases
-
-- **WHEN** a pull request merged after the Version PR was prepared adds a fragment, and `verctl release --dry-run` runs on the Version PR's head
-- **THEN** the replay of `verctl version` differs from the commit, and the run exits non-zero naming the differing file
-
-#### Scenario: A package that does not build
-
-- **WHEN** `cargo publish --workspace --dry-run` fails for crate `app`
-- **THEN** `verctl release --dry-run` exits non-zero, names `app`, and uploads nothing
-
-### Requirement: `release` runs the same proof before its first upload
-
-`verctl release` SHALL run the proof of `release --dry-run` before its first upload.
-When it fails, `verctl release` SHALL exit non-zero and SHALL publish, tag, and release nothing.
+Before its first write, `verctl release` SHALL run each check `release_checks` names.
+`release_checks` SHALL default to `registry` and `trust`, and `trust` SHALL run only when `VERCTL_OWNER_TOKEN` is set, reported as skipped otherwise.
+When a check fails, `verctl release` SHALL exit non-zero naming each failure, and SHALL create no draft and publish, tag, and release nothing.
 
 #### Scenario: Drift between the merge and the release
 
 - **WHEN** crate `demo` lost owner `any-victor` after the Version PR merged, and `verctl release` runs from the push that landed it
 - **THEN** the `registry` check fails, the run exits non-zero naming `demo`, and no crate, tag, or Release is published
+
+#### Scenario: No owner's token
+
+- **WHEN** `VERCTL_OWNER_TOKEN` is unset and `verctl release` runs with the default `release_checks`
+- **THEN** it runs `registry`, reports `trust` as skipped, and sends no request to `/api/v1/trusted_publishing/github_configs`
+
+#### Scenario: The proof turned off
+
+- **WHEN** `.ctl/ver.yaml` sets `release_checks: []`
+- **THEN** `verctl release` runs no check before its first upload
+
+### Requirement: The release proof repeats no earlier gate
+
+The proof SHALL NOT replay `version`, run `cargo publish --dry-run`, or build a tarball.
+The Version PR's `check versions`, CI's `cargo package` and the release workflow's asset matrix prove those before the release.
+
+#### Scenario: A release of a crate with assets
+
+- **WHEN** `verctl release` runs with the default `release_checks` for a crate with declared assets
+- **THEN** it runs no `cargo publish --dry-run`, no replay of `version` and no asset build before its first upload
+
+### Requirement: `release --dry-run` prints the plan and runs the same checks
+
+`verctl release --dry-run` (`-n`) SHALL print the plan and run the checks `release` would run, and SHALL upload nothing and change no registry and no Release.
+
+#### Scenario: A dry run with a missing owner
+
+- **WHEN** crate `demo` lacks owner `any-victor` and `verctl release --dry-run` runs
+- **THEN** it prints the plan, the `registry` check fails naming `demo`, and it exits non-zero having created no draft
+
+### Requirement: `release_checks` names the checks `release` runs
+
+The top-level `release_checks` key of `.ctl/ver.yaml` SHALL list check names from `registry` and `trust`.
+Omitted, it SHALL be `[registry, trust]`.
+A name outside that set, or a name listed twice, SHALL fail the load and name the field.
+
+#### Scenario: A check that runs before the merge
+
+- **WHEN** `.ctl/ver.yaml` sets `release_checks: [versions]`
+- **THEN** loading `.ctl/ver.yaml` fails, names `release_checks`, and lists `registry` and `trust`

@@ -52,7 +52,7 @@ The label SHALL pass only the freeze; every other proof of the `registry` check 
 
 #### Scenario: Rulesets without a queue
 
-- **WHEN** the default branch's rules include a ruleset requiring the `release --dry-run` job on pull requests and no merge queue
+- **WHEN** the default branch's rules include a ruleset requiring the job that runs `check registry` on pull requests and no merge queue
 - **THEN** `verctl status` reports `rulesets without a queue`
 
 #### Scenario: Neither
