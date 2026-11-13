@@ -492,23 +492,22 @@ queue:
       - '2026-11-13, stacked on draft-release-assets: the self-release build job compiled verctl once and each assets job compiled it again from the same commit.'
 
   - id: VER-129
-    title: Install only the release tools at a version commit
-    scope: release workflow
+    title: 'Release whole: prove every upload before the bump lands, and freeze until the release completes'
+    scope: release, status, check, release.yml, first publish
     outcome: >-
-      The publish and docs jobs at an old version commit install only what the
-      release runs. A lock without a checksum for an unrelated tool no longer blocks a
-      release.
+      A Version PR lands only after check --release proves every upload, the push that lands it releases HEAD at once, and the default branch takes no other change until that release completes.
     blocked_by: []
     acceptance:
-      - "The plan job outputs each pending version commit's publisher tools: rust for cargo, bun for bun, and all for a custom publisher."
-      - The publish job installs only those tools, or the `release-tools` input when set, and runs the release with `MISE_EXEC_AUTO_INSTALL=false`.
-      - The docs job installs no tool at the version commit beyond the plan verctl.
-      - shrub publishes the 7 crates of its 0.7.0 release that are missing from crates.io.
-    plan: openspec/changes/release-tools-at-version-commits/proposal.md
+      - verctl check --registry and verctl check --release exist, and release runs check --release before its first upload.
+      - status and release read HEAD only, and src/ holds no refuse_skipped_versions.
+      - A release publishes the tag last, with the draft Release that already holds every asset.
+      - 'check --registry fails every other pull request while the default branch holds an incomplete release, unless the pull request is labelled verctl: unfreeze.'
+      - verctl release --first and verctl trust publish and register a crate crates.io lacks, and shrub-process is published through them.
+    plan: openspec/changes/releases-land-whole/proposal.md
     notes:
       - On 2026-11-13, every shrub Release run since 2026-11-11 failed at `mise install --locked` on version commit `1ecc0b5`. Its lock has no checksum for taplo 0.10.0.
       - mise 2026.11.6 refuses a locked download without a checksum, through the `locked_require_checksum` setting.
-      - This change keeps the commit a release publishes from. Which commit that is, and which pending versions a run releases, is a separate decision.
+      - The operator decided the design on 2026-11-13; docs/research/2026-11-13-atomic-releases.md holds it.
 
 horizon:
   - id: VER-038
@@ -1020,24 +1019,24 @@ horizon:
     notes:
       - Needs a release.yml input and a release asset path that packs a given binary; it helps only callers that build their own binary first.
 
+archive:
   - id: VER-130
     title: Decide which commit a release publishes from, and which versions a run releases
     scope: release workflow, pending
     outcome: >-
       One approved rule states which commit each release publishes from, and which
       pending versions a run releases, with defaults and opt-in overrides.
-    kind: research
-    open: >-
-      The operator and the lead have not decided the rule together. Today a run
-      releases every incomplete version commit, oldest first, each at its own commit.
     notes:
       - A release run is idempotent and can be retried as often as needed (operator, 2026-11-13).
       - A run releases only what needs releasing, and does not release past versions before new ones, or in the same run, by default (operator, 2026-11-13).
       - Releasing a skipped past version stays possible as an opt-in. Releases are immutable by default, and a repository may choose otherwise (operator, 2026-11-13).
       - The latest HEAD and the commit a release publishes from are different things. Any move between them is decided with the operator, never implied by another change (operator, 2026-11-13).
       - 'Related rows: `VER-092` derives release state from facts, `VER-093` states how each release completes, and `VER-124` rebuilds or retires missing assets.'
+    completed: 2026-11-13T07:16:29
+    evidence:
+      - 'Decided 2026-11-13 in docs/research/2026-11-13-atomic-releases.md, section 4: HEAD is the release reference, and a run never releases an older version. VER-129 implements it.'
+    disposition: completed
 
-archive:
   - id: VER-020
     title: check validates served files, and one file has one owner
     scope: verctl
