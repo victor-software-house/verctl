@@ -124,11 +124,12 @@ fn a_check_that_fails_leaves_unreleased_unchecked() {
 }
 
 /// The case `actions/checkout` produces: a depth-1 clone whose version
-/// commit lies past the shallow boundary, with a token set. `status` reports
-/// the walk's failure as the reason and exits zero; the plan for
-/// `--github-output` fails on it.
+/// commit lies past the shallow boundary, with a token set. The plan names
+/// HEAD and walks no history, so the boundary stops nothing: `status` reaches
+/// the tag lookup, and here only the unreachable GitHub leaves the releases
+/// unchecked.
 #[test]
-fn a_depth_1_clone_leaves_unreleased_unchecked() {
+fn a_depth_1_clone_plans_without_a_history_walk() {
     let work = TempDir::new().expect("tempdir");
     let source = work.path().join("source");
     fs::create_dir_all(&source).expect("dir");
@@ -173,25 +174,9 @@ fn a_depth_1_clone_leaves_unreleased_unchecked() {
     assert!(
         value["unreleased_unchecked"]
             .as_str()
-            .is_some_and(|reason| reason.contains("the clone is shallow")),
+            .is_some_and(|reason| reason.contains("read tag v1.0.0")
+                && !reason.contains("the clone is shallow")),
         "{value}"
-    );
-    let pretty = status(&["--color", "never"]);
-    assert!(pretty.status.success(), "{pretty:?}");
-    let stdout = String::from_utf8_lossy(&pretty.stdout);
-    assert!(stdout.contains("not checked ("), "{stdout}");
-    assert!(stdout.contains("the clone is shallow"), "{stdout}");
-    let out = work.path().join("out");
-    let planned = status(&[
-        "--format",
-        "json",
-        "--github-output",
-        out.to_str().expect("utf-8"),
-    ]);
-    assert!(!planned.status.success(), "{planned:?}");
-    assert!(
-        String::from_utf8_lossy(&planned.stdout).contains("the clone is shallow"),
-        "{planned:?}"
     );
 }
 
@@ -925,7 +910,7 @@ fn a_config_with_no_packages_has_no_package_assets_to_plan() {
             commits=[]
             pending=false
             assets={"include":[]}
-            declared={}
+            declared=
         "#}
     );
 }

@@ -142,8 +142,8 @@ fn a_build_inherits_no_registry_token() {
     fs::write(root.path().join("out/demo"), "binary").expect("binary");
     let output = common::verctl()
         .current_dir(root.path())
-        .env("VERCTL_REGISTRY_TOKEN", "from-secret")
-        .env("VERCTL_TRUSTED_PUBLISHING_TOKEN", "from-trusted")
+        .env("VERCTL_REGISTRY_TOKEN", "registry-token-value")
+        .env("VERCTL_TRUSTED_PUBLISHING_TOKEN", "trusted-token-value")
         .env("BUILD_SEES", "this")
         .args([
             "release",
@@ -160,7 +160,7 @@ fn a_build_inherits_no_registry_token() {
     assert!(seen.contains("BUILD_SEES=this"), "{seen}");
     assert!(!seen.contains("VERCTL_REGISTRY_TOKEN"), "{seen}");
     assert!(!seen.contains("VERCTL_TRUSTED_PUBLISHING_TOKEN"), "{seen}");
-    assert!(!seen.contains("from-"), "{seen}");
+    assert!(!seen.contains("-token-value"), "{seen}");
 }
 
 /// A package whose release is two executables, a service unit, and a licence,
