@@ -29,7 +29,7 @@ use crate::assets::{self, MatrixTarget};
 use crate::config::{Assets, Config, PackageSpec};
 use crate::driver::Driver;
 use crate::git::{self, VersionCommit};
-use crate::github::{self, ReleaseState};
+use crate::github::{self, ReleaseList, ReleaseState};
 use crate::publish::{self, PublishEntry};
 use crate::registry::RegistryCheck;
 use crate::registry_token::RegistryToken;
@@ -219,6 +219,13 @@ struct PackageState {
 /// right commit is HEAD, or another commit HEAD contains at the same version
 /// (see [`git::tagged_commit`]). Counting a release tagged in the wrong place
 /// as complete would hide it.
+///
+/// `list` holds the Releases list for every tag the plan looks up, so a
+/// run that goes on to release reads it once.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is one input of the plan; a struct would be built once per call"
+)]
 pub fn pending(
     config: &Config,
     config_path: &Path,
@@ -227,6 +234,7 @@ pub fn pending(
     skip_assets: bool,
     declared_assets: &[String],
     registry_token: Option<&RegistryToken>,
+    list: &ReleaseList,
 ) -> Result<Pending> {
     if config.packages.is_empty() {
         return Ok(Pending::default());
@@ -260,7 +268,7 @@ pub fn pending(
         let release = match releases.entry(tag.clone()) {
             Entry::Occupied(found) => found.into_mut(),
             Entry::Vacant(slot) => {
-                let state = github::release_state(token, &repo, slot.key())?;
+                let state = github::release_state(token, &repo, slot.key(), list)?;
                 slot.insert(state)
             }
         };

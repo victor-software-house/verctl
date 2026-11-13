@@ -555,6 +555,8 @@ async fn draft_to_publish(server: &MockServer, id: u64, head: &str, assets: &[&s
 /// takes a new draft (id 1), an upload of each of `assets` to it, and the
 /// update that publishes it, and serves the tag at `head` once the plan and
 /// the run have read it missing. Every `/__upload/{name}` answers 200.
+/// Each upload reads the draft by id twice, once for verctl and once for
+/// octocrab, before the read that publishes it sees the assets.
 async fn new_release(server: &MockServer, head: &str, assets: &[&str]) {
     let uri = server.uri();
     tag_after(server, TAG, head, 2).await;
@@ -566,14 +568,9 @@ async fn new_release(server: &MockServer, head: &str, assets: &[&str]) {
     Mock::given(method("GET"))
         .and(path("/repos/acme/demo/releases"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
-        .up_to_n_times(2)
+        .expect(1)
         .mount(server)
         .await;
-    listed(
-        server,
-        serde_json::json!([full_release(&uri, 1, TAG, head, true, &[])]),
-    )
-    .await;
     Mock::given(method("POST"))
         .and(path("/repos/acme/demo/releases"))
         .respond_with(ResponseTemplate::new(201).set_body_json(full_release(
@@ -597,7 +594,7 @@ async fn new_release(server: &MockServer, head: &str, assets: &[&str]) {
                 true,
                 &[],
             )))
-            .up_to_n_times(u64::try_from(assets.len()).unwrap())
+            .up_to_n_times(2 * u64::try_from(assets.len()).unwrap())
             .mount(server)
             .await;
         for name in assets {

@@ -6,6 +6,7 @@
 
 use std::collections::BTreeMap;
 use std::error::Error;
+use std::ffi::OsStr;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -319,6 +320,7 @@ pub fn run_pending(
     full_history(root)?;
     let allowed = prove_version_commit(config, root, &planned, allow)?;
     let token = release::resolve_token()?;
+    let release_list = github::ReleaseList::default();
     let pending = pending::pending(
         config,
         config_path,
@@ -327,6 +329,7 @@ pub fn run_pending(
         scope.skip_assets,
         &scope.declared_assets,
         registry_token,
+        &release_list,
     )?;
     if pending.is_empty() {
         return Ok(nothing_to_release(allowed, pending.shortfalls));
@@ -356,7 +359,7 @@ pub fn run_pending(
                     .any(|package| package.name == named.name)
             })
         })
-        .map(|tag| TagRelease::read(config, root, &token, &repo, tag, &head))
+        .map(|tag| TagRelease::read(config, root, &token, &repo, tag, &head, &release_list))
         .collect::<Result<Vec<_>>>()?;
     let files = asset_files(&tags, &declared, scope.assets_dir.as_deref())?;
     let drafts = tags
@@ -364,8 +367,12 @@ pub fn run_pending(
         .map(|tag| tag.open(&token, &repo, &head, &declared))
         .collect::<Result<Vec<_>>>()?;
     if let Some((carrier, _)) = &declared {
-        for file in &files {
-            github::upload_release_asset(&token, &repo, carrier, file)?;
+        for (tag, opened) in tags.iter().zip(&drafts) {
+            if tag.plan.tag == *carrier {
+                for file in &files {
+                    github::upload_to_release(&token, &repo, opened.id(), carrier, file)?;
+                }
+            }
         }
     }
     let lines = match run_uploads(uploads, registry_token) {
@@ -569,7 +576,25 @@ fn declared_assets(config: &Config, root: &Path, scope: &Scope) -> Result<Declar
     } else {
         scope.declared_assets.clone()
     };
+    plain_names(&names)?;
     Ok((!names.is_empty()).then_some((planned.tag, names)))
+}
+
+/// Refuse every asset name that is not a plain file name: one with a
+/// directory, `..`, or a root. A run joins each name to `--assets-dir`, so
+/// such a name would read a file outside it.
+fn plain_names(names: &[String]) -> Result<()> {
+    let refused: Vec<&str> = names
+        .iter()
+        .map(String::as_str)
+        .filter(|name| Path::new(name).file_name() != Some(OsStr::new(name)))
+        .collect();
+    ensure!(
+        refused.is_empty(),
+        "an asset name must be a plain file name, with no directory, `..`, or root: {refused}; fix --declared-assets or the asset targets",
+        refused = refused.join(", ")
+    );
+    Ok(())
 }
 
 /// The asset names the Release for `tag` must hold before it is published.
@@ -649,16 +674,32 @@ struct TagRelease<'a> {
 
 /// A tag's Release once the run opened its draft.
 enum Held {
-    /// Published at HEAD before the run: its URL.
-    Published(String),
-    /// The id of the draft the run publishes.
+    /// Published at HEAD before the run.
+    Published {
+        /// Its URL.
+        url: String,
+        /// Its id, which a mutable one takes the tarballs it lacks on.
+        id: u64,
+    },
+    /// The id of the draft the run uploads to and publishes.
     Draft(u64),
+}
+
+impl Held {
+    /// The id of the Release the run uploads the tarballs to.
+    const fn id(&self) -> u64 {
+        match self {
+            Self::Published { id, .. } | Self::Draft(id) => *id,
+        }
+    }
 }
 
 impl<'a> TagRelease<'a> {
     /// Read GitHub for `plan`'s tag at `head`, with the CHANGELOG sections of
     /// its packages as the notes.
     /// A candidate's Release is a prerelease that never becomes the latest.
+    /// The Releases list comes from `release_list`, which the plan already
+    /// read.
     fn read(
         config: &Config,
         root: &Path,
@@ -666,6 +707,7 @@ impl<'a> TagRelease<'a> {
         repo: &github::Repo,
         plan: &'a TagPlan,
         head: &str,
+        release_list: &github::ReleaseList,
     ) -> Result<Self> {
         let notes = release::notes_for(
             config,
@@ -683,7 +725,7 @@ impl<'a> TagRelease<'a> {
         } else {
             github::Stage::Stable
         };
-        let found = github::read_release(token, repo, &plan.tag, head)?;
+        let found = github::read_release(token, repo, &plan.tag, head, release_list)?;
         Ok(Self {
             plan,
             notes,
@@ -718,7 +760,10 @@ impl<'a> TagRelease<'a> {
         declared: &DeclaredAssets,
     ) -> Result<Held> {
         match &self.found {
-            github::Found::Published(release) => Ok(Held::Published(release.url().to_owned())),
+            github::Found::Published(release) => Ok(Held::Published {
+                url: release.url().to_owned(),
+                id: release.id(),
+            }),
             github::Found::Unpublished(draft) => {
                 github::open_draft(token, repo, &self.release(head, declared), draft)
                     .map(Held::Draft)
@@ -736,7 +781,7 @@ impl<'a> TagRelease<'a> {
         opened: Held,
     ) -> Result<String> {
         match opened {
-            Held::Published(url) => Ok(url),
+            Held::Published { url, .. } => Ok(url),
             Held::Draft(id) => {
                 github::publish_draft(token, repo, &self.release(head, declared), id)
             }
@@ -1208,6 +1253,43 @@ mod tests {
             };
             let declared = declared_assets(&config, dir.path(), &scope).unwrap();
             assert_eq!(assets_of(&declared, "v1.2.0"), Vec::<String>::new());
+        }
+
+        /// The error for a run that declares `name` through
+        /// `--declared-assets`.
+        fn refused(name: &str) -> String {
+            let (dir, config) = demo(TARGETS);
+            let scope = Scope {
+                declared_assets: vec!["demo_1.2.0_linux_x64.tar.gz".to_owned(), name.to_owned()],
+                ..Scope::default()
+            };
+            let error = declared_assets(&config, dir.path(), &scope).unwrap_err();
+            format!("{error:#}")
+        }
+
+        #[test]
+        fn a_name_with_a_parent_directory_is_refused() {
+            let message = refused("../demo.tar.gz");
+            assert!(message.contains(": ../demo.tar.gz;"), "{message}");
+        }
+
+        #[test]
+        fn a_name_with_a_directory_is_refused() {
+            let message = refused("dist/demo.tar.gz");
+            assert!(message.contains(": dist/demo.tar.gz;"), "{message}");
+        }
+
+        #[test]
+        fn an_absolute_name_is_refused() {
+            let message = refused("/tmp/demo.tar.gz");
+            assert!(message.contains(": /tmp/demo.tar.gz;"), "{message}");
+        }
+
+        #[test]
+        fn a_bare_parent_is_refused() {
+            let message = refused("..");
+            assert!(message.contains(": ..;"), "{message}");
+            assert!(!message.contains("demo_1.2.0_linux_x64"), "{message}");
         }
 
         /// A leg declares the plan's set instead of the targets its own config

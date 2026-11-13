@@ -144,6 +144,7 @@ fn released_crates(config: &Config, root: &Path, token: &str) -> Result<Vec<Want
     let head = git::head_sha(root)?;
     let planned = publish::plan(config, root)?;
     let repo = github::repo(root)?;
+    let releases = github::ReleaseList::default();
     let mut wanted = Vec::new();
     for (spec, entry) in config.packages.iter().zip(&planned.packages) {
         if entry.argv.is_empty() {
@@ -174,7 +175,7 @@ fn released_crates(config: &Config, root: &Path, token: &str) -> Result<Vec<Want
         else {
             continue;
         };
-        let state = github::release_state(token, &repo, &tag.tag)?;
+        let state = github::release_state(token, &repo, &tag.tag, &releases)?;
         if !state.tag.is_some_and(|sha| sha.eq_ignore_ascii_case(&head)) {
             continue;
         }

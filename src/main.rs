@@ -647,6 +647,7 @@ fn unreleased_state(args: &StatusArgs, config: &Config, root: &Path) -> Result<U
                 args.skip_assets,
                 &[],
                 None,
+                &github::ReleaseList::default(),
             ) {
                 Ok(planned) => {
                     if let Some(path) = &args.github_output {
