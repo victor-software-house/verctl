@@ -601,6 +601,18 @@ queue:
     notes:
       - 2026-11-13, ctl-core and qctl template update PRs failed Publish checks on their own releases published under 3 days before.
 
+  - id: VER-140
+    title: Drop the docs.rs wait from releases
+    scope: release, workflow
+    outcome: A release spends no runner time waiting for docs.rs.
+    blocked_by: []
+    acceptance:
+      - release.yml has no docs job and no docs input.
+      - verctl docs exits 2 as an unknown command.
+    plan: openspec/changes/drop-docs-wait/proposal.md
+    notes:
+      - 2026-11-13, the operator chose removal; no other release tool waits for docs.rs.
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all

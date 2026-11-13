@@ -31,7 +31,7 @@ use toml_edit::DocumentMut;
 use crate::config::Config;
 use crate::fragment::{Bump, Fragment};
 use crate::registry::{self, RegistryCheck};
-use crate::{docsrs, process, publish, publisher, release};
+use crate::{process, publish, publisher, release};
 
 /// How long one crate's check may run. It builds the rustdoc of the current
 /// crate and of its baseline, so it sits as high as a cold test build.
@@ -352,12 +352,34 @@ fn plan(config: &Config, root: &Path, fragments: &[Fragment]) -> Result<Vec<Plan
     Ok(crates)
 }
 
+/// Whether the package in `manifest` has a library target, as Cargo resolves
+/// it: an explicit `[lib]` table, or `src/lib.rs` found by
+/// [target auto-discovery] unless `package.autolib` is `false`.
+///
+/// [target auto-discovery]: https://doc.rust-lang.org/cargo/reference/cargo-targets.html#target-auto-discovery
+fn has_library(manifest: &Path) -> Result<bool> {
+    let raw = fs::read_to_string(manifest).with_context(|| manifest.display().to_string())?;
+    let document = raw
+        .parse::<DocumentMut>()
+        .with_context(|| manifest.display().to_string())?;
+    if document.contains_key("lib") {
+        return Ok(true);
+    }
+    let autolib = document
+        .get("package")
+        .and_then(|package| package.get("autolib"))
+        .and_then(toml_edit::Item::as_bool)
+        .unwrap_or(true);
+    let dir = manifest.parent().unwrap_or_else(|| Path::new("."));
+    Ok(autolib && dir.join("src").join("lib.rs").is_file())
+}
+
 /// Whether cargo-semver-checks can check the crate in `manifest`: it has a
-/// library target, as [`docsrs::has_library`] resolves it, that is not a
+/// library target, as [`has_library`] resolves it, that is not a
 /// proc-macro. cargo-semver-checks 0.51.0 leaves out a proc-macro
 /// (`is_lib_like_checkable_target`) and refuses to run with nothing left.
 fn checkable(manifest: &Path) -> Result<bool> {
-    if !docsrs::has_library(manifest)? {
+    if !has_library(manifest)? {
         return Ok(false);
     }
     let raw = fs::read_to_string(manifest).with_context(|| manifest.display().to_string())?;
@@ -453,6 +475,7 @@ fn skip_reason(
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::PathBuf;
 
     use anyhow::{Context, Result};
     use indoc::indoc;
@@ -460,8 +483,8 @@ mod tests {
     use tempfile::TempDir;
 
     use super::{
-        Decision, Retry, checkable, cooldown_rejections, marked_breaking, pending_bump,
-        released_mark, retry_decision, skip_reason,
+        Decision, Retry, checkable, cooldown_rejections, has_library, marked_breaking,
+        pending_bump, released_mark, retry_decision, skip_reason,
     };
     use crate::fragment::{Bump, Fragment, PackageBump};
 
@@ -824,5 +847,63 @@ mod tests {
             format!("{error:#}").contains("owners lookup failed"),
             "{error:#}"
         );
+    }
+
+    fn manifest(dir: &TempDir, body: &str) -> PathBuf {
+        let path = dir.path().join("Cargo.toml");
+        fs::write(&path, body).unwrap();
+        path
+    }
+
+    const PLAIN: &str = indoc! {r#"
+        [package]
+        name = "demo"
+        version = "0.4.6"
+    "#};
+
+    #[test]
+    fn a_library_found_by_auto_discovery() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/lib.rs"), "").unwrap();
+        assert!(has_library(&manifest(&dir, PLAIN)).unwrap());
+    }
+
+    #[test]
+    fn a_binary_only_crate() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/main.rs"), "fn main() {}").unwrap();
+        assert!(!has_library(&manifest(&dir, PLAIN)).unwrap());
+    }
+
+    #[test]
+    fn an_explicit_lib_table_or_autolib_off() {
+        let dir = TempDir::new().unwrap();
+        let explicit = manifest(
+            &dir,
+            indoc! {r#"
+                [package]
+                name = "demo"
+                version = "0.4.6"
+
+                [lib]
+                path = "lib/demo.rs"
+            "#},
+        );
+        assert!(has_library(&explicit).unwrap());
+        let off = TempDir::new().unwrap();
+        fs::create_dir_all(off.path().join("src")).unwrap();
+        fs::write(off.path().join("src/lib.rs"), "").unwrap();
+        let path = manifest(
+            &off,
+            indoc! {r#"
+                [package]
+                name = "demo"
+                version = "0.4.6"
+                autolib = false
+            "#},
+        );
+        assert!(!has_library(&path).unwrap());
     }
 }

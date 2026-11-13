@@ -2,27 +2,26 @@
 
 use std::env;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use ctl_core::prelude::*;
 use verctl::cli::{
-    AssetArgs, Check, CheckArgs, CiArgs, Cli, Command, DocsArgs, ReleaseArgs, ReleaseStep,
-    RenderArgs, SemverArgs, StatusArgs, VersionArgs,
+    AssetArgs, Check, CheckArgs, CiArgs, Cli, Command, ReleaseArgs, ReleaseStep, RenderArgs,
+    SemverArgs, StatusArgs, VersionArgs,
 };
 use verctl::config::{self, Config};
 use verctl::content::Inputs;
 use verctl::fragment::{self, Bump};
 use verctl::registry_token::RegistryToken;
 use verctl::{
-    assets, ci, docsrs, git, github, lookup, pending, pins, prepare, publish, release,
-    semver_check, templates, versions,
+    assets, ci, git, github, lookup, pending, pins, prepare, publish, release, semver_check,
+    templates, versions,
 };
 
 mod presentation;
 
 use presentation::{
-    AssetsReport, CheckReport, CheckResult, CiReport, DocsReport, InstructionsReport, PartialRow,
+    AssetsReport, CheckReport, CheckResult, CiReport, InstructionsReport, PartialRow,
     ReleaseReport, ReleaseRow, RenderReport, Report, SemverReport, StatusAssets, StatusFragment,
     StatusPackage, StatusReport, Unchecked, VendoredReport, VersionBump, VersionCheckReport,
     VersionReport,
@@ -52,7 +51,6 @@ fn execute(cli: Cli) -> Result<Report> {
         },
         Command::Render(args) => render_report(&args).map(Report::Render),
         Command::Ci(args) => ci_report(&args).map(Report::Ci),
-        Command::Docs(args) => docs_report(&args).map(Report::Docs),
         Command::Semver(args) => semver_report(&args).map(Report::Semver),
     }
 }
@@ -62,15 +60,6 @@ fn semver_report(args: &SemverArgs) -> Result<SemverReport> {
     let fragments = fragment::load_dir(&args.dir)?;
     Ok(SemverReport {
         crates: semver_check::run(&config, &config::root_of(&args.config), &fragments)?,
-    })
-}
-
-fn docs_report(args: &DocsArgs) -> Result<DocsReport> {
-    let config = Config::load(&args.config)?;
-    let root = &config::root_of(&args.config);
-    let timeout = Duration::from_secs(args.timeout.saturating_mul(60));
-    Ok(DocsReport {
-        crates: docsrs::run(&config, root, timeout)?,
     })
 }
 

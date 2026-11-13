@@ -25,7 +25,6 @@ The `--` in `#USAGE mount` is mise's completion bootstrap.
 | `release` | — | Release the versions on HEAD: publish with cargo or bun, and create the GitHub Release. `release asset <target>` builds one asset |
 | `render` | — | Rewrite pins and render served templates at the versions on HEAD |
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
-| `docs` | — | Wait for docs.rs to build each crates.io crate released at HEAD |
 | `semver` | — | Check the API of each crates.io crate whose next release is a patch |
 
 Every long option also reads `VERCTL_<LONG>`, with `-` turned into `_`: `VERCTL_CONFIG`, `VERCTL_DRY_RUN`, `VERCTL_FORMAT`, and so on.  
@@ -49,7 +48,7 @@ A parse error under `--format json` is a JSON error even when the bad argument c
    It releases every incomplete version HEAD holds, from HEAD, then opens or updates the Version PR.
 3. A person merges the Version PR, and verctl never merges it ([Version PR](#version-pr)).
 4. The push that merges it releases the new versions ([Release](#release)).  
-   That is the registry publish, the tag and GitHub Release, the assets, and the docs.rs wait.
+   That is the registry publish, the tag and GitHub Release, and the assets.
 
 ## Configuration
 
@@ -209,13 +208,13 @@ A thin caller (`examples/workflows/release.yml`) calls it on push to the default
 It plans every incomplete release of the versions HEAD holds and publishes them from HEAD.  
 Then it builds the tarballs the draft Release lacks.
 One job uploads them to the draft, publishes to the registries, and publishes the draft last, which creates the tag.
-Last it waits for docs.rs and opens or updates the Version PR.
+Last it opens or updates the Version PR.
 
 ### Inputs and secrets
 
 Every input is optional and defaults to verctl's:
 
-- `version-pr`, `publish`, `assets`, `docs`, `config`, and `runner`;
+- `version-pr`, `publish`, `assets`, `config`, and `runner`;
 - `mise-version`, `mise-env`, and `mise-ignored-config-paths`;
 - `registry-token-env`, `crates-io-trusted-publishing`, and `environment`;
 - `verctl-artifact`, for verctl's own release only: each job runs a verctl build from the calling run, and each asset job packs that build with `--prebuilt`.
@@ -773,21 +772,16 @@ PR CI stays unary by default: compiling a PR on two hosts wastes time.
 A built-in target (`darwin-arm64`, `linux-x64`) fills in `runner`, `os`, `arch`, and `triple`; any other name must state all four.  
 `verctl ci` writes the matrix for a `plan` job, since `runs-on` exists before the job does.
 
-The release workflow's `plan`, `publish`, `docs`, and `propose` jobs run on its `runner` input, a JSON label list that defaults to `["ubuntu-26.04"]`.  
+The release workflow's `plan`, `publish`, and `propose` jobs run on its `runner` input, a JSON label list that defaults to `["ubuntu-26.04"]`.  
 It is never a `.ctl/ver.yaml` key, and there is no `release` runner section.
 
 ## Docs and semver
 
-### docs
+### docs.rs
 
-`docs` waits for docs.rs to build each crates.io library crate released at HEAD, each library member of a workspace package included.  
-It polls every 30 seconds for `--timeout` minutes (default 60, `VERCTL_TIMEOUT`).  
-It needs a GitHub token to read the tag.
-
-It fails naming each crate docs.rs failed to build or had not built in time.  
-A failed build stays failed for that version, so the fix is the next patch release.  
-docs.rs shows a running build and a failed one alike.  
-So a failed build fails the job only when the timeout runs out.
+verctl waits for no docs.rs build.  
+docs.rs builds every crates.io release on its own, so a repository checks its docs build before the release, in its pull request CI.  
+A docs.rs build that still fails shows on docs.rs, and a crate owner can rebuild it from crates.io.
 
 ### semver
 

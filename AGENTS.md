@@ -166,6 +166,7 @@ The shared Rust workflow does not express either.
 
 `mise.toml` pins stable 1.99.0 through mr-boxington, whose store CI restores with its action.  
 It also pins the dated nightly, for formatting and for `doc`, which builds rustdoc as docs.rs does.  
+That `doc` task is the docs.rs check, before the release; no release job waits for docs.rs.  
 `rust-toolchain.toml` and `rust-version` match.  
 `mise.toml` composes `verify` from the actions repository's `tasks/rust.toml`.
 

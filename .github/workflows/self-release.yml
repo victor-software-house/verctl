@@ -4,8 +4,8 @@ name: Self-release
 # change to the workflow is exercised by the release that ships it.
 #
 # The build jobs here compile the verctl that runs every job of the release,
-# once per platform the release runs on: release.yml's plan, publish, docs,
-# and propose jobs run on ubuntu-26.04, and the asset jobs on the machines
+# once per platform the release runs on: release.yml's plan, publish, and
+# propose jobs run on ubuntu-26.04, and the asset jobs on the machines
 # .ctl/ver.yaml names (xcode-27, ubuntu-26.04, and ubuntu-26.04-arm).
 # Each asset job downloads the build of its own runner's OS and architecture,
 # so every runner .ctl/ver.yaml names has a leg here. The tarballs reuse it

@@ -30,8 +30,8 @@ name: Release
 # release of the versions that commit holds, build the tarballs the draft
 # Release lacks, then release in one job. There verctl uploads the tarballs
 # to the draft, publishes to the registries, and publishes the draft last,
-# which creates the tag. Then it checks docs.rs and opens or updates the
-# Version PR. Every job checks out that one commit.
+# which creates the tag. Then it opens or updates the Version PR. Every job
+# checks out that one commit.
 # A failure before the draft is published leaves no tag, and a rerun, by
 # dispatch or by "Re-run failed jobs", resumes: the registries skip every
 # version they list, and the draft keeps the tarballs it holds. Every job is
@@ -42,10 +42,10 @@ name: Release
 #
 # Every other job needs plan, so plan alone checks what they share: the
 # pinned verctl is 0.8.6-rc.2 or later, and each mise-ignored-config-paths
-# entry is a plain relative path. assets, publish, and docs take the checked
-# paths from plan's outputs.
+# entry is a plain relative path. assets and publish take the checked paths
+# from plan's outputs.
 #
-# assets, publish, and docs install the verctl plan checked with
+# assets and publish install the verctl plan checked with
 # `mise install --locked`, from the run's own lock.
 
 on:
@@ -63,10 +63,6 @@ on:
         description: >-
           Build the assets .ctl/ver.yaml declares. false skips the assets
           matrix and leaves assets out of the completeness check.
-        type: boolean
-        default: true
-      docs:
-        description: Wait for docs.rs to build each released crate.
         type: boolean
         default: true
       allow-workflow-change:
@@ -87,7 +83,7 @@ on:
         default: ""
       runner:
         description: >-
-          JSON label list for the plan, publish, docs, and propose jobs. Asset
+          JSON label list for the plan, publish, and propose jobs. Asset
           jobs take their runners from .ctl/ver.yaml.
         type: string
         default: '["ubuntu-26.04"]'
@@ -102,7 +98,7 @@ on:
       mise-ignored-config-paths:
         description: >-
           Colon-separated mise config paths, relative to the repository root,
-          that the plan, publish, assets, and docs jobs ignore, so they skip
+          that the plan, publish, and assets jobs ignore, so they skip
           tools only the repository's own tasks need. propose keeps them,
           because prepare.after runs those tasks. plan checks the entries
           once. Empty ignores none and leaves MISE_IGNORED_CONFIG_PATHS
@@ -511,78 +507,6 @@ jobs:
         # may predate this workflow. VERCTL_BIN is unset with verctl-artifact,
         # and this run's build runs from PATH.
         run: mise exec -- "${VERCTL_BIN:-verctl}" release
-
-  docs:
-    name: docs.rs
-    needs: [plan, publish]
-    # Runs after publish whatever its outcome, so a crate released before a
-    # later upload failed is still checked; a version whose tag is missing has
-    # nothing to check. It never holds the Version PR back.
-    if: >-
-      !cancelled() &&
-      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
-      inputs.docs && needs.plan.outputs.pending == 'true'
-    runs-on: ${{ fromJson(inputs.runner) }}
-    # `ver docs` waits up to 60 minutes for docs.rs by default; recent runs take
-    # under 10.
-    timeout-minutes: 75
-    permissions:
-      contents: read # reads the release tag through the API
-      id-token: write # downloads tools through the release mirror
-    steps:
-      - name: Check out the run's commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-      - name: Ignore mise config paths
-        # plan checked the paths. The variable stays unset when there are
-        # none, so .miserc.toml still applies.
-        if: needs.plan.outputs.mise-ignored-config-paths != ''
-        env:
-          IGNORED: ${{ needs.plan.outputs.mise-ignored-config-paths }}
-        run: echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
-      - name: Set up mise
-        uses: victor-software-house/actions/mise@bead5c01b61e14ecf1e923a5bcff97e8c421f151 # main, 2026-11-11
-        with:
-          mirror-url: ${{ secrets.release-mirror-url }}
-          mirror-key: ${{ secrets.release-mirror-ci-key }}
-          version: ${{ inputs.mise-version }}
-          cache: true
-          # These jobs install fewer tools than propose, so they keep their
-          # own cache rather than share propose's key.
-          cache_key_prefix: ${{ inputs.mise-ignored-config-paths != '' && 'mise-v1-trimmed' || 'mise-v1' }}
-      - run: mise install --locked
-      - name: Download this run's verctl build
-        if: inputs.verctl-artifact != ''
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: ${{ inputs.verctl-artifact }}-${{ runner.os }}-${{ runner.arch }}
-          path: ${{ runner.temp }}/verctl-build
-      - name: Put this run's verctl build first on PATH
-        if: inputs.verctl-artifact != ''
-        env:
-          BUILD_DIR: ${{ runner.temp }}/verctl-build
-        run: |
-          chmod +x "${BUILD_DIR}/verctl"
-          echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
-      - name: Install the plan's verctl
-        if: inputs.verctl-artifact == '' && needs.plan.outputs.verctl-version != ''
-        env:
-          VERCTL_TOOL: github:victor-software-house/verctl@${{ needs.plan.outputs.verctl-version }}
-        # --locked installs only what the run's mise.lock lists.
-        run: |
-          mise install --locked "${VERCTL_TOOL}"
-          bin=$(mise which verctl --tool="${VERCTL_TOOL}")
-          test -x "${bin}"
-          "${bin}" --version
-          echo "VERCTL_BIN=${bin}" >> "${GITHUB_ENV}"
-      - name: Wait for docs.rs
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        # The plan's verctl, as in publish.
-        run: mise exec -- "${VERCTL_BIN:-verctl}" docs
 
   propose:
     name: Open or update the Version PR

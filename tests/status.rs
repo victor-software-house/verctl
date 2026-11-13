@@ -798,6 +798,25 @@ fn a_renamed_verb_is_an_unknown_command() {
     }
 }
 
+/// `docs` is an unknown command: verctl waits for no docs.rs build, so the
+/// verb is gone with no hidden one left behind.
+#[test]
+fn docs_is_an_unknown_command() {
+    let root = TempDir::new().expect("tempdir");
+    let output = common::verctl()
+        .current_dir(root.path())
+        .args(["docs", "--color", "never"])
+        .output()
+        .expect("spawn");
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, Vec::<u8>::new());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("unrecognized subcommand 'docs'"),
+        "{stderr}"
+    );
+}
+
 /// `release --plan` is an unknown flag, and under `--format json` the
 /// failure is the JSON error on stdout.
 #[test]

@@ -47,8 +47,6 @@ pub enum Command {
     Render(RenderArgs),
     /// Plan the validation jobs declared in `[ci]`.
     Ci(CiArgs),
-    /// Wait for docs.rs to build each crates.io crate released at HEAD.
-    Docs(DocsArgs),
     /// Check the API of each crates.io crate whose next release is a patch.
     Semver(SemverArgs),
 }
@@ -63,19 +61,6 @@ pub struct SemverArgs {
     /// Package map. Defaults to .ctl/ver.yaml in the current directory.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
     pub config: PathBuf,
-}
-
-/// Arguments of `docs`.
-#[derive(Debug, Args)]
-#[non_exhaustive]
-pub struct DocsArgs {
-    /// Package map. Defaults to .ctl/ver.yaml in the current directory.
-    #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
-    pub config: PathBuf,
-    /// Minutes to wait for docs.rs before a crate it has not built fails, at
-    /// most a day.
-    #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(0..=1440))]
-    pub timeout: u64,
 }
 
 /// Arguments of `ci`.
