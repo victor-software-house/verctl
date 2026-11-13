@@ -227,9 +227,8 @@ pub(super) struct StatusReport {
     /// The asset plan: the packages' when they declare targets, a vendored
     /// set's under `--vendored`, and `null` when there is none.
     pub(super) assets: Option<StatusAssets>,
-    /// Every package at an incomplete version commit, oldest first. `null`
-    /// means not checked, never nothing pending; `unreleased_unchecked` says
-    /// why.
+    /// Every package whose release at HEAD is incomplete. `null` means not
+    /// checked, never nothing pending; `unreleased_unchecked` says why.
     pub(super) unreleased: Option<Vec<ReleaseRow>>,
     /// Why `unreleased` was not checked, or `null` when it was.
     pub(super) unreleased_unchecked: Option<Unchecked>,
@@ -246,7 +245,7 @@ fn with_warnings(document: Document, notices: &[String]) -> Document {
     })
 }
 
-/// Why `status` did not check for unreleased version commits. The human view
+/// Why `status` did not check for incomplete releases. The human view
 /// shows the top-level message, which fits on one line. JSON holds the whole
 /// error chain, so the cause stays available to automation.
 #[derive(Clone, Serialize)]
@@ -480,8 +479,6 @@ pub(super) struct ReleaseReport {
     pub(super) outcome: publish::Outcome,
     pub(super) packages: Vec<publish::PublishLine>,
     pub(super) releases: Vec<String>,
-    /// Incomplete packages left for the run at their own version commit.
-    pub(super) waiting: Vec<ReleaseRow>,
     /// The proofs the operator allowed this run to go past.
     pub(super) allowed: Vec<publish::Allowed>,
     pub(super) dry_run: bool,
@@ -504,22 +501,12 @@ impl ReleaseReport {
     }
 }
 
-/// A package at the version commit that releases it.
+/// A package whose release HEAD still has to make.
 #[derive(Serialize)]
 pub(super) struct ReleaseRow {
     pub(super) name: String,
     pub(super) version: String,
     pub(super) commit: String,
-}
-
-impl From<&publish::Waiting> for ReleaseRow {
-    fn from(waiting: &publish::Waiting) -> Self {
-        Self {
-            name: waiting.name.clone(),
-            version: waiting.version.clone(),
-            commit: waiting.commit.clone(),
-        }
-    }
 }
 
 fn release_rows(rows: &[ReleaseRow]) -> Table {
@@ -581,9 +568,6 @@ impl Present for ReleaseReport {
         let mut document = Document::new();
         if !self.packages.is_empty() {
             document = document.table(table);
-        }
-        if !self.waiting.is_empty() {
-            document = document.table(release_rows(&self.waiting));
         }
         if fields.is_empty() {
             with_warnings(document, &self.notices)
@@ -713,7 +697,6 @@ mod tests {
             outcome,
             packages: Vec::new(),
             releases: Vec::new(),
-            waiting: Vec::new(),
             allowed: Vec::new(),
             dry_run: false,
             notices: Vec::new(),
@@ -728,7 +711,6 @@ mod tests {
             outcome: publish::Outcome::NothingToRelease,
             packages: Vec::new(),
             releases: Vec::new(),
-            waiting: Vec::new(),
             allowed: vec![publish::Allowed {
                 check: publish::Check::WorkflowChange,
                 reason: ".github/workflows/ at HEAD aaa differs from the default branch at bbb"
@@ -835,7 +817,6 @@ mod tests {
             outcome: publish::Outcome::Released,
             packages: Vec::new(),
             releases: vec![url.into()],
-            waiting: Vec::new(),
             allowed: Vec::new(),
             dry_run: false,
             notices: Vec::new(),
@@ -857,7 +838,6 @@ mod tests {
             outcome: publish::Outcome::Released,
             packages: Vec::new(),
             releases: vec!["https://example.test/v1".into()],
-            waiting: Vec::new(),
             allowed: Vec::new(),
             dry_run: false,
             notices: Vec::new(),

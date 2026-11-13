@@ -8,9 +8,9 @@ use std::path::Path;
 use std::process::Output;
 
 use common::demo_root;
-use indoc::indoc;
+use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{method, path, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[test]
@@ -927,5 +927,212 @@ fn a_config_with_no_packages_has_no_package_assets_to_plan() {
             assets={"include":[]}
             declared={}
         "#}
+    );
+}
+
+/// `package`'s manifest at `version`.
+fn manifest(package: &str, version: &str) -> String {
+    formatdoc! {r#"
+        [package]
+        name = "{package}"
+        version = "{version}"
+    "#}
+}
+
+/// A GitHub that holds no tag and no Release, so every version a plan holds is
+/// unpublished. Each tag in `never_asked` fails the test when the plan looks it
+/// up.
+async fn github_without_releases(never_asked: &[&str]) -> MockServer {
+    let not_found = || {
+        ResponseTemplate::new(404).set_body_json(serde_json::json!({
+            "message": "Not Found",
+            "documentation_url": "https://docs.github.com"
+        }))
+    };
+    let server = MockServer::start().await;
+    for tag in never_asked {
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/acme/demo/git/ref/tags/{tag}")))
+            .respond_with(not_found())
+            .expect(0)
+            .mount(&server)
+            .await;
+    }
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/repos/acme/demo/git/ref/tags/.+$"))
+        .respond_with(not_found())
+        .mount(&server)
+        .await;
+    server
+}
+
+/// Put `origin` on GitHub, with `origin/main` at HEAD.
+fn on_github(root: &Path) {
+    common::git(
+        root,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/acme/demo.git",
+        ],
+    );
+    let head = common::git(root, &["rev-parse", "HEAD"]);
+    common::git(root, &["update-ref", "refs/remotes/origin/main", &head]);
+}
+
+/// Run `status --github-output` and return what it wrote and its JSON report.
+fn plan_at_head(root: &Path, server: &MockServer) -> (String, serde_json::Value) {
+    let out = root.join("github-output");
+    let output = common::verctl()
+        .current_dir(root)
+        .env("GITHUB_REPOSITORY", "acme/demo")
+        .env("GITHUB_TOKEN", "test")
+        .env("GITHUB_API_URL", server.uri())
+        .args([
+            "status",
+            "--github-output",
+            out.to_str().expect("utf-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("spawn");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    (
+        fs::read_to_string(&out).expect("output"),
+        serde_json::from_slice(&output.stdout).expect("JSON"),
+    )
+}
+
+fn row(name: &str, version: &str, commit: &str) -> serde_json::Value {
+    serde_json::json!({ "name": name, "version": version, "commit": commit })
+}
+
+/// Two packages whose versions different commits set, neither published, are
+/// one plan at HEAD: the commit `A` set `core` and the commit `C` set `app`
+/// both release from `C`.
+#[tokio::test]
+async fn packages_bumped_at_different_commits_are_planned_at_head() {
+    let root = TempDir::new().expect("tempdir");
+    common::write_config(
+        root.path(),
+        indoc! {r#"
+            packages:
+              - name: core
+                path: core/Cargo.toml
+                publisher: none
+              - name: app
+                path: app/Cargo.toml
+                publisher: none
+            tags:
+              template: "{name}@{version}"
+        "#},
+    );
+    for (package, version) in [("core", "0.3.0"), ("app", "0.2.0")] {
+        fs::create_dir_all(root.path().join(package)).expect("dir");
+        fs::write(
+            root.path().join(package).join("Cargo.toml"),
+            manifest(package, version),
+        )
+        .expect("manifest");
+    }
+    common::init(root.path());
+    common::commit_all(root.path(), "chore: start");
+    fs::write(
+        root.path().join("core/Cargo.toml"),
+        manifest("core", "0.3.1"),
+    )
+    .expect("manifest");
+    common::commit_all(root.path(), "chore(release): core 0.3.1");
+    fs::write(root.path().join("app/Cargo.toml"), manifest("app", "0.2.1")).expect("manifest");
+    let head = common::commit_all(root.path(), "chore(release): app 0.2.1");
+    on_github(root.path());
+    let server = github_without_releases(&[]).await;
+    let (written, report) = plan_at_head(root.path(), &server);
+    assert!(
+        written.contains(&format!(r#"commits=["{head}"]"#)),
+        "{written}"
+    );
+    assert!(written.contains("pending=true"), "{written}");
+    assert_eq!(
+        report["unreleased"],
+        serde_json::json!([row("core", "0.3.1", &head), row("app", "0.2.1", &head)])
+    );
+}
+
+/// A version HEAD does not hold stays unreleased.
+/// The commit `A` set `core` to 0.3.1, and the commit `C` set it to 0.4.0.
+/// The plan holds 0.4.0 only, and GitHub is never asked about 0.3.1.
+#[tokio::test]
+async fn a_version_head_no_longer_holds_is_not_planned() {
+    let root = TempDir::new().expect("tempdir");
+    common::write_config(
+        root.path(),
+        indoc! {r#"
+            packages:
+              - name: core
+                path: Cargo.toml
+                publisher: none
+            tags:
+              template: "{name}@{version}"
+        "#},
+    );
+    fs::write(root.path().join("Cargo.toml"), manifest("core", "0.3.0")).expect("manifest");
+    common::init(root.path());
+    common::commit_all(root.path(), "chore: start");
+    fs::write(root.path().join("Cargo.toml"), manifest("core", "0.3.1")).expect("manifest");
+    common::commit_all(root.path(), "chore(release): core 0.3.1");
+    fs::write(root.path().join("Cargo.toml"), manifest("core", "0.4.0")).expect("manifest");
+    let head = common::commit_all(root.path(), "chore(release): core 0.4.0");
+    on_github(root.path());
+    let server = github_without_releases(&["core@0.3.1"]).await;
+    let (written, report) = plan_at_head(root.path(), &server);
+    assert!(
+        written.contains(&format!(r#"commits=["{head}"]"#)),
+        "{written}"
+    );
+    assert_eq!(
+        report["unreleased"],
+        serde_json::json!([row("core", "0.4.0", &head)])
+    );
+}
+
+/// HEAD one commit past the commit that set the version, with the version
+/// unpublished: the plan holds the version at HEAD.
+#[tokio::test]
+async fn head_past_the_version_commit_plans_the_version_at_head() {
+    let root = TempDir::new().expect("tempdir");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publisher: none
+        "},
+    );
+    fs::write(root.path().join("Cargo.toml"), manifest("demo", "0.4.5")).expect("manifest");
+    common::init(root.path());
+    common::commit_all(root.path(), "chore: start");
+    fs::write(root.path().join("Cargo.toml"), manifest("demo", "0.4.6")).expect("manifest");
+    common::commit_all(root.path(), "chore(release): demo 0.4.6");
+    fs::write(root.path().join("README"), "later\n").expect("readme");
+    let head = common::commit_all(root.path(), "docs: later");
+    on_github(root.path());
+    let server = github_without_releases(&[]).await;
+    let (written, report) = plan_at_head(root.path(), &server);
+    assert!(
+        written.contains(&format!(r#"commits=["{head}"]"#)),
+        "{written}"
+    );
+    assert!(written.contains("pending=true"), "{written}");
+    assert_eq!(
+        report["unreleased"],
+        serde_json::json!([row("demo", "0.4.6", &head)])
     );
 }
