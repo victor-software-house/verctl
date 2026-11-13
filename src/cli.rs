@@ -118,6 +118,16 @@ pub struct ReleaseArgs {
     /// registry `query` run with it.
     #[arg(long, default_value = "CARGO_REGISTRY_TOKEN", value_parser = variable_name)]
     pub registry_token_env: String,
+    /// The crates.io API root that `release` reads owners and trusted
+    /// publishers from. Point it at crates.io's staging instance,
+    /// `https://staging.crates.io/api/v1`, to prove a staging release.
+    #[arg(long, value_name = "URL", default_value = crate::registry::CRATES_IO_API)]
+    pub crates_io_api: String,
+    /// The crates.io sparse index root that `release` reads to learn whether a
+    /// crate version is already published. Point it at crates.io's staging
+    /// index, `https://index.staging.crates.io`, for a staging release.
+    #[arg(long, value_name = "URL", default_value = crate::registry::CRATES_IO_INDEX)]
+    pub crates_io_index: String,
     /// `release asset <target>`. Without it, `release` publishes.
     #[command(subcommand)]
     pub step: Option<ReleaseStep>,
@@ -272,6 +282,11 @@ pub struct StatusArgs {
     /// writes only `has_assets`, `tag`, and `matrix`, and needs no token.
     #[arg(long, value_hint = clap::ValueHint::FilePath)]
     pub github_output: Option<PathBuf>,
+    /// The crates.io sparse index root that `status` reads to learn whether a
+    /// crate version is already published. Point it at crates.io's staging
+    /// index, `https://index.staging.crates.io`, for a staging release.
+    #[arg(long, value_name = "URL", default_value = crate::registry::CRATES_IO_INDEX)]
+    pub crates_io_index: String,
 }
 
 /// Arguments of `check`.
@@ -291,6 +306,11 @@ pub struct CheckArgs {
     /// Run every check. Any check named beside it runs once, with the rest.
     #[arg(short = 'a', long)]
     pub all: bool,
+    /// The crates.io API root that `registry` and `trust` reads owners and
+    /// trusted publishers from. Point it at crates.io's staging instance,
+    /// `https://staging.crates.io/api/v1`, to prove a staging release.
+    #[arg(long, value_name = "URL", default_value = crate::registry::CRATES_IO_API)]
+    pub crates_io_api: String,
 }
 
 impl CheckArgs {
@@ -330,7 +350,7 @@ pub enum Check {
     /// trusted publishing. Needs the network and no token.
     Registry,
     /// Each crates.io crate has a trusted publisher naming this repository and
-    /// `release_workflow`. Needs an owner's token in `VERCTL_REGISTRY_TOKEN`.
+    /// `release_workflow`. Needs an owner's token in `VERCTL_OWNER_TOKEN`.
     Trust,
 }
 
@@ -668,6 +688,8 @@ mod tests {
             ),
             ("config", "VERCTL_CONFIG"),
             ("registry_token_env", "VERCTL_REGISTRY_TOKEN_ENV"),
+            ("crates_io_api", "VERCTL_CRATES_IO_API"),
+            ("crates_io_index", "VERCTL_CRATES_IO_INDEX"),
         ] {
             let arg = release
                 .get_arguments()

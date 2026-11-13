@@ -1,4 +1,8 @@
 //! `publish --dry-run` prints the stock plan and writes nothing.
+//!
+//! Each `dry_run_*` fixture sets `release_checks: []`, because it runs in a
+//! directory with no git repository and no network, where the release proof
+//! a dry run runs could not resolve the default branch or reach crates.io.
 
 mod common;
 
@@ -27,6 +31,7 @@ fn dry_run_lists_one_cargo_crate() {
     common::write_config(
         root.path(),
         indoc! {"
+            release_checks: []
             packages:
               - name: demo
                 path: Cargo.toml
@@ -62,6 +67,7 @@ fn dry_run_lists_workspace_members_in_publish_order() {
     common::write_config(
         root.path(),
         indoc! {"
+            release_checks: []
             packages:
               - name: demo
                 path: Cargo.toml
@@ -139,6 +145,7 @@ fn dry_run_lists_a_release_only_package() {
     common::write_config(
         root.path(),
         indoc! {"
+            release_checks: []
             packages:
               - name: demo
                 path: Cargo.toml
@@ -175,6 +182,7 @@ fn dry_run_lists_a_crate_that_skips_the_verify_build() {
     common::write_config(
         root.path(),
         indoc! {"
+            release_checks: []
             packages:
               - name: demo
                 path: Cargo.toml
@@ -212,6 +220,7 @@ fn dry_run_releases_a_private_crate_on_github_only() {
     common::write_config(
         root.path(),
         indoc! {"
+            release_checks: []
             packages:
               - name: demo
                 path: Cargo.toml
@@ -246,6 +255,7 @@ fn dry_run_lists_many_packages() {
     common::write_config(
         root.path(),
         indoc! {r#"
+            release_checks: []
             packages:
               - name: demo
                 path: Cargo.toml
@@ -296,6 +306,7 @@ fn dry_run_leaves_out_a_package_at_0_0_0() {
     common::write_config(
         root.path(),
         indoc! {"
+            release_checks: []
             packages:
               - name: demo
                 path: Cargo.toml
@@ -343,6 +354,7 @@ fn dry_run_of_a_package_at_0_0_0_has_nothing_to_release() {
     common::write_config(
         root.path(),
         indoc! {"
+            release_checks: []
             packages:
               - name: demo
                 path: Cargo.toml
@@ -370,6 +382,7 @@ fn dry_run_of_a_missing_version_file_has_nothing_to_release() {
     common::write_config(
         root.path(),
         indoc! {"
+            release_checks: []
             packages:
               - name: templates
                 path: VERSION
@@ -387,6 +400,7 @@ fn dry_run_names_the_package_whose_version_it_cannot_read() {
     common::write_config(
         root.path(),
         indoc! {"
+            release_checks: []
             packages:
               - name: templates
                 path: VERSION
@@ -417,6 +431,7 @@ fn dry_run_refuses_differing_versions_without_name() {
     common::write_config(
         root.path(),
         indoc! {r#"
+            release_checks: []
             packages:
               - name: demo
                 path: Cargo.toml

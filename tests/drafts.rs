@@ -1090,3 +1090,219 @@ async fn a_mutable_published_release_takes_the_tarball_it_lacks() {
     assert!(!sent(&seen, "PATCH", "/"), "{seen:?}");
     assert!(!sent(&seen, "DELETE", "/"), "{seen:?}");
 }
+
+/// A stock cargo crate `demo` at `0.4.0`, whose upload check reads the
+/// crates.io index, with its changelog section, and `.ctl/ver.yaml` holding
+/// `top` before its packages. Committed as the tip of `main`; returns HEAD.
+fn proof_crate(root: &Path, top: &str) -> String {
+    common::write_config(
+        root,
+        &formatdoc! {"
+            {top}packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    fs::write(root.join("Cargo.toml"), manifest("0.4.0")).unwrap();
+    fs::write(
+        root.join("CHANGELOG.md"),
+        indoc! {"
+            # Changelog
+
+            ## demo 0.4.0
+
+            - First.
+        "},
+    )
+    .unwrap();
+    common::on_default_branch(root);
+    common::git(root, &["rev-parse", "HEAD"])
+}
+
+/// A crates.io whose index lists `demo` 0.4.0, so no upload runs, and whose
+/// API lists `owners` as the crate's user owners and a token upload as its
+/// newest version. Returns the index and the API, two servers, so a test can
+/// tell which one a request reached.
+async fn crates_io(owners: &[&str]) -> (MockServer, MockServer) {
+    let index = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/de/mo/demo"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string(
+                serde_json::json!({ "name": "demo", "vers": "0.4.0" }).to_string(),
+            ),
+        )
+        .mount(&index)
+        .await;
+    let api = MockServer::start().await;
+    let users: Vec<serde_json::Value> = owners
+        .iter()
+        .enumerate()
+        .map(|(id, login)| {
+            serde_json::json!({
+                "id": id,
+                "login": login,
+                "kind": "user",
+                "url": format!("https://github.com/{login}"),
+                "name": null,
+            })
+        })
+        .collect();
+    Mock::given(method("GET"))
+        .and(path("/crates/demo/owners"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "users": users })),
+        )
+        .mount(&api)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/crates/demo/versions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "versions": [{ "num": "0.4.0", "trustpub_data": null }],
+            "meta": { "total": 1, "next_page": null },
+        })))
+        .mount(&api)
+        .await;
+    (index, api)
+}
+
+/// `release` with `args` against `github`, reading crates.io from `index`
+/// and `api` through `--crates-io-index` and `--crates-io-api`. The report is
+/// laid out wide, so no message wraps inside a word.
+fn release_against(
+    root: &Path,
+    github: &MockServer,
+    (index, api): &(MockServer, MockServer),
+    args: &[&str],
+) -> Output {
+    common::verctl()
+        .current_dir(root)
+        .env("GITHUB_REPOSITORY", "acme/demo")
+        .env("GITHUB_TOKEN", "test")
+        .env("GITHUB_API_URL", github.uri())
+        .env("COLUMNS", "400")
+        .args(["release", "--color", "never"])
+        .arg("--crates-io-index")
+        .arg(index.uri())
+        .arg("--crates-io-api")
+        .arg(api.uri())
+        .args(args)
+        .output()
+        .unwrap()
+}
+
+/// stdout and stderr of `output`, with every run of whitespace one space, so
+/// a message the terminal wraps still reads as one line.
+fn printed(output: &Output) -> String {
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+    .split_whitespace()
+    .collect::<Vec<_>>()
+    .join(" ")
+}
+
+/// `demo` lost owner `any-victor` after the merge: the `registry` check of
+/// the release proof fails, and the run stops naming the crate and the login
+/// before the draft. GitHub takes no write and no upload runs.
+#[tokio::test]
+async fn a_missing_owner_stops_the_release_before_the_draft() {
+    let root = TempDir::new().unwrap();
+    let head = proof_crate(root.path(), "owners: [any-victor]\n");
+    let github = MockServer::start().await;
+    new_release(&github, &head, &[]).await;
+    let registry = crates_io(&["alice"]).await;
+    let output = release_against(root.path(), &github, &registry, &[]);
+    assert!(!output.status.success(), "{output:?}");
+    let said = printed(&output);
+    assert!(
+        said.contains("the release proof failed, and nothing was published"),
+        "{said}"
+    );
+    assert!(
+        said.contains("demo: lacks owner any-victor on crates.io, which lists alice"),
+        "{said}"
+    );
+    let seen = requests(&github).await;
+    for write in ["POST", "PATCH", "DELETE"] {
+        assert!(!sent(&seen, write, "/"), "{write}: {seen:?}");
+    }
+    assert!(!sent(&seen, "GET", "/__upload/"), "{seen:?}");
+}
+
+/// With the default `release_checks` and no `VERCTL_OWNER_TOKEN`, the run
+/// proves `registry`, reports `trust` as skipped naming the variable, and
+/// goes on to release. No request reads the trusted publishers.
+#[tokio::test]
+async fn trust_is_skipped_without_the_owner_token() {
+    let root = TempDir::new().unwrap();
+    let head = proof_crate(root.path(), "owners: [any-victor]\n");
+    let github = MockServer::start().await;
+    new_release(&github, &head, &[]).await;
+    let registry = crates_io(&["any-victor"]).await;
+    let output = release_against(root.path(), &github, &registry, &[]);
+    assert!(output.status.success(), "{output:?}");
+    let said = printed(&output);
+    assert!(
+        said.contains("skipped trust, VERCTL_OWNER_TOKEN is unset"),
+        "{said}"
+    );
+    let asked = requests(&registry.1).await;
+    assert!(sent(&asked, "GET", "/crates/demo/owners"), "{asked:?}");
+    assert!(
+        !sent(&asked, "GET", "/trusted_publishing/github_configs"),
+        "{asked:?}"
+    );
+    let seen = requests(&github).await;
+    assert!(
+        sent(&seen, "PATCH", "/repos/acme/demo/releases/1"),
+        "{seen:?}"
+    );
+}
+
+/// `release_checks: []` turns the proof off: the run releases, and the
+/// crates.io API receives no request.
+#[tokio::test]
+async fn an_empty_release_checks_runs_no_proof() {
+    let root = TempDir::new().unwrap();
+    let head = proof_crate(
+        root.path(),
+        indoc! {"
+            owners: [any-victor]
+            release_checks: []
+        "},
+    );
+    let github = MockServer::start().await;
+    new_release(&github, &head, &[]).await;
+    let registry = crates_io(&["alice"]).await;
+    let output = release_against(root.path(), &github, &registry, &[]);
+    assert!(output.status.success(), "{output:?}");
+    let asked = requests(&registry.1).await;
+    assert!(asked.is_empty(), "{asked:?}");
+    let seen = requests(&github).await;
+    assert!(sent(&seen, "POST", "/repos/acme/demo/releases"), "{seen:?}");
+}
+
+/// `release --dry-run` with a missing owner prints the plan, fails the same
+/// `registry` check naming the crate, and writes nothing.
+#[tokio::test]
+async fn a_dry_run_runs_the_proof() {
+    let root = TempDir::new().unwrap();
+    proof_crate(root.path(), "owners: [any-victor]\n");
+    let github = MockServer::start().await;
+    let registry = crates_io(&["alice"]).await;
+    let output = release_against(root.path(), &github, &registry, &["--dry-run"]);
+    assert!(!output.status.success(), "{output:?}");
+    let said = printed(&output);
+    assert!(said.contains("release would create v0.4.0"), "{said}");
+    assert!(
+        said.contains("demo: lacks owner any-victor on crates.io, which lists alice"),
+        "{said}"
+    );
+    let seen = requests(&github).await;
+    for write in ["POST", "PATCH", "DELETE"] {
+        assert!(!sent(&seen, write, "/"), "{write}: {seen:?}");
+    }
+}

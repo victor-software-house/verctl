@@ -94,7 +94,8 @@ pub fn run_inherit_env(argv: &[String], env: &[(&str, &str)], timeout: Duration)
 const GITHUB_CREDENTIALS: [&str; 2] = ["GITHUB_TOKEN", "GH_TOKEN"];
 
 /// `argv[0]` with its arguments and `env`, without the variables a registry
-/// token arrives in ([`registry_token::SOURCES`]) or a GitHub credential
+/// token arrives in ([`registry_token::SOURCES`]), the owner's token
+/// ([`registry_token::OWNER`]), or a GitHub credential
 /// ([`GITHUB_CREDENTIALS`]), so no command verctl starts inherits one.
 ///
 /// A command that needs one gets it back through `env` under the variable it
@@ -107,6 +108,7 @@ fn command(argv: &[String], env: &[(&str, &str)]) -> duct::Expression {
     );
     registry_token::SOURCES
         .iter()
+        .chain(&[registry_token::OWNER])
         .chain(&GITHUB_CREDENTIALS)
         .fold(expression, |expression, variable| {
             expression.env_remove(variable)
@@ -550,8 +552,7 @@ mod tests {
     /// `inherited` is set outermost, as this process's environment is, and
     /// `given` is what verctl hands the child.
     fn seen_by_child(inherited: &[(&str, &str)], given: &[(&str, &str)]) -> String {
-        let script =
-            r#"printf '[%s][%s][%s]' "$GITHUB_TOKEN" "$GH_TOKEN" "$VERCTL_REGISTRY_TOKEN""#;
+        let script = r#"printf '[%s][%s][%s][%s]' "$GITHUB_TOKEN" "$GH_TOKEN" "$VERCTL_REGISTRY_TOKEN" "$VERCTL_OWNER_TOKEN""#;
         let mut expression = command(&argv(&["sh", "-c", script]), given);
         for (key, value) in inherited {
             expression = expression.env(key, value);
@@ -566,8 +567,9 @@ mod tests {
             ("GITHUB_TOKEN", "github"),
             ("GH_TOKEN", "gh"),
             ("VERCTL_REGISTRY_TOKEN", "registry"),
+            ("VERCTL_OWNER_TOKEN", "owner"),
         ];
-        assert_eq!(seen_by_child(&inherited, &[]), "[][][]");
+        assert_eq!(seen_by_child(&inherited, &[]), "[][][][]");
     }
 
     /// A publisher whose `--registry-token-env` names `GITHUB_TOKEN`, as a
@@ -578,7 +580,7 @@ mod tests {
         let inherited = [("GITHUB_TOKEN", "github"), ("GH_TOKEN", "gh")];
         assert_eq!(
             seen_by_child(&inherited, &[("GITHUB_TOKEN", "given")]),
-            "[given][][]"
+            "[given][][][]"
         );
     }
 }

@@ -65,6 +65,7 @@ A parse error under `--format json` is a JSON error even when the bad argument c
 | `patterns`, `pins`, `templates` | [Pins and templates](#pins-and-templates) |
 | `runners`, `ci` | [Runners and CI](#runners-and-ci) |
 | `owners`, `release_workflow` | [Registry and trust checks](#registry-and-trust-checks) |
+| `release_checks` | [The release proof](#the-release-proof) |
 
 ## Fragments
 
@@ -172,7 +173,7 @@ A crate only the checked commit adds passes while crates.io lacks it.
 Its notice names `verctl release bootstrap` as the step once it lands.  
 When crates.io holds that name, the owner proof applies to it as to any crate.
 
-`check trust` reads an owner's crates.io token with the `trusted-publishing` scope from `VERCTL_REGISTRY_TOKEN`, because crates.io serves trusted publisher entries to owners alone.  
+`check trust` reads an owner's crates.io token with the `trusted-publishing` scope from `VERCTL_OWNER_TOKEN`, because crates.io serves trusted publisher entries to owners alone.  
 It fails each crate with no entry naming this repository and the workflow file `release_workflow` names.  
 Without the token it fails, naming the variable, and sends no request.
 
@@ -184,6 +185,9 @@ An empty list or a login listed twice fails the load.
 crates.io matches an entry against the calling workflow that the OIDC token names.  
 A repository on verctl's reusable workflow therefore names its own caller file.  
 A value that is not a plain file name ending in `.yml` or `.yaml` fails the load.
+
+`--crates-io-api <URL>` (`VERCTL_CRATES_IO_API`) names the crates.io API both checks read, crates.io itself when omitted.  
+crates.io's staging instance, `https://staging.crates.io/api/v1`, is the other use.
 
 ### Authoring rules
 
@@ -467,6 +471,29 @@ verctl checks a release for an asset target only when `.ctl/ver.yaml` declares i
 A target added later never reopens a release.  
 `--skip-assets` (`VERCTL_SKIP_ASSETS`) leaves assets out.
 
+### The release proof
+
+Once the plan finds something to release, and before the draft, `release` runs each check `release_checks` names, as `check registry` and `check trust` run them.  
+Only registry state can change between the merge and the release: an owner removed, a crate taken, a trusted publisher deleted.
+
+A failed check stops the run, naming each failure, with no draft, upload, tag, or Release.  
+A complete release runs no proof.
+
+`release_checks` lists names from `registry` and `trust`, and is `[registry, trust]` when omitted.  
+`[]` turns the proof off.  
+Another name, or a name listed twice, fails the load.  
+`trust` runs only when `VERCTL_OWNER_TOKEN` holds an owner's token, and the report lists it as `skipped` otherwise.
+
+The proof replays no `version`, runs no `cargo publish --dry-run`, and builds no tarball.  
+The Version PR's `check versions`, CI's `cargo package`, and the release workflow's asset matrix prove those before the release.
+
+`release --dry-run` (`-n`) prints the plan, runs the same proof, and writes nothing.  
+A failed check fails it, with the plan and each failure in the report.
+
+`--crates-io-api <URL>` (`VERCTL_CRATES_IO_API`) names the crates.io API the proof reads.  
+`--crates-io-index <URL>` (`VERCTL_CRATES_IO_INDEX`) names the sparse index that `release` and `status` read to learn whether a version is published.  
+Both default to crates.io, and crates.io's staging instance (`https://staging.crates.io/api/v1` and `https://index.staging.crates.io`) is the other use.
+
 ### The release order
 
 `release` makes every step it can undo first.  
@@ -553,7 +580,7 @@ It fails when both are set.
 It runs each publisher, and the registry `query` that checks it, with the token under `--registry-token-env`.  
 That option (`VERCTL_REGISTRY_TOKEN_ENV`) defaults to `CARGO_REGISTRY_TOKEN`, and a value that is not a variable name is a usage error.
 
-No other command it starts sees either token variable.  
+No other command it starts sees either token variable, or the owner's token in `VERCTL_OWNER_TOKEN`.  
 No command it starts sees `GITHUB_TOKEN` or `GH_TOKEN`, so a publisher, a build script, and `assets.prepare` and `assets.build` run without the job's contents token.  
 A publisher that reads `GITHUB_TOKEN` gets the registry token there when `--registry-token-env` is `GITHUB_TOKEN`.  
 The publish step of `release.yml` sets the three from the `registry-token` secret, `crates-io-trusted-publishing`, and `registry-token-env`.

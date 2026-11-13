@@ -6,9 +6,13 @@
 //! expects. As evidence and not as proof, it reports how the newest version
 //! reached crates.io.
 //!
-//! `trust` needs an owner's token in `VERCTL_REGISTRY_TOKEN`, because crates.io
+//! `trust` needs an owner's token in `VERCTL_OWNER_TOKEN`, because crates.io
 //! serves trusted publisher entries to owners alone. It proves that an entry
 //! names the repository and the workflow file `release_workflow` names.
+//!
+//! `release` runs the checks `release_checks` names as its proof ([`prove`]),
+//! because registry state is all that can change between the merge and the
+//! release.
 //!
 //! Both apply the existence proof to the crates the default branch's tip
 //! holds. A crate that only the checked commit adds cannot be on crates.io
@@ -21,10 +25,10 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 use toml_edit::{DocumentMut, Item};
 
-use crate::config::Config;
+use crate::config::{Config, ReleaseCheck};
 use crate::github::{self, Repo};
 use crate::registry::{self, GithubConfig, RegistryCheck, TrustedPublishers, TrustedUpload};
-use crate::registry_token::SECRET;
+use crate::registry_token::OWNER;
 use crate::{git, publish, publisher};
 
 /// A crate the repository uploads to crates.io.
@@ -181,7 +185,7 @@ pub fn prove_registry(crates: &[Crate], api: &str, repository: &Repo) -> Result<
 /// `check trust`: each crate of `config` against the trusted publisher
 /// entries the crates.io API at `api` serves to `token`, an owner's token.
 /// Without a token it sends no request and reads no branch, and the report
-/// fails naming `VERCTL_REGISTRY_TOKEN`.
+/// fails naming `VERCTL_OWNER_TOKEN`.
 ///
 /// # Errors
 ///
@@ -189,7 +193,7 @@ pub fn prove_registry(crates: &[Crate], api: &str, repository: &Repo) -> Result<
 /// [`prove_trust`].
 pub fn trust(config: &Config, root: &Path, api: &str, token: Option<&str>) -> Result<TrustReport> {
     let Some(token) = token else {
-        return Ok(TrustReport::Unset { variable: SECRET });
+        return Ok(TrustReport::Unset { variable: OWNER });
     };
     let (crates, repository) = crates_from_env(config, root)?;
     let Some(repository) = repository else {
@@ -200,6 +204,162 @@ pub fn trust(config: &Config, root: &Path, api: &str, token: Option<&str>) -> Re
         });
     };
     prove_trust(&crates, api, token, &repository, &config.release_workflow)
+}
+
+/// The release proof: each of `checks` against the crates.io API at `api`,
+/// in the order [`ReleaseCheck::ALL`] declares them.
+///
+/// `registry` runs as `check registry` does. `trust` runs as `check trust`
+/// does when `owner_token` holds an owner's token, and is skipped otherwise,
+/// because a release under trusted publishing holds no such token. Both read
+/// the crates and the default branch once. With nothing to run, it reads
+/// nothing.
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`registry()`] and [`trust`].
+pub fn prove(
+    config: &Config,
+    root: &Path,
+    api: &str,
+    checks: &[ReleaseCheck],
+    owner_token: Option<&str>,
+) -> Result<Proof> {
+    let listed = |check| checks.contains(&check);
+    let token = owner_token.filter(|_| listed(ReleaseCheck::Trust));
+    let trust_skipped = listed(ReleaseCheck::Trust) && token.is_none();
+    if !listed(ReleaseCheck::Registry) && token.is_none() {
+        return Ok(Proof {
+            registry: None,
+            trust: None,
+            trust_skipped,
+        });
+    }
+    let (crates, repository) = crates_from_env(config, root)?;
+    let registry = match (&repository, listed(ReleaseCheck::Registry)) {
+        (Some(repository), true) => Some(prove_registry(&crates, api, repository)?),
+        (None, true) => Some(RegistryReport { crates: Vec::new() }),
+        (_, false) => None,
+    };
+    let trust = match (&repository, token) {
+        (Some(repository), Some(token)) => Some(prove_trust(
+            &crates,
+            api,
+            token,
+            repository,
+            &config.release_workflow,
+        )?),
+        (None, Some(_)) => Some(TrustReport::Set {
+            repository: None,
+            workflow: config.release_workflow.clone(),
+            crates: Vec::new(),
+        }),
+        (_, None) => None,
+    };
+    Ok(Proof {
+        registry,
+        trust,
+        trust_skipped,
+    })
+}
+
+/// What the release proof found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Proof {
+    /// The `registry` report, or `None` when `release_checks` leaves it out.
+    pub registry: Option<RegistryReport>,
+    /// The `trust` report, or `None` when it did not run.
+    pub trust: Option<TrustReport>,
+    /// Whether `release_checks` names `trust` and no owner's token was set,
+    /// so it did not run.
+    pub trust_skipped: bool,
+}
+
+impl Proof {
+    /// One message per failed proof of either check.
+    #[must_use]
+    pub fn failures(&self) -> Vec<String> {
+        self.rows()
+            .into_iter()
+            .filter_map(|row| match row {
+                ProofRow::Failed { message, .. } => Some(message),
+                ProofRow::Notice { .. } | ProofRow::Skipped { .. } => None,
+            })
+            .collect()
+    }
+
+    /// Every row beyond a pass, check by check: each failure, then each
+    /// notice, then `trust` when it was skipped.
+    #[must_use]
+    pub fn rows(&self) -> Vec<ProofRow> {
+        let found = |check: ReleaseCheck, failures: Vec<String>, notices: Vec<String>| {
+            failures
+                .into_iter()
+                .map(move |message| ProofRow::Failed { check, message })
+                .chain(
+                    notices
+                        .into_iter()
+                        .map(move |message| ProofRow::Notice { check, message }),
+                )
+        };
+        let mut rows = Vec::new();
+        if let Some(report) = &self.registry {
+            rows.extend(found(
+                ReleaseCheck::Registry,
+                report.failures(),
+                report.notices(),
+            ));
+        }
+        if let Some(report) = &self.trust {
+            rows.extend(found(
+                ReleaseCheck::Trust,
+                report.failures(),
+                report.notices(),
+            ));
+        }
+        if self.trust_skipped {
+            rows.push(ProofRow::Skipped {
+                check: ReleaseCheck::Trust,
+                variable: OWNER,
+            });
+        }
+        rows
+    }
+}
+
+/// One row of the release proof beyond a pass, as the release report shows
+/// it.
+///
+/// Not `#[non_exhaustive]`: the binary shows every row, so a new one fails
+/// its build until it is shown.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "row", rename_all = "kebab-case")]
+pub enum ProofRow {
+    /// A proof that failed. A dry run reports it beside the plan; `release`
+    /// stops before the draft instead.
+    Failed {
+        /// The check whose proof failed.
+        check: ReleaseCheck,
+        /// What failed, naming the crate and what to change.
+        message: String,
+    },
+    /// A proof that passed without running, such as a crate that needs its
+    /// bootstrap.
+    Notice {
+        /// The check that passed it.
+        check: ReleaseCheck,
+        /// What passed unproven.
+        message: String,
+    },
+    /// A check `release_checks` names that did not run, because `variable`
+    /// holds no owner's token.
+    Skipped {
+        /// The check that did not run.
+        check: ReleaseCheck,
+        /// The variable to set for it to run.
+        variable: &'static str,
+    },
 }
 
 /// The `trust` proof of each of `crates`: an entry must name `repository`

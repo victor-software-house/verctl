@@ -127,7 +127,7 @@ It also fails when it changes whether a package publishes without a fragment tha
 `check registry` needs no token: each crates.io crate the default branch holds exists and lists every login `owners` names.  
 It reports the newest version's trusted publishing as evidence.  
 A crate only the pull request adds passes with a notice to run `verctl release bootstrap` once it lands.  
-`check trust` needs an owner's token in `VERCTL_REGISTRY_TOKEN`.  
+`check trust` needs an owner's token in `VERCTL_OWNER_TOKEN`.  
 It proves that a trusted publisher entry names the repository and `release_workflow` (`release.yml` when omitted).
 
 ## Release
@@ -157,6 +157,13 @@ The `.github/workflows/` tree at `GITHUB_SHA`, else HEAD, equals the one at the 
 `--allow-off-default-branch` and `--allow-workflow-change` go past one, and the report lists it under `allowed`.  
 Their variables are `VERCTL_ALLOW_OFF_DEFAULT_BRANCH` and `VERCTL_ALLOW_WORKFLOW_CHANGE`, and the `release.yml` inputs are `allow-off-default-branch` and `allow-workflow-change`.  
 A check that cannot run refuses anyway.
+
+Once something is left to release, and before the draft, `release` runs the checks `release_checks` names: `[registry, trust]` when omitted, `[]` for none.  
+`trust` runs only with `VERCTL_OWNER_TOKEN`, and is reported as `skipped` otherwise.  
+A failed check stops the run with nothing published.
+
+`release --dry-run` (`-n`) prints the plan and runs the same checks.  
+`--crates-io-api` (`VERCTL_CRATES_IO_API`) and `--crates-io-index` (`VERCTL_CRATES_IO_INDEX`) point the run at another crates.io, such as staging.
 
 `verctl release` fetches the default branch (that one ref, with history) only when `origin/<default>` is missing.  
 It rewrites `origin/HEAD` only from `VERCTL_DEFAULT_BRANCH`.  

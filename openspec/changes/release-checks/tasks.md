@@ -18,8 +18,8 @@
 
 ## 3. Release proof
 
-- [ ] 3.1 `release` runs the checks `release_checks` names before its first write, `trust` only with `VERCTL_OWNER_TOKEN`; `release --dry-run` prints the plan and runs the same checks. Proof: a CI test where a missing owner stops the run with no draft and no upload, and one where `trust` is skipped without the token.
-- [ ] 3.2 The `release_checks` key, `[registry, trust]` when omitted, and `check trust` reading `VERCTL_OWNER_TOKEN`. Proof: CI tests of `Config::parse` for the default, `[]`, and a refused name, and the existing trust tests on the new variable.
+- [x] 3.1 `release` runs the checks `release_checks` names before its first write, `trust` only with `VERCTL_OWNER_TOKEN`; `release --dry-run` prints the plan and runs the same checks. Proof: a CI test where a missing owner stops the run with no draft and no upload, and one where `trust` is skipped without the token.
+- [x] 3.2 The `release_checks` key, `[registry, trust]` when omitted, and `check trust` reading `VERCTL_OWNER_TOKEN`. Proof: CI tests of `Config::parse` for the default, `[]`, and a refused name, and the existing trust tests on the new variable.
 - [ ] 3.3 Streaming progress and diagnostics are the queue row [VER-138][queue], outside this change. Proof: `mise run q show VER-138` lists it.
 
 ## 4. Freeze and tiers

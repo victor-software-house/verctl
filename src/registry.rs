@@ -12,7 +12,7 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use std::{env, fs, thread};
+use std::{env, fmt, fs, thread};
 
 use anyhow::{Context, Result, bail, ensure};
 use reqwest::StatusCode;
@@ -33,6 +33,45 @@ pub const CRATES_IO_INDEX: &str = "https://index.crates.io";
 /// The root URL of the crates.io API, which [`crates_io_user_owners`],
 /// [`crates_io_newest_trust`], and [`crates_io_github_configs`] read.
 pub const CRATES_IO_API: &str = "https://crates.io/api/v1";
+
+/// The crates.io a run reads, and the owner's token its `trust` proof sends
+/// there.
+///
+/// `release --crates-io-index` and `--crates-io-api` set the two addresses,
+/// so a run can read crates.io's staging instance, or a test a recorded one.
+///
+/// Its `Debug` output shows whether the token is set and hides it, so an
+/// error or a log line that prints it holds no secret.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct CratesIo<'a> {
+    /// The sparse index root, such as [`CRATES_IO_INDEX`], which the
+    /// completeness check and the check after each upload read.
+    pub index: &'a str,
+    /// The API root, such as [`CRATES_IO_API`], which the release proof reads.
+    pub api: &'a str,
+    /// An owner's token for the `trust` proof, from
+    /// [`crate::registry_token::OWNER`], or `None` to skip it.
+    pub owner_token: Option<&'a str>,
+}
+
+impl CratesIo<'static> {
+    /// crates.io itself, with no owner's token.
+    pub const PUBLIC: Self = Self {
+        index: CRATES_IO_INDEX,
+        api: CRATES_IO_API,
+        owner_token: None,
+    };
+}
+
+impl fmt::Debug for CratesIo<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CratesIo")
+            .field("index", &self.index)
+            .field("api", &self.api)
+            .field("owner_token", &self.owner_token.map(|_| "<redacted>"))
+            .finish()
+    }
+}
 
 /// The registry name Cargo gives crates.io, in `publish`, `--registry`, and
 /// `registry.default`.
@@ -103,13 +142,16 @@ impl RegistryCheck {
     /// 5xx, and a `query` that timed out. A line that does not parse and a
     /// `query` that cannot be started stay errors.
     ///
+    /// A crate is read from the sparse index at `index`, such as
+    /// [`CRATES_IO_INDEX`].
+    ///
     /// A `query` runs with `env` set. `release` passes the registry token
     /// under the variable its publisher reads, because a query against a
     /// private registry needs the same credential. A check that publishes
     /// nothing passes none.
-    pub fn lists(&self, version: &str, env: &[(&str, &str)]) -> Result<bool> {
+    pub fn lists(&self, index: &str, version: &str, env: &[(&str, &str)]) -> Result<bool> {
         match self {
-            Self::CratesIo { name } => crates_io_lists(CRATES_IO_INDEX, name, version),
+            Self::CratesIo { name } => crates_io_lists(index, name, version),
             Self::Query { argv, dir } => query_lists(argv, dir, version, env),
             Self::Unchecked => Ok(false),
         }
@@ -807,7 +849,8 @@ fn is_exit_failure(error: &anyhow::Error) -> bool {
 
 /// Ask `check` until it lists `version`. Pause between asks, using each entry
 /// of `delays` in turn.
-/// A `query` runs with `env` set, as [`RegistryCheck::lists`] describes.
+/// A crate is read from `index`, and a `query` runs with `env` set, as
+/// [`RegistryCheck::lists`] describes.
 ///
 /// The publish already happened. A failed check (an index timeout, a 5xx)
 /// therefore counts as "not listed yet" for that round and does not fail the
@@ -819,6 +862,7 @@ fn is_exit_failure(error: &anyhow::Error) -> bool {
 /// last pause, carrying the last round's check error when it had one.
 pub fn wait_listed(
     check: &RegistryCheck,
+    index: &str,
     coord: &str,
     version: &str,
     env: &[(&str, &str)],
@@ -827,7 +871,7 @@ pub fn wait_listed(
     let mut last_error = None;
     for delay in delays {
         thread::sleep(*delay);
-        match check.lists(version, env) {
+        match check.lists(index, version, env) {
             Ok(true) => return Ok(()),
             Ok(false) => last_error = None,
             Err(error) => last_error = Some(error),
@@ -854,9 +898,9 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{
-        CargoEnv, CargoTarget, RegistryCheck, TrustedPublishers, TrustedUpload, cargo_target,
-        crates_io_baseline, crates_io_github_configs, crates_io_lists, crates_io_newest_trust,
-        crates_io_user_owners, index_path, wait_listed,
+        CRATES_IO_INDEX, CargoEnv, CargoTarget, RegistryCheck, TrustedPublishers, TrustedUpload,
+        cargo_target, crates_io_baseline, crates_io_github_configs, crates_io_lists,
+        crates_io_newest_trust, crates_io_user_owners, index_path, wait_listed,
     };
     use crate::lookup;
 
@@ -1414,6 +1458,7 @@ mod tests {
         };
         let error = wait_listed(
             &check,
+            CRATES_IO_INDEX,
             "demo",
             "1.0.0",
             &[],
@@ -1433,7 +1478,15 @@ mod tests {
             argv: vec!["false".to_owned()],
             dir: dir.path().to_path_buf(),
         };
-        let error = wait_listed(&check, "demo", "1.0.0", &[], &[Duration::ZERO]).unwrap_err();
+        let error = wait_listed(
+            &check,
+            CRATES_IO_INDEX,
+            "demo",
+            "1.0.0",
+            &[],
+            &[Duration::ZERO],
+        )
+        .unwrap_err();
         assert_eq!(
             error.to_string(),
             "demo: the publisher exited zero, but the registry does not list 1.0.0"

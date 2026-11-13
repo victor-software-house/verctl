@@ -9,7 +9,7 @@ use ctl_core::validate;
 use ctl_core::validate::{at_least_one, cannot_be_empty, inside_the_repo};
 use garde::Validate;
 use serde::de::{IgnoredAny, MapAccess, SeqAccess, Visitor};
-use serde::{Deserialize, de};
+use serde::{Deserialize, Serialize, de};
 
 use crate::driver::{CommandSpec, Driver, Format, Text};
 use crate::publisher::{PublisherSpec, RELEASE_ONLY};
@@ -834,6 +834,16 @@ pub struct Config {
     #[serde(default = "Config::default_release_workflow")]
     #[garde(custom(a_workflow_file_name))]
     pub release_workflow: String,
+    /// The checks `release` and `release --dry-run` run before the first
+    /// write, from `registry` and `trust`. Only registry state can change
+    /// between the merge and the release, so the checks that prove anything
+    /// else run before the merge and are not listed here. `trust` runs only
+    /// when `VERCTL_OWNER_TOKEN` holds an owner's token, and is reported as
+    /// skipped otherwise. When omitted, it is `[registry, trust]`; `[]` runs
+    /// no check.
+    #[serde(default = "ReleaseCheck::default_list")]
+    #[garde(custom(each_release_check_once))]
+    pub release_checks: Vec<ReleaseCheck>,
     /// Publish recipes by name, for a package's `publisher` to select.
     #[serde(default)]
     #[garde(custom(none_is_not_a_publisher))]
@@ -1104,6 +1114,71 @@ fn package_owners_are_logins(packages: &[PackageSpec], _: &Config) -> garde::Res
         }
     }
     Ok(())
+}
+
+/// A check `release` runs before its first write, as `release_checks` names
+/// it.
+///
+/// Not `#[non_exhaustive]`: the release proof matches every check, so a new
+/// one fails its build until it runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase", try_from = "String")]
+pub enum ReleaseCheck {
+    /// `check registry`: each crates.io crate exists and lists its owners.
+    Registry,
+    /// `check trust`: each crates.io crate has a trusted publisher naming
+    /// the repository and `release_workflow`.
+    Trust,
+}
+
+impl ReleaseCheck {
+    /// Every check, in the order the proof runs them.
+    pub const ALL: [Self; 2] = [Self::Registry, Self::Trust];
+
+    /// The name `.ctl/ver.yaml` and the report use.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Registry => "registry",
+            Self::Trust => "trust",
+        }
+    }
+
+    /// The `release_checks` a file that sets none gets: every check.
+    fn default_list() -> Vec<Self> {
+        Self::ALL.to_vec()
+    }
+}
+
+/// A name outside the set fails here, naming the field and the names it
+/// takes. serde's own wording names neither, because a parse problem carries
+/// no field path.
+impl TryFrom<String> for ReleaseCheck {
+    type Error = String;
+
+    fn try_from(name: String) -> Result<Self, Self::Error> {
+        Self::ALL
+            .into_iter()
+            .find(|check| check.name() == name)
+            .ok_or_else(|| {
+                format!(
+                    "release_checks lists {name:?}, which release does not run; use registry or trust, the checks that can change after the merge"
+                )
+            })
+    }
+}
+
+/// `release_checks` names each check once: a repeated name is a typo or a
+/// stale edit.
+fn each_release_check_once(checks: &[ReleaseCheck], _: &Config) -> garde::Result {
+    let mut seen = BTreeSet::new();
+    match checks.iter().find(|check| !seen.insert(check.name())) {
+        Some(check) => Err(garde::Error::new(format!(
+            "lists {:?} twice; remove one",
+            check.name()
+        ))),
+        None => Ok(()),
+    }
 }
 
 /// `release_workflow` is the file name crates.io compares, so a path or a
@@ -3130,6 +3205,52 @@ mod tests {
                 error.contains(&format!("release_workflow: must {problem}")),
                 "{name}: {error}"
             );
+        }
+    }
+
+    /// `release_checks` is `[registry, trust]` when omitted, takes `[]` and
+    /// any one name, and refuses a name listed twice or one release does not
+    /// run, naming the field.
+    #[test]
+    fn release_checks_name_the_checks_release_runs() {
+        assert_eq!(
+            load(PACKAGE).unwrap().release_checks,
+            [ReleaseCheck::Registry, ReleaseCheck::Trust]
+        );
+        for (list, expected) in [
+            ("[]", [].as_slice()),
+            ("[registry]", [ReleaseCheck::Registry].as_slice()),
+            (
+                "[trust, registry]",
+                [ReleaseCheck::Trust, ReleaseCheck::Registry].as_slice(),
+            ),
+        ] {
+            let config = load(&formatdoc! {"
+                {PACKAGE}release_checks: {list}
+            "})
+            .unwrap();
+            assert_eq!(config.release_checks, expected, "{list}");
+        }
+        let error = format!(
+            "{:#}",
+            load(&formatdoc! {"
+                {PACKAGE}release_checks: [registry, registry]
+            "})
+            .unwrap_err()
+        );
+        assert!(
+            error.contains(r#"release_checks: lists "registry" twice"#),
+            "{error}"
+        );
+        let error = format!(
+            "{:#}",
+            load(&formatdoc! {"
+                {PACKAGE}release_checks: [versions]
+            "})
+            .unwrap_err()
+        );
+        for name in ["release_checks", "versions", "registry", "trust"] {
+            assert!(error.contains(name), "{name}: {error}");
         }
     }
 }
