@@ -46,9 +46,6 @@ pub struct Pending {
     /// Published Releases that are immutable and lack declared assets. They
     /// count complete, and no asset job is planned for them.
     pub shortfalls: Vec<Shortfall>,
-    /// Commits whose releases are all done, so a run there has nothing left
-    /// to do.
-    pub finished: Vec<String>,
 }
 
 /// A published, immutable Release that lacks declared assets.
@@ -82,16 +79,6 @@ impl Pending {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.commits.is_empty()
-    }
-
-    /// Whether `sha` is a commit whose releases are all done.
-    #[must_use]
-    pub fn is_finished(&self, sha: &str) -> bool {
-        self.at(sha).is_none()
-            && self
-                .finished
-                .iter()
-                .any(|finished| finished.eq_ignore_ascii_case(sha))
     }
 
     /// The pending commit at `sha`, if any.
@@ -164,6 +151,10 @@ struct PackageState {
 }
 
 /// Find every incomplete release of a version HEAD's manifests hold.
+///
+/// The plan commit is HEAD for every package. A release tag only has to sit at
+/// HEAD or at a first-parent commit at the same version, so a finished
+/// release whose tag names an older commit stays complete.
 ///
 /// A package at `0.0.0` is left out before any lookup: it has never been
 /// released, and its first release is the `0.0.1` a Version PR prepares (see
@@ -245,23 +236,23 @@ pub fn pending(
                 slot.insert(state)
             }
         };
-        let commit = match &release.tag {
-            Some(named) if !named.eq_ignore_ascii_case(&head) => {
-                git::tagged_commit(root, &root.join(&spec.path), named, &|raw: &str| {
-                    version_in(&driver, raw)
-                })?
-                .with_context(|| {
-                    format!(
-                        "tag {tag} names {named}: not HEAD {head} and not a first-parent commit at \
+        if let Some(named) = &release.tag
+            && !named.eq_ignore_ascii_case(&head)
+        {
+            git::tagged_commit(root, &root.join(&spec.path), named, &|raw: &str| {
+                version_in(&driver, raw)
+            })?
+            .with_context(|| {
+                format!(
+                    "tag {tag} names {named}: not HEAD {head} and not a first-parent commit at \
                      {}@{}",
-                        entry.name, entry.version
-                    )
-                })?
-            }
-            Some(_) | None => VersionCommit {
-                sha: head.clone(),
-                depth: 0,
-            },
+                    entry.name, entry.version
+                )
+            })?;
+        }
+        let commit = VersionCommit {
+            sha: head.clone(),
+            depth: 0,
         };
         let listed = registry_lists(config, root, spec, entry, release, env)?;
         let head_targets: &[MatrixTarget] = if index == 0 { &targets } else { &[] };
@@ -488,13 +479,9 @@ struct AtCommit {
 fn group(states: Vec<PackageState>) -> Pending {
     let mut by_commit: BTreeMap<String, AtCommit> = BTreeMap::new();
     let mut shortfalls = Vec::new();
-    let mut finished = Vec::new();
     for mut state in states {
         shortfalls.extend(state.shortfall.take());
         if state.complete {
-            if !finished.contains(&state.commit.sha) {
-                finished.push(state.commit.sha);
-            }
             continue;
         }
         let slot = by_commit
@@ -516,7 +503,6 @@ fn group(states: Vec<PackageState>) -> Pending {
     }
     let mut pending = Pending {
         shortfalls,
-        finished,
         ..Pending::default()
     };
     for (sha, at) in by_commit {
@@ -824,35 +810,6 @@ mod tests {
         let jobs: Vec<&str> = pending.assets.iter().map(|job| job.id.as_str()).collect();
         assert_eq!(jobs, ["darwin-arm64"]);
         assert_eq!(pending.shortfalls, []);
-    }
-
-    /// HEAD is finished only when every release at it is done, so a run at
-    /// HEAD with a draft left still has the draft to publish.
-    #[test]
-    fn a_finished_commit_is_not_pending() {
-        let declared = [target("linux-x64")];
-        let done = state_of(
-            &entry("core", "0.3.1"),
-            at("aaa", 0),
-            true,
-            &finished(&["demo-linux-x64.tar.gz"]),
-            &declared,
-            "v0.3.1",
-        );
-        let pending = group(vec![done.clone()]);
-        assert!(pending.is_finished("aaa"));
-        assert!(!pending.is_finished("bbb"));
-        let waiting = state_of(
-            &entry("app", "0.2.1"),
-            at("aaa", 0),
-            true,
-            &draft(&["demo-linux-x64.tar.gz"]),
-            &declared,
-            "v0.2.1",
-        );
-        let pending = group(vec![done, waiting]);
-        assert!(!pending.is_finished("aaa"));
-        assert!(pending.at("aaa").is_some());
     }
 
     /// An immutable Release that holds every asset warns of nothing.

@@ -331,9 +331,7 @@ pub fn run_pending(
         return Ok(nothing_to_release(allowed, pending.shortfalls));
     }
     let head = git::head_sha(root)?;
-    let Some(here) = at_head(&pending, &head)? else {
-        return Ok(nothing_to_release(allowed, pending.shortfalls));
-    };
+    let here = at_head(&pending, &head)?;
     let selected: Vec<(&PackageSpec, &PublishEntry)> = config
         .packages
         .iter()
@@ -687,19 +685,11 @@ fn dry_run_plan(
     })
 }
 
-/// The pending commit at `head`, or `None` when `head` is a commit whose
-/// releases are all done, as when a `finalize` leg runs after another leg
-/// finished its Release.
+/// The pending commit at `head`.
 ///
 /// The plan holds HEAD only, so a plan that names another commit is a bug in
 /// the plan, and fails before anything is published.
-fn at_head<'a>(
-    pending: &'a pending::Pending,
-    head: &str,
-) -> Result<Option<&'a pending::PendingCommit>> {
-    if pending.is_finished(head) {
-        return Ok(None);
-    }
+fn at_head<'a>(pending: &'a pending::Pending, head: &str) -> Result<&'a pending::PendingCommit> {
     let Some(here) = pending.at(head) else {
         let named: Vec<&str> = pending
             .commits
@@ -711,7 +701,7 @@ fn at_head<'a>(
             named.join(", ")
         );
     };
-    Ok(Some(here))
+    Ok(here)
 }
 
 /// Run one upload under its registry check, and return `already` when the
@@ -988,19 +978,8 @@ mod tests {
                 commits: vec![commit("ccc", "app", "0.2.1")],
                 ..Pending::default()
             };
-            let here = at_head(&pending, "ccc").unwrap().unwrap();
+            let here = at_head(&pending, "ccc").unwrap();
             assert_eq!(here.packages[0].name, "app");
-        }
-
-        /// A finalize leg at a commit whose release another leg finished does
-        /// nothing.
-        #[test]
-        fn a_finished_commit_has_nothing_to_release() {
-            let pending = Pending {
-                finished: vec!["ddd".into()],
-                ..Pending::default()
-            };
-            assert!(at_head(&pending, "ddd").unwrap().is_none());
         }
 
         /// A plan that names a commit other than HEAD is a bug, and the error
