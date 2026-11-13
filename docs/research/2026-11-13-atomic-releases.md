@@ -105,19 +105,25 @@ The operator decided these on 2026-11-13.
    3. `check trust` proves the trusted publisher entry with an owner's token.
    4. `verctl release --dry-run` adds the package build, the replay of `version` and the asset builds, uploads nothing, and runs where the Version PR is proven (section 5).
    5. `check --versions` goes, with no hidden flag; `check versions` replaces it.
-8. **First publish: `verctl release --new`, then `verctl trust`.**
-   1. Run locally with the operator's crates.io token, `release --new` publishes the real code of each package the registry lacks, tags it, and runs `trust`.
-      The name follows the crates.io token scope `publish-new`, which a first publish needs.
-   2. `verctl trust` lists each crate's trusted publisher entries and adds the repository's entry only when it is missing, because crates.io accepts duplicates, up to 5 per crate ([create.rs][cio-trustpub-create]).
-      `trust --dry-run` shows what it would add, and `trust` reads the repository, workflow file and environment from the repository, so it takes no provider argument.
-   3. This follows npm, where the first publish is by hand and `npm trust` follows.
-   4. Nothing is published only to hold a name: crates.io and npm both forbid it (section 10).
+      The hidden renamed verbs `prepare`, `pin`, `publish` and `assets`, and the hidden `release --plan`, go too, reversing that part of the 2026-11-09 renames.
+   6. A person types a short form for each flag, such as `-a` for `--all` and `-n` for `--dry-run`; a flag only CI sets through `VERCTL_*` stays long-only.
+8. **First publish: `verctl release bootstrap`, then `verctl release trust`.**
+   1. Run locally with the operator's crates.io token, `release bootstrap [PACKAGE]...` publishes the real code of each package the registry lacks, tags each standalone one, and runs `release trust`.
+      It is a step under `release`, as `release asset <target>` is, and the name the state model of `derived-release-state` already plans, so no two names cover one step.
+   2. `verctl release trust` lists each crate's trusted publisher entries and adds the repository's entry only when it is missing, because crates.io accepts duplicates, up to 5 per crate ([create.rs][cio-trustpub-create]).
+      `release trust --dry-run` shows what it would add.
+      The step reads the repository, workflow file and environment from the repository, so it takes no provider argument.
+   3. `check trust` proves the entry and `release trust` adds it: `check` proves, and a `release` step acts.
+   4. This follows npm, where the first publish is by hand and `npm trust` follows.
+   5. Nothing is published only to hold a name: crates.io and npm both forbid it (section 10).
 9. **The first version is the one main holds.**
    A standalone package first publishes at `0.0.0`, where verctl already starts it, and `check` fails a never-published package at any other version.
    A member of a shared-version group, such as a crate whose manifest sets `version.workspace = true`, first publishes at the group's current version.
 10. **Tokens in CI are opt-in.**
     Trusted publishing stays the default.
-    A repository may opt in with the `publish-new` input and the `registry-token` secret, and `check registry` then counts a missing crate as one the run can create.
+    A repository may opt in with the boolean `bootstrap` input, beside `publish`, `assets` and `docs`, and the `registry-token` secret; `check registry` then counts a missing crate as one the run can create.
+11. **Every break ships in a 0.8.x patch.**
+    A `patch!` fragment carries it, and the CHANGELOG lists it under `### Breaking`, as 0.8.4 did.
 
 The decision on HEAD drops `refuse_skipped_versions` and the oldest-first plan of section 2.
 It also replaces the first draft of `VER-129`, about tools at old version commits: no run checks out an old commit, and `VER-129` now carries `release-from-head`.
@@ -204,7 +210,7 @@ crates.io limits each user, keyed by user id and action, not by token or crate (
 What follows for the design:
 
 1. A release by trusted publishing creates no crate, so it meets no rate limit.
-2. `release --new`, and a release with the `publish-new` opt-in, can meet one.
+2. `release bootstrap`, and a release with the `bootstrap` opt-in, can meet one.
    On a 429 each waits until `Retry-After`, then uploads again, so one run creates any number of crates.
 3. A release that still stops on an external failure, such as an outage, is a partial release.
    `status` and the job summary name it, and a rerun, by dispatch or by "Re-run failed jobs", skips every crate the index lists.
@@ -240,7 +246,7 @@ What follows for the design:
 
 1. **shrub, once it ships.**
    shrub's `main` already moved 24 commits past 0.7.0, which the freeze would have prevented.
-   The plan for it: run `verctl release --new` for `shrub-process` at 0.7.0, let the next Version PR consume the 3 pending fragments into a new version, and leave 0.7.0 of the other crates skipped.
+   The plan for it: run `verctl release bootstrap` for `shrub-process` at 0.7.0, let the next Version PR consume the 3 pending fragments into a new version, and leave 0.7.0 of the other crates skipped.
 
 `check:*` in `verify` is queued as templates `TPL-052`.
 One-command setup of a ctl CLI is ctl-core `CTC-058`, and the checks run from a GitHub App are `CTC-059`; verctl pilots both.

@@ -70,7 +70,7 @@ A rerun SHALL repeat every request whatever the state of the pull request.
 
 #### Scenario: A rerun repeats the proof
 
-- **WHEN** `verctl check registry` failed on `demo-extra`, the operator ran `verctl release --new` for it, and the CI job reruns with "Re-run failed jobs"
+- **WHEN** `verctl check registry` failed on `demo-extra`, the operator ran `verctl release bootstrap` for it, and the CI job reruns with "Re-run failed jobs"
 - **THEN** the rerun queries crates.io again and exits zero
 
 ### Requirement: The `trust` check proves the trusted publisher with an owner's token
