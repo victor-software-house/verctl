@@ -12,7 +12,7 @@ No spec changes until section 9 is answered.
 - [4. Decided](#4-decided)
 - [5. Releases that land whole](#5-releases-that-land-whole)
   - [5.1 Enforcement by plan](#51-enforcement-by-plan)
-  - [5.2 Commit hooks](#52-commit-hooks)
+  - [5.2 No commit hooks](#52-no-commit-hooks)
 - [6. Rate limits and resuming a partial release](#6-rate-limits-and-resuming-a-partial-release)
 - [7. What other release tools do](#7-what-other-release-tools-do)
 - [8. Checks on pull requests](#8-checks-on-pull-requests)
@@ -160,7 +160,7 @@ What it can enforce depends on the plan (section 10):
       The up-to-date rule makes each one run again after the Version PR lands, which enforces the freeze.
 3. **Tier 3, neither.**
    Private repositories on Free.
-   1. The operator runs `check --release` by dispatch, or merges from a clone where the pre-push hook runs it (section 5.2).
+   1. The operator runs `check --release` by dispatch before merging the Version PR (section 5.2).
    2. The freeze is not enforced; `status` and the job summary report the pending release.
 
 `verctl status` names the tier it finds, from the default branch's rules.
@@ -170,18 +170,12 @@ Publishing inside the queue would remove the freeze, but GitHub can still drop a
 A registry upload made in that group could not be undone ([pulp 089d712][pulp]).
 The freeze gives the same result, a bump and its release with nothing between them, without that window.
 
-### 5.2 Commit hooks
+### 5.2 No commit hooks
 
-A git hook runs only in the clone that pushes, and `--no-verify` skips it.
-A merge through GitHub's button or API runs no hook at all.
-So a hook enforces nothing in tiers 1 and 2; it only reports a failure sooner.
-
-1. **Hooks in lefthook.**
-   The pre-push hook runs `check --release` and the freeze for a push to the default branch, and nothing more for other branches.
-   In tier 3 that makes a merge from a clone, `git merge` of the Version PR then `git push`, the checked path.
-   A push to a feature branch stays offline and fast, as today.
-2. **No hooks.**
-   Tier 3 then rests on the operator dispatching `check --release` before merging the Version PR.
+The design adds no git hook (operator, 2026-11-13).
+A hook runs only in the clone that pushes, `--no-verify` skips it, and a merge through GitHub's button or API runs none.
+A repository may also use another hook manager, or none, and may never push to its default branch.
+So in tier 3 the operator dispatches `check --release` before merging the Version PR.
 
 ## 6. Rate limits and resuming a partial release
 
@@ -238,8 +232,7 @@ What follows for the design:
 
 ## 9. Open decisions
 
-1. **Commit hooks:** the pre-push hook of section 5.2, item 1, or no hook.
-2. **shrub, once it ships.**
+1. **shrub, once it ships.**
    shrub's `main` already moved 24 commits past 0.7.0, which the freeze would have prevented.
    The plan for it: run `verctl release --first` for `shrub-process` at 0.7.0, let the next Version PR consume the 3 pending fragments into a new version, and leave 0.7.0 of the other crates skipped.
 
