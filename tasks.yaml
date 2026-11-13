@@ -540,21 +540,52 @@ queue:
       - The operator decided the design on 2026-11-13; docs/research/2026-11-13-atomic-releases.md holds it.
 
   - id: VER-136
-    title: "First publish: release --new and trust for a crate the registry lacks"
-    scope: release, trust, release.yml
+    title: "First publish: release bootstrap and release trust for a crate the registry lacks"
+    scope: release, release.yml
     outcome: >-
       A crate crates.io lacks is published with the operator token at the version the
       default branch holds, and its trusted publisher is registered once.
     blocked_by:
       - VER-135
     acceptance:
-      - verctl release --new publishes each package the registry lacks and runs verctl trust.
-      - verctl trust adds the trusted publisher entry only when it is missing, and trust --dry-run sends no POST.
-      - The publish-new input lets CI publish a missing crate with the registry-token secret, and defaults to false.
-      - shrub-process is published through release --new.
+      - verctl release bootstrap publishes each package the registry lacks, or each named one, and runs verctl release trust.
+      - verctl release trust adds the trusted publisher entry only when it is missing, and release trust --dry-run sends no POST.
+      - The bootstrap input lets CI run release bootstrap with the registry-token secret, and defaults to false.
+      - shrub-process is published through release bootstrap.
     plan: openspec/changes/first-publish/proposal.md
     notes:
       - The operator decided the design on 2026-11-13; docs/research/2026-11-13-atomic-releases.md holds it.
+
+  - id: VER-137
+    title: Give every hand-typed verctl flag a short form
+    scope: cli
+    outcome: A person types every verctl flag they type by hand in a short form.
+    blocked_by: []
+    acceptance:
+      - Every long flag a person types by hand has a short form.
+      - No two short forms collide within one command.
+      - A flag only CI sets through VERCTL_* variables stays long-only.
+    notes:
+      - 'Decided 2026-11-13 (operator): short forms for hand-typed flags only.'
+      - Today only -d, -c, -n and -f exist; -a for check --all comes with release-checks.
+
+  - id: VER-138
+    title: Stream progress and diagnostics from release, check and docs
+    scope: cli, presentation
+    outcome: >-
+      A run of release, check or docs shows each step as it happens, and every
+      warning and error as a diagnostic.
+    blocked_by: []
+    acceptance:
+      - Progress goes to stderr as each step starts and ends, and the report stays on stdout in both --format pretty and --format json.
+      - 'With no flag, a run shows a live region when stderr is a terminal, one ::group:: per step on GitHub Actions with the failing step log outside any group, and plain start and end lines with times otherwise.'
+      - The --quiet flag keeps only failures.
+      - The --progress flag, live, plain or github (VERCTL_PROGRESS, long-only), overrides the detected mode.
+      - 'Each warning and error is a diagnostic with a code: a ▲ line, a GitHub ::warning or ::error annotation with file and line, at most 10 per level per step and then one that counts the rest, a diagnostics array in JSON, and a row in $GITHUB_STEP_SUMMARY.'
+      - version --pr emits the warning version-pr-body-cut when the Version PR body is cut at the GitHub limit.
+    notes:
+      - Blocked on ctl-core CTC-036, live regions and progress, which owns streams and the live region.
+      - 'Decided 2026-11-13 (operator): the mode follows the run, and a flag only overrides it.'
 
 horizon:
   - id: VER-038
@@ -1069,7 +1100,7 @@ horizon:
   - id: VER-131
     title: Release whole on npm and GitHub Packages
     scope: >-
-      check registry, check trust, release --dry-run, release --new, trust, the npm and bun publishers
+      check registry, check trust, release --dry-run, release bootstrap, release trust, the npm and bun publishers
     outcome: >-
       A spike states what each check, the first publish and trust do for npm and GitHub Packages, and which parts of the four crates.io changes, release-from-head to first-publish, carry over.
     kind: research
@@ -1094,9 +1125,9 @@ horizon:
 
   - id: VER-133
     title: Registry checks for a custom publisher and for registries verctl does not ship
-    scope: publisher query recipes, check registry, release --new
+    scope: publisher query recipes, check registry, release bootstrap
     outcome: >-
-      An evaluation states what a custom publisher must declare, beside its query, for check registry, check trust, release --new and trust, and which registries to support next.
+      An evaluation states what a custom publisher must declare, beside its query, for check registry, check trust, release bootstrap and release trust, and which registries to support next.
     kind: evaluation
     open: >-
       No repository has asked for a registry beyond crates.io, npm, GitHub Packages
