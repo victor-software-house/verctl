@@ -6,14 +6,14 @@ The pull request's CI verifies every compile, format, lint, and test task.
 
 - [ ] 1.1 The plan job writes `verctl-version` from its minimum check, and leaves it empty with `verctl-artifact`.
   Verify: `mise run lint:workflows` and `mise run lint:workflow-policy` pass in CI.
-- [ ] 1.2 The publish, asset, and docs jobs run `mise exec ${VERCTL_TOOL:+"$VERCTL_TOOL"} -- verctl <verb>`.
-  Verify: `rg 'mise run ver (release|docs)' .github/workflows/release.yml` finds nothing.
-- [ ] 1.3 The header comment states that every job runs the plan's verctl.
+- [ ] 1.2 The publish, asset, and docs jobs check out HEAD's mise files into `.verctl-head`, install the plan's verctl with `mise -C .verctl-head install --locked`, and run `mise exec -- "${VERCTL_BIN:-verctl}" <verb>`.
+  Verify: `rg 'MISE_LOCKED|MISE_LOCKFILE|PLAN_VERCTL|mise run ver (release|docs)' .github/workflows/release.yml` finds nothing.
+- [ ] 1.3 The header comment states that every job runs the plan's verctl, installed from HEAD's lock.
   Verify: reading the header.
 
 ## 2. Proof
 
-- [ ] 2.1 A caller releases a version commit that pins an older verctl than HEAD.
+- [ ] 2.1 A caller with `locked = true` and `[tool_config] locked = true` releases a version commit that pins an older verctl than HEAD.
   Verify: the caller's run link, recorded here.
 - [ ] 2.2 A `.changeset/` patch fragment.
   Verify: `verctl check` in CI passes on the pull request.

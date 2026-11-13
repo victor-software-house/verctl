@@ -105,6 +105,7 @@ queue:
     plan: openspec/changes/release-jobs-run-head-verctl/proposal.md
     notes:
       - '2026-11-11: a caller whose pending version commit pinned verctl 0.7.4 failed in publish with unrecognized subcommand release; the plan job had checked only HEAD.'
+      - "2026-11-13: the first install ran mise exec with MISE_LOCKED=false and MISE_LOCKFILE=false, which fails a consumer that sets locked = true in settings and tool_config (locked mode requires lockfile to be enabled). Each job now installs the plan's verctl with mise install --locked from a checkout of HEAD's mise files, and no lock is switched off."
 
   - id: VER-097
     title: Ship cargo and bun as built-ins, with bun-release in Rust

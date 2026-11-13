@@ -36,9 +36,11 @@ name: Release
 # from plan's outputs.
 #
 # publish, assets, and docs check out the version commit, but they run the
-# verctl plan checked at HEAD through `mise exec`, not the one that commit's
-# served task pins. A released commit cannot move its pin, and an older pin
-# has no release verb.
+# verctl plan checked at HEAD, not the one that commit's served task pins. A
+# released commit cannot move its pin, and an older pin has no release verb.
+# Each installs that version with `mise install --locked` from a second
+# checkout of HEAD's mise files, so the install comes from HEAD's lock and
+# no lock is switched off.
 
 on:
   workflow_call:
@@ -337,6 +339,37 @@ jobs:
         run: |
           chmod +x "${BUILD_DIR}/verctl"
           echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
+      - name: Check out HEAD's mise lock
+        # The version commit's mise.lock lacks the plan's verctl, which HEAD's
+        # lists. The files mise reads sit in a second checkout of the commit
+        # this run started from. actions/checkout takes no path outside the
+        # workspace, so it sits inside it, after the checkout above, whose
+        # clean would remove it.
+        if: inputs.verctl-artifact == '' && needs.plan.outputs.verctl-version != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: .verctl-head
+          ref: ${{ github.sha }}
+          sparse-checkout: |
+            /mise.toml
+            /mise.*.toml
+            /mise.lock
+            /mise.*.lock
+            /.miserc.toml
+          sparse-checkout-cone-mode: false
+      - name: Install the plan's verctl from HEAD's lock
+        if: inputs.verctl-artifact == '' && needs.plan.outputs.verctl-version != ''
+        env:
+          VERCTL_TOOL: github:victor-software-house/verctl@${{ needs.plan.outputs.verctl-version }}
+        # --locked installs only what HEAD's lock lists, and leaves the
+        # version commit's mise.lock alone. The exclude keeps the second
+        # checkout out of git's status, so a publisher's dirty check does not
+        # count it.
+        run: |
+          echo "/.verctl-head/" >> "$(git rev-parse --git-path info/exclude)"
+          mise -C .verctl-head install --locked "${VERCTL_TOOL}"
+          echo "VERCTL_BIN=$(mise -C .verctl-head which verctl --tool="${VERCTL_TOOL}")" >> "${GITHUB_ENV}"
       # crates.io matches the token's repository and the caller's workflow
       # file against the crate's trusted publishers, and the action's post
       # step revokes the token when the job ends.
@@ -360,17 +393,10 @@ jobs:
           VERCTL_REGISTRY_TOKEN: ${{ secrets.registry-token }}
           VERCTL_TRUSTED_PUBLISHING_TOKEN: ${{ steps.crates-io.outputs.token }}
           VERCTL_REGISTRY_TOKEN_ENV: ${{ inputs.registry-token-env }}
-          PLAN_VERCTL: ${{ needs.plan.outputs.verctl-version && format('github:victor-software-house/verctl@{0}', needs.plan.outputs.verctl-version) || '' }}
         # The plan's verctl, not the one this commit's served task pins, which
-        # may predate this workflow. Empty runs this run's build from PATH.
-        # The version commit's mise.lock pins its own verctl and lacks the plan's, so
-        # mise installs this one past the lockfile and writes none into the
-        # checkout. env -u drops both settings again, so every mise task verctl
-        # runs is held to the commit's lock.
-        run: >-
-          MISE_LOCKED=false MISE_LOCKFILE=false
-          mise exec ${PLAN_VERCTL:+"$PLAN_VERCTL"} --
-          env -u MISE_LOCKED -u MISE_LOCKFILE verctl release
+        # may predate this workflow. VERCTL_BIN is unset with verctl-artifact,
+        # and this run's build runs from PATH.
+        run: mise exec -- "${VERCTL_BIN:-verctl}" release
 
   assets:
     name: ${{ matrix.id }} at ${{ matrix.commit }}
@@ -438,6 +464,37 @@ jobs:
         run: |
           chmod +x "${BUILD_DIR}/verctl"
           echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
+      - name: Check out HEAD's mise lock
+        # The version commit's mise.lock lacks the plan's verctl, which HEAD's
+        # lists. The files mise reads sit in a second checkout of the commit
+        # this run started from. actions/checkout takes no path outside the
+        # workspace, so it sits inside it, after the checkout above, whose
+        # clean would remove it.
+        if: inputs.verctl-artifact == '' && needs.plan.outputs.verctl-version != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: .verctl-head
+          ref: ${{ github.sha }}
+          sparse-checkout: |
+            /mise.toml
+            /mise.*.toml
+            /mise.lock
+            /mise.*.lock
+            /.miserc.toml
+          sparse-checkout-cone-mode: false
+      - name: Install the plan's verctl from HEAD's lock
+        if: inputs.verctl-artifact == '' && needs.plan.outputs.verctl-version != ''
+        env:
+          VERCTL_TOOL: github:victor-software-house/verctl@${{ needs.plan.outputs.verctl-version }}
+        # --locked installs only what HEAD's lock lists, and leaves the
+        # version commit's mise.lock alone. The exclude keeps the second
+        # checkout out of git's status, so the build's dirty checks do not
+        # count it.
+        run: |
+          echo "/.verctl-head/" >> "$(git rev-parse --git-path info/exclude)"
+          mise -C .verctl-head install --locked "${VERCTL_TOOL}"
+          echo "VERCTL_BIN=$(mise -C .verctl-head which verctl --tool="${VERCTL_TOOL}")" >> "${GITHUB_ENV}"
       # Each asset job compiles its binary from the version commit, so mbx
       # keeps the compiled objects between releases on the same runner. The
       # objects payload with a private store is the shape a remote backend
@@ -453,16 +510,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           VERCTL_TARGET: ${{ matrix.id }}
           VERCTL_TAG: ${{ matrix.tag }}
-          PLAN_VERCTL: ${{ needs.plan.outputs.verctl-version && format('github:victor-software-house/verctl@{0}', needs.plan.outputs.verctl-version) || '' }}
         # The plan's verctl, as in publish.
-        # The version commit's mise.lock pins its own verctl and lacks the plan's, so
-        # mise installs this one past the lockfile and writes none into the
-        # checkout. env -u drops both settings again, so every mise task verctl
-        # runs is held to the commit's lock.
-        run: >-
-          MISE_LOCKED=false MISE_LOCKFILE=false
-          mise exec ${PLAN_VERCTL:+"$PLAN_VERCTL"} --
-          env -u MISE_LOCKED -u MISE_LOCKFILE verctl release asset
+        run: mise exec -- "${VERCTL_BIN:-verctl}" release asset
 
   docs:
     name: docs.rs at ${{ matrix.commit }}
@@ -523,19 +572,40 @@ jobs:
         run: |
           chmod +x "${BUILD_DIR}/verctl"
           echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
+      - name: Check out HEAD's mise lock
+        # The version commit's mise.lock lacks the plan's verctl, which HEAD's
+        # lists. The files mise reads sit in a second checkout of the commit
+        # this run started from. actions/checkout takes no path outside the
+        # workspace, so it sits inside it, after the checkout above, whose
+        # clean would remove it.
+        if: inputs.verctl-artifact == '' && needs.plan.outputs.verctl-version != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: .verctl-head
+          ref: ${{ github.sha }}
+          sparse-checkout: |
+            /mise.toml
+            /mise.*.toml
+            /mise.lock
+            /mise.*.lock
+            /.miserc.toml
+          sparse-checkout-cone-mode: false
+      - name: Install the plan's verctl from HEAD's lock
+        if: inputs.verctl-artifact == '' && needs.plan.outputs.verctl-version != ''
+        env:
+          VERCTL_TOOL: github:victor-software-house/verctl@${{ needs.plan.outputs.verctl-version }}
+        # --locked installs only what HEAD's lock lists, and leaves the
+        # version commit's mise.lock alone.
+        run: |
+          echo "/.verctl-head/" >> "$(git rev-parse --git-path info/exclude)"
+          mise -C .verctl-head install --locked "${VERCTL_TOOL}"
+          echo "VERCTL_BIN=$(mise -C .verctl-head which verctl --tool="${VERCTL_TOOL}")" >> "${GITHUB_ENV}"
       - name: Wait for docs.rs
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          PLAN_VERCTL: ${{ needs.plan.outputs.verctl-version && format('github:victor-software-house/verctl@{0}', needs.plan.outputs.verctl-version) || '' }}
         # The plan's verctl, as in publish.
-        # The version commit's mise.lock pins its own verctl and lacks the plan's, so
-        # mise installs this one past the lockfile and writes none into the
-        # checkout. env -u drops both settings again, so every mise task verctl
-        # runs is held to the commit's lock.
-        run: >-
-          MISE_LOCKED=false MISE_LOCKFILE=false
-          mise exec ${PLAN_VERCTL:+"$PLAN_VERCTL"} --
-          env -u MISE_LOCKED -u MISE_LOCKFILE verctl docs
+        run: mise exec -- "${VERCTL_BIN:-verctl}" docs
 
   propose:
     name: Open or update the Version PR
