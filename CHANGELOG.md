@@ -1,5 +1,10 @@
 # Changelog
 
+## verctl 0.8.6-rc.1
+
+- `verctl semver` runs `cargo semver-checks` once more past the publish-age cooldown when every crate the cooldown rejected has a crates.io owner that `CARGO_TRUSTED_OWNERS` lists.
+  A check blocked by any other crate fails as before, and its error names the rejected crates ([#367](https://github.com/victor-software-house/verctl/pull/367)).
+
 ## verctl 0.8.5
 
 ### Changed
