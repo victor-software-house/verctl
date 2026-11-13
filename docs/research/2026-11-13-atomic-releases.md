@@ -11,6 +11,8 @@ No spec changes until section 9 is answered.
 - [3. What the registries make impossible](#3-what-the-registries-make-impossible)
 - [4. Decided](#4-decided)
 - [5. Releases that land whole](#5-releases-that-land-whole)
+  - [5.1 Enforcement by plan](#51-enforcement-by-plan)
+  - [5.2 Commit hooks](#52-commit-hooks)
 - [6. Rate limits and resuming a partial release](#6-rate-limits-and-resuming-a-partial-release)
 - [7. What other release tools do](#7-what-other-release-tools-do)
 - [8. Checks on pull requests](#8-checks-on-pull-requests)
@@ -79,11 +81,10 @@ The operator decided these on 2026-11-13.
 
 1. **Check everything first, and fail closed.**
    Before any upload, the run proves:
-   1. every crate already exists on the registry, or the run holds a credential that may create it;
+   1. every crate already exists on the registry and lists the repository's workflow as a trusted publisher, or the run holds a token that may create it;
    2. the publishing identity owns every crate, through the crates.io owners API;
-   3. the new crates fit the rate limit, or the plan waits for it (section 5);
-   4. every package packages and builds, through `cargo publish --workspace --dry-run`;
-   5. every declared asset builds.
+   3. every package packages and builds, through `cargo publish --workspace --dry-run`;
+   4. every declared asset builds.
 2. **Order.**
    Build the assets and upload them to a draft Release, then publish to the registries in dependency order, then publish the tag and the Release last.
 3. **A partial release is its own state.**
@@ -97,8 +98,21 @@ The operator decided these on 2026-11-13.
    The release starts on the push that lands it, with no manual step.
 6. **A bump lands only with its release.**
    If a release cannot happen, nothing is bumped; section 5 is the mechanism.
-7. **A new crate's first version comes from `verctl bootstrap`.**
-   The operator runs it locally with a crates.io token, as the first publish of an npm package with OIDC works (section 5, item 5).
+7. **Checks are named for their reach.**
+   1. `verctl check --registry` runs on every pull request: each crate exists, lists the trusted publisher, and has the publishing identity among its owners.
+   2. It needs the network, so it is a CI step of its own, like `deny:advisories`, and a rerun repeats it whatever the pull request's state.
+   3. `verctl check --release` adds the package build and the assets in a draft, and runs where the Version PR is proven (section 5).
+8. **First publish: `verctl release --first`, then `verctl trust`.**
+   1. Run locally with the operator's crates.io token, `release --first` publishes the real code of each package the registry lacks, tags it, and runs `trust`.
+   2. `verctl trust` registers the repository's release workflow as each crate's trusted publisher, or checks that it is registered.
+   3. This follows npm, where the first publish is by hand and `npm trust` follows.
+   4. Nothing is published only to hold a name: crates.io and npm both forbid it (section 10).
+9. **The first version is the one main holds.**
+   A standalone package first publishes at `0.0.0`, where verctl already starts it, and `check` fails a never-published package at any other version.
+   A member of a shared-version group, such as a crate whose manifest sets `version.workspace = true`, first publishes at the group's current version.
+10. **Tokens in CI are opt-in.**
+    Trusted publishing stays the default.
+    A repository may pass a token for first publishes, and `check --registry` then counts a missing crate as one the run can create.
 
 The decision on HEAD drops `refuse_skipped_versions` and the oldest-first plan of section 2.
 It also leaves `VER-129`, the draft about tools at old version commits, without a reason to exist: no run checks out an old commit.
@@ -107,41 +121,67 @@ It also leaves `VER-129`, the draft about tools at old version commits, without 
 
 A version bump reaches the default branch only with its release, and nothing lands between the two.
 
-1. **The queue proves the release before the bump lands.**
-   The Version PR merges only through the merge queue.
-   A required check, `release:check`, runs on each merge-group commit that holds unreleased versions, and proves:
-   1. the replay of `version` matches, so no pull request merged since the Version PR was prepared changes what it releases;
-   2. every crate exists on crates.io and lists the repository's workflow as a trusted publisher, or the check names `verctl bootstrap`;
-   3. the crates.io owners of every crate include the publishing identity;
-   4. `cargo publish --workspace --dry-run` packages and builds every crate;
-   5. every asset builds and uploads to a draft Release for that commit.
-
-   A failure takes the Version PR out of the queue, so nothing is bumped.
-   Every failure shrub met in 0.7.0 is caught here.
+1. **The Version PR is proven before it lands.**
+   1. `verctl check --release` runs on the commit that will land and holds unreleased versions.
+   2. A failure keeps the Version PR out, so nothing is bumped.
+      Every failure shrub met in 0.7.0 is caught here.
+   3. It also proves that the replay of `version` matches, so no pull request merged since the Version PR was prepared changes what it releases.
 2. **The push that lands it publishes at once.**
-   1. With the `MERGE` method the commit that lands is the merge-group commit the check tested, and it is HEAD.
-   2. The release uploads to the registries by trusted publishing, which meets no rate limit (section 6).
+   1. The release runs from HEAD, the commit the check proved.
+   2. It uploads to the registries by trusted publishing, which meets no rate limit (section 6).
    3. It then publishes the draft Release, and that creates the tag.
    4. The assets are already in the draft, so the release builds nothing.
 3. **The default branch freezes until the release completes.**
-   1. While the default branch holds a version whose release is incomplete, `release:check` fails every other merge group and names the pending release.
+   1. While the default branch holds a version whose release is incomplete, `check --registry` fails every other pull request and names the pending release.
    2. So HEAD never moves past an unreleased version commit, and a retry always runs at the version commit.
    3. The check first waits for the running release to finish, within its timeout.
-      A pull request queued during a normal release then stays in the queue.
+      A pull request checked during a normal release then passes.
 4. **A failure after the landing.**
    1. Only an external failure is left, such as a registry outage.
    2. The default branch stays frozen, `status` reports the partial release, and a rerun resumes it.
    3. A release that can never finish, such as one whose crate name someone else took, ends only by an operator act.
-      The operator labels a pull request `verctl: unfreeze`, and `release:check` lets that one through.
-5. **`verctl bootstrap`.**
-   1. Run locally with the operator's crates.io token, it publishes a placeholder `0.0.0` for each publishable crate crates.io lacks, to claim the name.
-   2. It registers the repository's release workflow as the crate's trusted publisher, through `POST /api/v1/trusted_publishing/github_configs` ([create.rs][cio-trustpub-create]).
-   3. It waits on `Retry-After` past the 5-crate burst.
-   4. The crate's real version then ships through the release like every other, with its changelog.
+      The operator labels a pull request `verctl: unfreeze`, and the check lets that one through.
+
+### 5.1 Enforcement by plan
+
+GitHub enforces a required check on its own servers: the merge button and the merge API refuse a pull request until the named check passes on its latest commit.
+Only an actor on the ruleset's bypass list can merge past it.
+What it can enforce depends on the plan (section 10):
+
+1. **Tier 1, a merge queue.**
+   Organization public repositories have it, and private ones on Enterprise Cloud.
+   1. `check --release` is a required check on the merge-group commit, which is the commit that lands with the `MERGE` method.
+   2. `check --registry` is required on every merge group, which enforces the freeze.
+2. **Tier 2, rulesets without a queue.**
+   Public repositories on every plan have them, and private ones on Pro or Team.
+   1. `check --release` is required on the Version PR, with "require branches to be up to date".
+      The tested head then holds the default branch's tip, and the merge commit has the same tree.
+   2. `check --registry` is required on every pull request.
+      The up-to-date rule makes each one run again after the Version PR lands, which enforces the freeze.
+3. **Tier 3, neither.**
+   Private repositories on Free.
+   1. The operator runs `check --release` by dispatch, or merges from a clone where the pre-push hook runs it (section 5.2).
+   2. The freeze is not enforced; `status` and the job summary report the pending release.
+
+`verctl status` names the tier it finds, from the default branch's rules.
+In every tier the release still runs `check --release` before its first upload, so a failure there stops with nothing published.
 
 Publishing inside the queue would remove the freeze, but GitHub can still drop a group after its last check passed, as when an entry is removed by hand.
 A registry upload made in that group could not be undone ([pulp 089d712][pulp]).
 The freeze gives the same result, a bump and its release with nothing between them, without that window.
+
+### 5.2 Commit hooks
+
+A git hook runs only in the clone that pushes, and `--no-verify` skips it.
+A merge through GitHub's button or API runs no hook at all.
+So a hook enforces nothing in tiers 1 and 2; it only reports a failure sooner.
+
+1. **Hooks in lefthook.**
+   The pre-push hook runs `check --release` and the freeze for a push to the default branch, and nothing more for other branches.
+   In tier 3 that makes a merge from a clone, `git merge` of the Version PR then `git push`, the checked path.
+   A push to a feature branch stays offline and fast, as today.
+2. **No hooks.**
+   Tier 3 then rests on the operator dispatching `check --release` before merging the Version PR.
 
 ## 6. Rate limits and resuming a partial release
 
@@ -157,20 +197,19 @@ crates.io limits each user, keyed by user id and action, not by token or crate (
    A crates.io maintainer confirmed it has no hard limit ([crates.io#11685][cio-11685]).
    So with trusted publishing, a release of new versions is never rate limited.
 2. Only a new crate meets a limit, because its first version needs a user's token.
-   A release with more than 5 new crates, or one whose user created other crates minutes before, gets a 429.
 3. The 429 carries a `Retry-After` header with an HTTP date, and the same time in its message ([rate_limiter.rs][cio-retry-after]).
 4. cargo does not retry a publish upload on a 429, with or without `--workspace`.
    It stops, and the crates already uploaded stay live.
 
 What follows for the design:
 
-1. The release creates no crate, since `verctl bootstrap` does that first, so a release by trusted publishing meets no rate limit.
-2. Only `bootstrap` meets one.
-   On a 429 it waits until `Retry-After`, then uploads again, so one run creates any number of crates.
+1. A release by trusted publishing creates no crate, so it meets no rate limit.
+2. `release --first`, and a release with the opt-in token, can meet one.
+   On a 429 each waits until `Retry-After`, then uploads again, so one run creates any number of crates.
 3. A release that still stops on an external failure, such as an outage, is a partial release.
    `status` and the job summary name it, and a rerun, by dispatch or by "Re-run failed jobs", skips every crate the index lists.
 4. Where the Version PR sits in its merge group does not matter.
-   Under `HEADGREEN` the top entry's run decides the merge, and its commit becomes HEAD, so `release:check` there covers the version bump.
+   Under `HEADGREEN` the top entry's run decides the merge, and its commit becomes HEAD, so `check --release` there covers the version bump.
 
 ## 7. What other release tools do
 
@@ -199,12 +238,13 @@ What follows for the design:
 
 ## 9. Open decisions
 
-1. **The mechanism of section 5:** the queue check, the publish on landing, the freeze, the unfreeze label, and `bootstrap`.
+1. **Commit hooks:** the pre-push hook of section 5.2, item 1, or no hook.
 2. **shrub, once it ships.**
    shrub's `main` already moved 24 commits past 0.7.0, which the freeze would have prevented.
-   The plan for it: run `verctl bootstrap` for `shrub-process`, let the next Version PR consume the 3 pending fragments into a new version, and leave 0.7.0 skipped, with `shrub-parser` 0.7.0 yanked.
+   The plan for it: run `verctl release --first` for `shrub-process` at 0.7.0, let the next Version PR consume the 3 pending fragments into a new version, and leave 0.7.0 of the other crates skipped.
 
-`check:*` in `verify` is queued as templates `TPL-052`, and one-command setup of a ctl CLI as ctl-core `CTC-058`.
+`check:*` in `verify` is queued as templates `TPL-052`.
+One-command setup of a ctl CLI is ctl-core `CTC-058`, and the checks run from a GitHub App are `CTC-059`; verctl pilots both.
 
 ## 10. Sources
 
@@ -215,6 +255,8 @@ What follows for the design:
 - no server dry run: [crates.io#1515][cratesio-1515]
 - new crates refused to trusted publishing: [publish.rs][cio-publish-new]
 - trusted publisher configs by API: [create.rs][cio-trustpub-create]
+- name squatting: [crates.io policies][cio-policies], [npm disputes][npm-disputes]
+- GitHub plans: [merge queue][gh-queue], [protected branches][gh-protected], [rulesets][gh-rulesets]
 - rate limits: [crates.io docs][cratesio-rates], [rate_limiter.rs][cio-rate-limiter], [the limit only for a user][cio-publish-limit], [crates.io#11685][cio-11685]
 - npm unpublish: [npm policy][npm-unpublish]
 - npm staged publishing: [npm docs][npm-staged]
@@ -242,6 +284,10 @@ What follows for the design:
 [gh-immutable]: https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases
 [gh-queue]: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue
 [pulp]: https://github.com/Generous-Corp/pulp/commit/089d7121ecbd49af80991c3d88062fc4a3f690bf
+[cio-policies]: https://github.com/rust-lang/crates.io/blob/6e5f2e47f6c3cf34fd7ccad959975c52e15fe4d2/svelte/src/routes/policies/+page.svelte#L68
+[npm-disputes]: https://docs.npmjs.com/policies/disputes
+[gh-protected]: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches
+[gh-rulesets]: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets
 [cio-trustpub-create]: https://github.com/rust-lang/crates.io/blob/6e5f2e47f6c3cf34fd7ccad959975c52e15fe4d2/src/controllers/trustpub/github_configs/create.rs#L24-L36
 [rplz-release]: https://github.com/release-plz/release-plz/blob/0f401ecb1f8b629b335011f9abbbf14acc5dbc3a/crates/release_plz_core/src/command/release.rs#L691-L705
 [rplz-config]: https://github.com/release-plz/release-plz/blob/0f401ecb1f8b629b335011f9abbbf14acc5dbc3a/website/docs/config.md#L700-L740
