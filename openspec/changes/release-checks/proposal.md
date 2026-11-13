@@ -1,0 +1,35 @@
+# Release checks
+
+## Motivation
+
+verctl releases are idempotent, but nothing proves, before the first upload, that every upload can succeed.
+A version bump can also land on the default branch long before its release completes.
+shrub 0.7.0 published one crate of 9, then crates.io refused a new crate, a failure knowable before any upload.
+While its release stayed incomplete, `main` took 24 more commits.
+
+`check` also mixes two models today: bare `check` validates fragments and served files, and `check --versions` replaces that run instead of adding to it.
+
+The research note `docs/research/2026-11-13-atomic-releases.md` holds the analysis and the operator's decisions of 2026-11-13.
+This change follows [`release-order`][release-order].
+
+Queue row: [VER-135][ver-135].
+
+## Changes
+
+1. **Named checks.**
+   `verctl check [CHECK]...` runs `fragments`, `served`, `versions`, `registry` and `trust`, as `cargo deny check` runs its named checks.
+   Bare `check` runs `fragments` and `served`, offline; `--all` runs every check.
+   `check --versions` is removed.
+2. **The `registry` check** needs no token: each crate exists, has its expected owners, and its latest version shows whether it came through trusted publishing.
+   The `trust` check needs an owner's token and proves the trusted publisher entry.
+3. **The `owners` key** lists the expected owners once, with a per-package override.
+4. **`release --dry-run`** runs the checks, `cargo publish --workspace --dry-run`, the replay of `version`, and the asset builds, and uploads nothing.
+   `release` runs the same proof before its first upload.
+5. **The freeze.**
+   While the default branch holds a version whose release is incomplete, the `registry` check fails every other pull request or merge group.
+   A pull request labelled `verctl: unfreeze` passes.
+6. **Enforcement tiers.**
+   `status` names the tier the default branch's rules give: a merge queue, rulesets without a queue, or neither.
+
+[release-order]: ../release-order/proposal.md
+[ver-135]: ../../../tasks.yaml

@@ -492,21 +492,68 @@ queue:
       - '2026-11-13, stacked on draft-release-assets: the self-release build job compiled verctl once and each assets job compiled it again from the same commit.'
 
   - id: VER-129
-    title: 'Release whole: prove every upload before the bump lands, and freeze until the release completes'
-    scope: release, status, check, release.yml, first publish
+    title: 'Release from HEAD: drop the old-commit plan and refuse_skipped_versions'
+    scope: release, status, release.yml
     outcome: >-
-      A Version PR lands only after check --release proves every upload, the push that lands it releases HEAD at once, and the default branch takes no other change until that release completes.
+      A run releases the versions HEAD holds, from HEAD, and no job checks out an older commit.
     blocked_by: []
     acceptance:
-      - verctl check --registry and verctl check --release exist, and release runs check --release before its first upload.
       - status and release read HEAD only, and src/ holds no refuse_skipped_versions.
-      - A release publishes the tag last, with the draft Release that already holds every asset.
-      - 'check --registry fails every other pull request while the default branch holds an incomplete release, unless the pull request is labelled verctl: unfreeze.'
-      - verctl release --first and verctl trust publish and register a crate crates.io lacks, and shrub-process is published through them.
-    plan: openspec/changes/releases-land-whole/proposal.md
+      - release.yml checks out github.sha in every job and has no matrix of version commits.
+      - release no longer refuses a commit that is not a version commit.
+    plan: openspec/changes/release-from-head/proposal.md
     notes:
       - On 2026-11-13, every shrub Release run since 2026-11-11 failed at `mise install --locked` on version commit `1ecc0b5`. Its lock has no checksum for taplo 0.10.0.
       - mise 2026.11.6 refuses a locked download without a checksum, through the `locked_require_checksum` setting.
+      - The operator decided the design on 2026-11-13; docs/research/2026-11-13-atomic-releases.md holds it.
+
+  - id: VER-134
+    title: "Release order: assets in a draft, then the registries, then the tag"
+    scope: release, status
+    outcome: >-
+      A release creates its tag only by publishing the draft Release after every
+      upload, and status reports a partial release that a rerun resumes.
+    blocked_by:
+      - VER-129
+    acceptance:
+      - A release publishes the tag last, with the draft Release that already holds every asset.
+      - status reports a partial release with its count and cause, and a rerun skips every crate the index lists.
+    plan: openspec/changes/release-order/proposal.md
+    notes:
+      - The operator decided the design on 2026-11-13; docs/research/2026-11-13-atomic-releases.md holds it.
+
+  - id: VER-135
+    title: "Release checks: named checks, release --dry-run, and the freeze"
+    scope: check, release, status, .ctl/ver.yaml
+    outcome: >-
+      Every upload is proven before the first, and the default branch takes no other
+      change until a landed release completes.
+    blocked_by:
+      - VER-134
+    acceptance:
+      - verctl check runs the checks it names, bare check runs fragments and served, and check --versions no longer parses.
+      - The registry check proves existence and owners without a token, and the trust check proves the trusted publisher with an owner token.
+      - release --dry-run runs the checks, cargo publish --workspace --dry-run, the version replay and the asset builds, and uploads nothing; release runs the same proof first.
+      - 'The registry check fails every other pull request while the default branch holds an incomplete release, unless the pull request is labelled verctl: unfreeze.'
+    plan: openspec/changes/release-checks/proposal.md
+    notes:
+      - The operator decided the design on 2026-11-13; docs/research/2026-11-13-atomic-releases.md holds it.
+
+  - id: VER-136
+    title: "First publish: release --new and trust for a crate the registry lacks"
+    scope: release, trust, release.yml
+    outcome: >-
+      A crate crates.io lacks is published with the operator token at the version the
+      default branch holds, and its trusted publisher is registered once.
+    blocked_by:
+      - VER-135
+    acceptance:
+      - verctl release --new publishes each package the registry lacks and runs verctl trust.
+      - verctl trust adds the trusted publisher entry only when it is missing, and trust --dry-run sends no POST.
+      - The publish-new input lets CI publish a missing crate with the registry-token secret, and defaults to false.
+      - shrub-process is published through release --new.
+    plan: openspec/changes/first-publish/proposal.md
+    notes:
       - The operator decided the design on 2026-11-13; docs/research/2026-11-13-atomic-releases.md holds it.
 
 horizon:
@@ -1022,15 +1069,12 @@ horizon:
   - id: VER-131
     title: Release whole on npm and GitHub Packages
     scope: >-
-      check --registry, check --release, release --first, trust, the npm and bun
-      publishers
+      check registry, check trust, release --dry-run, release --new, trust, the npm and bun publishers
     outcome: >-
-      A spike states what each check, the first publish and trust do for npm and
-      GitHub Packages, and which parts of releases-land-whole carry over.
+      A spike states what each check, the first publish and trust do for npm and GitHub Packages, and which parts of the four crates.io changes, release-from-head to first-publish, carry over.
     kind: research
     open: >-
-      releases-land-whole covers crates.io only; nobody has mapped its checks onto
-      npm or GitHub Packages.
+      The four changes cover crates.io only; nobody has mapped their checks onto npm or GitHub Packages.
     notes:
       - npm needs a package to exist before trusted publishing, and npm trust configures it, from npm 11.10.0; npm/cli#8544 asks for first-publish support.
       - npm refuses a republished version and allows unpublish only within 72 hours with no dependents; staged publishing needs a human 2FA approval and its batch approval is not atomic.
@@ -1039,10 +1083,9 @@ horizon:
 
   - id: VER-132
     title: Release whole for Go modules
-    scope: check --registry, check --release, the go publisher, tags
+    scope: check registry, release --dry-run, the go publisher, tags
     outcome: >-
-      A spike states what releases-land-whole means for a Go module, whose release is
-      its tag.
+      A spike states what the four crates.io changes, release-from-head to first-publish, mean for a Go module, whose release is its tag.
     kind: research
     open: Nobody has mapped the checks and the freeze onto a release that uploads nothing.
     notes:
@@ -1051,11 +1094,9 @@ horizon:
 
   - id: VER-133
     title: Registry checks for a custom publisher and for registries verctl does not ship
-    scope: publisher query recipes, check --registry, release --first
+    scope: publisher query recipes, check registry, release --new
     outcome: >-
-      An evaluation states what a custom publisher must declare, beside its query,
-      for check --registry, release --first and trust, and which registries to support
-      next.
+      An evaluation states what a custom publisher must declare, beside its query, for check registry, check trust, release --new and trust, and which registries to support next.
     kind: evaluation
     open: >-
       No repository has asked for a registry beyond crates.io, npm, GitHub Packages
