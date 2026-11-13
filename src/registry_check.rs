@@ -1,0 +1,535 @@
+//! The `registry` and `trust` checks: what crates.io must hold before a
+//! release uploads anything.
+//!
+//! `registry` needs no token. For each crate the repository publishes to
+//! crates.io, it proves that the crate exists and lists every login `owners`
+//! expects. As evidence and not as proof, it reports how the newest version
+//! reached crates.io.
+//!
+//! `trust` needs an owner's token in `VERCTL_REGISTRY_TOKEN`, because crates.io
+//! serves trusted publisher entries to owners alone. It proves that an entry
+//! names the repository and the workflow file `release_workflow` names.
+//!
+//! Both apply the existence proof to the crates the default branch's tip
+//! holds. A crate that only the checked commit adds cannot be on crates.io
+//! before it lands, so it passes with a notice to run `verctl release
+//! bootstrap` once it does.
+
+use std::path::Path;
+
+use anyhow::{Context, Result};
+use serde::Serialize;
+use toml_edit::{DocumentMut, Item};
+
+use crate::config::Config;
+use crate::github::{self, Repo};
+use crate::registry::{self, GithubConfig, RegistryCheck, TrustedUpload};
+use crate::registry_token::SECRET;
+use crate::{git, publish, publisher};
+
+/// A crate the repository uploads to crates.io.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Crate {
+    /// The crate name, as its manifest spells it.
+    pub name: String,
+    /// Whether the default branch's tip holds a manifest at the same path
+    /// that names this crate.
+    pub held: bool,
+    /// The logins its package expects among the owners, or `None` when the
+    /// package has no owner proof ([`Config::owners_of`]).
+    pub owners: Option<Vec<String>>,
+}
+
+/// Every crate an `Upload` of `config` sends to crates.io, in upload order:
+/// each member of a workspace package, and each other package whose
+/// registry check reads crates.io. A package that uploads nothing is left
+/// out.
+///
+/// The default branch resolves from `candidates` as [`git::default_tip`]
+/// resolves it, and only when there is a crate to place.
+///
+/// # Errors
+///
+/// Returns an error when [`publish::plan`] or [`publisher::uploads`] fails,
+/// when the default branch does not resolve, or when a manifest cannot be
+/// read in the working tree or parsed at the default branch's tip.
+pub fn crates(config: &Config, root: &Path, candidates: &[String]) -> Result<Vec<Crate>> {
+    let planned = publish::plan(config, root)?;
+    let mut found = Vec::new();
+    for (spec, entry) in config.packages.iter().zip(&planned.packages) {
+        if entry.argv.is_empty() {
+            continue;
+        }
+        for upload in publisher::uploads(config, spec, root, entry)? {
+            if let RegistryCheck::CratesIo { name } = upload.check {
+                found.push((name, upload.manifest, config.owners_of(spec)));
+            }
+        }
+    }
+    if found.is_empty() {
+        return Ok(Vec::new());
+    }
+    let tip = git::default_tip(root, candidates)?;
+    found
+        .into_iter()
+        .map(|(name, manifest, owners)| {
+            Ok(Crate {
+                held: held_at(root, &tip, &manifest, &name)?,
+                name,
+                owners: owners.map(<[String]>::to_vec),
+            })
+        })
+        .collect()
+}
+
+/// Whether commit `tip` holds `manifest`, a path in the working tree, and its
+/// `package.name` there is `name`. A crate the pull request renames is not
+/// held under its new name.
+fn held_at(root: &Path, tip: &str, manifest: &Path, name: &str) -> Result<bool> {
+    let manifest = manifest
+        .canonicalize()
+        .with_context(|| format!("resolve {}", manifest.display()))?;
+    let Some(raw) = git::file_at(root, tip, &manifest)? else {
+        return Ok(false);
+    };
+    let document = raw
+        .parse::<DocumentMut>()
+        .with_context(|| format!("{} at the default branch {tip}", manifest.display()))?;
+    Ok(document
+        .get("package")
+        .and_then(|package| package.get("name"))
+        .and_then(Item::as_str)
+        == Some(name))
+}
+
+/// The crates of `config` against the default branch, fetched first as
+/// `check versions` fetches it, and the repository they release from.
+fn crates_from_env(config: &Config, root: &Path) -> Result<(Vec<Crate>, Option<Repo>)> {
+    let fetch = git::FetchDefault::from_env();
+    for branch in git::comparison_branches() {
+        git::ensure_comparable(root, &branch, &fetch)?;
+    }
+    let crates = crates(config, root, &git::release_branch_candidates())?;
+    if crates.is_empty() {
+        return Ok((crates, None));
+    }
+    Ok((crates, Some(github::repo(root)?)))
+}
+
+/// `check registry`: each crate of `config` against the crates.io API at
+/// `api`, which needs no token. It fetches and resolves the default branch as
+/// `check versions` does, and reads the repository from
+/// [`github::repo`].
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`crates`] and [`prove_registry`],
+/// when the default branch cannot be fetched, or when the repository does not
+/// resolve.
+pub fn registry(config: &Config, root: &Path, api: &str) -> Result<RegistryReport> {
+    match crates_from_env(config, root)? {
+        (crates, Some(repository)) => prove_registry(&crates, api, &repository),
+        (_, None) => Ok(RegistryReport { crates: Vec::new() }),
+    }
+}
+
+/// The `registry` proof of each of `crates` against the crates.io API at
+/// `api`, with `repository` as the source trusted publishing should name.
+///
+/// # Errors
+///
+/// Returns an error when an owners or versions request fails, as described
+/// for [`registry::crates_io_user_owners`].
+pub fn prove_registry(crates: &[Crate], api: &str, repository: &Repo) -> Result<RegistryReport> {
+    let slug = slug(repository);
+    let mut rows = Vec::with_capacity(crates.len());
+    for listed in crates {
+        let state = match registry::crates_io_user_owners(api, &listed.name)? {
+            None if listed.held => RegistryState::Missing,
+            None => RegistryState::New,
+            Some(found) => {
+                let lacking = listed.owners.as_ref().map_or_else(Vec::new, |expected| {
+                    expected
+                        .iter()
+                        .filter(|login| {
+                            !found.iter().any(|owner| owner.eq_ignore_ascii_case(login))
+                        })
+                        .cloned()
+                        .collect()
+                });
+                RegistryState::Present {
+                    expected: listed.owners.clone(),
+                    owners: found,
+                    lacking,
+                    trusted: Evidence::of(
+                        registry::crates_io_newest_trust(api, &listed.name)?,
+                        &slug,
+                    ),
+                }
+            }
+        };
+        rows.push(RegistryRow {
+            name: listed.name.clone(),
+            held: listed.held,
+            state,
+        });
+    }
+    Ok(RegistryReport { crates: rows })
+}
+
+/// `check trust`: each crate of `config` against the trusted publisher
+/// entries the crates.io API at `api` serves to `token`, an owner's token.
+/// Without a token it sends no request and reads no branch, and the report
+/// fails naming `VERCTL_REGISTRY_TOKEN`.
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`registry()`] and
+/// [`prove_trust`].
+pub fn trust(config: &Config, root: &Path, api: &str, token: Option<&str>) -> Result<TrustReport> {
+    let Some(token) = token else {
+        return Ok(TrustReport::Unset { variable: SECRET });
+    };
+    let (crates, repository) = crates_from_env(config, root)?;
+    let Some(repository) = repository else {
+        return Ok(TrustReport::Set {
+            repository: None,
+            workflow: config.release_workflow.clone(),
+            crates: Vec::new(),
+        });
+    };
+    prove_trust(&crates, api, token, &repository, &config.release_workflow)
+}
+
+/// The `trust` proof of each of `crates`: an entry must name `repository`
+/// and `workflow`. A crate crates.io lacks is judged as `registry` judges
+/// it, and its entries are not read.
+///
+/// # Errors
+///
+/// Returns an error when an owners request fails, as described for
+/// [`registry::crates_io_user_owners`], or an entries request fails, as
+/// described for [`registry::crates_io_github_configs`].
+pub fn prove_trust(
+    crates: &[Crate],
+    api: &str,
+    token: &str,
+    repository: &Repo,
+    workflow: &str,
+) -> Result<TrustReport> {
+    let mut rows = Vec::with_capacity(crates.len());
+    for listed in crates {
+        let state = match registry::crates_io_user_owners(api, &listed.name)? {
+            None if listed.held => TrustState::Missing,
+            None => TrustState::New,
+            Some(_) => {
+                let entries = registry::crates_io_github_configs(api, &listed.name, token)?;
+                if entries
+                    .iter()
+                    .any(|entry| names(entry, repository, workflow))
+                {
+                    TrustState::Trusted
+                } else {
+                    TrustState::Untrusted { entries }
+                }
+            }
+        };
+        rows.push(TrustRow {
+            name: listed.name.clone(),
+            held: listed.held,
+            state,
+        });
+    }
+    Ok(TrustReport::Set {
+        repository: Some(slug(repository)),
+        workflow: workflow.to_owned(),
+        crates: rows,
+    })
+}
+
+/// Whether `entry` names `repository`, compared as GitHub compares names,
+/// without case, and exactly `workflow`.
+fn names(entry: &GithubConfig, repository: &Repo, workflow: &str) -> bool {
+    entry
+        .repository_owner
+        .eq_ignore_ascii_case(&repository.owner)
+        && entry.repository_name.eq_ignore_ascii_case(&repository.name)
+        && entry.workflow_filename == workflow
+}
+
+/// `owner/name`.
+fn slug(repository: &Repo) -> String {
+    format!("{}/{}", repository.owner, repository.name)
+}
+
+/// The fix for a crate crates.io lacks while the default branch holds it.
+fn bootstrap_fix(name: &str) -> String {
+    format!(
+        "{name}: missing from crates.io, though the default branch holds it; run `verctl release bootstrap {name}` at the default branch's tip"
+    )
+}
+
+/// The notice for a crate only the checked commit adds.
+fn bootstrap_notice(name: &str) -> String {
+    format!(
+        "{name}: not on crates.io yet; it needs `verctl release bootstrap {name}` once it lands on the default branch"
+    )
+}
+
+/// What `check registry` found: one row per crate, in upload order.
+///
+/// Not `#[non_exhaustive]`: the binary builds one in its presentation tests.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RegistryReport {
+    /// One row per crate.
+    pub crates: Vec<RegistryRow>,
+}
+
+impl RegistryReport {
+    /// One message per failed proof, naming its crate and what to change.
+    #[must_use]
+    pub fn failures(&self) -> Vec<String> {
+        self.crates
+            .iter()
+            .filter_map(RegistryRow::failure)
+            .collect()
+    }
+
+    /// One message per proof that passed without running: a crate that
+    /// needs its bootstrap, or a crate with no owner proof.
+    #[must_use]
+    pub fn notices(&self) -> Vec<String> {
+        self.crates.iter().filter_map(RegistryRow::notice).collect()
+    }
+}
+
+/// One crate's row in the `registry` report.
+///
+/// Not `#[non_exhaustive]`: the binary builds one in its presentation tests.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RegistryRow {
+    /// The crate name.
+    pub name: String,
+    /// Whether the default branch's tip holds the crate.
+    pub held: bool,
+    /// What crates.io holds, and what the check made of it.
+    #[serde(flatten)]
+    pub state: RegistryState,
+}
+
+impl RegistryRow {
+    /// Why this crate failed, or `None` when it passed.
+    #[must_use]
+    pub fn failure(&self) -> Option<String> {
+        match &self.state {
+            RegistryState::Missing => Some(bootstrap_fix(&self.name)),
+            RegistryState::Present {
+                owners, lacking, ..
+            } if !lacking.is_empty() => Some(format!(
+                "{name}: lacks owner {lacking} on crates.io, which lists {found}; add it with `cargo owner --add`, or change owners in .ctl/ver.yaml",
+                name = self.name,
+                lacking = lacking.join(", "),
+                found = if owners.is_empty() {
+                    "no user owner".to_owned()
+                } else {
+                    owners.join(", ")
+                },
+            )),
+            RegistryState::New | RegistryState::Present { .. } => None,
+        }
+    }
+
+    /// What passed without being proven, or `None`.
+    #[must_use]
+    pub fn notice(&self) -> Option<String> {
+        match &self.state {
+            RegistryState::New => Some(bootstrap_notice(&self.name)),
+            RegistryState::Present { expected: None, .. } => Some(format!(
+                "{name}: owner proof skipped; set owners in .ctl/ver.yaml to prove them",
+                name = self.name
+            )),
+            RegistryState::Missing | RegistryState::Present { .. } => None,
+        }
+    }
+}
+
+/// What crates.io holds for a crate.
+///
+/// Not `#[non_exhaustive]`: the binary labels every state, so a new one fails
+/// its build until it has a label.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "state", rename_all = "kebab-case")]
+pub enum RegistryState {
+    /// crates.io lacks a crate the default branch holds: the check fails.
+    Missing,
+    /// crates.io lacks a crate only the checked commit adds: the check
+    /// passes, and the crate needs its bootstrap once it lands.
+    New,
+    /// crates.io holds the crate.
+    Present {
+        /// The user logins crates.io lists as owners.
+        owners: Vec<String>,
+        /// The logins `owners` expects, or `None` when the owner proof is
+        /// skipped.
+        expected: Option<Vec<String>>,
+        /// Each expected login crates.io does not list. The check fails when
+        /// any is.
+        lacking: Vec<String>,
+        /// How the newest version reached crates.io, as evidence only.
+        trusted: Evidence,
+    },
+}
+
+/// How a crate's newest version reached crates.io, against the repository
+/// the check runs in. It never fails the check.
+///
+/// Not `#[non_exhaustive]`, for the reason [`RegistryState`] gives.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "via", rename_all = "kebab-case")]
+pub enum Evidence {
+    /// Trusted publishing from this repository.
+    ThisRepository {
+        /// The `owner/name` crates.io recorded.
+        repository: String,
+    },
+    /// Trusted publishing from another GitHub repository.
+    OtherRepository {
+        /// The `owner/name` crates.io recorded.
+        repository: String,
+    },
+    /// Trusted publishing from a GitLab project.
+    #[serde(rename = "gitlab")]
+    GitLab {
+        /// The project path crates.io recorded.
+        project_path: String,
+    },
+    /// Not through trusted publishing.
+    Untrusted,
+}
+
+impl Evidence {
+    /// `upload` against `slug`, compared without case as GitHub compares
+    /// names.
+    fn of(upload: TrustedUpload, slug: &str) -> Self {
+        match upload {
+            TrustedUpload::GitHub { repository } if repository.eq_ignore_ascii_case(slug) => {
+                Self::ThisRepository { repository }
+            }
+            TrustedUpload::GitHub { repository } => Self::OtherRepository { repository },
+            TrustedUpload::GitLab { project_path } => Self::GitLab { project_path },
+            TrustedUpload::Untrusted => Self::Untrusted,
+        }
+    }
+
+    /// The evidence in a few words: `trusted from <repository>`, `gitlab`,
+    /// or `not trusted`.
+    #[must_use]
+    pub fn label(&self) -> String {
+        match self {
+            Self::ThisRepository { repository } | Self::OtherRepository { repository } => {
+                format!("trusted from {repository}")
+            }
+            Self::GitLab { .. } => "gitlab".to_owned(),
+            Self::Untrusted => "not trusted".to_owned(),
+        }
+    }
+}
+
+/// What `check trust` found.
+///
+/// Not `#[non_exhaustive]`, for the reason [`RegistryState`] gives.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "token", rename_all = "kebab-case")]
+pub enum TrustReport {
+    /// No owner's token: no entry was read, and the check fails.
+    Unset {
+        /// The variable to set.
+        variable: &'static str,
+    },
+    /// The entries read with the token.
+    Set {
+        /// The `owner/name` an entry must name, or `None` when no crate
+        /// publishes to crates.io.
+        repository: Option<String>,
+        /// The workflow file an entry must name: `release_workflow`.
+        workflow: String,
+        /// One row per crate, in upload order.
+        crates: Vec<TrustRow>,
+    },
+}
+
+impl TrustReport {
+    /// One message per failed proof, naming its crate and what to change.
+    #[must_use]
+    pub fn failures(&self) -> Vec<String> {
+        match self {
+            Self::Unset { variable } => vec![format!(
+                "{variable} is unset: set it to an owner's crates.io token with the trusted-publishing scope to prove the trusted publishers"
+            )],
+            Self::Set {
+                repository,
+                workflow,
+                crates,
+            } => crates
+                .iter()
+                .filter_map(|row| match row.state {
+                    TrustState::Missing => Some(bootstrap_fix(&row.name)),
+                    TrustState::Untrusted { .. } => Some(format!(
+                        "{name}: lacks a trusted publisher for {workflow} in {repository}; add one on crates.io that names this repository and workflow file",
+                        name = row.name,
+                        repository = repository.as_deref().unwrap_or("this repository"),
+                    )),
+                    TrustState::New | TrustState::Trusted => None,
+                })
+                .collect(),
+        }
+    }
+
+    /// One notice per crate that needs its bootstrap.
+    #[must_use]
+    pub fn notices(&self) -> Vec<String> {
+        match self {
+            Self::Unset { .. } => Vec::new(),
+            Self::Set { crates, .. } => crates
+                .iter()
+                .filter(|row| row.state == TrustState::New)
+                .map(|row| bootstrap_notice(&row.name))
+                .collect(),
+        }
+    }
+}
+
+/// One crate's row in the `trust` report.
+///
+/// Not `#[non_exhaustive]`: the binary builds one in its presentation tests.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TrustRow {
+    /// The crate name.
+    pub name: String,
+    /// Whether the default branch's tip holds the crate.
+    pub held: bool,
+    /// What the check found.
+    #[serde(flatten)]
+    pub state: TrustState,
+}
+
+/// What `check trust` found for one crate.
+///
+/// Not `#[non_exhaustive]`, for the reason [`RegistryState`] gives.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "state", rename_all = "kebab-case")]
+pub enum TrustState {
+    /// An entry names the repository and the workflow file.
+    Trusted,
+    /// No entry names both: the check fails.
+    Untrusted {
+        /// The entries crates.io holds for the crate.
+        entries: Vec<GithubConfig>,
+    },
+    /// crates.io lacks a crate the default branch holds: the check fails.
+    Missing,
+    /// crates.io lacks a crate only the checked commit adds: the check
+    /// passes, and the crate needs its bootstrap once it lands.
+    New,
+}

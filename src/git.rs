@@ -384,6 +384,27 @@ fn blob_at(tree: &gix::Tree<'_>, rel: &Path) -> Option<String> {
     Some(String::from_utf8_lossy(&blob.data).into_owned())
 }
 
+/// The commit at the default branch's tip, as a full hex SHA. The branch
+/// resolves as for [`files_on_merge_base`]: `origin/HEAD`, or else the first
+/// of `candidates` that `origin` has.
+///
+/// # Errors
+///
+/// Returns an error when no repository covers `root`, when there is no
+/// `origin` remote, or when `origin` has none of those refs.
+pub fn default_tip(root: &Path, candidates: &[String]) -> Result<String> {
+    let repo = repo_covering(root).with_context(|| {
+        format!(
+            "cannot resolve the default branch: no git repository covers {}",
+            root.display()
+        )
+    })?;
+    let tip = default_upstream_commit(&repo, candidates)?.context(
+        "cannot resolve the default branch: there is no `origin` remote; add it and fetch the default branch",
+    )?;
+    Ok(tip.to_string())
+}
+
 /// The URL of the `origin` remote.
 ///
 /// # Errors

@@ -78,6 +78,22 @@ No first publish can happen before the merge, and the pull request could then ne
 **Override.**
 None: the notice names the step the operator takes after the merge.
 
+### 3.2 The workflow file a trusted publisher names
+
+**Decision.**
+The top-level `release_workflow` key names the workflow file that publishes, `release.yml` when omitted.
+crates.io matches a trusted publisher entry against the file in the OIDC token's `workflow_ref` claim, which names the calling workflow and not a reusable one it calls.
+A repository on verctl's reusable workflow therefore names its own caller file; verctl itself sets `self-release.yml`.
+The operator chose this on 2026-11-13.
+
+**Alternative.**
+Find the file under `.github/workflows/` that calls verctl's workflow or its publish action.
+It lost because zero or several matches would each need a rule, and a hand-written workflow may call neither.
+Passing any entry for the repository lost too, because it proves less than the requirement states.
+
+**Default.**
+`release.yml`, the caller file the template renders.
+
 ## 4. `owners` once, with a per-package override
 
 **Decision.**

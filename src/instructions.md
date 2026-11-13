@@ -64,6 +64,7 @@ A parse error under `--format json` is a JSON error even when the bad argument c
 | `assets`, `vendored` | [Assets](#assets) |
 | `patterns`, `pins`, `templates` | [Pins and templates](#pins-and-templates) |
 | `runners`, `ci` | [Runners and CI](#runners-and-ci) |
+| `owners`, `release_workflow` | [Registry and trust checks](#registry-and-trust-checks) |
 
 ## Fragments
 
@@ -139,7 +140,7 @@ The candidate sections stay in the CHANGELOG below the stable one.
 
 ### Validation
 
-`verctl check [CHECK]...` runs each check it names once, in the order `fragments`, `served`, `versions`, and the report lists each check that ran.  
+`verctl check [CHECK]...` runs each check it names once, in the order `fragments`, `served`, `versions`, `registry`, `trust`, and the report lists each check that ran.  
 Bare `check` runs `fragments` and `served`, which need only the checkout, with no network and no token.  
 `--all` (`-a`) runs every check, including any named beside it.  
 An unknown name exits 2 and lists the known ones.
@@ -155,6 +156,34 @@ A pin fails too when it names another version or its pattern matches nothing.
 `verctl render` writes what `check served` compares, so it fixes a hand edit and a template change alike.  
 A file that a template renders and a `pins` entry also names has two owners.  
 `version`, `check`, and `render` refuse it before writing anything.
+
+### Registry and trust checks
+
+`check registry` needs the network and no token.  
+For each crate the repository publishes to crates.io, it proves that the crate exists and that its owners include every login `owners` lists.  
+It also reports whether the crate's newest version came through trusted publishing from this repository.  
+That report is evidence and never fails the check.  
+A rerun repeats every request.
+
+The existence proof applies to each crate the default branch's tip holds, found as `check versions` finds that branch.  
+A crate the default branch holds and crates.io lacks fails, naming `verctl release bootstrap <name>` as the fix.
+
+A crate only the checked commit adds passes while crates.io lacks it.  
+Its notice names `verctl release bootstrap` as the step once it lands.  
+When crates.io holds that name, the owner proof applies to it as to any crate.
+
+`check trust` reads an owner's crates.io token with the `trusted-publishing` scope from `VERCTL_REGISTRY_TOKEN`, because crates.io serves trusted publisher entries to owners alone.  
+It fails each crate with no entry naming this repository and the workflow file `release_workflow` names.  
+Without the token it fails, naming the variable, and sends no request.
+
+The top-level `owners` lists the crates.io logins every package's crates must have as owners, and a package's own `owners` replaces it for that package.  
+Omitted at both levels, a package has no owner proof, and `check registry` shows a notice for it.  
+An empty list or a login listed twice fails the load.
+
+`release_workflow` names the file under `.github/workflows/` whose run publishes, `release.yml` when omitted.  
+crates.io matches an entry against the calling workflow that the OIDC token names.  
+A repository on verctl's reusable workflow therefore names its own caller file.  
+A value that is not a plain file name ending in `.yml` or `.yaml` fails the load.
 
 ### Authoring rules
 

@@ -11,9 +11,10 @@
 
 ## 2. Registry and trust
 
-- [ ] 2.1 The `registry` check: existence, owners and trusted-publishing evidence. Proof: integration tests against recorded crates.io index and API responses under `tests/`, run in CI.
-- [ ] 2.2 The `trust` check with an owner's token. Proof: a CI test against a recorded `github_configs` response, and one with no token.
-- [ ] 2.3 The `owners` key at the top level and per package. Proof: CI tests of `Config::parse` for the default, the override, and an empty list.
+- [x] 2.1 The `registry` check: existence, owners and trusted-publishing evidence. Proof: integration tests against recorded crates.io index and API responses under `tests/`, run in CI.
+- [x] 2.2 The `trust` check with an owner's token. Proof: a CI test against a recorded `github_configs` response, and one with no token.
+- [x] 2.3 The `owners` key at the top level and per package. Proof: CI tests of `Config::parse` for the default, the override, and an empty list.
+- [x] 2.4 The `release_workflow` key, `release.yml` when omitted, and `self-release.yml` in this repository's `.ctl/ver.yaml`. Proof: CI tests of `Config::parse` for the default, a set value, and a value that is not a file name.
 
 ## 3. Release proof
 

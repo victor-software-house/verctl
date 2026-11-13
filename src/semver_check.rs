@@ -187,8 +187,10 @@ fn check_crate(
     if rejected.is_empty() {
         return Err(format!("({cause})"));
     }
-    let owners =
-        |crate_name: &str| registry::crates_io_user_owners(registry::CRATES_IO_API, crate_name);
+    let owners = |crate_name: &str| {
+        registry::crates_io_user_owners(registry::CRATES_IO_API, crate_name)
+            .map(Option::unwrap_or_default)
+    };
     match retry_decision(&rejected, logins, owners) {
         Err(lookup) => Err(format!("({cause}) (the owners lookup failed: {lookup:#})")),
         Ok(Retry::NoRetry(reason)) => Err(format!("({cause}) ({reason})")),
@@ -224,7 +226,8 @@ enum Retry {
 /// Decide whether the check may run again past the cooldown, given the crates
 /// it rejected (at least one) and the trusted `logins`.
 /// `owners` returns a crate's user logins, as
-/// [`registry::crates_io_user_owners`] does.
+/// [`registry::crates_io_user_owners`] does, and none for a crate crates.io
+/// does not know.
 ///
 /// # Errors
 ///

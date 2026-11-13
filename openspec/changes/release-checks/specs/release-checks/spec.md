@@ -70,7 +70,7 @@ A rerun SHALL repeat every request whatever the state of the pull request.
 
 ### Requirement: The `trust` check proves the trusted publisher with an owner's token
 
-`verctl check trust` SHALL read `VERCTL_REGISTRY_TOKEN`, an owner's token with the `trusted-publishing` scope, and SHALL prove for each crate that a trusted publisher entry names the repository's release workflow.
+`verctl check trust` SHALL read `VERCTL_REGISTRY_TOKEN`, an owner's token with the `trusted-publishing` scope, and SHALL prove for each crate that a trusted publisher entry names the repository and the workflow file `release_workflow` names.
 Without the token it SHALL fail and name the variable.
 
 #### Scenario: A missing entry
