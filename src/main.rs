@@ -14,8 +14,8 @@ use verctl::content::Inputs;
 use verctl::fragment::{self, Bump};
 use verctl::registry_token::RegistryToken;
 use verctl::{
-    assets, ci, git, github, lookup, pending, pins, prepare, publish, release, semver_check,
-    templates, versions,
+    assets, ci, git, github, lookup, pending, pins, prepare, publish, registry, registry_check,
+    registry_token, release, semver_check, templates, versions,
 };
 
 mod presentation;
@@ -76,6 +76,18 @@ fn check_report(args: &CheckArgs) -> Result<CheckReport> {
             Check::Fragments => check_fragments(args, &config, root),
             Check::Served => check_served(root, &config).map(|()| CheckResult::Served),
             Check::Versions => check_versions(args, &config, root).map(CheckResult::Versions),
+            Check::Registry => registry_check::registry(&config, root, registry::CRATES_IO_API)
+                .map(CheckResult::Registry),
+            Check::Trust => registry_check::trust(
+                &config,
+                root,
+                registry::CRATES_IO_API,
+                env::var(registry_token::SECRET)
+                    .ok()
+                    .filter(|token| !token.is_empty())
+                    .as_deref(),
+            )
+            .map(CheckResult::Trust),
         })
         .collect::<Result<_>>()?;
     Ok(CheckReport { checks })

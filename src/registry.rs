@@ -14,6 +14,7 @@ use std::time::Duration;
 use std::{env, fs, thread};
 
 use anyhow::{Context, Result, bail, ensure};
+use reqwest::header::{AUTHORIZATION, HeaderValue};
 use semver::Version;
 use toml_edit::{DocumentMut, Item};
 
@@ -27,7 +28,8 @@ use crate::{github, lookup, process};
 /// [sparse protocol]: https://doc.rust-lang.org/cargo/reference/registry-index.html#sparse-protocol
 pub const CRATES_IO_INDEX: &str = "https://index.crates.io";
 
-/// The root URL of the crates.io API, which `crates_io_user_owners` reads.
+/// The root URL of the crates.io API, which [`crates_io_user_owners`],
+/// [`crates_io_newest_trust`], and [`crates_io_github_configs`] read.
 pub const CRATES_IO_API: &str = "https://crates.io/api/v1";
 
 /// The registry name Cargo gives crates.io, in `publish`, `--registry`, and
@@ -349,7 +351,7 @@ pub fn crates_io_lists(base: &str, name: &str, version: &str) -> Result<bool> {
     );
     let wanted = Version::parse(version).with_context(|| format!("semver {version:?}"))?;
     let url = format!("{}/{}", base.trim_end_matches('/'), index_path(name));
-    let body = github::block(fetch(&url))?;
+    let body = github::block(fetch(&url, None))?;
     let Some(body) = body else {
         return Ok(false);
     };
@@ -384,7 +386,7 @@ pub fn crates_io_baseline(base: &str, name: &str, current: &Version) -> Result<O
         "{name:?} is not a crates.io crate name"
     );
     let url = format!("{}/{}", base.trim_end_matches('/'), index_path(name));
-    let Some(body) = github::block(fetch(&url))? else {
+    let Some(body) = github::block(fetch(&url, None))? else {
         return Ok(None);
     };
     let mut released = Vec::new();
@@ -406,8 +408,8 @@ pub fn crates_io_baseline(base: &str, name: &str, current: &Version) -> Result<O
 }
 
 /// The logins of the user owners of `name`, from the crates.io API under
-/// `base`. A team owner has a login too, and is left out.
-/// A crate that crates.io does not know has no owners.
+/// `base`, which needs no token. A team owner has a login too, and is left
+/// out. `None` when crates.io does not know the crate.
 ///
 /// # Errors
 ///
@@ -420,23 +422,145 @@ pub fn crates_io_baseline(base: &str, name: &str, current: &Version) -> Result<O
 ///
 /// Only an API that gave no answer is a [`lookup::Unavailable`], under the
 /// conditions of [`RegistryCheck::lists`].
-pub fn crates_io_user_owners(base: &str, name: &str) -> Result<Vec<String>> {
+pub fn crates_io_user_owners(base: &str, name: &str) -> Result<Option<Vec<String>>> {
     ensure!(
         !name.is_empty() && name.is_ascii(),
         "{name:?} is not a crates.io crate name"
     );
     let url = format!("{}/crates/{name}/owners", base.trim_end_matches('/'));
-    let Some(body) = github::block(fetch(&url))? else {
-        return Ok(Vec::new());
+    let Some(body) = github::block(fetch(&url, None))? else {
+        return Ok(None);
     };
     let owners: Owners =
         serde_json::from_str(&body).with_context(|| format!("crates.io owners of {name}"))?;
-    Ok(owners
-        .users
-        .into_iter()
-        .filter(|owner| owner.kind == "user")
-        .map(|owner| owner.login)
-        .collect())
+    Ok(Some(
+        owners
+            .users
+            .into_iter()
+            .filter(|owner| owner.kind == "user")
+            .map(|owner| owner.login)
+            .collect(),
+    ))
+}
+
+/// How a crate's newest version reached crates.io, as its `trustpub_data`
+/// records it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TrustedUpload {
+    /// Trusted publishing from a GitHub Actions run.
+    GitHub {
+        /// The `owner/name` of the repository whose workflow published it.
+        repository: String,
+    },
+    /// Trusted publishing from a GitLab CI pipeline.
+    GitLab {
+        /// The `group/project` path of the project that published it.
+        project_path: String,
+    },
+    /// Not through trusted publishing: a token upload, or no version at all.
+    Untrusted,
+}
+
+/// How the newest version of `name` reached crates.io, from the crates.io
+/// API under `base`, which needs no token. The newest is the first version
+/// `sort=date` lists. A crate crates.io does not know, or one with no
+/// version, is [`TrustedUpload::Untrusted`].
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`crates_io_user_owners`], or
+/// when `trustpub_data` names a provider other than `github` or `gitlab`.
+pub fn crates_io_newest_trust(base: &str, name: &str) -> Result<TrustedUpload> {
+    ensure!(
+        !name.is_empty() && name.is_ascii(),
+        "{name:?} is not a crates.io crate name"
+    );
+    let url = format!(
+        "{}/crates/{name}/versions?per_page=1&sort=date",
+        base.trim_end_matches('/')
+    );
+    let Some(body) = github::block(fetch(&url, None))? else {
+        return Ok(TrustedUpload::Untrusted);
+    };
+    let listed: Versions =
+        serde_json::from_str(&body).with_context(|| format!("crates.io versions of {name}"))?;
+    Ok(
+        match listed
+            .versions
+            .into_iter()
+            .next()
+            .and_then(|version| version.trustpub_data)
+        {
+            Some(TrustpubData::Github { repository }) => TrustedUpload::GitHub { repository },
+            Some(TrustpubData::Gitlab { project_path }) => TrustedUpload::GitLab { project_path },
+            None => TrustedUpload::Untrusted,
+        },
+    )
+}
+
+/// One GitHub trusted publisher entry of a crate: the repository and the
+/// workflow file whose OIDC token crates.io accepts for it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[non_exhaustive]
+pub struct GithubConfig {
+    /// The repository's owner, as GitHub spells it.
+    pub repository_owner: String,
+    /// The repository's name.
+    pub repository_name: String,
+    /// The calling workflow's file name under `.github/workflows/`.
+    pub workflow_filename: String,
+    /// The deployment environment the run must use, or `None` for any.
+    pub environment: Option<String>,
+}
+
+/// The GitHub trusted publisher entries of `name`, from the crates.io API
+/// under `base`.
+///
+/// crates.io serves them only to an owner. `token`, an owner's API token,
+/// goes in the `Authorization` header of these requests and nowhere else.
+/// No URL, log line, or error holds it.
+///
+/// Each page's `meta.next_page` is a query string for the same path
+/// (`query_with_params` in crates.io's `src/util/request_helpers.rs`). It is
+/// followed until it is null.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - `name` is not ASCII;
+/// - `token` cannot be an HTTP header value;
+/// - a request fails;
+/// - the API answers with a status other than 200, such as 403 for a token it
+///   does not accept or 400 for a token whose user owns no such crate, or with
+///   404;
+/// - a body is not the entries JSON.
+///
+/// Only an API that gave no answer is a [`lookup::Unavailable`], under the
+/// conditions of [`RegistryCheck::lists`].
+pub fn crates_io_github_configs(base: &str, name: &str, token: &str) -> Result<Vec<GithubConfig>> {
+    ensure!(
+        !name.is_empty() && name.is_ascii(),
+        "{name:?} is not a crates.io crate name"
+    );
+    let path = format!(
+        "{}/trusted_publishing/github_configs",
+        base.trim_end_matches('/')
+    );
+    let mut url = format!("{path}?crate={name}");
+    let mut entries = Vec::new();
+    loop {
+        let body = github::block(fetch(&url, Some(token)))?
+            .with_context(|| format!("GET {url}: 404 Not Found"))?;
+        let page: GithubConfigs = serde_json::from_str(&body)
+            .with_context(|| format!("crates.io trusted publishers of {name}"))?;
+        entries.extend(page.github_configs);
+        match page.meta.next_page {
+            Some(next) => url = format!("{path}{next}"),
+            None => return Ok(entries),
+        }
+    }
 }
 
 /// The crates.io owners response.
@@ -453,6 +577,42 @@ struct Owner {
     kind: String,
 }
 
+/// The crates.io versions response, newest first under `sort=date`.
+#[derive(serde::Deserialize)]
+struct Versions {
+    versions: Vec<VersionData>,
+}
+
+/// One version in the versions response.
+#[derive(serde::Deserialize)]
+struct VersionData {
+    /// `null` for a version not published through trusted publishing.
+    #[serde(default)]
+    trustpub_data: Option<TrustpubData>,
+}
+
+/// A version's `trustpub_data`, tagged by its `provider`.
+#[derive(serde::Deserialize)]
+#[serde(tag = "provider", rename_all = "lowercase")]
+enum TrustpubData {
+    Github { repository: String },
+    Gitlab { project_path: String },
+}
+
+/// One page of the GitHub trusted publisher entries response.
+#[derive(serde::Deserialize)]
+struct GithubConfigs {
+    github_configs: Vec<GithubConfig>,
+    meta: GithubConfigsMeta,
+}
+
+/// The paging part of the entries response.
+#[derive(serde::Deserialize)]
+struct GithubConfigsMeta {
+    /// The query string of the next page, or `None` on the last.
+    next_page: Option<String>,
+}
+
 /// One line of a crate's index file.
 #[derive(serde::Deserialize)]
 struct IndexRecord {
@@ -462,15 +622,23 @@ struct IndexRecord {
 }
 
 /// The body at `url`, or `None` on a 404, which the index and the API both
-/// answer for a crate they do not have.
-async fn fetch(url: &str) -> Result<Option<String>> {
+/// answer for a crate they do not have. With `token`, the request carries it
+/// as its `Authorization` header, the raw token as cargo sends it, marked
+/// sensitive so no debug output shows it.
+async fn fetch(url: &str, token: Option<&str>) -> Result<Option<String>> {
     let client = reqwest::Client::builder()
         .user_agent(user_agent())
         .timeout(INDEX_TIMEOUT)
         .build()
         .context("HTTP client")?;
-    let response = client
-        .get(url)
+    let mut request = client.get(url);
+    if let Some(token) = token {
+        let mut value = HeaderValue::from_str(token)
+            .context("the crates.io token holds a character an HTTP header cannot carry")?;
+        value.set_sensitive(true);
+        request = request.header(AUTHORIZATION, value);
+    }
+    let response = request
         .send()
         .await
         .map_err(|error| unanswered(error, url))?;
@@ -580,12 +748,13 @@ mod tests {
     use indoc::indoc;
     use tempfile::TempDir;
     use tokio::task;
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{header, method, path, query_param, query_param_is_missing};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{
-        CargoEnv, CargoTarget, RegistryCheck, cargo_target, crates_io_baseline, crates_io_lists,
-        crates_io_user_owners, index_path, wait_listed,
+        CargoEnv, CargoTarget, RegistryCheck, TrustedUpload, cargo_target, crates_io_baseline,
+        crates_io_github_configs, crates_io_lists, crates_io_newest_trust, crates_io_user_owners,
+        index_path, wait_listed,
     };
     use crate::lookup;
 
@@ -719,7 +888,7 @@ mod tests {
 
     /// What `crates_io_user_owners` makes of an API that answers `response`
     /// for `demo`'s owners.
-    async fn owners(response: ResponseTemplate) -> Vec<String> {
+    async fn owners(response: ResponseTemplate) -> Option<Vec<String>> {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/crates/demo/owners"))
@@ -745,16 +914,116 @@ mod tests {
     async fn the_owners_of_a_crate_are_its_user_logins() {
         assert_eq!(
             owners(ResponseTemplate::new(200).set_body_string(OWNERS)).await,
-            ["any-victor", "other"]
+            Some(vec!["any-victor".to_owned(), "other".to_owned()])
         );
     }
 
+    /// A 404 is a crate crates.io does not know, which `check registry` reads
+    /// apart from a crate with no user owner.
     #[tokio::test]
     async fn a_crate_crates_io_does_not_know_has_no_owners() {
+        assert_eq!(owners(ResponseTemplate::new(404)).await, None);
+    }
+
+    /// What `crates_io_newest_trust` makes of a versions answer of `body`.
+    async fn newest_trust(body: &str) -> TrustedUpload {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/crates/demo/versions"))
+            .and(query_param("per_page", "1"))
+            .and(query_param("sort", "date"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(body))
+            .mount(&server)
+            .await;
+        let base = server.uri();
+        task::spawn_blocking(move || crates_io_newest_trust(&base, "demo"))
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    /// The newest version's `trustpub_data` names its provider: a GitHub
+    /// repository, a GitLab project, or `null` for a token upload.
+    #[tokio::test]
+    async fn the_newest_version_shows_how_it_was_published() {
         assert_eq!(
-            owners(ResponseTemplate::new(404)).await,
-            Vec::<String>::new()
+            newest_trust(indoc! {r#"
+                {"versions":[{"num":"0.7.5","trustpub_data":{"provider":"github","repository":"victor-software-house/ctl-core","run_id":"43479037333","sha":"2af7"}}],"meta":{"total":12,"next_page":null}}
+            "#})
+            .await,
+            TrustedUpload::GitHub {
+                repository: "victor-software-house/ctl-core".into()
+            }
         );
+        assert_eq!(
+            newest_trust(indoc! {r#"
+                {"versions":[{"num":"1.0.0","trustpub_data":{"provider":"gitlab","project_path":"group/demo","job_id":"7","sha":"abc"}}],"meta":{"total":1,"next_page":null}}
+            "#})
+            .await,
+            TrustedUpload::GitLab {
+                project_path: "group/demo".into()
+            }
+        );
+        assert_eq!(
+            newest_trust(indoc! {r#"
+                {"versions":[{"num":"0.1.0","trustpub_data":null}],"meta":{"total":1,"next_page":null}}
+            "#})
+            .await,
+            TrustedUpload::Untrusted
+        );
+    }
+
+    /// The trusted publisher entries over two pages, each request carrying
+    /// the raw token as its `Authorization` header.
+    #[tokio::test]
+    async fn the_trusted_publishers_of_a_crate_follow_every_page() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/trusted_publishing/github_configs"))
+            .and(query_param("crate", "demo"))
+            .and(query_param("seek", "abc"))
+            .and(header("authorization", "t0ken"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(indoc! {r#"
+                {"github_configs":[{"id":2,"crate":"demo","repository_owner":"acme","repository_name":"demo","repository_owner_id":9,"workflow_filename":"self-release.yml","environment":"release","created_at":"2026-11-13T00:00:00Z"}],"meta":{"total":2,"next_page":null}}
+            "#}))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/trusted_publishing/github_configs"))
+            .and(query_param("crate", "demo"))
+            .and(query_param_is_missing("seek"))
+            .and(header("authorization", "t0ken"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(indoc! {r#"
+                {"github_configs":[{"id":1,"crate":"demo","repository_owner":"acme","repository_name":"demo","repository_owner_id":9,"workflow_filename":"release.yml","environment":null,"created_at":"2026-11-13T00:00:00Z"}],"meta":{"total":2,"next_page":"?crate=demo&seek=abc"}}
+            "#}))
+            .mount(&server)
+            .await;
+        let base = server.uri();
+        let entries =
+            task::spawn_blocking(move || crates_io_github_configs(&base, "demo", "t0ken"))
+                .await
+                .unwrap()
+                .unwrap();
+        let files: Vec<(&str, Option<&str>)> = entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.workflow_filename.as_str(),
+                    entry.environment.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            files,
+            [("release.yml", None), ("self-release.yml", Some("release"))]
+        );
+        assert!(
+            entries
+                .iter()
+                .all(|entry| entry.repository_owner == "acme" && entry.repository_name == "demo")
+        );
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 2);
     }
 
     #[tokio::test]

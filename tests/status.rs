@@ -868,7 +868,7 @@ fn an_unknown_check_exits_2_listing_the_checks() {
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("[possible values: fragments, served, versions]"),
+        stderr.contains("[possible values: fragments, served, versions, registry, trust]"),
         "{stderr}"
     );
 }

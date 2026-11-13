@@ -98,7 +98,7 @@ The Version PR gets no label.
 
 ### Checks on pull requests
 
-`check [CHECK]...` runs `fragments`, `served`, and `versions`, each once, as named; bare `check` runs `fragments` and `served`, and `--all` (`-a`) runs every check.  
+`check [CHECK]...` runs `fragments`, `served`, `versions`, `registry`, and `trust`, each once, as named; bare `check` runs `fragments` and `served`, and `--all` (`-a`) runs every check.  
 The PR comes from `verctl/release/<base>`, derived and never configured.  
 On that branch, `check versions` replays the version step on the merge-base in place of the version comparison.  
 It fails any change the replay does not make.  
@@ -106,6 +106,12 @@ The replay runs no lockfile owner and no `prepare.after` command.
 
 Any other pull request fails when it adds a CHANGELOG section for a version.  
 It also fails when it changes whether a package publishes without a fragment that bumps it above `none`.
+
+`check registry` needs no token: each crates.io crate the default branch holds exists and lists every login `owners` names.  
+It reports the newest version's trusted publishing as evidence.  
+A crate only the pull request adds passes with a notice to run `verctl release bootstrap` once it lands.  
+`check trust` needs an owner's token in `VERCTL_REGISTRY_TOKEN`.  
+It proves that a trusted publisher entry names the repository and `release_workflow` (`release.yml` when omitted).
 
 ## Release
 

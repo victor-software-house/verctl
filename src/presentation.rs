@@ -1,6 +1,6 @@
 use ctl_core::prelude::{Document, Fields, Notice, NoticeLevel, Outcome, Present, Table};
 use serde::Serialize;
-use verctl::{assets, ci, publish, semver_check, stop, versions};
+use verctl::{assets, ci, publish, registry_check, semver_check, stop, versions};
 
 #[derive(Serialize)]
 #[serde(untagged)]
@@ -122,44 +122,169 @@ pub(super) enum CheckResult {
     Served,
     /// The manifests' versions against the default branch.
     Versions(VersionCheckReport),
+    /// Each crates.io crate's existence and owners, and how its newest
+    /// version was published.
+    Registry(registry_check::RegistryReport),
+    /// Each crates.io crate's trusted publisher entry.
+    Trust(registry_check::TrustReport),
 }
 
 impl Present for CheckReport {
-    /// One row per check, then the drifted versions and the notices of the
-    /// `versions` check.
+    /// One row per check, then each check's details in the same order: the
+    /// drifted versions, the crates of `registry` and `trust`, and their
+    /// notices.
     fn present(&self) -> Document {
         let mut fields = Fields::new();
-        let mut versions = None;
         for check in &self.checks {
             fields = match check {
                 CheckResult::Fragments { ok } => {
                     fields.row("fragments", format!("ok, {ok} fragment(s)"))
                 }
                 CheckResult::Served => fields.row("served", "ok"),
-                CheckResult::Versions(report) => {
-                    versions = Some(report);
-                    fields.row("versions", report.summary())
-                }
+                CheckResult::Versions(report) => fields.row("versions", report.summary()),
+                CheckResult::Registry(report) => fields.row(
+                    "registry",
+                    crate_summary(report.crates.len(), report.failures().len()),
+                ),
+                CheckResult::Trust(report) => fields.row("trust", trust_summary(report)),
             };
         }
-        let document = Document::new().fields(fields);
-        match versions {
-            Some(report) => report.details(document),
-            None => document,
-        }
+        self.checks.iter().fold(
+            Document::new().fields(fields),
+            |document, check| match check {
+                CheckResult::Versions(report) => report.details(document),
+                CheckResult::Registry(report) => registry_details(report, document),
+                CheckResult::Trust(report) => trust_details(report, document),
+                CheckResult::Fragments { .. } | CheckResult::Served => document,
+            },
+        )
     }
 
+    /// An error when any check failed, after every row is shown.
     fn outcome(&self) -> Outcome {
-        let drifted = self.checks.iter().any(|check| match check {
+        let failed = self.checks.iter().any(|check| match check {
             CheckResult::Versions(report) => !report.drifted().is_empty(),
+            CheckResult::Registry(report) => !report.failures().is_empty(),
+            CheckResult::Trust(report) => !report.failures().is_empty(),
             CheckResult::Fragments { .. } | CheckResult::Served => false,
         });
-        if drifted {
+        if failed {
             Outcome::Error
         } else {
             Outcome::Success
         }
     }
+}
+
+/// The one-line result of a check over `total` crates, `failed` of them
+/// failing.
+fn crate_summary(total: usize, failed: usize) -> String {
+    match (total, failed) {
+        (0, _) => "ok, no crates.io crate".to_owned(),
+        (_, 0) => format!("ok, {total} crate(s)"),
+        _ => format!("failed, {failed} of {total} crate(s)"),
+    }
+}
+
+/// The one-line result of `trust`, which fails without a token.
+fn trust_summary(report: &registry_check::TrustReport) -> String {
+    match report {
+        registry_check::TrustReport::Unset { variable } => {
+            format!("not checked, {variable} is unset")
+        }
+        registry_check::TrustReport::Set { crates, .. } => {
+            crate_summary(crates.len(), report.failures().len())
+        }
+    }
+}
+
+/// `document` with one warning per notice and one error per failure.
+fn with_findings(document: Document, notices: &[String], failures: &[String]) -> Document {
+    failures
+        .iter()
+        .fold(with_warnings(document, notices), |document, failure| {
+            document.notice(Notice::new(NoticeLevel::Error, failure.clone()))
+        })
+}
+
+/// `document` with the `registry` table, its notices, and its failures.
+fn registry_details(report: &registry_check::RegistryReport, document: Document) -> Document {
+    if report.crates.is_empty() {
+        return document;
+    }
+    let table = report.crates.iter().fold(
+        Table::new(["crate", "state", "owners", "trusted"]).id_column(0),
+        |table, row| {
+            let (state, owners, trusted) = match &row.state {
+                registry_check::RegistryState::Missing => {
+                    ("missing", "-".to_owned(), "-".to_owned())
+                }
+                registry_check::RegistryState::New => ("new", "-".to_owned(), "-".to_owned()),
+                registry_check::RegistryState::Present {
+                    owners,
+                    lacking,
+                    trusted,
+                    ..
+                } => (
+                    if lacking.is_empty() {
+                        "ok"
+                    } else {
+                        "lacks owner"
+                    },
+                    if owners.is_empty() {
+                        "-".to_owned()
+                    } else {
+                        owners.join(", ")
+                    },
+                    trusted.label(),
+                ),
+            };
+            table.row([row.name.clone(), state.to_owned(), owners, trusted])
+        },
+    );
+    with_findings(document.table(table), &report.notices(), &report.failures())
+}
+
+/// `document` with the `trust` table, its notices, and its failures.
+fn trust_details(report: &registry_check::TrustReport, document: Document) -> Document {
+    let document = match report {
+        registry_check::TrustReport::Set { crates, .. } if !crates.is_empty() => {
+            document.table(crates.iter().fold(
+                Table::new(["crate", "state", "entries"]).id_column(0),
+                |table, row| {
+                    let (state, entries) = match &row.state {
+                        registry_check::TrustState::Trusted => ("trusted", "-".to_owned()),
+                        registry_check::TrustState::Untrusted { entries } => (
+                            "no entry",
+                            if entries.is_empty() {
+                                "-".to_owned()
+                            } else {
+                                entries
+                                    .iter()
+                                    .map(|entry| {
+                                        format!(
+                                            "{owner}/{name} {file}",
+                                            owner = entry.repository_owner,
+                                            name = entry.repository_name,
+                                            file = entry.workflow_filename
+                                        )
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            },
+                        ),
+                        registry_check::TrustState::Missing => ("missing", "-".to_owned()),
+                        registry_check::TrustState::New => ("new", "-".to_owned()),
+                    };
+                    table.row([row.name.clone(), state.to_owned(), entries])
+                },
+            ))
+        }
+        registry_check::TrustReport::Set { .. } | registry_check::TrustReport::Unset { .. } => {
+            document
+        }
+    };
+    with_findings(document, &report.notices(), &report.failures())
 }
 
 #[derive(Serialize)]
@@ -757,8 +882,8 @@ impl Present for CiReport {
 #[cfg(test)]
 mod tests {
     use ctl_core::prelude::{ColorMode, Destination, Outcome, OutputFormat, Present, View};
-    use indoc::formatdoc;
-    use verctl::{publish, stop, versions};
+    use indoc::{formatdoc, indoc};
+    use verctl::{publish, registry_check, stop, versions};
 
     use super::{
         CheckReport, CheckResult, PartialRow, ReleaseReport, ReleaseRow, Report, StatusFragment,
@@ -911,6 +1036,113 @@ mod tests {
         assert!(text.contains("  served  ok"), "{text}");
         assert!(text.contains("versions  differ"), "{text}");
         assert!(text.contains("demo 1.0.0 -> 1.0.1"), "{text}");
+    }
+
+    /// A registry report with one crate that lacks an owner and one that is
+    /// ready: the table shows both, the failure is an error, and the run
+    /// fails, in both shapes.
+    #[test]
+    fn a_registry_report_shows_every_crate_and_fails_on_one() {
+        let report = Report::Check(CheckReport {
+            checks: vec![CheckResult::Registry(registry_check::RegistryReport {
+                crates: vec![
+                    registry_check::RegistryRow {
+                        name: "demo".into(),
+                        held: true,
+                        state: registry_check::RegistryState::Present {
+                            owners: vec!["alice".into()],
+                            expected: Some(vec!["any-victor".into()]),
+                            lacking: vec!["any-victor".into()],
+                            trusted: registry_check::Evidence::Untrusted,
+                        },
+                    },
+                    registry_check::RegistryRow {
+                        name: "demo-core".into(),
+                        held: true,
+                        state: registry_check::RegistryState::Present {
+                            owners: vec!["any-victor".into()],
+                            expected: Some(vec!["any-victor".into()]),
+                            lacking: Vec::new(),
+                            trusted: registry_check::Evidence::ThisRepository {
+                                repository: "acme/demo".into(),
+                            },
+                        },
+                    },
+                ],
+            })],
+        });
+        assert_eq!(report.outcome(), Outcome::Error);
+        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+            .width(120)
+            .capture(&report)
+            .expect("pretty report");
+        assert_eq!(pretty.stream(), Destination::Stderr);
+        assert_eq!(
+            pretty.text(),
+            formatdoc! {"
+                registry  failed, 1 of 2 crate(s)
+
+                ┌───────────┬─────────────┬────────────┬────────────────────────┐
+                │ crate     ┆ state       ┆ owners     ┆ trusted                │
+                ╞═══════════╪═════════════╪════════════╪════════════════════════╡
+                │ demo      ┆ lacks owner ┆ alice      ┆ not trusted            │
+                │ demo-core ┆ ok          ┆ any-victor ┆ trusted from acme/demo │
+                └───────────┴─────────────┴────────────┴────────────────────────┘
+
+                error · demo: lacks owner any-victor on crates.io, which lists alice; add it with `cargo owner --add`, or change owners
+                in .ctl/ver.yaml
+            "}
+        );
+        let json = View::new(OutputFormat::Json, ColorMode::Never)
+            .capture(&report)
+            .expect("JSON report");
+        assert_eq!(
+            json.text(),
+            indoc! {r#"
+                {
+                  "checks": [
+                    {
+                      "check": "registry",
+                      "crates": [
+                        {
+                          "name": "demo",
+                          "held": true,
+                          "state": "present",
+                          "owners": [
+                            "alice"
+                          ],
+                          "expected": [
+                            "any-victor"
+                          ],
+                          "lacking": [
+                            "any-victor"
+                          ],
+                          "trusted": {
+                            "via": "untrusted"
+                          }
+                        },
+                        {
+                          "name": "demo-core",
+                          "held": true,
+                          "state": "present",
+                          "owners": [
+                            "any-victor"
+                          ],
+                          "expected": [
+                            "any-victor"
+                          ],
+                          "lacking": [],
+                          "trusted": {
+                            "via": "this-repository",
+                            "repository": "acme/demo"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+            "#}
+        );
     }
 
     #[test]

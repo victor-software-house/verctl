@@ -13,6 +13,7 @@ It is not `@changesets/cli`, not Knope, and not a forkctl verb.
 mise run ver status
 mise run ver check
 mise run ver check versions
+mise run ver check registry
 mise run ver version
 mise run ver version --pr
 mise run ver release
@@ -443,6 +444,9 @@ A manifest that opts out of publishing needs no `publisher: none`: a `Cargo.toml
 
 `publish` on a package holds options of its publisher.  
 `publish: {verify: false}` makes cargo upload with `--no-verify`, for a crate CI already packs on every commit to the default branch, and keeps the crates.io check.
+
+`check registry` proves, with no token, that each crates.io crate the default branch holds exists and lists every login the top-level or per-package `owners` names.  
+`check trust` reads an owner's token from `VERCTL_REGISTRY_TOKEN` and proves that a trusted publisher entry names this repository and `release_workflow`, which is `release.yml` when omitted.  
 
 ## Operator documents
 

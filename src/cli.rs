@@ -325,6 +325,13 @@ pub enum Check {
     /// Each declared manifest version matches the default branch, outside the
     /// Version PR.
     Versions,
+    /// Each crates.io crate the default branch holds exists and lists every
+    /// login `owners` names; reports whether its newest version came through
+    /// trusted publishing. Needs the network and no token.
+    Registry,
+    /// Each crates.io crate has a trusted publisher naming this repository and
+    /// `release_workflow`. Needs an owner's token in `VERCTL_REGISTRY_TOKEN`.
+    Trust,
 }
 
 impl Check {
@@ -451,7 +458,17 @@ mod tests {
             [Check::Served, Check::Versions]
         );
         assert_eq!(checks_from(&["versions", "versions"]), [Check::Versions]);
-        let every = [Check::Fragments, Check::Served, Check::Versions];
+        assert_eq!(
+            checks_from(&["trust", "registry"]),
+            [Check::Registry, Check::Trust]
+        );
+        let every = [
+            Check::Fragments,
+            Check::Served,
+            Check::Versions,
+            Check::Registry,
+            Check::Trust,
+        ];
         assert_eq!(checks_from(&["--all"]), every);
         assert_eq!(checks_from(&["-a"]), every);
         assert_eq!(checks_from(&["-a", "versions"]), every);
@@ -466,7 +483,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("[possible values: fragments, served, versions]"),
+                .contains("[possible values: fragments, served, versions, registry, trust]"),
             "{error}"
         );
     }

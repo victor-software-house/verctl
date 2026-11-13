@@ -214,6 +214,10 @@ pub struct PackageSpec {
     /// and with no publisher the package releases on GitHub only.
     #[serde(default)]
     pub marker: bool,
+    /// The crates.io logins this package's crates must list as owners, which
+    /// `check registry` proves. It replaces the top-level `owners` for this
+    /// package. When omitted, the package expects the top-level list.
+    pub owners: Option<Vec<String>>,
     /// Inline driver fields. They override the named driver's.
     #[serde(flatten)]
     pub spec: DriverSpec,
@@ -810,9 +814,26 @@ pub struct Config {
         custom(publish_options_fit_the_publisher),
         custom(python_names_its_publisher),
         custom(a_marker_names_no_driver),
-        custom(a_prerelease_is_lowercase_letters)
+        custom(a_prerelease_is_lowercase_letters),
+        custom(package_owners_are_logins)
     )]
     pub packages: Vec<PackageSpec>,
+    /// The crates.io logins every package's crates must list as owners, which
+    /// `check registry` proves. A package's own `owners` replaces it. When
+    /// omitted here and on a package, that package has no owner proof.
+    #[serde(default)]
+    #[garde(inner(custom(owners_are_logins)))]
+    pub owners: Option<Vec<String>>,
+    /// The file under `.github/workflows/` whose run publishes, which a
+    /// crates.io trusted publisher entry must name for `check trust` to pass.
+    /// crates.io matches the entry against the calling workflow that the OIDC
+    /// token's `workflow_ref` claim names
+    /// (`crates_io_trustpub/src/github/workflows.rs`), so a reusable workflow
+    /// it calls does not count. When omitted, it is `release.yml`, the caller
+    /// file the template renders.
+    #[serde(default = "Config::default_release_workflow")]
+    #[garde(custom(a_workflow_file_name))]
+    pub release_workflow: String,
     /// Publish recipes by name, for a package's `publisher` to select.
     #[serde(default)]
     #[garde(custom(none_is_not_a_publisher))]
@@ -1044,6 +1065,62 @@ fn no_unknown_package_keys(packages: &[PackageSpec], _: &Config) -> garde::Resul
                 keys.join(", ")
             )));
         }
+    }
+    Ok(())
+}
+
+/// The problem with an `owners` list, if it has one: a list with no login
+/// proves nothing, and a login listed twice is a typo or a stale edit.
+fn owners_problem(owners: &[String]) -> Option<String> {
+    if owners.is_empty() {
+        return Some(
+            "must list at least one crates.io login; omit the key to expect no owners".to_owned(),
+        );
+    }
+    let mut seen = BTreeSet::new();
+    owners
+        .iter()
+        .find(|login| !seen.insert(login.as_str()))
+        .map(|login| format!("lists {login:?} twice; remove one"))
+}
+
+/// The top-level `owners`, when set.
+fn owners_are_logins(owners: &[String], _: &Config) -> garde::Result {
+    match owners_problem(owners) {
+        Some(problem) => Err(garde::Error::new(problem)),
+        None => Ok(()),
+    }
+}
+
+/// Each package's own `owners`, named as `packages[<name>].owners`, because
+/// the field is on one entry of the list.
+fn package_owners_are_logins(packages: &[PackageSpec], _: &Config) -> garde::Result {
+    for package in packages {
+        if let Some(problem) = package.owners.as_deref().and_then(owners_problem) {
+            return Err(garde::Error::new(format!(
+                "packages[{name}].owners {problem}",
+                name = package.name
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// `release_workflow` is the file name crates.io compares, so a path or a
+/// file that is not a workflow could never match an entry.
+fn a_workflow_file_name(name: &str, config: &Config) -> garde::Result {
+    if validate::one_file_name(name, config).is_err() {
+        return Err(garde::Error::new(
+            "must be a file name under .github/workflows/, such as release.yml, with no directory",
+        ));
+    }
+    if !Path::new(name)
+        .extension()
+        .is_some_and(|extension| extension == "yml" || extension == "yaml")
+    {
+        return Err(garde::Error::new(
+            "must name a workflow file, ending in .yml or .yaml",
+        ));
     }
     Ok(())
 }
@@ -1647,6 +1724,19 @@ impl Config {
                 .filter_map(|id| declared.get(id).cloned())
                 .collect();
         }
+    }
+
+    /// The `release_workflow` a file that sets none gets.
+    fn default_release_workflow() -> String {
+        "release.yml".to_owned()
+    }
+
+    /// The crates.io logins `package` must list as owners: its own `owners`,
+    /// or else the top-level list. `None` when neither is set, so the package
+    /// has no owner proof.
+    #[must_use]
+    pub fn owners_of<'a>(&'a self, package: &'a PackageSpec) -> Option<&'a [String]> {
+        package.owners.as_deref().or(self.owners.as_deref())
     }
 
     /// The package declared as `name`.
@@ -2932,6 +3022,114 @@ mod tests {
         ] {
             let error = load(yaml).unwrap_err();
             assert!(format!("{error:#}").contains(message), "{error:#}");
+        }
+    }
+
+    /// Two packages, `core` and `app`, under `top` and with `app` set to
+    /// `app` (each a line of YAML, or empty).
+    fn with_owners(top: &str, app: &str) -> Result<Config> {
+        load(&formatdoc! {"
+            {top}
+            packages:
+              - name: core
+                path: core/Cargo.toml
+              - name: app
+                path: app/Cargo.toml
+                {app}
+        "})
+    }
+
+    /// The top-level `owners` applies to every package, and a package's own
+    /// list replaces it for that package alone. With neither, a package has
+    /// no owner proof.
+    #[test]
+    fn owners_default_to_the_top_level_list() {
+        let config = with_owners("owners: [any-victor]", "").unwrap();
+        for name in ["core", "app"] {
+            let package = config.find(name).unwrap();
+            assert_eq!(
+                config.owners_of(package),
+                Some(["any-victor".to_owned()].as_slice()),
+                "{name}"
+            );
+        }
+        let config = with_owners("owners: [any-victor]", "owners: [any-victor, alice]").unwrap();
+        assert_eq!(
+            config.owners_of(config.find("app").unwrap()),
+            Some(["any-victor".to_owned(), "alice".to_owned()].as_slice())
+        );
+        assert_eq!(
+            config.owners_of(config.find("core").unwrap()),
+            Some(["any-victor".to_owned()].as_slice())
+        );
+        let config = with_owners("", "").unwrap();
+        assert_eq!(config.owners_of(config.find("app").unwrap()), None);
+    }
+
+    /// An empty list or a login listed twice fails the load and names the
+    /// field, at the top level and on a package.
+    #[test]
+    fn an_empty_or_repeated_owners_list_fails_naming_the_field() {
+        for (top, app, expected) in [
+            (
+                "owners: []",
+                "",
+                "owners: must list at least one crates.io login",
+            ),
+            (
+                "owners: [any-victor, any-victor]",
+                "",
+                r#"owners: lists "any-victor" twice"#,
+            ),
+            (
+                "",
+                "owners: []",
+                "packages[app].owners must list at least one crates.io login",
+            ),
+            (
+                "owners: [any-victor]",
+                "owners: [alice, alice]",
+                r#"packages[app].owners lists "alice" twice"#,
+            ),
+        ] {
+            let error = format!("{:#}", with_owners(top, app).unwrap_err());
+            assert!(error.contains(expected), "{top} {app}: {error}");
+        }
+    }
+
+    /// `release_workflow` is `release.yml` when omitted, takes another file
+    /// name, and refuses a path or a file that is not a workflow, naming the
+    /// field.
+    #[test]
+    fn release_workflow_is_a_workflow_file_name() {
+        assert_eq!(load(PACKAGE).unwrap().release_workflow, "release.yml");
+        for name in ["self-release.yml", "publish.yaml"] {
+            let config = load(&formatdoc! {"
+                {PACKAGE}release_workflow: {name}
+            "})
+            .unwrap();
+            assert_eq!(config.release_workflow, name);
+        }
+        for (name, problem) in [
+            (
+                ".github/workflows/release.yml",
+                "be a file name under .github/workflows/",
+            ),
+            (
+                "release.toml",
+                "name a workflow file, ending in .yml or .yaml",
+            ),
+            ("\"\"", "be a file name under .github/workflows/"),
+        ] {
+            let error = load(&formatdoc! {"
+                {PACKAGE}release_workflow: {name}
+            "})
+            .unwrap_err();
+            let error = format!("{error:#}");
+            assert!(
+                error.contains(&format!("release_workflow: must {problem}")),
+                "{name}: {error}"
+            );
         }
     }
 }

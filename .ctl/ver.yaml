@@ -9,6 +9,12 @@
 #
 # examples/ver.yaml shows the shape a repo that pins by hand would write.
 
+# `check registry` fails a crate whose crates.io owners lack this login.
+owners: [any-victor]
+
+# The caller workflow crates.io matches a trusted publisher entry against.
+release_workflow: self-release.yml
+
 prepare:
   after: [cargo, update, --workspace]
   stage: [Cargo.lock]

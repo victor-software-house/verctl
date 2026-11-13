@@ -220,6 +220,10 @@ name = "release"
 path = "tests/release.rs"
 
 [[test]]
+name = "registry"
+path = "tests/registry.rs"
+
+[[test]]
 name = "served"
 path = "tests/served.rs"
 
