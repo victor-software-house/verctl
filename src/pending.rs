@@ -133,6 +133,9 @@ pub struct PendingAsset {
     pub labels: Vec<String>,
     /// The release tag the tarball is uploaded to.
     pub tag: String,
+    /// The tarball's file name, which `release asset` writes beside the
+    /// config's root, so a job can hand the file on without parsing output.
+    pub asset: String,
 }
 
 /// One package's state, before grouping.
@@ -519,6 +522,7 @@ fn group(states: Vec<PackageState>) -> Pending {
                 id: target.id,
                 labels: target.labels,
                 tag,
+                asset: target.asset,
             }));
         pending.commits.push(PendingCommit {
             sha,
@@ -728,6 +732,7 @@ mod tests {
                 id: "darwin-arm64".into(),
                 labels: vec!["darwin-arm64-runner".into()],
                 tag: "v0.4.6".into(),
+                asset: "demo-darwin-arm64.tar.gz".into(),
             }]
         );
     }

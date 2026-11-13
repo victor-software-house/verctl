@@ -1,8 +1,9 @@
 name: verctl release
 description: >-
-  After the Version PR merges, publish cargo and bun packages and open
-  the GitHub Release: a draft when asset targets are declared, published
-  by a later run once every asset is uploaded. Requires `verctl` on PATH.
+  After the Version PR merges, release HEAD's versions: create the draft
+  GitHub Release, upload the declared tarballs to it, publish the cargo and
+  bun packages, then publish the draft, which creates the tag. Requires
+  `verctl` on PATH.
 author: victor-software-house
 branding:
   icon: package
@@ -15,6 +16,13 @@ inputs:
     default: ${{ github.token }}
   config:
     description: Path to the declarations file. Empty means verctl's default, `.ctl/ver.yaml`.
+    required: false
+    default: ""
+  assets-dir:
+    description: >-
+      Directory holding the declared tarballs the draft Release lacks, as the
+      asset jobs built them with `actions/asset`. Empty when no asset target
+      is declared.
     required: false
     default: ""
   dry-run:
@@ -31,5 +39,6 @@ runs:
         GITHUB_TOKEN: ${{ inputs.token }}
         VERCTL_CONFIG: ${{ inputs.config }}
         VERCTL_DRY_RUN: ${{ inputs.dry-run }}
+        VERCTL_ASSETS_DIR: ${{ inputs.assets-dir }}
         VERCTL_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       run: exec verctl release

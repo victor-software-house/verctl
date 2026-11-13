@@ -1,17 +1,17 @@
 name: verctl asset
 description: >-
-  Build one declared native target and attach the tarball to the
-  GitHub Release. Skip the job when no `[assets.NAME]` table is declared.
+  Build one declared native target's tarball and upload nothing. Hand the
+  tarball to the release job, whose `verctl release --assets-dir` uploads it
+  to the draft Release before any registry upload. The tarball is the
+  `asset` file name of the target's row in `verctl status --github-output`,
+  beside the config's root. Skip the job when no `[assets.NAME]` table is
+  declared.
 author: victor-software-house
 branding:
   icon: package
   color: gray-dark
 
 inputs:
-  token:
-    description: Token that can upload release assets. Default GITHUB_TOKEN.
-    required: false
-    default: ${{ github.token }}
   config:
     description: Path to the declarations file. Empty means verctl's default, `.ctl/ver.yaml`.
     required: false
@@ -19,18 +19,13 @@ inputs:
   target:
     description: Name of an `[assets.NAME]` table (`darwin-arm64`, `linux-x64`).
     required: true
-  tag:
-    description: Release tag (`v0.0.1`).
-    required: true
 
 runs:
   using: composite
   steps:
-    - name: Build and upload
+    - name: Build
       shell: bash
       env:
-        GITHUB_TOKEN: ${{ inputs.token }}
         VERCTL_CONFIG: ${{ inputs.config }}
         VERCTL_TARGET: ${{ inputs.target }}
-        VERCTL_TAG: ${{ inputs.tag }}
       run: exec verctl release asset
