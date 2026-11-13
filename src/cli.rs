@@ -197,9 +197,10 @@ pub struct ReleaseArgs {
     #[arg(long)]
     pub releases_only: bool,
     /// The directory holding the tarballs `release asset` built. `release`
-    /// uploads each declared one its draft Release lacks before any registry
-    /// upload, and fails before it writes anything when one is missing.
-    /// Without it, the draft must already hold every declared asset.
+    /// uploads each declared one its draft, or its mutable published Release,
+    /// lacks before any registry upload, and fails before it writes anything
+    /// when one is missing. Without it, the Release must already hold every
+    /// declared asset.
     #[arg(long, value_name = "DIR", value_hint = clap::ValueHint::DirPath)]
     pub assets_dir: Option<PathBuf>,
     /// The proofs `release` may go past.

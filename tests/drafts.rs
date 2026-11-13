@@ -1001,3 +1001,70 @@ async fn a_draft_at_head_that_holds_every_tarball_needs_none_in_the_directory() 
     assert!(!sent(&seen, "POST", "/"), "{seen:?}");
     first(&seen, "PATCH", "/repos/acme/demo/releases/1");
 }
+
+/// A mutable Release published at HEAD that lacks a declared tarball takes it
+/// from `--assets-dir`: the run uploads it, opens no draft, and publishes
+/// nothing.
+#[tokio::test]
+async fn a_mutable_published_release_takes_the_tarball_it_lacks() {
+    let root = TempDir::new().unwrap();
+    let server = MockServer::start().await;
+    let head = crates(
+        root.path(),
+        &server.uri(),
+        &[("core", Upload::Listed)],
+        true,
+    );
+    let uri = server.uri();
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/git/ref/tags/{TAG}")))
+        .respond_with(tag_ref(TAG, &head))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/releases/tags/{TAG}")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(full_release(
+            &uri,
+            1,
+            TAG,
+            &head,
+            false,
+            &[],
+        )))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/releases/1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(full_release(
+            &uri,
+            1,
+            TAG,
+            &head,
+            false,
+            &[],
+        )))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/upload/repos/acme/demo/releases/1/assets"))
+        .and(query_param("name", TARBALL))
+        .respond_with(ResponseTemplate::new(201).set_body_json(uploaded_asset(&uri, TARBALL)))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let dir = tarballs(&[TARBALL]);
+    let output = release(
+        root.path(),
+        &server,
+        &["--assets-dir", dir.path().to_str().unwrap()],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let seen = requests(&server).await;
+    first(&seen, "POST", "/upload/repos/acme/demo/releases/1/assets");
+    assert!(
+        !sent(&seen, "POST", "/repos/acme/demo/releases"),
+        "{seen:?}"
+    );
+    assert!(!sent(&seen, "PATCH", "/"), "{seen:?}");
+    assert!(!sent(&seen, "DELETE", "/"), "{seen:?}");
+}

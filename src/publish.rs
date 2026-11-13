@@ -171,9 +171,10 @@ pub struct Scope {
     /// and refuses a package the registry does not list.
     pub releases_only: bool,
     /// The directory holding the tarballs `release asset` built. The run
-    /// uploads from it each declared tarball the draft lacks.
-    /// `None` uploads nothing, and the run then fails when the draft lacks a
-    /// declared tarball.
+    /// uploads from it each declared tarball the draft, or a mutable Release
+    /// published at HEAD, lacks.
+    /// `None` uploads nothing, and the run then fails when that Release lacks
+    /// a declared tarball.
     pub assets_dir: Option<PathBuf>,
 }
 
@@ -258,8 +259,8 @@ pub struct PublishRun {
 /// 1. Each tag gets a draft Release at HEAD, with no tag. A draft found at
 ///    another commit is deleted and created again; a draft at HEAD is used. A
 ///    tag that exists must name HEAD.
-/// 2. Each declared tarball the draft lacks is uploaded to it from
-///    `scope.assets_dir`.
+/// 2. Each declared tarball the draft, or a mutable Release published at HEAD,
+///    lacks is uploaded to it from `scope.assets_dir`.
 /// 3. Each package is published to its registry, in config order, and a version
 ///    the registry lists is skipped.
 /// 4. Each draft is published, which creates its tag at HEAD.
@@ -267,8 +268,9 @@ pub struct PublishRun {
 ///
 /// GitHub is read for every tag, and every declared tarball is found, before
 /// the run writes anything.
-/// A Release already published at HEAD gets none of steps 1, 2 and 4, only
-/// the proof of its tag.
+/// A Release already published at HEAD gets neither step 1 nor step 4.
+/// A mutable one takes the declared tarballs it lacks in step 2, and an
+/// immutable one takes none.
 ///
 /// With `scope.skip_assets`, declared assets do not count toward completeness.
 /// `scope.declared_assets` names the assets the run declares, and
@@ -513,9 +515,10 @@ fn assets_of<'a>(declared: &'a DeclaredAssets, tag: &str) -> &'a [String] {
 }
 
 /// The tarballs a run uploads: each declared asset that the carrier tag's
-/// draft lacks, as a file in `dir`.
-/// A Release published at HEAD takes none, and a stale draft is deleted, so
-/// all its assets come from `dir`.
+/// draft, or its mutable Release published at HEAD, lacks, as a file in
+/// `dir`.
+/// An immutable published Release takes none, and a stale draft is deleted,
+/// so all its assets come from `dir`.
 /// It is checked before the run writes anything, so a tarball that is missing
 /// fails the run before the draft exists.
 fn asset_files(
@@ -526,14 +529,14 @@ fn asset_files(
     let Some((carrier, names)) = declared else {
         return Ok(Vec::new());
     };
-    let Some(github::Found::Unpublished(draft)) = tags
+    let Some(uploaded) = tags
         .iter()
         .find(|tag| tag.plan.tag == *carrier)
-        .map(|tag| &tag.found)
+        .and_then(|tag| tag.found.uploaded())
     else {
         return Ok(Vec::new());
     };
-    lacking(names, &draft.uploaded(), dir)
+    lacking(names, &uploaded, dir)
 }
 
 /// The files in `dir` for each of `names` that `uploaded` lacks.
@@ -551,7 +554,7 @@ fn lacking(names: &[String], uploaded: &[&str], dir: Option<&Path>) -> Result<Ve
     }
     let Some(dir) = dir else {
         bail!(
-            "the release declares {wanted}, which its draft does not hold; pass --assets-dir with the tarballs release asset built, or --skip-assets to release without them",
+            "the release declares {wanted}, which its Release does not hold; pass --assets-dir with the tarballs release asset built, or --skip-assets to release without them",
             wanted = wanted.join(", ")
         );
     };
@@ -649,7 +652,7 @@ impl<'a> TagRelease<'a> {
         declared: &DeclaredAssets,
     ) -> Result<Held> {
         match &self.found {
-            github::Found::Published { url } => Ok(Held::Published(url.clone())),
+            github::Found::Published(release) => Ok(Held::Published(release.url().to_owned())),
             github::Found::Unpublished(draft) => {
                 github::open_draft(token, repo, &self.release(head, declared), draft)
                     .map(Held::Draft)

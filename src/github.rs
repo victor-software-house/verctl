@@ -501,14 +501,27 @@ pub const TAG_PROOF_DELAYS: [Duration; 4] = [
 /// anything.
 #[derive(Debug)]
 pub(crate) enum Found {
-    /// A Release published at HEAD. The run creates nothing for it and only
-    /// proves its tag.
-    Published {
-        /// The Release's HTML URL.
-        url: String,
-    },
+    /// A Release published at HEAD. The run opens no draft for it and proves
+    /// its tag. A mutable one takes the declared tarballs it lacks, so an
+    /// older release missing a target can still be finished.
+    Published(ForgeRelease),
     /// No published Release: the run opens a draft for the tag.
     Unpublished(Unpublished),
+}
+
+impl Found {
+    /// The asset names already on the Release the run uploads to, or `None`
+    /// for a published immutable Release, which takes no asset ([immutable
+    /// releases]). Its shortfall is reported, and nothing is uploaded.
+    ///
+    /// [immutable releases]: https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/immutable-releases
+    pub(crate) fn uploaded(&self) -> Option<Vec<&str>> {
+        match self {
+            Self::Published(release) if release.immutable => None,
+            Self::Published(release) => Some(release.uploaded()),
+            Self::Unpublished(draft) => Some(draft.uploaded()),
+        }
+    }
 }
 
 /// A tag with no published Release, and the draft a run finds for it.
@@ -581,9 +594,7 @@ async fn read_release_with(crab: &Octocrab, repo: &Repo, tag: &str, head: &str) 
         "release {tag} is published at {target}, not HEAD {head}, and GitHub serves no tag {tag}",
         target = release.target_commitish
     );
-    Ok(Found::Published {
-        url: release.html_url,
-    })
+    Ok(Found::Published(release))
 }
 
 /// The id of the draft for `release`: the one `found` names at HEAD, or a new
@@ -1137,6 +1148,11 @@ pub(crate) struct ForgeRelease {
 }
 
 impl ForgeRelease {
+    /// The Release's HTML URL.
+    pub(crate) fn url(&self) -> &str {
+        &self.html_url
+    }
+
     /// The names of the assets whose upload completed.
     pub(crate) fn uploaded(&self) -> Vec<&str> {
         self.assets
@@ -2059,10 +2075,7 @@ mod tests {
             .mount(&server)
             .await;
         assert!(
-            matches!(
-                found(&server).await.unwrap(),
-                super::Found::Published { .. }
-            ),
+            matches!(found(&server).await.unwrap(), super::Found::Published(_)),
             "published at HEAD"
         );
     }
