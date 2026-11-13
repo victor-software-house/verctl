@@ -4,6 +4,7 @@
 
 verctl releases are idempotent, but nothing proves, before the first upload, that every upload can succeed.
 A version bump can also land on the default branch long before its release completes.
+
 shrub 0.7.0 published one crate of 9, then crates.io refused a new crate, a failure knowable before any upload.
 While its release stayed incomplete, `main` took 24 more commits.
 

@@ -11,7 +11,8 @@ npm and GitHub Packages, Go modules, and other registries are horizon rows of th
 **Decision.**
 `verctl check [CHECK]...` takes the names `fragments`, `served`, `versions`, `registry` and `trust`.
 Names add up and never overlap; each check runs once.
-Bare `check` runs `fragments` and `served`, which need only the checkout, so the pre-commit hook and `verify` keep today's result.
+Bare `check` runs `fragments` and `served`.
+Both need only the checkout, and the pre-commit hook and `verify` keep today's result.
 `--all` (`-a`) runs every check, and fails `trust` when no owner's token is set.
 A new check later is a new name, so no existing name starts needing more.
 
@@ -64,13 +65,15 @@ Leave out `owners`, and the owner proof is skipped with a notice.
 **Decision.**
 The existence proof applies to the crates the default branch holds.
 A crate that only the pull request adds passes with a notice that it needs `release bootstrap` once it lands.
+
 After it lands, `check registry` fails every pull request until the operator runs `verctl release bootstrap` at the default branch's tip, or the `bootstrap` workflow input lets the release do it.
 The first version is then the code the default branch holds, as [`first-publish`][first-publish] requires.
 
 **Alternative.**
 Bootstrap from the pull request's head before it merges.
 It lost because it publishes code the default branch never held, which a later change to the pull request could make wrong.
-Failing the pull request until then lost too: no first publish can happen before the merge, so the pull request could never merge.
+Failing the pull request until then lost too.
+No first publish can happen before the merge, and the pull request could then never merge.
 
 **Override.**
 None: the notice names the step the operator takes after the merge.

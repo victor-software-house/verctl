@@ -3,6 +3,7 @@
 ## Motivation
 
 crates.io trusted publishing cannot create a crate: its first version needs a user's token, and a trusted publisher entry can only be added to a crate that exists.
+
 shrub 0.7.0 stopped there, on the new crate `shrub-process`, after another crate of the release was live.
 A first publish is a manual act today, with no verctl command, and nothing then registers the trusted publisher.
 

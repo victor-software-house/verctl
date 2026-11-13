@@ -16,7 +16,7 @@ when none of them is set.
 #### Scenario: A depth-1 pull request merge checkout
 
 - **WHEN** a clone holds only a depth-1 fetch of `refs/pull/1/merge`, has no `origin/main`, `main` has moved on since the merge ref was made, `GITHUB_BASE_REF=main`, and `verctl check versions` runs
-- **THEN** `origin/main` is fetched and each manifest is compared with its copy at the merge-base of HEAD and `origin/main`, which is HEAD's first parent
+- **THEN** `origin/main` is fetched and each manifest is compared with the copy that the merge-base of HEAD and `origin/main` holds, which is HEAD's first parent
 
 #### Scenario: A pull request to another branch
 
