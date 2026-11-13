@@ -151,7 +151,7 @@ A version bump reaches the default branch only with its release, and nothing lan
    1. Only an external failure is left, such as a registry outage.
    2. The default branch stays frozen, `status` reports the partial release, and a rerun resumes it.
    3. A release that can never finish, such as one whose crate name someone else took, ends only by an operator act.
-      The operator labels a pull request `verctl: unfreeze`, and the check lets that one through.
+      The operator labels a pull request `verctl: unfreeze` that renames or removes the package, and the check lets that one through.
 
 ### 5.1 Enforcement by plan
 

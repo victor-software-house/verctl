@@ -2,7 +2,8 @@
 
 ### Requirement: `release bootstrap` publishes the packages the registry lacks
 
-`verctl release bootstrap [PACKAGE]...` SHALL run locally, read the registry token from `VERCTL_REGISTRY_TOKEN`, and publish the real code of each named package the registry lacks, or of every such declared package when none is named, at the version the default branch holds.
+`verctl release bootstrap [PACKAGE]...` SHALL run locally, or in the release job when the `bootstrap` input is set.
+It SHALL read the registry token from `VERCTL_REGISTRY_TOKEN`, and publish the real code of each named package the registry lacks, or of every such declared package when none is named, at the version the default branch holds.
 
 #### Scenario: A new crate
 
@@ -22,13 +23,19 @@
 
 ### Requirement: `release bootstrap` tags each standalone package
 
-After its uploads, `verctl release bootstrap` SHALL tag each published standalone package, and then run `verctl release trust` for the same packages.
+Run on its own, `verctl release bootstrap` SHALL tag each published standalone package after its uploads, and then run `verctl release trust` for the same packages.
+Inside a release run, it SHALL only upload, and the publish of the run's draft Release SHALL create the tag, as release-order requires.
 A member of a shared-version group SHALL get no tag, because its tag belongs to the group's release.
 
 #### Scenario: A new standalone package
 
 - **WHEN** standalone package `demo` is at `0.0.0` on `main`, crates.io lacks it, and `verctl release bootstrap` runs
 - **THEN** it publishes `demo` `0.0.0`, creates tag `v0.0.0` at the default branch's tip, and runs `verctl release trust`
+
+#### Scenario: Bootstrap inside a release run
+
+- **WHEN** the release job runs with `bootstrap: true`, standalone package `demo` at `0.0.0` is missing from crates.io, and the next registry upload of the run fails
+- **THEN** `demo` `0.0.0` is on crates.io, no tag `v0.0.0` exists, and the run's draft Release stays a draft until a rerun completes
 
 ### Requirement: `release bootstrap` needs the operator's token
 

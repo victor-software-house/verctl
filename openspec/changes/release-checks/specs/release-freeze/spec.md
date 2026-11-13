@@ -28,8 +28,9 @@ The label SHALL pass only the freeze; every other proof of the `registry` check 
 
 #### Scenario: A release that can never complete
 
-- **WHEN** crate `demo` `0.4.0` can never publish, because another owner took the name, and a pull request labelled `verctl: unfreeze` runs `verctl check registry`
+- **WHEN** crate `demo` `0.4.0` can never publish, because another owner took the name, and a pull request labelled `verctl: unfreeze` renames the package to `demo-cli` and runs `verctl check registry`
 - **THEN** the freeze does not fail the check, and the check names the pending release as passed by the label
+- **AND** it runs no proof for `demo`, which the checked commit no longer holds, and gives `demo-cli` the bootstrap notice
 
 #### Scenario: The label does not pass a registry proof
 
