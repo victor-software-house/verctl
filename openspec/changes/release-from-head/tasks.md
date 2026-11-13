@@ -11,9 +11,15 @@
 
 ## 3. Workflow
 
-- [ ] 3.1 `release.yml` runs at HEAD only: no matrix of version commits, no checkout of an old commit. Proof: `actionlint` and the workflow policy in CI, and a release of this repository.
+- [x] 3.1 `release.yml` runs at HEAD only: no matrix of version commits, no checkout of an old commit. Proof: `actionlint` and the workflow policy in CI, and a release of this repository.
+  - [#371][pr-371] passed both in CI, and [run 43511698400][release-run] released `0.8.6-rc.2` from HEAD `19ee926`.
 
 ## 4. Documents
 
 - [x] 4.1 Update AGENTS.md, the instructions, the operator skill and the README for HEAD as the release reference. Proof: `UPDATE_OPERATOR_DOCS=1 cargo test operator_docs` leaves no diff in CI.
-- [ ] 4.2 A `patch!` fragment for verctl lists the HEAD-only release under `### Breaking`. Proof: `verctl version --dry-run` shows the entry under that heading.
+- [x] 4.2 A `patch!` fragment for verctl lists the HEAD-only release under `### Breaking`. Proof: `verctl version --dry-run` shows the entry under that heading.
+  - [Version PR #384][pr-384] listed it under `### Breaking`.
+
+[pr-371]: https://github.com/victor-software-house/verctl/pull/371
+[pr-384]: https://github.com/victor-software-house/verctl/pull/384
+[release-run]: https://github.com/victor-software-house/verctl/actions/runs/43511698400
