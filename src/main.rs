@@ -405,6 +405,7 @@ fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
         skip_assets: args.skip_assets,
         declared_assets: args.declared_assets.clone(),
         releases_only: args.releases_only,
+        assets_dir: args.assets_dir.clone(),
     };
     let run = publish::run_pending(
         &config,
@@ -415,12 +416,7 @@ fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
         allow,
         registry_token.as_ref(),
     )?;
-    let notices: Vec<String> = run
-        .shortfalls
-        .iter()
-        .map(ToString::to_string)
-        .chain(run.drafts.iter().map(ToString::to_string))
-        .collect();
+    let notices: Vec<String> = run.shortfalls.iter().map(ToString::to_string).collect();
     Ok(ReleaseReport {
         outcome: run.outcome,
         packages: run.published.packages,
@@ -456,21 +452,16 @@ fn render_report(args: &RenderArgs) -> Result<RenderReport> {
     })
 }
 
-/// `release asset <target>`: build the target's tarball, then upload it to
-/// `--tag`, or the first package's tag, unless `--dry-run` asks for the build
-/// alone. `--dry-run` and `--config` count before or after `asset`.
+/// `release asset <target>`: build the target's tarball and upload nothing,
+/// so the leg needs no token. `release --assets-dir` uploads it to the draft
+/// after the run reads GitHub, and before any registry upload.
+/// `--config` counts before or after `asset`.
 fn asset_report(args: &AssetArgs, release: &ReleaseArgs) -> Result<AssetsReport> {
     let path = args.config_under(release);
     let config = Config::load(path)?;
     let root = &config::root_of(path);
     let planned = assets::plan(&config, root)?;
     let tarball = assets::build(&planned, &args.target, root, args.prebuilt.as_deref())?;
-    let uploaded = if args.dry_run_under(release) {
-        None
-    } else {
-        let tag = args.tag.as_deref().unwrap_or(planned.tag.as_str());
-        Some(assets::upload(root, tag, &tarball)?)
-    };
     Ok(AssetsReport {
         plan: planned,
         tarball: Some(tarball.display().to_string()),
@@ -478,7 +469,6 @@ fn asset_report(args: &AssetArgs, release: &ReleaseArgs) -> Result<AssetsReport>
             .prebuilt
             .as_ref()
             .map(|path| path.display().to_string()),
-        uploaded,
     })
 }
 

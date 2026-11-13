@@ -601,7 +601,6 @@ pub(super) struct AssetsReport {
     pub(super) tarball: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) prebuilt: Option<String>,
-    pub(super) uploaded: Option<String>,
 }
 
 impl Present for AssetsReport {
@@ -620,9 +619,6 @@ impl Present for AssetsReport {
         }
         if let Some(path) = &self.prebuilt {
             fields = fields.row("prebuilt", path.clone());
-        }
-        if let Some(url) = &self.uploaded {
-            fields = fields.row("upload", url.clone());
         }
         Document::new().table(table).fields(fields)
     }

@@ -40,9 +40,9 @@
 //!    [`release::write_changelogs`] renders the changelog sections,
 //!    [`prepare::run_steps`] runs each lockfile's owner and `prepare.after`,
 //!    and [`release::open_or_update_pr`] opens or updates the Version PR.
-//! 4. After the merge, [`publish`] runs each package's [`publisher`], tags the
-//!    commit, and opens a GitHub Release, and [`assets`] builds the declared
-//!    release tarballs.
+//! 4. After the merge, [`assets`] builds the declared release tarballs, and
+//!    [`publish`] uploads them to a draft GitHub Release, runs each package's
+//!    [`publisher`], then publishes the draft, which tags the commit.
 //! 5. [`versions`] guards the other way: a manifest version that differs from
 //!    the default branch without a fragment fails the check. On the Version PR,
 //!    [`content::check`] replays the version step on the merge-base and fails

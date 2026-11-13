@@ -2,7 +2,8 @@
 //!
 //! A release is complete when the registry lists each package's version, and
 //! its tag and its published Release exist, with every declared asset.
-//! A Release with declared assets is a draft until every asset is uploaded.
+//! `release` creates a draft with no tag first and publishes it after every
+//! upload, which creates the tag.
 //! A draft is incomplete, and `release` run again publishes it.
 //! A published Release that lacks an asset is incomplete too, unless GitHub
 //! holds it immutable.
@@ -113,9 +114,9 @@ pub struct PendingPackage {
     /// The version HEAD's manifest holds.
     pub version: String,
     /// Whether the registry already lists the version or, for an upload with
-    /// no registry check, its tag exists. Only the Release or its assets are
-    /// then left, such as a draft waiting to be published, and `release`
-    /// runs no upload for it.
+    /// no registry check, its tag or its published Release exists. Only the
+    /// Release or its assets are then left, such as a draft waiting to be
+    /// published, and `release` runs no upload for it.
     #[serde(skip)]
     pub listed: bool,
 }
@@ -386,10 +387,11 @@ fn tag_of(planned: &publish::PublishPlan, entry: &PublishEntry) -> Result<String
 /// Whether the registry has `entry`'s version: for a workspace package, every
 /// member's.
 ///
-/// A package with no registry, or an upload with no check, counts as listed
-/// once its tag exists. `release` creates the tag of a package with an
-/// unchecked upload only after the upload, so the tag is the record. A tag
-/// with only checked uploads is created first and records nothing.
+/// A package with no registry counts as listed. An upload with no check
+/// counts as listed once its tag or its published Release exists: `release`
+/// publishes the draft, which creates the tag, only after every upload, so
+/// either is the record. GitHub can serve the tag a moment after the Release,
+/// so a published Release whose tag is not served yet counts too.
 ///
 /// A `query` runs with `env`, as [`RegistryCheck::lists`] describes.
 fn registry_lists(
@@ -405,7 +407,9 @@ fn registry_lists(
     }
     for upload in publisher::uploads(config, spec, root, entry)? {
         let listed = match &upload.check {
-            RegistryCheck::Unchecked => release.tag.is_some(),
+            RegistryCheck::Unchecked => {
+                release.tag.is_some() || (release.release && !release.draft)
+            }
             check @ (RegistryCheck::CratesIo { .. } | RegistryCheck::Query { .. }) => {
                 check.lists(&upload.version, env)?
             }

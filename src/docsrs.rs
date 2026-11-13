@@ -98,7 +98,8 @@ struct Wanted {
 ///   check reads GitHub for this.
 /// - The crates.io index lists the version.
 ///
-/// `release` creates the tag of a crates.io package before the upload.
+/// `release` creates the tag of a crates.io package only after its upload,
+/// when it publishes the draft Release.
 /// The tag therefore marks which commit released the version, and the index
 /// shows that the upload happened.
 /// The tag lookup goes to GitHub and never to local refs, because a CI

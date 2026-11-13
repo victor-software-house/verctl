@@ -1,5 +1,6 @@
-//! A Release with declared assets is a draft until every asset is uploaded,
-//! as `status` and `release` see it through the binary.
+//! `release` drafts a Release with no tag, uploads its assets, publishes to
+//! the registries, then publishes the draft, which creates the tag. `status`
+//! and `release` see each state through the binary.
 
 mod common;
 
@@ -7,9 +8,9 @@ use std::fs;
 use std::path::Path;
 use std::process::Output;
 
-use indoc::indoc;
+use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{method, path, path_regex, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const CONFIG: &str = indoc! {"
@@ -311,4 +312,759 @@ async fn releases_only_refuses_a_package_the_registry_lacks() {
         said.contains("--releases-only starts no publisher"),
         "{said}"
     );
+}
+
+/// How a test package's upload behaves.
+#[derive(Clone, Copy)]
+enum Upload {
+    /// The registry lists the version from the start, so no upload runs.
+    Listed,
+    /// The upload reaches the mock, and the registry lists the version after.
+    Succeeds,
+    /// The upload reaches the mock, then fails with crates.io's 429.
+    RateLimited,
+}
+
+/// What crates.io prints when it refuses an upload for its rate limit.
+const RATE_LIMITED: &str = "the remote server responded with an error (status 429 Too Many Requests): Please try again after Fri, 13 Nov 2026 19:00:00 GMT or email help@crates.io";
+
+/// The tag every crate of the order tests shares.
+const TAG: &str = "v0.4.0";
+
+/// The tarball the order tests declare.
+const TARBALL: &str = "core_0.4.0_linux_x64.tar.gz";
+
+/// Write `body` as the shell script `name` in `root`, and return the argv
+/// that runs it through `sh`, so a test never executes a file it wrote a moment
+/// before.
+fn script(root: &Path, name: &str, body: &str) -> String {
+    let path = root.join(name);
+    fs::write(&path, body).unwrap();
+    format!(r#"["sh", "{}"]"#, path.display())
+}
+
+/// One package of [`crates`]: its manifest and changelog at `0.4.0`, and its
+/// entry under `packages`, whose upload `curl -fsS <uri>/__upload/{name}` the
+/// mock records and whose `query` lists the version once that upload ran.
+fn crate_entry(root: &Path, uri: &str, name: &str, upload: Upload) -> String {
+    let marker = root.join(format!("{name}.up"));
+    let marker = marker.display();
+    let upload_body = match upload {
+        Upload::Listed | Upload::Succeeds => formatdoc! {r#"
+            curl -fsS "{uri}/__upload/{name}" > /dev/null
+            touch "{marker}"
+        "#},
+        Upload::RateLimited => formatdoc! {r#"
+            curl -fsS "{uri}/__upload/{name}" > /dev/null
+            echo "{RATE_LIMITED}" >&2
+            exit 101
+        "#},
+    };
+    let query_body = match upload {
+        Upload::Listed => "echo 0.4.0\n".to_owned(),
+        Upload::Succeeds | Upload::RateLimited => formatdoc! {r#"
+            test -f "{marker}" && echo 0.4.0
+        "#},
+    };
+    fs::create_dir_all(root.join(name)).unwrap();
+    fs::write(
+        root.join(name).join("Cargo.toml"),
+        formatdoc! {r#"
+            [package]
+            name = "{name}"
+            version = "0.4.0"
+        "#},
+    )
+    .unwrap();
+    fs::write(
+        root.join(name).join("CHANGELOG.md"),
+        formatdoc! {"
+            # Changelog
+
+            ## {name} 0.4.0
+
+            - First.
+        "},
+    )
+    .unwrap();
+    formatdoc! {"
+        - name: {name}
+          path: {name}/Cargo.toml
+          publish: {publish}
+          query: {query}
+        ",
+        publish = script(root, &format!("upload-{name}.sh"), &upload_body),
+        query = script(root, &format!("query-{name}.sh"), &query_body),
+    }
+}
+
+/// Crates at `0.4.0` in config order, each as [`crate_entry`] writes it,
+/// sharing tag [`TAG`]. With `assets`, that tag carries the `linux-x64`
+/// tarball [`TARBALL`]. Returns HEAD, the tip of `origin/main`.
+fn crates(root: &Path, uri: &str, packages: &[(&str, Upload)], assets: bool) -> String {
+    let entries: String = packages
+        .iter()
+        .map(|(name, upload)| crate_entry(root, uri, name, *upload))
+        .collect();
+    let targets = if assets {
+        indoc! {"
+            assets:
+              linux-x64: {}
+        "}
+    } else {
+        ""
+    };
+    common::write_config(
+        root,
+        &formatdoc! {"
+            packages:
+            {entries}{targets}"},
+    );
+    common::on_default_branch(root);
+    common::git(root, &["rev-parse", "HEAD"])
+}
+
+fn not_found() -> ResponseTemplate {
+    ResponseTemplate::new(404).set_body_json(serde_json::json!({
+        "message": "Not Found",
+        "documentation_url": "https://docs.github.com"
+    }))
+}
+
+/// A Release as GitHub returns it, complete enough for octocrab to read:
+/// release `id` for `tag` at `target`, holding `assets`.
+/// octocrab reads a full asset, so a Release it reads holds none.
+fn full_release(
+    uri: &str,
+    id: u64,
+    tag: &str,
+    target: &str,
+    draft: bool,
+    assets: &[&str],
+) -> serde_json::Value {
+    serde_json::json!({
+        "url": format!("{uri}/repos/acme/demo/releases/{id}"),
+        "html_url": format!("https://github.com/acme/demo/releases/tag/{tag}"),
+        "assets_url": format!("{uri}/repos/acme/demo/releases/{id}/assets"),
+        "upload_url": format!("{uri}/upload/repos/acme/demo/releases/{id}/assets{{?name,label}}"),
+        "tarball_url": null,
+        "zipball_url": null,
+        "id": id,
+        "node_id": "R",
+        "tag_name": tag,
+        "target_commitish": target,
+        "name": tag,
+        "body": "notes",
+        "draft": draft,
+        "prerelease": false,
+        "created_at": "2026-11-13T00:00:00Z",
+        "published_at": null,
+        "assets": assets
+            .iter()
+            .map(|name| serde_json::json!({ "name": name, "state": "uploaded" }))
+            .collect::<Vec<_>>()
+    })
+}
+
+/// An asset as GitHub returns it after an upload.
+fn uploaded_asset(uri: &str, name: &str) -> serde_json::Value {
+    serde_json::json!({
+        "url": format!("{uri}/repos/acme/demo/releases/assets/9"),
+        "browser_download_url": format!("https://github.com/acme/demo/releases/download/{TAG}/{name}"),
+        "id": 9,
+        "node_id": "A",
+        "name": name,
+        "label": null,
+        "state": "uploaded",
+        "content_type": "application/gzip",
+        "size": 7,
+        "digest": null,
+        "download_count": 0,
+        "created_at": "2026-11-13T00:00:00Z",
+        "updated_at": "2026-11-13T00:00:00Z",
+        "uploader": null
+    })
+}
+
+/// The tag ref GitHub answers with once tag `tag` names `sha`.
+fn tag_ref(tag: &str, sha: &str) -> ResponseTemplate {
+    ResponseTemplate::new(200).set_body_json(serde_json::json!({
+        "ref": format!("refs/tags/{tag}"),
+        "node_id": "R",
+        "url": format!("https://api.github.com/repos/acme/demo/git/refs/tags/{tag}"),
+        "object": {
+            "type": "commit",
+            "sha": sha,
+            "url": format!("https://api.github.com/repos/acme/demo/git/commits/{sha}")
+        }
+    }))
+}
+
+/// Tag `tag` missing for the first `missing` reads, then naming `sha`, as
+/// GitHub serves a tag once publishing the draft created it.
+async fn tag_after(server: &MockServer, tag: &str, sha: &str, missing: u64) {
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/git/ref/tags/{tag}")))
+        .respond_with(not_found())
+        .up_to_n_times(missing)
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/git/ref/tags/{tag}")))
+        .respond_with(tag_ref(tag, sha))
+        .mount(server)
+        .await;
+}
+
+/// `GET /releases` answering `releases`, the only listing that shows drafts.
+async fn listed(server: &MockServer, releases: serde_json::Value) {
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/releases"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(releases))
+        .mount(server)
+        .await;
+}
+
+/// The draft `id` as `GET /releases/{id}` returns it, and the update that
+/// publishes it.
+async fn draft_to_publish(server: &MockServer, id: u64, head: &str, assets: &[&str]) {
+    let uri = server.uri();
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/releases/{id}")))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(full_release(&uri, id, TAG, head, true, assets)),
+        )
+        .mount(server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path(format!("/repos/acme/demo/releases/{id}")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(full_release(
+            &uri,
+            id,
+            TAG,
+            head,
+            false,
+            &[],
+        )))
+        .mount(server)
+        .await;
+}
+
+/// Mount on `server` a GitHub with no tag and no Release for [`TAG`]. It
+/// takes a new draft (id 1), an upload of each of `assets` to it, and the
+/// update that publishes it, and serves the tag at `head` once the plan and
+/// the run have read it missing. Every `/__upload/{name}` answers 200.
+async fn new_release(server: &MockServer, head: &str, assets: &[&str]) {
+    let uri = server.uri();
+    tag_after(server, TAG, head, 2).await;
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/releases/tags/{TAG}")))
+        .respond_with(not_found())
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/releases"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+        .up_to_n_times(2)
+        .mount(server)
+        .await;
+    listed(
+        server,
+        serde_json::json!([full_release(&uri, 1, TAG, head, true, &[])]),
+    )
+    .await;
+    Mock::given(method("POST"))
+        .and(path("/repos/acme/demo/releases"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(full_release(
+            &uri,
+            1,
+            TAG,
+            head,
+            true,
+            &[],
+        )))
+        .mount(server)
+        .await;
+    if !assets.is_empty() {
+        Mock::given(method("GET"))
+            .and(path("/repos/acme/demo/releases/1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(full_release(
+                &uri,
+                1,
+                TAG,
+                head,
+                true,
+                &[],
+            )))
+            .up_to_n_times(u64::try_from(assets.len()).unwrap())
+            .mount(server)
+            .await;
+        for name in assets {
+            Mock::given(method("POST"))
+                .and(path("/upload/repos/acme/demo/releases/1/assets"))
+                .and(query_param("name", *name))
+                .respond_with(ResponseTemplate::new(201).set_body_json(uploaded_asset(&uri, name)))
+                .mount(server)
+                .await;
+        }
+    }
+    draft_to_publish(server, 1, head, assets).await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/__upload/[a-z]+$"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(server)
+        .await;
+}
+
+/// The directory `--assets-dir` names, holding each of `names`.
+fn tarballs(names: &[&str]) -> TempDir {
+    let dir = TempDir::new().unwrap();
+    for name in names {
+        fs::write(dir.path().join(name), "tarball").unwrap();
+    }
+    dir
+}
+
+/// Each request the mock received, as its method and path.
+async fn requests(server: &MockServer) -> Vec<(String, String)> {
+    server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .map(|request| (request.method.to_string(), request.url.path().to_owned()))
+        .collect()
+}
+
+/// Where the first request with `method` to `path` sits among `seen`.
+fn first(seen: &[(String, String)], method: &str, path: &str) -> usize {
+    seen.iter()
+        .position(|(by, to)| by == method && to == path)
+        .unwrap_or_else(|| panic!("no {method} {path} in {seen:?}"))
+}
+
+/// Whether `seen` holds a request with `method` whose path starts with
+/// `prefix`.
+fn sent(seen: &[(String, String)], method: &str, prefix: &str) -> bool {
+    seen.iter()
+        .any(|(by, to)| by == method && to.starts_with(prefix))
+}
+
+/// `release` with `--color never` and `args`, against `server`.
+fn release(root: &Path, server: &MockServer, args: &[&str]) -> Output {
+    let mut all = vec!["release", "--color", "never"];
+    all.extend(args);
+    run(root, server, &all)
+}
+
+/// The run drafts the Release and uploads its asset, publishes `core` then
+/// `app`, then publishes the draft at HEAD, and only then reads the tag. No
+/// tag is created through the git refs API.
+#[tokio::test]
+async fn a_release_drafts_uploads_publishes_then_tags() {
+    let root = TempDir::new().unwrap();
+    let server = MockServer::start().await;
+    let head = crates(
+        root.path(),
+        &server.uri(),
+        &[("core", Upload::Succeeds), ("app", Upload::Succeeds)],
+        true,
+    );
+    new_release(&server, &head, &[TARBALL]).await;
+    let dir = tarballs(&[TARBALL]);
+    let output = release(
+        root.path(),
+        &server,
+        &["--assets-dir", dir.path().to_str().unwrap()],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let seen = requests(&server).await;
+    let draft = first(&seen, "POST", "/repos/acme/demo/releases");
+    let asset = first(&seen, "POST", "/upload/repos/acme/demo/releases/1/assets");
+    let core = first(&seen, "GET", "/__upload/core");
+    let app = first(&seen, "GET", "/__upload/app");
+    let publish = first(&seen, "PATCH", "/repos/acme/demo/releases/1");
+    let tag = format!("/repos/acme/demo/git/ref/tags/{TAG}");
+    let proof = seen
+        .iter()
+        .rposition(|(by, to)| by == "GET" && *to == tag)
+        .unwrap();
+    assert!(
+        draft < asset && asset < core && core < app && app < publish && publish < proof,
+        "{seen:?}"
+    );
+    assert!(
+        !sent(&seen, "POST", "/repos/acme/demo/git/refs"),
+        "{seen:?}"
+    );
+    let received = server.received_requests().await.unwrap();
+    let created: serde_json::Value = serde_json::from_slice(&received[draft].body).unwrap();
+    assert_eq!(created["draft"], true, "{created}");
+    assert_eq!(created["target_commitish"], head.as_str(), "{created}");
+    let published: serde_json::Value = serde_json::from_slice(&received[publish].body).unwrap();
+    assert_eq!(published["draft"], false, "{published}");
+    assert_eq!(published["target_commitish"], head.as_str(), "{published}");
+}
+
+/// crates.io's 429 on the second crate stops the run with the draft holding
+/// its asset: the draft is never published and no tag is created.
+#[tokio::test]
+async fn a_rate_limit_on_the_second_crate_leaves_the_draft_and_no_tag() {
+    let root = TempDir::new().unwrap();
+    let server = MockServer::start().await;
+    let head = crates(
+        root.path(),
+        &server.uri(),
+        &[("core", Upload::Succeeds), ("app", Upload::RateLimited)],
+        true,
+    );
+    new_release(&server, &head, &[TARBALL]).await;
+    let dir = tarballs(&[TARBALL]);
+    let output = release(
+        root.path(),
+        &server,
+        &["--assets-dir", dir.path().to_str().unwrap()],
+    );
+    assert!(!output.status.success(), "{output:?}");
+    let said = String::from_utf8_lossy(&output.stderr)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        said.contains("try again after Fri, 13 Nov 2026 19:00:00 GMT"),
+        "{said}"
+    );
+    assert!(said.contains("No tag exists"), "{said}");
+    let seen = requests(&server).await;
+    assert!(
+        sent(&seen, "POST", "/upload/repos/acme/demo/releases/1/assets"),
+        "{seen:?}"
+    );
+    assert!(sent(&seen, "GET", "/__upload/app"), "{seen:?}");
+    assert!(
+        !sent(&seen, "PATCH", "/repos/acme/demo/releases"),
+        "{seen:?}"
+    );
+    assert!(
+        !sent(&seen, "POST", "/repos/acme/demo/git/refs"),
+        "{seen:?}"
+    );
+}
+
+/// A rerun skips the crate the registry already lists, publishes the other
+/// two in config order, then publishes the draft.
+#[tokio::test]
+async fn a_rerun_skips_every_crate_the_registry_lists() {
+    let root = TempDir::new().unwrap();
+    let server = MockServer::start().await;
+    let head = crates(
+        root.path(),
+        &server.uri(),
+        &[
+            ("core", Upload::Succeeds),
+            ("util", Upload::Listed),
+            ("app", Upload::Succeeds),
+        ],
+        false,
+    );
+    new_release(&server, &head, &[]).await;
+    let output = release(root.path(), &server, &[]);
+    assert!(output.status.success(), "{output:?}");
+    let seen = requests(&server).await;
+    assert!(!sent(&seen, "GET", "/__upload/util"), "{seen:?}");
+    let core = first(&seen, "GET", "/__upload/core");
+    let app = first(&seen, "GET", "/__upload/app");
+    let publish = first(&seen, "PATCH", "/repos/acme/demo/releases/1");
+    assert!(core < app && app < publish, "{seen:?}");
+}
+
+/// A published Release at HEAD, its tag at HEAD, and every crate listed is
+/// nothing to release: the run writes nothing.
+#[tokio::test]
+async fn a_finished_release_writes_nothing() {
+    let root = TempDir::new().unwrap();
+    let server = MockServer::start().await;
+    let head = crates(
+        root.path(),
+        &server.uri(),
+        &[("core", Upload::Listed), ("app", Upload::Listed)],
+        false,
+    );
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/git/ref/tags/{TAG}")))
+        .respond_with(tag_ref(TAG, &head))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/releases/tags/{TAG}")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(full_release(
+            &server.uri(),
+            1,
+            TAG,
+            &head,
+            false,
+            &[],
+        )))
+        .mount(&server)
+        .await;
+    let output = release(root.path(), &server, &[]);
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("nothing to release"), "{stdout}");
+    let seen = requests(&server).await;
+    assert!(
+        !seen
+            .iter()
+            .any(|(by, _)| by == "POST" || by == "PATCH" || by == "DELETE"),
+        "{seen:?}"
+    );
+}
+
+/// A published Release whose tag names an older commit at the same version,
+/// with the registries incomplete, fails before any upload, naming the tag and
+/// both commits.
+#[tokio::test]
+async fn a_tag_on_another_commit_fails_before_any_upload() {
+    let root = TempDir::new().unwrap();
+    let server = MockServer::start().await;
+    let older = crates(
+        root.path(),
+        &server.uri(),
+        &[("core", Upload::Succeeds), ("app", Upload::Succeeds)],
+        false,
+    );
+    fs::write(root.path().join("README"), "later\n").unwrap();
+    let head = common::commit_all(root.path(), "docs: later");
+    common::git(
+        root.path(),
+        &["update-ref", "refs/remotes/origin/main", &head],
+    );
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/git/ref/tags/{TAG}")))
+        .respond_with(tag_ref(TAG, &older))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/releases/tags/{TAG}")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(full_release(
+            &server.uri(),
+            1,
+            TAG,
+            &older,
+            false,
+            &[],
+        )))
+        .mount(&server)
+        .await;
+    let output = release(root.path(), &server, &[]);
+    assert!(!output.status.success(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains(&format!("tag {TAG}")), "{stderr}");
+    assert!(stderr.contains(&older), "{stderr}");
+    assert!(stderr.contains(&head), "{stderr}");
+    let seen = requests(&server).await;
+    assert!(!sent(&seen, "GET", "/__upload/"), "{seen:?}");
+    assert!(
+        !seen
+            .iter()
+            .any(|(by, _)| by == "POST" || by == "PATCH" || by == "DELETE"),
+        "{seen:?}"
+    );
+}
+
+/// A draft at another commit holds tarballs built from other code, so it is
+/// deleted and a draft is created at HEAD, which the run publishes.
+#[tokio::test]
+async fn a_stale_draft_is_deleted_and_created_again_at_head() {
+    let root = TempDir::new().unwrap();
+    let server = MockServer::start().await;
+    let head = crates(
+        root.path(),
+        &server.uri(),
+        &[("core", Upload::Listed)],
+        false,
+    );
+    let uri = server.uri();
+    let stale = "1111111111111111111111111111111111111111";
+    tag_after(&server, TAG, &head, 2).await;
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/releases/tags/{TAG}")))
+        .respond_with(not_found())
+        .mount(&server)
+        .await;
+    listed(
+        &server,
+        serde_json::json!([full_release(&uri, 1, TAG, stale, true, &[])]),
+    )
+    .await;
+    Mock::given(method("DELETE"))
+        .and(path("/repos/acme/demo/releases/1"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/repos/acme/demo/releases"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(full_release(
+            &uri,
+            2,
+            TAG,
+            &head,
+            true,
+            &[],
+        )))
+        .expect(1)
+        .mount(&server)
+        .await;
+    draft_to_publish(&server, 2, &head, &[]).await;
+    let output = release(root.path(), &server, &[]);
+    assert!(output.status.success(), "{output:?}");
+    let seen = requests(&server).await;
+    let deleted = first(&seen, "DELETE", "/repos/acme/demo/releases/1");
+    let created = first(&seen, "POST", "/repos/acme/demo/releases");
+    let published = first(&seen, "PATCH", "/repos/acme/demo/releases/2");
+    assert!(deleted < created && created < published, "{seen:?}");
+    let received = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&received[created].body).unwrap();
+    assert_eq!(body["draft"], true, "{body}");
+    assert_eq!(body["target_commitish"], head.as_str(), "{body}");
+}
+
+/// A declared tarball that is neither on the draft nor in `--assets-dir`
+/// fails the run before it writes anything.
+#[tokio::test]
+async fn a_missing_tarball_fails_before_any_write() {
+    let root = TempDir::new().unwrap();
+    let server = MockServer::start().await;
+    let head = crates(
+        root.path(),
+        &server.uri(),
+        &[("core", Upload::Succeeds), ("app", Upload::Succeeds)],
+        true,
+    );
+    new_release(&server, &head, &[TARBALL]).await;
+    let dir = tarballs(&[]);
+    let output = release(
+        root.path(),
+        &server,
+        &["--assets-dir", dir.path().to_str().unwrap()],
+    );
+    assert!(!output.status.success(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--assets-dir"), "{stderr}");
+    assert!(stderr.contains(TARBALL), "{stderr}");
+    let seen = requests(&server).await;
+    assert!(
+        !seen
+            .iter()
+            .any(|(by, _)| by == "POST" || by == "PATCH" || by == "DELETE"),
+        "{seen:?}"
+    );
+    assert!(!sent(&seen, "GET", "/__upload/"), "{seen:?}");
+}
+
+/// On a rerun the draft at HEAD already holds the declared tarball, so an
+/// empty `--assets-dir` is enough: nothing is uploaded, and the draft is
+/// published.
+#[tokio::test]
+async fn a_draft_at_head_that_holds_every_tarball_needs_none_in_the_directory() {
+    let root = TempDir::new().unwrap();
+    let server = MockServer::start().await;
+    let head = crates(
+        root.path(),
+        &server.uri(),
+        &[("core", Upload::Listed)],
+        true,
+    );
+    let uri = server.uri();
+    tag_after(&server, TAG, &head, 2).await;
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/releases/tags/{TAG}")))
+        .respond_with(not_found())
+        .mount(&server)
+        .await;
+    listed(
+        &server,
+        serde_json::json!([full_release(&uri, 1, TAG, &head, true, &[TARBALL])]),
+    )
+    .await;
+    draft_to_publish(&server, 1, &head, &[TARBALL]).await;
+    let dir = tarballs(&[]);
+    let output = release(
+        root.path(),
+        &server,
+        &["--assets-dir", dir.path().to_str().unwrap()],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let seen = requests(&server).await;
+    assert!(!sent(&seen, "POST", "/"), "{seen:?}");
+    first(&seen, "PATCH", "/repos/acme/demo/releases/1");
+}
+
+/// A mutable Release published at HEAD that lacks a declared tarball takes it
+/// from `--assets-dir`: the run uploads it, opens no draft, and publishes
+/// nothing.
+#[tokio::test]
+async fn a_mutable_published_release_takes_the_tarball_it_lacks() {
+    let root = TempDir::new().unwrap();
+    let server = MockServer::start().await;
+    let head = crates(
+        root.path(),
+        &server.uri(),
+        &[("core", Upload::Listed)],
+        true,
+    );
+    let uri = server.uri();
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/git/ref/tags/{TAG}")))
+        .respond_with(tag_ref(TAG, &head))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/releases/tags/{TAG}")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(full_release(
+            &uri,
+            1,
+            TAG,
+            &head,
+            false,
+            &[],
+        )))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/releases/1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(full_release(
+            &uri,
+            1,
+            TAG,
+            &head,
+            false,
+            &[],
+        )))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/upload/repos/acme/demo/releases/1/assets"))
+        .and(query_param("name", TARBALL))
+        .respond_with(ResponseTemplate::new(201).set_body_json(uploaded_asset(&uri, TARBALL)))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let dir = tarballs(&[TARBALL]);
+    let output = release(
+        root.path(),
+        &server,
+        &["--assets-dir", dir.path().to_str().unwrap()],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let seen = requests(&server).await;
+    first(&seen, "POST", "/upload/repos/acme/demo/releases/1/assets");
+    assert!(
+        !sent(&seen, "POST", "/repos/acme/demo/releases"),
+        "{seen:?}"
+    );
+    assert!(!sent(&seen, "PATCH", "/"), "{seen:?}");
+    assert!(!sent(&seen, "DELETE", "/"), "{seen:?}");
 }

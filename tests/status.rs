@@ -948,6 +948,16 @@ async fn github_without_releases(never_asked: &[&str]) -> MockServer {
         .respond_with(not_found())
         .mount(&server)
         .await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/repos/acme/demo/releases/tags/.+$"))
+        .respond_with(not_found())
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/releases"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+        .mount(&server)
+        .await;
     server
 }
 
