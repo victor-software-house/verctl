@@ -27,9 +27,9 @@ A parse error under `--format json` is a JSON error even when the bad argument c
 
 1. A pull request that changes behaviour adds a fragment ([Fragments](#fragments)).
 2. Each push to the default branch runs the release workflow ([Release workflow](#release-workflow)).  
-   It releases every incomplete version commit, then opens or updates the Version PR.
+   It releases every incomplete version HEAD holds, from HEAD, then opens or updates the Version PR.
 3. A person merges the Version PR, and verctl never merges it ([Version PR](#version-pr)).
-4. The push that merges it releases the new version commit ([Release](#release)).  
+4. The push that merges it releases the new versions ([Release](#release)).  
    That is the registry publish, the tag and GitHub Release, the assets, and the docs.rs wait.
 
 ## Configuration
@@ -182,7 +182,7 @@ The rest are `pull_request`, `commit`, `summary_has_terminal`, `dependencies`, a
 
 Releases run through verctl's reusable workflow, `victor-software-house/verctl/.github/workflows/release.yml`.  
 A thin caller (`examples/workflows/release.yml`) calls it on push to the default branch and on `workflow_dispatch`.  
-It plans every incomplete version commit and publishes each in history order.  
+It plans every incomplete release of the versions HEAD holds and publishes them from HEAD.  
 Then it builds the assets each Release lacks, publishes each draft Release whose assets are all uploaded, waits for docs.rs, and opens or updates the Version PR.
 
 ### Inputs and secrets
@@ -192,16 +192,15 @@ Every input is optional and defaults to verctl's:
 - `version-pr`, `publish`, `assets`, `docs`, `config`, and `runner`;
 - `mise-version`, `mise-env`, and `mise-ignored-config-paths`;
 - `registry-token-env`, `crates-io-trusted-publishing`, and `environment`;
-- `verctl-artifact`, for verctl's own release only: each job runs a verctl build from the calling run, and an asset job whose version commit is the run's commit packs that build with `--prebuilt`.
+- `verctl-artifact`, for verctl's own release only: each job runs a verctl build from the calling run, and each asset job packs that build with `--prebuilt`.
 
 The secrets are `app-client-id`, `app-private-key`, and `registry-token`.
 
-The plan job first requires verctl 0.8.4 or later, unless `verctl-artifact` is set.  
+The plan job first requires verctl 0.8.6-rc.2 or later, unless `verctl-artifact` is set.  
 The caller's pin chooses verctl apart from the workflow ref, so move both together.
 
-The later jobs check out each version commit, but they run the verctl the plan job checked at HEAD.  
-Each installs that version with `mise install --locked` from a second checkout of HEAD's mise files, so no lock is switched off.  
-A pending version commit that pins an older verctl, even one with no `release` verb, still releases.
+Every job checks out the commit that started the run.  
+The later jobs install the verctl the plan job checked with `mise install --locked`, from that commit's lock.
 
 `mise-ignored-config-paths` takes colon-separated config paths relative to the repository root, such as `mise.toml`.  
 Every job but propose ignores them, so they install only the release tools.  
@@ -249,14 +248,11 @@ Migrating from `version-pr.yml` and `publish.yml`:
 2. Close the open `version-packages` pull request and delete that branch.
 3. Move any setting the old workflows carried into inputs.
 
-Adopt `release.yml` when no release is pending, or merge the adoption before the Version PR.  
-Each release runs at its version commit.  
-A version commit from before the adoption lacks the `ver` task the reusable workflow runs.  
-Its publish then fails with `no task ver found`.
+Each release runs at the commit that started the run, so a release pending before the adoption releases from the first run after it.
 
 ### Workflow changes and the 403
 
-GitHub refuses to create a Release with 403 "Resource not accessible by integration" when the version commit's `.github/workflows` differs from the default branch.  
+GitHub refuses to create a Release with 403 "Resource not accessible by integration" when the release commit's `.github/workflows` differs from the default branch.  
 The Releases API then needs `workflows: write`, which `GITHUB_TOKEN` cannot hold.
 
 So `release` creates the tag and Release of some packages before their uploads.  
@@ -406,10 +402,10 @@ A merge queue run skips both rules.
 
 ## Release
 
-### Version commits
+### HEAD is the release reference
 
-`release` ships the versions already on HEAD, then a GitHub Release.  
-A package's version commit is the newest commit on HEAD's first-parent history where its manifest version became the version at HEAD.
+`release` ships the versions HEAD's manifests hold, from HEAD, then a GitHub Release, whichever commit set each version.  
+A version HEAD's manifests do not hold stays unreleased: no run releases it.
 
 Its release tag may instead sit on a commit that HEAD holds only through a merge.  
 An example is a forkctl append publish on a merge's second parent.  
@@ -417,7 +413,7 @@ That passes when the package's version there equals its version at HEAD.
 A tag on a commit HEAD does not contain, or at another version, fails.
 
 A release is complete when the registry lists the version, its tag and published Release exist, and the Release holds every declared asset.  
-verctl checks a release for an asset target only when `.ctl/ver.yaml` declares it both at HEAD and at the release's version commit.  
+verctl checks a release for an asset target only when `.ctl/ver.yaml` declares it both at HEAD and at the release's commit: the commit its tag names, or HEAD.  
 A target added later never reopens a release.  
 `--skip-assets` (`VERCTL_SKIP_ASSETS`) leaves assets out.
 
@@ -431,11 +427,11 @@ A draft is incomplete even when it holds every asset.
 `--skip-assets` also publishes an existing draft, without waiting for its assets.  
 `--declared-assets` (`VERCTL_DECLARED_ASSETS`) names the asset files a run declares, comma separated.  
 The workflow sets it from the plan, so a leg declares what the plan scheduled.  
-Without it, `release` declares the targets the version commit's own config names.  
+Without it, `release` declares the targets HEAD's config names.  
 `--releases-only` (`VERCTL_RELEASES_ONLY`) creates and publishes tags and Releases and starts no publisher.  
 It refuses a package whose version the registry does not list, and the `finalize` job runs with it.
 
-A hand-written workflow that runs `actions/publish` and then `actions/asset` must run `verctl release` again at the version commit after its uploads.  
+A hand-written workflow that runs `actions/publish` and then `actions/asset` must run `verctl release` again at the same commit after its uploads.  
 That run publishes the draft, and without it the Release stays a draft.  
 A vendored set's Release is still created published, so immutable Releases are not yet safe for a repository with vendored sets.
 
@@ -445,9 +441,9 @@ An immutable Release can take no asset, so it counts complete and plans no asset
 
 ### Status
 
-`status` lists every version commit with an incomplete release, oldest first, under `unreleased`.  
+`status` lists HEAD's incomplete releases under `unreleased`.  
 With `--github-output <file>` it fetches the full history and needs `GITHUB_TOKEN` or `GH_TOKEN`.  
-It then writes `commits` (a JSON list), `pending`, and `assets` (a job matrix of commit, target, and labels).  
+It then writes `commits` (a JSON list holding HEAD when anything is pending), `pending`, `assets` (a job matrix of commit, target, and labels), and `declared` (the comma-separated asset names HEAD's Release is expected to hold).  
 It writes them beside the asset plan's `has_assets`, `tag`, and `matrix`.
 
 Without `--github-output`, `status` fetches nothing.  
@@ -464,8 +460,7 @@ Any other error, such as a release tag on the wrong commit or a 401 from a bad t
 ### Refusals
 
 `release --plan` fails and names `status --github-output`.  
-`release` releases only the packages whose version commit is HEAD, and names the others.  
-It fails before any side effect on a commit that releases nothing, unless that commit is a version commit whose releases are all complete, where it reports `nothing to release`.  
+`release` releases every incomplete version HEAD holds.  
 When every release is complete, `release` reports `nothing to release` and exits zero.  
 Its JSON report's `outcome` is `nothing-to-release` or `released`.
 
@@ -476,7 +471,7 @@ Its JSON report's `outcome` is `nothing-to-release` or `released`.
 - `.github/workflows/` at the commit the run executes is the same tree as at the default branch's tip.
 
 Actions runs the workflows of `GITHUB_SHA`, so `release` compares that commit's tree when the variable names a commit in the repository, and HEAD's otherwise.  
-In the reusable workflow HEAD is the version commit, so a workflow change merged after a Version PR does not block its release.
+In the reusable workflow HEAD is the run's commit, so the two trees differ only when the default branch moved since the run started.
 
 A run whose `GITHUB_SHA` is an old commit executes the workflows as they were then.  
 Changed steps or permissions can then publish to the registry and fail to tag.
@@ -486,33 +481,6 @@ The report lists each under `allowed`: a row in the human view, and `allowed: [{
 A check that cannot run, as with no `origin` or no default-branch ref, refuses even with a flag set.
 
 The reusable `release.yml` takes the `allow-workflow-change` and `allow-off-default-branch` boolean inputs, default `false`, and passes them through `env:`.
-
-### Skipped versions
-
-`release` also refuses a package with a skipped version, because releasing past it would skip that version for good.  
-No flag allows it.  
-A version v is skipped when all three hold:
-
-- some commit in the first-parent range from HEAD has v;
-- v is below HEAD's version;
-- no newer commit in the range has a version strictly below v.
-
-The range ends before a released version, `0.0.0`, a revision with no version, or a version that is not semver.  
-Otherwise it ends at the root.  
-
-A version is released when the registry lists it for every checked upload of the package.  
-A package with an unchecked upload, or with none, has it released once its tag exists.
-
-For a workspace, only these members count at an earlier version:
-
-- a member on the package's version;
-- a member that crates.io lists at or below that version.
-
-The other members joined later or move on their own.  
-With no member left, the tag decides.
-
-`status` lists each skipped version once, at its oldest commit in the range, oldest first.  
-So the workflow releases it before the newer one.
 
 ### Registry tokens
 
@@ -534,7 +502,7 @@ It does not treat `GITHUB_REF_NAME` as the default, since that is the branch bei
 It fetches that one ref, with history and not at depth 1, only when it is missing.
 
 With `VERCTL_DEFAULT_BRANCH` set, `release` and `status --github-output` first fetch the whole history of that branch when the clone is shallow.  
-So a depth-1 checkout still finds each version commit.  
+So a depth-1 checkout still finds each release tag's commit.  
 Without it, a shallow clone fails, and the error points to fetching the history.
 
 GitHub git HTTPS authenticates as `x-access-token`.  
@@ -626,7 +594,7 @@ Every lookup of a Release for a tag that exists also reads drafts, which GitHub 
 
 ### Package tarballs
 
-After the Version PR merges, the next push runs the reusable workflow's `publish` matrix at each version commit.  
+After the Version PR merges, the next push runs the reusable workflow's `publish` job at that commit.  
 A hand-written workflow uses `victor-software-house/verctl/actions/publish` instead.  
 Native tarballs are the `assets` matrix, only when an `assets` target is declared.  
 `verctl status` shows the matrix.

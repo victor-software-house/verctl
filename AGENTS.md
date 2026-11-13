@@ -184,7 +184,7 @@ CI runs `MISE_ENV=ci`.
 
 `self-release.yml` builds verctl once per platform in its `build` job.  
 It calls `release.yml` with `verctl-artifact: verctl` and `MISE_ENV=ci,release`, so every release job runs that build.  
-An asset job packs that build with `release asset --prebuilt` when its version commit is the run's commit, and compiles an older commit from its own tree.  
+Each asset job packs that build with `release asset --prebuilt`.  
 `mise.release.toml` is only a `ver` task that runs `verctl` from `PATH`, with no pin.  
 Build verctl from source only there, never in every job.  
 `.miserc.toml` defaults local `MISE_ENV` to `dev`.
@@ -205,13 +205,14 @@ The changelog adapter does not concatenate Markdown in Rust beyond a typed conte
 Actions run `verctl` from `PATH`.  
 `release` is exact-SHA plus a matching per-package CHANGELOG heading.
 
-Before any upload, `release` proves three facts about the commit:
+HEAD is the release reference: `release` releases every incomplete version HEAD's manifests hold, from HEAD, and a version HEAD's manifests do not hold stays unreleased.
+
+Before any upload, `release` proves two facts about the commit:
 
 - the default branch contains it;
-- its `.github/workflows/` tree, taken at `GITHUB_SHA` when that names a commit and at HEAD otherwise, equals the one at the default tip;
-- no package has a skipped version since its last tag.
+- its `.github/workflows/` tree, taken at `GITHUB_SHA` when that names a commit and at HEAD otherwise, equals the one at the default tip.
 
-Only the first two have an `--allow-…` flag, and a run that uses one lists it under `allowed`.  
+Each has an `--allow-…` flag, and a run that uses one lists it under `allowed`.  
 Cargo and bun are stock recipes, and nothing in the architecture is specific to them.  
 Do not name private release skills in this repo.
 
