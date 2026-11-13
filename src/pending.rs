@@ -31,6 +31,7 @@ use crate::driver::Driver;
 use crate::git::{self, VersionCommit};
 use crate::github::{self, ReleaseList, ReleaseState};
 use crate::publish::{self, PublishEntry};
+use crate::publisher::Upload;
 use crate::registry::RegistryCheck;
 use crate::registry_token::RegistryToken;
 use crate::{bump, publisher, stop};
@@ -59,8 +60,10 @@ pub struct Pending {
 pub struct Partial {
     /// The release tag.
     pub tag: String,
-    /// The uploads with a registry check that their registry lists.
-    pub live: usize,
+    /// The uploads with a registry check that their registry lists. `None`
+    /// when a lookup after the first unlisted upload failed, so the count is
+    /// not known; the plan still holds the release as incomplete.
+    pub live: Option<usize>,
     /// Every upload with a registry check under the tag's packages. A
     /// workspace package counts each member.
     pub total: usize,
@@ -292,12 +295,10 @@ pub fn pending(
             sha: head.clone(),
             depth: 0,
         };
-        let listing = registry_lists(config, root, spec, entry, release, env)?;
-        counts
-            .entry(tag.clone())
-            .or_default()
-            .add(&listing, &entry.noun);
-        let listed = listing.listed;
+        let count = release
+            .draft
+            .then(|| counts.entry(tag.clone()).or_default());
+        let listed = registry_lists(config, root, spec, entry, release, env, count)?;
         let head_targets: &[MatrixTarget] = if index == 0 { &targets } else { &[] };
         let declared = checked_targets(head_targets, &release.assets, || {
             declared_at(root, config_path, &release_commit)
@@ -324,51 +325,74 @@ pub fn pending(
     })
 }
 
-/// The uploads with a registry check under one tag, and how many are live.
+/// The uploads with a registry check under one tag whose Release is a
+/// draft, so a run has started, and how many are live.
 #[derive(Default)]
 struct Count {
     live: usize,
     total: usize,
     nouns: Vec<String>,
+    /// An upload under the tag is unlisted.
+    unlisted: bool,
+    /// A lookup after the first unlisted upload failed, so `live` is not
+    /// known.
+    uncounted: bool,
 }
 
 impl Count {
-    /// Add one package's `listing`, whose publisher calls it `noun`.
-    fn add(&mut self, listing: &Listing, noun: &str) {
-        if listing.checked == 0 {
-            return;
-        }
-        self.live += listing.live;
-        self.total += listing.checked;
+    /// Ask `check` whether it lists `version`, for an upload whose publisher
+    /// calls it `noun`, and count the answer.
+    ///
+    /// Until an upload is unlisted, a failed lookup fails the plan, as the
+    /// lookup of a release that has not started does. After it, the release
+    /// is known to be incomplete, so a failed lookup only leaves the count
+    /// unknown, and the tag's later uploads are not asked.
+    fn ask(
+        &mut self,
+        check: &RegistryCheck,
+        version: &str,
+        env: &[(&str, &str)],
+        noun: &str,
+    ) -> Result<bool> {
+        self.total += 1;
         if !self.nouns.iter().any(|known| known == noun) {
             self.nouns.push(noun.to_owned());
         }
+        if self.uncounted {
+            return Ok(false);
+        }
+        let live = match check.lists(version, env) {
+            Ok(live) => live,
+            Err(_) if self.unlisted => {
+                self.uncounted = true;
+                return Ok(false);
+            }
+            Err(error) => return Err(error),
+        };
+        if live {
+            self.live += 1;
+        } else {
+            self.unlisted = true;
+        }
+        Ok(live)
     }
 
-    /// The partial release of `tag`, when some but not all uploads are live.
+    /// The partial release of `tag`: some but not all uploads live, or a
+    /// count left unknown.
     fn partial(self, tag: String, stop: stop::Record) -> Option<Partial> {
         let noun = match self.nouns.as_slice() {
             [one] => format!("{one}s"),
             _ => "packages".to_owned(),
         };
-        (self.live > 0 && self.live < self.total).then_some(Partial {
+        let live = (!self.uncounted).then_some(self.live);
+        (self.uncounted || (self.live > 0 && self.live < self.total)).then_some(Partial {
             tag,
-            live: self.live,
+            live,
             total: self.total,
             noun,
             stop,
         })
     }
-}
-
-/// What the registry lists of one package's uploads.
-struct Listing {
-    /// Every upload is listed, or counts as listed.
-    listed: bool,
-    /// The uploads with a registry check.
-    checked: usize,
-    /// The uploads with a registry check that the registry lists.
-    live: usize,
 }
 
 /// The asset targets a release is checked for. HEAD declares `targets`, and
@@ -482,8 +506,12 @@ fn tag_of(planned: &publish::PublishPlan, entry: &PublishEntry) -> Result<String
 }
 
 /// Whether the registry has `entry`'s version: for a workspace package, every
-/// member's. Every upload with a registry check is asked, so a partial
-/// release can count what is live.
+/// member's.
+///
+/// With no `count`, the answer stops at the first unlisted upload. A `count`
+/// is given when the tag's Release is a draft: a run has started, so every
+/// upload is asked and counted, for `status` to report the release as
+/// partial (see [`Count::ask`]).
 ///
 /// A package with no registry counts as listed. An upload with no check
 /// counts as listed once its tag or its published Release exists: `release`
@@ -499,30 +527,44 @@ fn registry_lists(
     entry: &PublishEntry,
     release: &ReleaseState,
     env: &[(&str, &str)],
-) -> Result<Listing> {
-    let mut listing = Listing {
-        listed: true,
-        checked: 0,
-        live: 0,
-    };
+    count: Option<&mut Count>,
+) -> Result<bool> {
     if entry.argv.is_empty() {
-        return Ok(listing);
+        return Ok(true);
     }
-    for upload in publisher::uploads(config, spec, root, entry)? {
-        let listed = match &upload.check {
-            RegistryCheck::Unchecked => {
+    let uploads = publisher::uploads(config, spec, root, entry)?;
+    uploads_listed(&uploads, &entry.noun, release, env, count)
+}
+
+/// Whether every one of `uploads` is listed, as [`registry_lists`] answers
+/// it.
+fn uploads_listed(
+    uploads: &[Upload],
+    noun: &str,
+    release: &ReleaseState,
+    env: &[(&str, &str)],
+    mut count: Option<&mut Count>,
+) -> Result<bool> {
+    let mut listed = true;
+    for upload in uploads {
+        let live = match (&upload.check, count.as_deref_mut()) {
+            (RegistryCheck::Unchecked, _) => {
                 release.tag.is_some() || (release.release && !release.draft)
             }
-            check @ (RegistryCheck::CratesIo { .. } | RegistryCheck::Query { .. }) => {
-                listing.checked += 1;
-                let live = check.lists(&upload.version, env)?;
-                listing.live += usize::from(live);
-                live
+            (check @ (RegistryCheck::CratesIo { .. } | RegistryCheck::Query { .. }), None) => {
+                check.lists(&upload.version, env)?
             }
+            (
+                check @ (RegistryCheck::CratesIo { .. } | RegistryCheck::Query { .. }),
+                Some(count),
+            ) => count.ask(check, &upload.version, env, noun)?,
         };
-        listing.listed &= listed;
+        listed &= live;
+        if !listed && count.is_none() {
+            return Ok(false);
+        }
     }
-    Ok(listing)
+    Ok(listed)
 }
 
 /// One package's state at its release commit.
@@ -680,19 +722,22 @@ pub fn write_github_output(pending: &Pending, path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::Path;
 
     use ctl_core::input::Input;
-    use indoc::indoc;
+    use indoc::{formatdoc, indoc};
 
     use super::{
-        Count, DeclaredTargets, Listing, PackageState, Pending, PendingAsset, PendingPackage,
-        Shortfall, checked_targets, group, state_of, write_github_output,
+        Count, DeclaredTargets, PackageState, Pending, PendingAsset, PendingPackage, Shortfall,
+        checked_targets, group, state_of, uploads_listed, write_github_output,
     };
     use crate::assets::MatrixTarget;
     use crate::config::{Assets, Config};
     use crate::git::VersionCommit;
     use crate::github::ReleaseState;
     use crate::publish::PublishEntry;
+    use crate::publisher::Upload;
+    use crate::registry::RegistryCheck;
     use crate::stop::Record;
 
     fn entry(name: &str, version: &str) -> PublishEntry {
@@ -760,46 +805,156 @@ mod tests {
         )
     }
 
-    fn listing(checked: usize, live: usize) -> Listing {
-        Listing {
-            listed: live == checked,
-            checked,
-            live,
+    /// How a test upload's registry query answers.
+    #[derive(Clone, Copy)]
+    enum Answer {
+        Listed,
+        Unlisted,
+        /// The query cannot run, so the lookup fails.
+        Fails,
+    }
+
+    /// An upload named `name` whose query appends `name` to `dir/calls`, then
+    /// answers as `answer` says.
+    fn upload(dir: &Path, name: &str, answer: Answer) -> Upload {
+        let script = dir.join(format!("{name}.sh"));
+        let reply = match answer {
+            Answer::Listed => "echo 0.4.0",
+            Answer::Unlisted | Answer::Fails => "exit 1",
+        };
+        fs::write(
+            &script,
+            formatdoc! {r#"
+                echo {name} >> "{calls}"
+                {reply}
+            "#, calls = dir.join("calls").display()},
+        )
+        .unwrap();
+        let argv = match answer {
+            Answer::Listed | Answer::Unlisted => {
+                vec!["sh".to_owned(), script.display().to_string()]
+            }
+            Answer::Fails => vec![dir.join("no-such-query").display().to_string()],
+        };
+        Upload {
+            name: name.into(),
+            version: "0.4.0".into(),
+            manifest: dir.join("Cargo.toml"),
+            argv: vec!["true".into()],
+            check: RegistryCheck::Query {
+                argv,
+                dir: dir.to_path_buf(),
+            },
         }
     }
 
-    /// One crate of three live is partial, and every upload's noun names
-    /// them.
+    fn calls(dir: &Path) -> String {
+        fs::read_to_string(dir.join("calls")).unwrap_or_default()
+    }
+
+    /// A release whose Release is no draft has not started, so the answer
+    /// stops at the first unlisted upload and the rest are never asked.
+    #[test]
+    fn a_release_not_started_asks_up_to_its_first_unlisted_upload() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let uploads = [
+            upload(dir.path(), "a", Answer::Listed),
+            upload(dir.path(), "b", Answer::Unlisted),
+            upload(dir.path(), "c", Answer::Listed),
+        ];
+        let listed =
+            uploads_listed(&uploads, "crate", &ReleaseState::default(), &[], None).unwrap();
+        assert!(!listed);
+        assert_eq!(
+            calls(dir.path()),
+            indoc! {"
+                a
+                b
+            "}
+        );
+    }
+
+    /// A draft means a run started, so every upload is counted; one crate of
+    /// three live is partial, and their shared noun names them.
     #[test]
     fn some_crates_live_is_a_partial_release() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let uploads = [
+            upload(dir.path(), "a", Answer::Listed),
+            upload(dir.path(), "b", Answer::Unlisted),
+            upload(dir.path(), "c", Answer::Unlisted),
+        ];
         let mut count = Count::default();
-        count.add(&listing(1, 1), "crate");
-        count.add(&listing(1, 0), "crate");
-        count.add(&listing(1, 0), "crate");
+        let listed = uploads_listed(&uploads, "crate", &draft(&[]), &[], Some(&mut count)).unwrap();
+        assert!(!listed);
         let partial = count.partial("v0.4.0".into(), Record::Unreadable).unwrap();
-        assert_eq!((partial.live, partial.total), (1, 3));
+        assert_eq!((partial.live, partial.total), (Some(1), 3));
         assert_eq!(partial.noun, "crates");
         assert_eq!(partial.stop, Record::Unreadable);
     }
 
-    /// A workspace counts each member, a package with no registry check
-    /// counts for nothing, and mixed nouns read as packages.
+    /// A lookup that fails after the first unlisted upload leaves the count
+    /// unknown, and the plan goes on: the release is incomplete either way.
     #[test]
-    fn members_count_and_mixed_nouns_are_packages() {
+    fn a_started_release_still_plans_when_a_later_lookup_fails() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let uploads = [
+            upload(dir.path(), "a", Answer::Listed),
+            upload(dir.path(), "b", Answer::Unlisted),
+            upload(dir.path(), "c", Answer::Fails),
+        ];
         let mut count = Count::default();
-        count.add(&listing(2, 2), "crate");
-        count.add(&listing(0, 0), "release");
-        count.add(&listing(1, 0), "package");
+        let listed = uploads_listed(&uploads, "crate", &draft(&[]), &[], Some(&mut count)).unwrap();
+        assert!(!listed);
+        let partial = count.partial("v0.4.0".into(), Record::Absent).unwrap();
+        assert_eq!((partial.live, partial.total), (None, 3));
+    }
+
+    /// Before any upload is unlisted, a failed lookup still fails the plan.
+    #[test]
+    fn a_failed_first_lookup_fails_the_plan() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let uploads = [upload(dir.path(), "a", Answer::Fails)];
+        let mut count = Count::default();
+        assert!(uploads_listed(&uploads, "crate", &draft(&[]), &[], Some(&mut count)).is_err());
+    }
+
+    /// Mixed nouns under one tag read as packages.
+    #[test]
+    fn mixed_nouns_are_packages() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut count = Count::default();
+        let release = draft(&[]);
+        uploads_listed(
+            &[upload(dir.path(), "a", Answer::Listed)],
+            "crate",
+            &release,
+            &[],
+            Some(&mut count),
+        )
+        .unwrap();
+        uploads_listed(
+            &[upload(dir.path(), "b", Answer::Unlisted)],
+            "package",
+            &release,
+            &[],
+            Some(&mut count),
+        )
+        .unwrap();
         let partial = count.partial("v1.0.0".into(), Record::Absent).unwrap();
-        assert_eq!((partial.live, partial.total), (2, 3));
         assert_eq!(partial.noun, "packages");
     }
 
     #[test]
     fn none_or_every_upload_live_is_not_partial() {
-        for live in [0, 2] {
+        for answer in [Answer::Listed, Answer::Unlisted] {
+            let dir = tempfile::TempDir::new().unwrap();
+            let uploads = [
+                upload(dir.path(), "a", answer),
+                upload(dir.path(), "b", answer),
+            ];
             let mut count = Count::default();
-            count.add(&listing(2, live), "crate");
+            uploads_listed(&uploads, "crate", &draft(&[]), &[], Some(&mut count)).unwrap();
             assert!(count.partial("v1.0.0".into(), Record::Absent).is_none());
         }
     }
