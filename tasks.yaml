@@ -1019,6 +1019,51 @@ horizon:
     notes:
       - Needs a release.yml input and a release asset path that packs a given binary; it helps only callers that build their own binary first.
 
+  - id: VER-131
+    title: Release whole on npm and GitHub Packages
+    scope: >-
+      check --registry, check --release, release --first, trust, the npm and bun
+      publishers
+    outcome: >-
+      A spike states what each check, the first publish and trust do for npm and
+      GitHub Packages, and which parts of releases-land-whole carry over.
+    kind: research
+    open: >-
+      releases-land-whole covers crates.io only; nobody has mapped its checks onto
+      npm or GitHub Packages.
+    notes:
+      - npm needs a package to exist before trusted publishing, and npm trust configures it, from npm 11.10.0; npm/cli#8544 asks for first-publish support.
+      - npm refuses a republished version and allows unpublish only within 72 hours with no dependents; staged publishing needs a human 2FA approval and its batch approval is not atomic.
+      - GitHub Packages takes the job GITHUB_TOKEN, with no trusted publishing, and a package first published by a personal token lacks the repository write grant.
+      - The operator asked for horizon rows for the other registries, with no decision yet (operator, 2026-11-13).
+
+  - id: VER-132
+    title: Release whole for Go modules
+    scope: check --registry, check --release, the go publisher, tags
+    outcome: >-
+      A spike states what releases-land-whole means for a Go module, whose release is
+      its tag.
+    kind: research
+    open: Nobody has mapped the checks and the freeze onto a release that uploads nothing.
+    notes:
+      - A Go module release is its tag; the module proxy and the checksum database keep a version once fetched, so a moved or deleted tag does not take it back.
+      - The operator asked for horizon rows for the other registries, with no decision yet (operator, 2026-11-13).
+
+  - id: VER-133
+    title: Registry checks for a custom publisher and for registries verctl does not ship
+    scope: publisher query recipes, check --registry, release --first
+    outcome: >-
+      An evaluation states what a custom publisher must declare, beside its query,
+      for check --registry, release --first and trust, and which registries to support
+      next.
+    kind: evaluation
+    open: >-
+      No repository has asked for a registry beyond crates.io, npm, GitHub Packages
+      and Go modules.
+    notes:
+      - 'PyPI pending publishers configure trusted publishing before a project exists, and reserve no name: prior art for a first publish without a token.'
+      - The operator asked for horizon rows for the other registries, with no decision yet (operator, 2026-11-13).
+
 archive:
   - id: VER-130
     title: Decide which commit a release publishes from, and which versions a run releases

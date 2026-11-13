@@ -3,6 +3,9 @@
 The research note `docs/research/2026-11-13-atomic-releases.md` holds the evidence for each decision.
 The operator made each decision on 2026-11-13.
 
+The change covers crates.io.
+npm and GitHub Packages, Go modules, and other registries are horizon rows VER-131, VER-132 and VER-133.
+
 ## 1. Prove every upload before the first
 
 **Decision.**
