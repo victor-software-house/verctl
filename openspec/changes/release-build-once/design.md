@@ -68,7 +68,7 @@ Every default GitHub-hosted Ubuntu label verctl owns changes to `ubuntu-26.04` o
 CHANGELOG entries and archived changes keep the labels they recorded.
 
 A Linux tarball built on the defaults links the glibc of Ubuntu 26.04.
-The changeset says so.
+The changeset records that requirement.
 
 Alternative considered: keep `ubuntu-latest`, which GitHub moves on its own schedule.
 It lost because the default would change the glibc of the tarballs without a commit in this repository.

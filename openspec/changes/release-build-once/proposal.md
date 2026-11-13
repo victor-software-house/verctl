@@ -1,4 +1,4 @@
-# Build verctl once per platform in its own release
+# One verctl build per platform in the self-release
 
 ## Motivation
 

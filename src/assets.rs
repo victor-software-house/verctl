@@ -308,6 +308,21 @@ pub fn build(plan: &AssetsPlan, id: &str, root: &Path, prebuilt: Option<&Path>) 
         None => compile(plan, target, pack, root)?,
     };
     let tarball = root.join(&target.asset);
+    let packed = tar(&tarball, &dir, files);
+    if prebuilt.is_some() {
+        let removed = fs::remove_dir_all(&dir).with_context(|| format!("remove {}", dir.display()));
+        packed?;
+        removed?;
+    } else {
+        packed?;
+    }
+    Ok(tarball)
+}
+
+/// Writes `tarball` holding `files` from `dir`. A staged prebuilt directory is
+/// removed after this returns, whatever it returns, and the caller reports this
+/// error before a failed removal.
+fn tar(tarball: &Path, dir: &Path, files: Vec<String>) -> Result<()> {
     let mut tar = process::argv(&[
         "tar",
         "czf",
@@ -316,12 +331,8 @@ pub fn build(plan: &AssetsPlan, id: &str, root: &Path, prebuilt: Option<&Path>) 
         dir.to_str().context("dir")?,
     ]);
     tar.extend(files);
-    let packed = process::run_inherit(&tar, Duration::from_mins(2)).context("tar");
-    if prebuilt.is_some() {
-        fs::remove_dir_all(&dir).with_context(|| format!("remove {}", dir.display()))?;
-    }
-    packed?;
-    Ok(tarball)
+    process::run_inherit(&tar, Duration::from_mins(2)).context("tar")?;
+    Ok(())
 }
 
 /// Runs the target's `prepare` and `build`, then returns the directory its
