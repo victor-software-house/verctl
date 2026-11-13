@@ -665,9 +665,9 @@ pub fn crates_io_github_configs(base: &str, name: &str, token: &str) -> Result<T
 }
 
 /// The reason in a crates.io error response, `{"errors":[{"detail":"..."}]}`:
-/// each `detail` joined by `; `. A body of another shape is its own reason,
-/// trimmed, and an empty one reads as the status, so the message never
-/// names an empty reason.
+/// each non-blank `detail`, trimmed, joined by `; `. A body of another shape is
+/// its own reason, trimmed, and an empty one reads as the status, so the
+/// message never names an empty reason.
 fn refusal(body: &str) -> String {
     let reason = serde_json::from_str::<ApiErrors>(body).map_or_else(
         |_| body.trim().to_owned(),
