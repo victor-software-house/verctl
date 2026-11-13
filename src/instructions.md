@@ -824,7 +824,9 @@ A crate with no library target, or a proc-macro, is left out, as cargo-semver-ch
 A workspace package counts once per publishing member.  
 The rule covers 0.x: a crate with a library target at 1.0 or later fails the run.  
 Reaching 1.0 is an operator decision that revisits the rule.  
-It needs `cargo-semver-checks` on `PATH` and reads the crates.io index.
+It needs `cargo-semver-checks` on `PATH` and reads the crates.io index.  
+When the publish-age cooldown rejects only crates that a `CARGO_TRUSTED_OWNERS` login owns on crates.io, `semver` checks once more with `CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow`.  
+Otherwise the check fails and names the rejected crates.
 
 ## Stop conditions
 

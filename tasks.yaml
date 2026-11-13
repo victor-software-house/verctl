@@ -587,6 +587,20 @@ queue:
       - Blocked on ctl-core CTC-036, live regions and progress, which owns streams and the live region.
       - 'Decided 2026-11-13 (operator): the mode follows the run, and a flag only overrides it.'
 
+  - id: VER-139
+    title: Run semver checks past the cooldown for trusted crates
+    scope: semver
+    outcome: >-
+      A semver check that the publish-age cooldown blocks only on crates a
+      CARGO_TRUSTED_OWNERS login owns passes or fails on the API comparison.
+    blocked_by: []
+    acceptance:
+      - verctl semver reruns cargo semver-checks with CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow when every crate the cooldown rejected has a trusted user owner.
+      - verctl semver fails as before, naming each rejected crate and the reason, when any rejected crate is untrusted or CARGO_TRUSTED_OWNERS is unset.
+    plan: openspec/changes/semver-trusted-cooldown/proposal.md
+    notes:
+      - 2026-11-13, ctl-core and qctl template update PRs failed Publish checks on their own releases published under 3 days before.
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
