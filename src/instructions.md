@@ -449,6 +449,11 @@ A draft at another commit holds tarballs built from other code, so `release` del
 A published Release whose tag names a commit other than HEAD fails the run before any upload.  
 A draft is incomplete even when it holds every asset.
 
+When an upload fails, `release` appends a stop record to the draft's notes before it exits: an HTML comment with the package, the cause, and the time the registry gave for the next attempt.  
+`status` reports a release with some, but not all, of its registry-checked uploads live as `partially published: <live> of <total> crates live`, with the cause and the resume time the record holds, as the last run reported them.  
+A record that does not parse shows as `stop record unreadable`, and a draft with no record shows the count alone.  
+The record is display only: what is live comes from the registry, a rerun replaces the record, and publishing the draft drops it.
+
 `--assets-dir <dir>` (`VERCTL_ASSETS_DIR`) holds the declared tarballs the draft lacks.  
 The run fails before any write when a declared tarball is neither on the draft nor in the directory.  
 `--skip-assets` declares no asset, so a draft found is published without its assets.  

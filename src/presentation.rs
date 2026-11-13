@@ -1,6 +1,6 @@
 use ctl_core::prelude::{Document, Fields, Notice, NoticeLevel, Outcome, Present, Table};
 use serde::Serialize;
-use verctl::{assets, ci, docsrs, publish, semver_check, versions};
+use verctl::{assets, ci, docsrs, publish, semver_check, stop, versions};
 
 #[derive(Serialize)]
 #[serde(untagged)]
@@ -232,10 +232,63 @@ pub(super) struct StatusReport {
     pub(super) unreleased: Option<Vec<ReleaseRow>>,
     /// Why `unreleased` was not checked, or `null` when it was.
     pub(super) unreleased_unchecked: Option<Unchecked>,
+    /// Every release whose registries list some, but not all, of its
+    /// uploads. `null` when `unreleased` was not checked.
+    pub(super) partial: Option<Vec<PartialRow>>,
     /// One warning per published, immutable Release that lacks declared
     /// assets.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) notices: Vec<String>,
+}
+
+/// A release whose registries list some, but not all, of its uploads, and
+/// why the last run stopped, as its draft records it.
+#[derive(Serialize)]
+pub(super) struct PartialRow {
+    pub(super) tag: String,
+    pub(super) live: usize,
+    pub(super) total: usize,
+    /// What the uploads are, plural, such as `crates`.
+    pub(super) noun: String,
+    /// The draft's stop record: `absent`, `read` with its fields, or
+    /// `unreadable`.
+    pub(super) stop: stop::Record,
+}
+
+impl PartialRow {
+    /// One `partial` row, and one `stopped` row when the draft holds a stop
+    /// record.
+    fn rows(&self, fields: Fields) -> Fields {
+        let fields = fields.row(
+            "partial",
+            format!(
+                "{tag}: partially published: {live} of {total} {noun} live",
+                tag = self.tag,
+                live = self.live,
+                total = self.total,
+                noun = self.noun
+            ),
+        );
+        match &self.stop {
+            stop::Record::Absent => fields,
+            stop::Record::Read(stopped) => {
+                let resume = stopped
+                    .retry_after
+                    .as_ref()
+                    .map_or_else(String::new, |time| format!(", resume after {time}"));
+                fields.row(
+                    "stopped",
+                    format!(
+                        "{package} {version}: {cause}{resume} (as the last run reported)",
+                        package = stopped.package,
+                        version = stopped.version,
+                        cause = stopped.cause
+                    ),
+                )
+            }
+            stop::Record::Unreadable => fields.row("stopped", "stop record unreadable"),
+        }
+    }
 }
 
 /// `document` with one warning per notice.
@@ -394,6 +447,9 @@ impl Present for StatusReport {
                 ),
             ),
         };
+        for partial in self.partial.iter().flatten() {
+            fields = partial.rows(fields);
+        }
         with_warnings(document.fields(fields), &self.notices)
     }
 }
@@ -681,10 +737,10 @@ impl Present for CiReport {
 mod tests {
     use ctl_core::prelude::{ColorMode, Destination, OutputFormat, View};
     use indoc::formatdoc;
-    use verctl::publish;
+    use verctl::{publish, stop};
 
     use super::{
-        CheckReport, ReleaseReport, ReleaseRow, Report, StatusFragment, StatusPackage,
+        CheckReport, PartialRow, ReleaseReport, ReleaseRow, Report, StatusFragment, StatusPackage,
         StatusReport, Unchecked, VersionReport,
     };
 
@@ -870,6 +926,7 @@ mod tests {
                 commit: "aaa".into(),
             }]),
             unreleased_unchecked: None,
+            partial: None,
             notices: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
@@ -913,7 +970,117 @@ mod tests {
                 "assets": null,
                 "unreleased": [{ "name": "demo", "version": "0.3.1", "commit": "aaa" }],
                 "unreleased_unchecked": null,
+                "partial": null,
             })
+        );
+    }
+
+    /// A release that crates.io stopped partway shows its count and the cause
+    /// its draft records, in both shapes (task 1.2 of release-order).
+    #[test]
+    fn a_partial_release_shows_its_count_and_its_cause() {
+        let row = |name: &str| ReleaseRow {
+            name: name.into(),
+            version: "0.4.0".into(),
+            commit: "aaa".into(),
+        };
+        let report = Report::Status(StatusReport {
+            pending: 0,
+            max: "none".into(),
+            fragments: Vec::new(),
+            assets: None,
+            unreleased: Some(vec![row("core"), row("util"), row("app")]),
+            unreleased_unchecked: None,
+            partial: Some(vec![PartialRow {
+                tag: "v0.4.0".into(),
+                live: 1,
+                total: 3,
+                noun: "crates".into(),
+                stop: stop::Record::Read(stop::Stop::new(
+                    "util",
+                    "0.4.0",
+                    "429 Too Many Requests",
+                    Some("Fri, 13 Nov 2026 19:00:00 GMT".into()),
+                )),
+            }]),
+            notices: Vec::new(),
+        });
+        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+            .width(120)
+            .capture(&report)
+            .expect("pretty");
+        assert_eq!(
+            pretty.text(),
+            formatdoc! {"
+                ┌──────┬─────────┬────────┐
+                │ name ┆ version ┆ commit │
+                ╞══════╪═════════╪════════╡
+                │ core ┆ 0.4.0   ┆ aaa    │
+                │ util ┆ 0.4.0   ┆ aaa    │
+                │ app  ┆ 0.4.0   ┆ aaa    │
+                └──────┴─────────┴────────┘
+
+                   pending  0
+                    assets  none
+                unreleased  3
+                   partial  v0.4.0: partially published: 1 of 3 crates live
+                   stopped  util 0.4.0: 429 Too Many Requests, resume after Fri, 13 Nov 2026 19:00:00 GMT (as the last run reported)
+            "},
+        );
+        let json = View::new(OutputFormat::Json, ColorMode::Never)
+            .capture(&report)
+            .expect("json");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(json.text()).expect("JSON")["partial"],
+            serde_json::json!([{
+                "tag": "v0.4.0",
+                "live": 1,
+                "total": 3,
+                "noun": "crates",
+                "stop": {
+                    "state": "read",
+                    "package": "util",
+                    "version": "0.4.0",
+                    "cause": "429 Too Many Requests",
+                    "retry_after": "Fri, 13 Nov 2026 19:00:00 GMT"
+                }
+            }])
+        );
+    }
+
+    /// A stop record that does not parse is named as unreadable, never
+    /// trusted in part.
+    #[test]
+    fn an_unreadable_stop_record_is_named() {
+        let report = Report::Status(StatusReport {
+            pending: 0,
+            max: "none".into(),
+            fragments: Vec::new(),
+            assets: None,
+            unreleased: Some(Vec::new()),
+            unreleased_unchecked: None,
+            partial: Some(vec![PartialRow {
+                tag: "v0.4.0".into(),
+                live: 2,
+                total: 3,
+                noun: "packages".into(),
+                stop: stop::Record::Unreadable,
+            }]),
+            notices: Vec::new(),
+        });
+        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+            .width(120)
+            .capture(&report)
+            .expect("pretty");
+        assert_eq!(
+            pretty.text(),
+            formatdoc! {"
+                   pending  0
+                    assets  none
+                unreleased  0
+                   partial  v0.4.0: partially published: 2 of 3 packages live
+                   stopped  stop record unreadable
+            "},
         );
     }
 
@@ -928,6 +1095,7 @@ mod tests {
             assets: None,
             unreleased: None,
             unreleased_unchecked: Some(Unchecked::missing_token()),
+            partial: None,
             notices: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
@@ -963,6 +1131,7 @@ mod tests {
             assets: None,
             unreleased: None,
             unreleased_unchecked: Some(Unchecked::failed(&error)),
+            partial: None,
             notices: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)

@@ -13,7 +13,7 @@ use octocrab::repos::releases::MakeLatest;
 use tokio::runtime::Builder;
 use tokio::time;
 
-use crate::{git, lookup, release};
+use crate::{git, lookup, release, stop};
 
 /// Append to `$GITHUB_OUTPUT`. That file belongs to the whole step, so a
 /// writer that truncates would drop assignments another step already made.
@@ -710,6 +710,33 @@ async fn publish_draft_with(
     finalize(crab, repo, release, &draft).await
 }
 
+/// Write `body` as the notes of draft `id` of `tag`, and nothing else, so
+/// the draft keeps its state: a failed run records why it stopped there.
+///
+/// # Errors
+///
+/// Returns an error when the GitHub client cannot be built or the update
+/// fails.
+pub(crate) fn write_draft_body(
+    token: &str,
+    repo: &Repo,
+    tag: &str,
+    id: u64,
+    body: &str,
+) -> Result<()> {
+    block(async {
+        let crab = client(token)?;
+        crab.repos(&repo.owner, &repo.name)
+            .releases()
+            .update(id)
+            .body(body)
+            .send()
+            .await
+            .with_context(|| format!("write the stop record into the draft release {tag}"))?;
+        Ok(())
+    })
+}
+
 /// Publish `draft` once every asset `release` declares is `uploaded` on it,
 /// and return its URL.
 ///
@@ -1042,6 +1069,9 @@ pub struct ReleaseState {
     pub immutable: bool,
     /// The file names of the Release's assets whose upload completed.
     pub assets: Vec<String>,
+    /// The stop record of a draft's body, which the last `release` run that
+    /// failed an upload wrote. Display only; a published Release has none.
+    pub stop: stop::Record,
 }
 
 /// Read the tag and the Release for `tag`, so a plan can tell which parts of a
@@ -1077,6 +1107,10 @@ async fn release_state_with(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<R
         assets: release
             .as_ref()
             .map_or_default(|release| release.uploaded().into_iter().map(str::to_owned).collect()),
+        stop: release
+            .as_ref()
+            .filter(|release| release.draft)
+            .map_or_default(|release| stop::read(release.body.as_deref().unwrap_or_default())),
     })
 }
 
@@ -1144,6 +1178,9 @@ pub(crate) struct ForgeRelease {
     /// it holds the Release mutable.
     #[serde(default)]
     immutable: bool,
+    /// The notes. GitHub reports `null` for a Release with none.
+    #[serde(default)]
+    body: Option<String>,
     assets: Vec<ForgeAsset>,
 }
 
@@ -1447,11 +1484,13 @@ where
 mod tests {
     use std::time::Duration;
 
+    use indoc::indoc;
     use octocrab::service::middleware::retry::RetryConfig;
     use wiremock::matchers::{body_partial_json, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{Octocrab, parse_remote, parse_slug};
+    use crate::stop::{Record, Stop};
 
     #[test]
     fn slug_and_remotes() {
@@ -2299,6 +2338,31 @@ mod tests {
         assert_eq!(state.tag, None);
         assert!(state.release && state.draft, "{state:?}");
         assert_eq!(state.assets, ["app.pkg"]);
+    }
+
+    /// A draft's stop record is read from its body, for `status` to show.
+    #[tokio::test]
+    async fn a_drafts_stop_record_is_read() {
+        let server = MockServer::start().await;
+        missing_tag().mount(&server).await;
+        missing_release().mount(&server).await;
+        let mut draft = draft_json(&[]);
+        draft["body"] = indoc! {r#"
+            notes
+
+            <!-- verctl:stop {"package":"app","version":"1.0.0","cause":"429 Too Many Requests"} -->
+        "#}
+        .into();
+        listed_releases(serde_json::json!([draft]))
+            .mount(&server)
+            .await;
+        let state = super::release_state_with(&crab(&server.uri()), &repo(), TAG)
+            .await
+            .unwrap();
+        assert_eq!(
+            state.stop,
+            Record::Read(Stop::new("app", "1.0.0", "429 Too Many Requests", None))
+        );
     }
 
     /// A tag with no Release in a repository with many reads ten pages, then
