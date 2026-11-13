@@ -108,20 +108,31 @@ cargo-release has an `owners` key too, but it only adds missing owners and never
 **Disable.**
 Omit the key at both levels.
 
-## 5. `release --dry-run` is the release proof
+## 5. `release` proves only what can change after the merge
 
 **Decision.**
-`release --dry-run` (`-n`) runs `fragments`, `served`, `versions` and `registry`, and `trust` when an owner's token is set.
-It also runs `cargo publish --workspace --dry-run`, the replay of `version`, and every asset build, and uploads nothing.
-`release` runs the same proof before its first upload, so drift between the merge and the release stops the run with nothing published.
-The flag exists today and only prints the plan; it now proves the release.
+Before its first upload, `release` runs the checks named in `release_checks`, by default `registry`, and `trust` when `VERCTL_OWNER_TOKEN` holds an owner's token.
+Only registry state can change between the merge and the release: an owner removed, a crate taken, a trusted publisher deleted.
+Everything else is proven once, by the gate that already owns it:
+
+| Fact | Gate that proves it |
+|:--|:--|
+| The Version PR matches a replay of `version` | `check versions` on the Version PR |
+| Every crate packages and builds | `cargo package` in CI on every pull request and merge group |
+| Every declared tarball builds | the release workflow's asset matrix, and `release` refusing a tarball missing from `--assets-dir` before any write |
+| Fragments parse, served files match | `check` on every pull request |
+
+`release --dry-run` (`-n`) prints the plan and runs the same checks, and uploads nothing.
+A failed check stops `release` before the draft, with nothing published.
+The operator chose this on 2026-11-13: no gate repeats work another gate already proved.
 
 **Alternative.**
-A `check --release` that covers every check plus the builds.
-It lost because it overlaps the named checks, and `cargo publish --dry-run` and `release-plz release --dry-run` already name the same proof.
+A dry run that also replays `version`, runs `cargo publish --workspace --dry-run` and builds every tarball.
+It lost because each of those repeats a gate above, and the tarballs need one runner per target.
 
 **Override.**
-None for the release; a proof that cannot pass is fixed at its cause, or the release is abandoned through the unfreeze label (decision 6).
+`release_checks` in `.ctl/ver.yaml` lists the checks `release` runs, from `registry` and `trust`; `[]` turns the proof off.
+`trust` runs only when `VERCTL_OWNER_TOKEN` is set, and is reported as skipped otherwise.
 
 ## 6. Freeze the default branch until the release completes
 
@@ -142,9 +153,11 @@ The label follows the `tool: state` form of release-please's `autorelease: pendi
 
 **Decision.**
 
-1. With a merge queue, the `release --dry-run` job is required on the merge-group commit, which is the commit that lands under the `MERGE` method.
-2. With rulesets and no queue, it is required on the Version PR with "require branches to be up to date", and `check registry` on every pull request.
-3. With neither, the operator dispatches `release --dry-run` before merging; the freeze is reported, not enforced.
+1. With a merge queue, the job that runs `check registry` is required on the merge-group commit, which is the commit that lands under the `MERGE` method.
+2. With rulesets and no queue, that job is required on every pull request with "require branches to be up to date", so each one runs again after the Version PR lands.
+3. With neither, the operator runs `release --dry-run` before merging; the freeze is reported, not enforced.
+
+No separate `release --dry-run` job runs in CI: it would repeat the `check registry` job (decision 5).
 
 `status` names the tier from the default branch's rules.
 No git hook is part of the design: a hook runs only in the pushing clone and on no merge through GitHub.

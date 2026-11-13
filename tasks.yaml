@@ -533,8 +533,8 @@ queue:
     acceptance:
       - verctl check runs the checks it names, bare check runs fragments and served, and check --versions no longer parses.
       - The registry check proves existence and owners without a token, and the trust check proves the trusted publisher with an owner token.
-      - release --dry-run runs the checks, cargo publish --workspace --dry-run, the version replay and the asset builds, and uploads nothing; release runs the same proof first.
       - 'The registry check fails every other pull request while the default branch holds an incomplete release, unless the pull request is labelled verctl: unfreeze.'
+      - release runs the checks release_checks names, registry and trust by default, before its first upload, and release --dry-run prints the plan and runs the same checks; no step repeats a gate CI or the Version PR already passed.
     plan: openspec/changes/release-checks/proposal.md
     notes:
       - The operator decided the design on 2026-11-13; docs/research/2026-11-13-atomic-releases.md holds it.
