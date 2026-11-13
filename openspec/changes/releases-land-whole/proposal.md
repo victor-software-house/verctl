@@ -22,7 +22,8 @@ Queue row: [VER-129][ver-129].
 ## Changes
 
 1. **Checks.**
-   `verctl check --registry` proves, on every pull request, that each crate exists, lists the repository's workflow as its trusted publisher, and has the publishing identity among its owners.
+   `verctl check --registry` proves, on every pull request, that each crate exists and has the owners the `owners` key of `.ctl/ver.yaml` lists.
+   It reports the trusted publisher as evidence, and proves it only with an owner's token.
    `verctl check --release` adds `cargo publish --workspace --dry-run`, the replay of the Version PR, and every asset built into a draft Release.
 2. **HEAD is the release reference.**
    A run releases the versions HEAD's manifests hold, from HEAD.
