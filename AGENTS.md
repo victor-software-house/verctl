@@ -202,8 +202,11 @@ The changelog adapter does not concatenate Markdown in Rust beyond a typed conte
 
 ### Release proofs
 
-`version` rewrites `pins` onto the Version PR commit, because the tag names that commit and publish pushes nothing but the tag.  
+`version` rewrites `pins` onto the Version PR commit, because the tag names that commit and `release` pushes nothing.  
 Actions run `verctl` from `PATH`.  
+`release` creates a draft Release at HEAD with no tag, uploads the declared tarballs to it, publishes to the registries in config order, and then publishes the draft, which creates the tag.  
+A failed upload leaves the draft and no tag.  
+`status` then reports the release as partial, with the cause the run wrote into the draft, and a rerun skips every version a registry lists.  
 `release` is exact-SHA plus a matching per-package CHANGELOG heading.
 
 HEAD is the release reference: `release` releases every incomplete version HEAD's manifests hold, from HEAD, and a version HEAD's manifests do not hold stays unreleased.
