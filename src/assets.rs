@@ -103,7 +103,7 @@ struct Known {
 const KNOWN: &[Known] = &[
     Known {
         id: "darwin-arm64",
-        labels: &["macos-latest"],
+        labels: &["xcode-27"],
         os: "darwin",
         arch: "arm64",
         triple: "aarch64-apple-darwin",
@@ -948,7 +948,7 @@ mod tests {
             plan.matrix.include[0].asset,
             "verctl_0.0.1_macos_arm64.tar.gz"
         );
-        assert_eq!(plan.matrix.include[0].labels, ["macos-latest"]);
+        assert_eq!(plan.matrix.include[0].labels, ["xcode-27"]);
     }
 
     /// A target's own `files` replace the shared list for that target alone.
@@ -1006,7 +1006,7 @@ mod tests {
             serde_json::from_str(matrix_line.trim_start_matches("matrix=")).unwrap();
         let first = &json["include"][0];
         assert_eq!(first["id"], "darwin-arm64");
-        assert_eq!(first["labels"][0], "macos-latest");
+        assert_eq!(first["labels"][0], "xcode-27");
         assert!(first.get("triple").is_none(), "{first}");
         assert!(first.get("asset").is_none(), "{first}");
         assert!(first.get("machine").is_none(), "{first}");

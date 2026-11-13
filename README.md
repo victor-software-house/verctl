@@ -234,8 +234,10 @@ Built-in target records, so a public repo needs no config to stay on free hosted
 
 | name | labels | `os` | `arch` | `triple` |
 |:--|:--|:--|:--|:--|
-| `darwin-arm64` | `["macos-latest"]` | `darwin` | `arm64` | `aarch64-apple-darwin` |
+| `darwin-arm64` | `["xcode-27"]` | `darwin` | `arm64` | `aarch64-apple-darwin` |
 | `linux-x64` | `["ubuntu-26.04"]` | `linux` | `x64` | `x86_64-unknown-linux-gnu` |
+
+`xcode-27` is the macOS 27 image, a public preview on GitHub until a GA `macos-27` label exists.  
 
 Each field is a default the repo overrides one at a time: naming a `runner` moves the machine and leaves the platform alone.  
 verctl has no record for a name outside that set, so the entry must describe the whole platform.  

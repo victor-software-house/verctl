@@ -44,7 +44,7 @@ An older pending version commit keeps compiling its own tree, which is also what
 
 Each platform's asset runs on the runner whose OS and architecture the build job used.
 The `linux-x64` target's triple is the host triple of `ubuntu-26.04`, and `linux-arm64`'s is the host triple of `ubuntu-26.04-arm`, so the host build is the target build.
-`darwin-arm64` is `macos-latest`, which is arm64.
+`darwin-arm64` is `xcode-27`, which is arm64.
 
 Alternatives considered:
 
