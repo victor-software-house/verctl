@@ -34,8 +34,8 @@ pub struct Cli {
 pub enum Command {
     /// Print the installed-version operator contract.
     Instructions,
-    /// List pending fragments, the asset plan, and the incomplete version
-    /// commits. `--github-output` writes the release workflow's plan.
+    /// List pending fragments, the asset plan, and HEAD's incomplete
+    /// releases. `--github-output` writes the release workflow's plan.
     Status(StatusArgs),
     /// Validate fragments, or `--versions` against the default branch.
     Check(CheckArgs),
