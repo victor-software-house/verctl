@@ -43,3 +43,24 @@ An empty list or a login listed twice SHALL fail the load and name the field.
 
 - **WHEN** package `app` sets `owners: []`
 - **THEN** loading `.ctl/ver.yaml` fails and names `packages[app].owners`
+
+### Requirement: `release_workflow` names the workflow file that publishes
+
+The top-level `release_workflow` key of `.ctl/ver.yaml` SHALL name the file under `.github/workflows/` whose run publishes, as crates.io reads it from the OIDC `workflow_ref` claim.
+Omitted, it SHALL be `release.yml`.
+A value that is not a plain file name ending in `.yml` or `.yaml` SHALL fail the load and name the field.
+
+#### Scenario: The default file
+
+- **WHEN** `.ctl/ver.yaml` sets no `release_workflow`
+- **THEN** the `trust` check looks for a trusted publisher entry naming `release.yml`
+
+#### Scenario: A caller of another name
+
+- **WHEN** `.ctl/ver.yaml` sets `release_workflow: self-release.yml`
+- **THEN** the `trust` check looks for an entry naming `self-release.yml`
+
+#### Scenario: A path instead of a file name
+
+- **WHEN** `.ctl/ver.yaml` sets `release_workflow: .github/workflows/release.yml`
+- **THEN** loading `.ctl/ver.yaml` fails and names `release_workflow`
