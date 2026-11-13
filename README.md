@@ -352,11 +352,10 @@ A repository releases through one thin caller of verctl's reusable workflow ([`e
 It triggers on push to the default branch and on `workflow_dispatch`, and runs one flow:
 
 1. `plan` runs `verctl status --github-output`, which lists every version HEAD holds whose release is incomplete.
-2. `publish` runs `verctl release`, which releases them from HEAD.
-3. `assets` runs `verctl release asset` for the tarballs each Release lacks.
-4. `finalize` runs `verctl release` again, which publishes a draft Release once every asset is uploaded.
-5. `docs` waits for docs.rs to build each released crate.
-6. `propose` opens or updates the Version PR.
+2. `assets` runs `verctl release asset`, which builds each tarball the draft Release lacks and uploads nothing.
+3. `publish` runs `verctl release --assets-dir`, which uploads the tarballs to the draft, publishes to the registries, and publishes the draft last, which creates the tag.
+4. `docs` waits for docs.rs to build each released crate.
+5. `propose` opens or updates the Version PR.
 
 Every job is safe to rerun.  
 A run with nothing pending reports `nothing to release`.  
@@ -369,19 +368,19 @@ The publish job uses it for crates.io trusted publishing.
 Every job uses it to download tools through the release mirror of `victor-software-house/actions/mise`.  
 A job without the grant downloads from GitHub and logs a notice.
 
-The `plan` job needs `contents: write`, as `publish`, `assets`, and `finalize` do.  
+The `plan` job needs `contents: write`, as `publish` and `propose` do.  
 GitHub lists a draft Release only to a token with push access, and without it `plan` cannot see a draft.  
 A caller grants `contents: write` to the whole called workflow.
 
-A Release with declared asset targets is a draft until every asset is uploaded, so it works with GitHub immutable Releases, which take no asset once published.  
-`publish` creates the tag, then the draft.  
-`assets` uploads to it, and `finalize` publishes it.  
-`--skip-assets` publishes the Release at once, and publishes an existing draft without its assets.  
-A hand-written workflow that runs `actions/publish` and then `actions/asset` runs `verctl release` again at the same commit after its uploads, which publishes the draft.
+Every Release starts as a draft with no tag, and the tag appears only when the draft is published, after every registry upload.  
+So a failed upload leaves no tag, and a rerun resumes: the registries skip every version they list, and the draft keeps its tarballs.  
+The tarballs go on the draft first, so it works with GitHub immutable Releases, which take no asset once published.  
+`--skip-assets` declares no asset, and publishes a draft found without its assets.  
+A hand-written workflow builds each tarball with `actions/asset`, hands them to its release job, and runs `actions/publish` there with `assets-dir`.
 
 A registry token stored in a GitHub environment that admits only the default branch is out of reach of every other branch.  
 Pass `environment: <name>`, and map the token by its stored name: `registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}`.  
-Only the `publish` and `finalize` jobs run in the environment, and they receive the environment's value.
+Only the `publish` job runs in the environment, and it receives the environment's value.
 
 The workflow reads no secret by a computed name, so a caller never passes `secrets: inherit`.  
 The App secrets stay in the same `secrets:` map.  
@@ -391,8 +390,7 @@ A crate's first publish maps the token and turns `crates-io-trusted-publishing` 
 The publish step sets `VERCTL_REGISTRY_TOKEN` from the secret and `VERCTL_TRUSTED_PUBLISHING_TOKEN` from trusted publishing.  
 `verctl release` fails when both are set.  
 It gives the token to each publisher and its registry `query` under `--registry-token-env` (`VERCTL_REGISTRY_TOKEN_ENV`).  
-No other command it starts gets either variable.  
-The finalize step sets only `VERCTL_REGISTRY_TOKEN`, which `release --releases-only` uses for the registry query and never to upload.
+No other command it starts gets either variable.
 
 To migrate from `version-pr.yml` and `publish.yml`, do it in one pull request:
 
@@ -406,12 +404,7 @@ Every job checks out the commit that started the run, so a release pending befor
 A version HEAD's manifests do not hold stays unreleased.
 
 GitHub refuses a Release at a commit whose `.github/workflows` differs from the default branch unless the token holds `workflows: write`, which `GITHUB_TOKEN` cannot.  
-So some packages get their tag and Release before their uploads, in the run that merged the Version PR.
-
-These are the packages with no upload, and those whose uploads all have a registry check.  
-A rerun after a failed upload finds the tag and Release.
-
-A package with an unchecked upload is tagged after its upload, since its tag is the record that the upload ran.
+`release` refuses a HEAD whose `.github/workflows` differs from the default branch tip, so its draft is created where that refusal cannot happen.
 
 ## Actions
 
@@ -426,7 +419,7 @@ There is no local token setup.
 |:--|:--|
 | [`actions/version-pr`](actions/version-pr/action.yml) | Open or update the Version PR |
 | [`actions/publish`](actions/publish/action.yml) | Run after that PR merges |
-| [`actions/asset`](actions/asset/action.yml) | Build and attach one native target |
+| [`actions/asset`](actions/asset/action.yml) | Build one native target's tarball for the release job |
 
 For a hand-written workflow, use these actions; most repositories call the reusable workflow instead.
 
