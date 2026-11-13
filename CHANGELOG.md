@@ -1,5 +1,39 @@
 # Changelog
 
+## verctl 0.8.4
+
+### Breaking
+
+- A Release with a declared asset target stays a draft until every asset is uploaded, so a repository can turn on GitHub immutable Releases.  
+  `verctl release` creates the tag, then the draft, and a later `verctl release` at that commit publishes it once every asset is uploaded.  
+  It reports a draft that still lacks assets as a warning, `draft <url> lacks <names>`, and exits zero.  
+  A draft is incomplete.  
+  A published Release that lacks a declared asset stays pending for that target only, unless GitHub holds it immutable: it then counts complete, and `status` and `release` warn that a later version must ship the asset.  
+  `--skip-assets` also publishes an existing draft without its assets ([#359](https://github.com/victor-software-house/verctl/pull/359)).
+
+  The reusable `release.yml` gains a `finalize` job, which runs `release --releases-only` after the assets.  
+  Its `plan` job needs `contents: write` to list drafts, so a caller grants `contents: write` to the whole called workflow.  
+  The plan hands each leg the assets it expects at that commit as `VERCTL_DECLARED_ASSETS`, which `release` reads as `--declared-assets`.
+
+  A hand-written workflow that runs `actions/publish` and then `actions/asset` must run `verctl release` again at the version commit after its uploads, which publishes the draft.  
+  Without that run the Release stays a draft.  
+  Draft publishing covers asset targets.  
+  A vendored set's Release is still created published, so immutable Releases are not yet safe for a repository with vendored sets.
+
+### Changed
+
+- `verctl release asset` takes `--prebuilt <path>` (`VERCTL_PREBUILT`), which packs a binary built earlier as the tarball's one entry and runs neither `prepare` nor `build`.
+  A target that packs `files` under `dir` refuses it, and it does not combine with `--vendored`.
+  In verctl's own release, the asset job reuses the release build when the version commit is the run's commit, and an older version commit still compiles from its own tree ([#361](https://github.com/victor-software-house/verctl/pull/361)).
+
+  The default GitHub-hosted Ubuntu machines move to `ubuntu-26.04` and `ubuntu-26.04-arm`: the `runner` input of `release.yml`, the built-in `linux-x64` target, and the `ci` default.
+  A Linux tarball built on the defaults needs the newer glibc of Ubuntu 26.04.
+
+### Fixed
+
+- The publish, asset, and docs jobs of the reusable `release.yml` install the verctl the plan job checked from HEAD's mise lock with `mise install --locked`, and no longer set `MISE_LOCKED` or `MISE_LOCKFILE`.
+  A caller whose `mise.toml` sets `locked = true` in `[settings]` and `[tool_config]` releases again, where the install failed with `locked mode requires lockfile to be enabled` ([#358](https://github.com/victor-software-house/verctl/pull/358)).
+
 ## verctl 0.8.3
 
 ### Fixed
