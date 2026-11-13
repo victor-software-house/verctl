@@ -591,7 +591,7 @@ const MAX_TRUSTED_PUBLISHER_PAGES: usize = 100;
 /// (`query_with_params` in crates.io's `src/util/request_helpers.rs`). It is
 /// followed until it is null, a page holds no entries, or the entries reach
 /// `meta.total`. A `next_page` that leads to a page already read, and more
-/// than [`MAX_TRUSTED_PUBLISHER_PAGES`] pages, are errors, because following
+/// than 100 pages, are errors, because following
 /// them may never end.
 ///
 /// # Errors
