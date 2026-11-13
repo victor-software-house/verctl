@@ -4,9 +4,9 @@
 
 mod common;
 
-use std::fs;
 use std::path::Path;
-use std::process::Output;
+use std::process::{Command, Output};
+use std::{env, fs};
 
 use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
@@ -139,8 +139,25 @@ async fn github_with_an_old_draft(first: &str, second: &str) -> MockServer {
     server
 }
 
+/// verctl with no host `CI` or `GITHUB_*` variable, so each run sees only
+/// the GitHub the test sets. On a pull request CI sets `GITHUB_BASE_REF`,
+/// and the release proof would then fetch that branch from the fixture's
+/// fake origin.
+fn off_actions() -> Command {
+    let mut command = common::verctl();
+    for (key, _) in env::vars_os() {
+        if key
+            .to_str()
+            .is_some_and(|key| key == "CI" || key.starts_with("GITHUB_"))
+        {
+            command.env_remove(key);
+        }
+    }
+    command
+}
+
 fn run(root: &Path, server: &MockServer, args: &[&str]) -> Output {
-    common::verctl()
+    off_actions()
         .current_dir(root)
         .env("GITHUB_REPOSITORY", "acme/demo")
         .env("GITHUB_TOKEN", "test")
@@ -1175,7 +1192,7 @@ fn release_against(
     (index, api): &(MockServer, MockServer),
     args: &[&str],
 ) -> Output {
-    common::verctl()
+    off_actions()
         .current_dir(root)
         .env("GITHUB_REPOSITORY", "acme/demo")
         .env("GITHUB_TOKEN", "test")
