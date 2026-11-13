@@ -9,11 +9,13 @@
 //! recipe's `query`, or has no check and keeps the stderr match.
 
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use std::{env, fs, thread};
 
 use anyhow::{Context, Result, bail, ensure};
+use reqwest::StatusCode;
 use reqwest::header::{AUTHORIZATION, HeaderValue};
 use semver::Version;
 use toml_edit::{DocumentMut, Item};
@@ -514,6 +516,22 @@ pub struct GithubConfig {
     pub environment: Option<String>,
 }
 
+/// What crates.io answered to a request for the trusted publishers of a crate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TrustedPublishers {
+    /// The entries, in the order crates.io lists them.
+    Listed(Vec<GithubConfig>),
+    /// crates.io answered 400, which is how it refuses a token whose user does
+    /// not own the crate (`list_by_crate` in crates.io's
+    /// `src/controllers/trustpub/github_configs/list.rs`). The refusal belongs
+    /// to this crate alone, so the caller can go on to the next one.
+    Refused {
+        /// crates.io's reason: the `detail` of each of its errors joined by
+        /// `; `, or its body when that is not an errors document.
+        detail: String,
+    },
+}
+
 /// The GitHub trusted publisher entries of `name`, from the crates.io API
 /// under `base`.
 ///
@@ -523,7 +541,9 @@ pub struct GithubConfig {
 ///
 /// Each page's `meta.next_page` is a query string for the same path
 /// (`query_with_params` in crates.io's `src/util/request_helpers.rs`). It is
-/// followed until it is null.
+/// followed until it is null or a page holds no entries. A `next_page` that
+/// leads to a page already read is an error, because following it would never
+/// end.
 ///
 /// # Errors
 ///
@@ -532,14 +552,16 @@ pub struct GithubConfig {
 /// - `name` is not ASCII;
 /// - `token` cannot be an HTTP header value;
 /// - a request fails;
-/// - the API answers with a status other than 200, such as 403 for a token it
-///   does not accept or 400 for a token whose user owns no such crate, or with
-///   404;
-/// - a body is not the entries JSON.
+/// - the API answers with a status other than 200 or 400, such as 403 for a
+///   token it does not accept, or with 404;
+/// - a body is not the entries JSON;
+/// - a page's `next_page` leads to a page already read.
+///
+/// A 400 is not an error but [`TrustedPublishers::Refused`].
 ///
 /// Only an API that gave no answer is a [`lookup::Unavailable`], under the
 /// conditions of [`RegistryCheck::lists`].
-pub fn crates_io_github_configs(base: &str, name: &str, token: &str) -> Result<Vec<GithubConfig>> {
+pub fn crates_io_github_configs(base: &str, name: &str, token: &str) -> Result<TrustedPublishers> {
     ensure!(
         !name.is_empty() && name.is_ascii(),
         "{name:?} is not a crates.io crate name"
@@ -549,18 +571,53 @@ pub fn crates_io_github_configs(base: &str, name: &str, token: &str) -> Result<V
         base.trim_end_matches('/')
     );
     let mut url = format!("{path}?crate={name}");
+    let mut read = HashSet::from([url.clone()]);
     let mut entries = Vec::new();
     loop {
-        let body = github::block(fetch(&url, Some(token)))?
-            .with_context(|| format!("GET {url}: 404 Not Found"))?;
+        let body = match github::block(answer(&url, Some(token)))? {
+            Answer::Body(body) => body,
+            Answer::NotFound => bail!("GET {url}: {}", StatusCode::NOT_FOUND),
+            Answer::BadRequest(body) => {
+                return Ok(TrustedPublishers::Refused {
+                    detail: refusal(&body),
+                });
+            }
+        };
         let page: GithubConfigs = serde_json::from_str(&body)
             .with_context(|| format!("crates.io trusted publishers of {name}"))?;
-        entries.extend(page.github_configs);
-        match page.meta.next_page {
-            Some(next) => url = format!("{path}{next}"),
-            None => return Ok(entries),
+        if page.github_configs.is_empty() {
+            return Ok(TrustedPublishers::Listed(entries));
         }
+        entries.extend(page.github_configs);
+        let Some(next) = page.meta.next_page else {
+            return Ok(TrustedPublishers::Listed(entries));
+        };
+        url = format!("{path}{next}");
+        ensure!(
+            read.insert(url.clone()),
+            "crates.io repeated page {url} of the trusted publishers of {name}"
+        );
     }
+}
+
+/// The reason in a crates.io error response, `{"errors":[{"detail":"..."}]}`:
+/// each `detail` joined by `; `. A body of another shape is its own reason,
+/// trimmed.
+fn refusal(body: &str) -> String {
+    serde_json::from_str::<ApiErrors>(body)
+        .ok()
+        .filter(|parsed| !parsed.errors.is_empty())
+        .map_or_else(
+            || body.trim().to_owned(),
+            |parsed| {
+                parsed
+                    .errors
+                    .iter()
+                    .map(|error| error.detail.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            },
+        )
 }
 
 /// The crates.io owners response.
@@ -613,6 +670,18 @@ struct GithubConfigsMeta {
     next_page: Option<String>,
 }
 
+/// A crates.io error response.
+#[derive(serde::Deserialize)]
+struct ApiErrors {
+    errors: Vec<ApiError>,
+}
+
+/// One error in a crates.io error response.
+#[derive(serde::Deserialize)]
+struct ApiError {
+    detail: String,
+}
+
 /// One line of a crate's index file.
 #[derive(serde::Deserialize)]
 struct IndexRecord {
@@ -621,11 +690,34 @@ struct IndexRecord {
     yanked: bool,
 }
 
+/// What the server at a URL answered.
+enum Answer {
+    /// 200, with its body.
+    Body(String),
+    /// 404, which the index and the API both answer for a crate they do not
+    /// have.
+    NotFound,
+    /// 400, with its body: crates.io's refusal of a token for a crate its user
+    /// does not own.
+    BadRequest(String),
+}
+
 /// The body at `url`, or `None` on a 404, which the index and the API both
-/// answer for a crate they do not have. With `token`, the request carries it
-/// as its `Authorization` header, the raw token as cargo sends it, marked
-/// sensitive so no debug output shows it.
+/// answer for a crate they do not have. A 400 is an error here: only the
+/// trusted publishers request reads it as a refusal.
 async fn fetch(url: &str, token: Option<&str>) -> Result<Option<String>> {
+    match answer(url, token).await? {
+        Answer::Body(body) => Ok(Some(body)),
+        Answer::NotFound => Ok(None),
+        Answer::BadRequest(_) => bail!("GET {url}: {}", StatusCode::BAD_REQUEST),
+    }
+}
+
+/// What the server at `url` answered. With `token`, the request carries it as
+/// its `Authorization` header, the raw token as cargo sends it, marked
+/// sensitive so no debug output shows it. Any status but 200, 400, and 404 is
+/// an error, a [`lookup::Unavailable`] when the server gave no answer.
+async fn answer(url: &str, token: Option<&str>) -> Result<Answer> {
     let client = reqwest::Client::builder()
         .user_agent(user_agent())
         .timeout(INDEX_TIMEOUT)
@@ -643,13 +735,19 @@ async fn fetch(url: &str, token: Option<&str>) -> Result<Option<String>> {
         .await
         .map_err(|error| unanswered(error, url))?;
     match response.status() {
-        reqwest::StatusCode::OK => Ok(Some(
+        StatusCode::OK => Ok(Answer::Body(
             response
                 .text()
                 .await
                 .map_err(|error| unanswered(error, url))?,
         )),
-        reqwest::StatusCode::NOT_FOUND => Ok(None),
+        StatusCode::NOT_FOUND => Ok(Answer::NotFound),
+        StatusCode::BAD_REQUEST => Ok(Answer::BadRequest(
+            response
+                .text()
+                .await
+                .map_err(|error| unanswered(error, url))?,
+        )),
         status if lookup::no_answer(status, Some(response.headers())) => {
             Err(lookup::unavailable(anyhow::anyhow!("GET {url}: {status}")))
         }
@@ -752,9 +850,9 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{
-        CargoEnv, CargoTarget, RegistryCheck, TrustedUpload, cargo_target, crates_io_baseline,
-        crates_io_github_configs, crates_io_lists, crates_io_newest_trust, crates_io_user_owners,
-        index_path, wait_listed,
+        CargoEnv, CargoTarget, RegistryCheck, TrustedPublishers, TrustedUpload, cargo_target,
+        crates_io_baseline, crates_io_github_configs, crates_io_lists, crates_io_newest_trust,
+        crates_io_user_owners, index_path, wait_listed,
     };
     use crate::lookup;
 
@@ -999,11 +1097,14 @@ mod tests {
             .mount(&server)
             .await;
         let base = server.uri();
-        let entries =
+        let TrustedPublishers::Listed(entries) =
             task::spawn_blocking(move || crates_io_github_configs(&base, "demo", "t0ken"))
                 .await
                 .unwrap()
-                .unwrap();
+                .unwrap()
+        else {
+            panic!("crates.io refused the token");
+        };
         let files: Vec<(&str, Option<&str>)> = entries
             .iter()
             .map(|entry| {
@@ -1024,6 +1125,87 @@ mod tests {
         );
         let requests = server.received_requests().await.unwrap();
         assert_eq!(requests.len(), 2);
+    }
+
+    /// `crates_io_github_configs` for `demo` against `base`, with the token
+    /// `t0ken`, off the async runtime as the command runs it.
+    async fn publishers_of_demo(base: String) -> anyhow::Result<TrustedPublishers> {
+        task::spawn_blocking(move || crates_io_github_configs(&base, "demo", "t0ken"))
+            .await
+            .unwrap()
+    }
+
+    /// A page with no entries ends the paging, whatever its `next_page` says,
+    /// so a server that keeps offering a next page cannot hold the check.
+    #[tokio::test]
+    async fn a_page_with_no_entries_stops_the_paging() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/trusted_publishing/github_configs"))
+            .and(query_param("seek", "abc"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(indoc! {r#"
+                {"github_configs":[],"meta":{"total":1,"next_page":"?crate=demo&seek=def"}}
+            "#}))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/trusted_publishing/github_configs"))
+            .and(query_param_is_missing("seek"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(indoc! {r#"
+                {"github_configs":[{"id":1,"crate":"demo","repository_owner":"acme","repository_name":"demo","repository_owner_id":9,"workflow_filename":"release.yml","environment":null,"created_at":"2026-11-13T00:00:00Z"}],"meta":{"total":1,"next_page":"?crate=demo&seek=abc"}}
+            "#}))
+            .mount(&server)
+            .await;
+        let TrustedPublishers::Listed(entries) = publishers_of_demo(server.uri()).await.unwrap()
+        else {
+            panic!("crates.io refused the token");
+        };
+        assert_eq!(entries.len(), 1);
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 2);
+    }
+
+    /// A `next_page` that leads back to a page already read fails, naming the
+    /// crate and the repeated URL.
+    #[tokio::test]
+    async fn a_next_page_that_repeats_a_page_fails() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/trusted_publishing/github_configs"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(indoc! {r#"
+                {"github_configs":[{"id":1,"crate":"demo","repository_owner":"acme","repository_name":"demo","repository_owner_id":9,"workflow_filename":"release.yml","environment":null,"created_at":"2026-11-13T00:00:00Z"}],"meta":{"total":1,"next_page":"?crate=demo"}}
+            "#}))
+            .mount(&server)
+            .await;
+        let base = server.uri();
+        let error = publishers_of_demo(base.clone()).await.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "crates.io repeated page {base}/trusted_publishing/github_configs?crate=demo of the trusted publishers of demo"
+            )
+        );
+    }
+
+    /// A 400 is crates.io refusing the token for a crate its user does not
+    /// own: the detail comes back, and the token is nowhere in it.
+    #[tokio::test]
+    async fn a_400_is_a_refusal_with_crates_ios_detail() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/trusted_publishing/github_configs"))
+            .and(header("authorization", "t0ken"))
+            .respond_with(ResponseTemplate::new(400).set_body_string(indoc! {r#"
+                {"errors":[{"detail":"You are not an owner of this crate"}]}
+            "#}))
+            .mount(&server)
+            .await;
+        assert_eq!(
+            publishers_of_demo(server.uri()).await.unwrap(),
+            TrustedPublishers::Refused {
+                detail: "You are not an owner of this crate".into()
+            }
+        );
     }
 
     #[tokio::test]

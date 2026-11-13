@@ -161,6 +161,20 @@ async fn entries(server: &MockServer, name: &str, workflows: &[&str]) {
         .await;
 }
 
+/// crates.io refuses `name`'s entries to the token: its user does not own the
+/// crate.
+async fn refused(server: &MockServer, name: &str) {
+    Mock::given(method("GET"))
+        .and(path("/trusted_publishing/github_configs"))
+        .and(query_param("crate", name))
+        .and(header("authorization", "t0ken"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "errors": [{ "detail": "You are not an owner of this crate" }],
+        })))
+        .mount(server)
+        .await;
+}
+
 /// `registry` over `crates` against `server`, off the async runtime as the
 /// command runs it.
 async fn registry(server: &MockServer, crates: Vec<Crate>) -> RegistryReport {
@@ -423,6 +437,37 @@ async fn trust_with_a_missing_entry() {
         report.failures(),
         [
             "demo: lacks a trusted publisher for release.yml in acme/demo; add one on crates.io that names this repository and workflow file"
+        ]
+    );
+}
+
+/// A crate whose entries crates.io refuses to the token fails alone: the run
+/// returns a report, the next crate is still read and passes, and the failure
+/// names only the refused crate and crates.io's reason.
+#[tokio::test]
+async fn trust_with_a_refused_crate_still_checks_the_next() {
+    let repo = repository("owners: [any-victor]", &["demo", "demo-core"], &[]);
+    let config = Config::load(&repo.path().join(config::FILE)).unwrap();
+    let server = MockServer::start().await;
+    owned_by(&server, "demo", &["any-victor"]).await;
+    owned_by(&server, "demo-core", &["any-victor"]).await;
+    refused(&server, "demo").await;
+    entries(&server, "demo-core", &["release.yml"]).await;
+    let report = trust(&server, crates_of(repo.path()), &config.release_workflow).await;
+    let TrustReport::Set { crates, .. } = &report else {
+        panic!("{report:?}");
+    };
+    assert_eq!(
+        crates[0].state,
+        TrustState::Refused {
+            detail: "You are not an owner of this crate".into()
+        }
+    );
+    assert_eq!(crates[1].state, TrustState::Trusted);
+    assert_eq!(
+        report.failures(),
+        [
+            "demo: crates.io refused to list its trusted publishers (You are not an owner of this crate); the token's user must be an owner of the crate"
         ]
     );
 }
