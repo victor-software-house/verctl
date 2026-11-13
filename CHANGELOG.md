@@ -1,5 +1,27 @@
 # Changelog
 
+## verctl 0.8.6-rc.2
+
+### Breaking
+
+- The reusable release workflow loses its `docs` job and its `docs` input, and the `verctl docs` verb is removed with no hidden one left behind.
+  verctl waits for no docs.rs build: docs.rs builds every crates.io release on its own, and a repository checks its docs build in pull request CI.
+  A caller that passes `docs:` to the workflow, or runs `verctl docs`, drops it ([#382](https://github.com/victor-software-house/verctl/pull/382)).
+- `verctl check [CHECK]...` runs the checks it names, `fragments`, `served` and `versions`, each once, and the report lists each check that ran.
+  Bare `check` runs `fragments` and `served`, and `--all` (`-a`) runs every check.
+  `check --versions` is removed with no hidden flag: run `check versions`.
+  The hidden verbs `prepare`, `pin`, `publish` and `assets`, and the hidden `release --plan`, are removed too, and each now fails as an unknown command or flag ([#379](https://github.com/victor-software-house/verctl/pull/379)).
+- `verctl release` and `verctl status` take HEAD as the release reference.
+  A run releases, from HEAD, every version HEAD's manifests hold whose release is incomplete, whichever commit set it.
+  A version HEAD no longer holds stays unreleased, `status --github-output` writes HEAD as the only commit, and a release no longer refuses a skipped version.
+  The `waiting` list leaves the `release` report, and `declared` in the `--github-output` file is the comma-separated asset names HEAD's Release holds ([#370](https://github.com/victor-software-house/verctl/pull/370)).
+- `verctl release` creates the tag last: it creates a draft Release at HEAD with no tag, uploads the declared tarballs to it from `--assets-dir`, publishes to the registries, and then publishes the draft, which creates the tag.
+  A failed upload leaves no tag, and a rerun resumes, skipping every version a registry lists.
+  `release asset` builds its tarball and uploads nothing, and loses `--tag`.
+  The reusable workflow builds the tarballs before the release job and drops the `finalize` job.
+  A hand-written workflow passes the tarballs to `actions/publish` through its new `assets-dir` input, and `actions/asset` loses its `token` and `tag` inputs.
+  Each row of the plan's `assets` matrix names its tarball as `asset`, so a job hands the file on without reading verctl's output ([#377](https://github.com/victor-software-house/verctl/pull/377)).
+
 ## verctl 0.8.6-rc.1
 
 - `verctl semver` runs `cargo semver-checks` once more past the publish-age cooldown when every crate the cooldown rejected has a crates.io owner that `CARGO_TRUSTED_OWNERS` lists.
