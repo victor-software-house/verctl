@@ -118,10 +118,12 @@ Everything else is proven once, by the gate that already owns it:
 | Fact | Gate that proves it |
 |:--|:--|
 | The Version PR matches a replay of `version` | `check versions` on the Version PR |
-| Every crate packages and builds | `cargo package` in CI on every pull request and merge group |
+| Every crate packages and builds | `cargo package --workspace` in the shared Rust CI's `semver` job, on every pull request and merge group of a repository whose template answer `published` is true, library or binary |
 | Every declared tarball builds | the release workflow's asset matrix, and `release` refusing a tarball missing from `--assets-dir` before any write |
 | Fragments parse, served files match | `check` on every pull request |
 
+A repository that publishes a crate while its template answer `published` is false has no packaging gate, and setting that answer to true adds it; the release adds no packaging step.
+Run by `release`, the `registry` check skips the freeze of decision 6 and its wait for a running release, because the run is that release.
 `release --dry-run` (`-n`) prints the plan and runs the same checks, and uploads nothing.
 A failed check stops `release` before the draft, with nothing published.
 The operator chose this on 2026-11-13: no gate repeats work another gate already proved.
@@ -155,7 +157,7 @@ The label follows the `tool: state` form of release-please's `autorelease: pendi
 
 1. With a merge queue, the job that runs `check registry` is required on the merge-group commit, which is the commit that lands under the `MERGE` method.
 2. With rulesets and no queue, that job is required on every pull request with "require branches to be up to date", so each one runs again after the Version PR lands.
-3. With neither, the operator runs `release --dry-run` before merging; the freeze is reported, not enforced.
+3. With neither, the operator updates the Version PR to the default branch's tip and runs `check versions registry` on it before merging; the freeze is reported, not enforced.
 
 No separate `release --dry-run` job runs in CI: it would repeat the `check registry` job (decision 5).
 

@@ -104,6 +104,16 @@ When a check fails, `verctl release` SHALL exit non-zero naming each failure, an
 - **WHEN** `.ctl/ver.yaml` sets `release_checks: []`
 - **THEN** `verctl release` runs no check before its first upload
 
+### Requirement: Run by `release`, the `registry` check skips the freeze
+
+When `verctl release` runs the `registry` check, it SHALL skip the freeze and the wait for a running release, and run only the existence and owner proofs.
+The run is the pending release itself, so the freeze would hold it back.
+
+#### Scenario: The landing push
+
+- **WHEN** the Version PR's merge lands `demo` `0.4.0`, and `verctl release` runs from that push while its own workflow is the running release
+- **THEN** the `registry` check proves existence and owners, does not wait for the running release, and does not fail naming `demo` `0.4.0` as pending
+
 ### Requirement: The release proof repeats no earlier gate
 
 The proof SHALL NOT replay `version`, run `cargo publish --dry-run`, or build a tarball.

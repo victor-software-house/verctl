@@ -26,7 +26,6 @@ Queue row: [VER-135][ver-135].
    The `trust` check needs an owner's token and proves the trusted publisher entry.
 3. **The `owners` key** lists the expected owners once, with a per-package override.
 4. **`release`** runs the registry checks `release_checks` names before its first upload, and `release --dry-run` prints the plan and runs the same checks; nothing another gate already proves runs again.
-   `release` runs the same proof before its first upload.
 5. **The freeze.**
    While the default branch holds a version whose release is incomplete, the `registry` check fails every other pull request or merge group.
    A pull request labelled `verctl: unfreeze` passes.
