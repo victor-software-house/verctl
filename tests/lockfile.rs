@@ -4,6 +4,7 @@
 //! for a two-package workspace. Each has an old and a new copy, where `a` moves
 //! from 1.0.0 to 1.1.0.
 
+use std::fs;
 use std::path::Path;
 
 use indoc::{formatdoc, indoc};
@@ -13,13 +14,9 @@ fn read(name: &str) -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/testdata/lockfiles")
         .join(name);
-    std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+    fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
 
-#[expect(
-    clippy::expect_used,
-    reason = "a fixture that does not parse fails the test"
-)]
 fn parse(format: Format, text: &str) -> Lockfile {
     Lockfile::parse(format, text).expect("parse")
 }

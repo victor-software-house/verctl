@@ -230,7 +230,7 @@ pub fn load_dir(dir: &Path) -> Result<Vec<Fragment>> {
     }
     let mut paths: Vec<PathBuf> = fs::read_dir(dir)
         .with_context(|| dir.display().to_string())?
-        .filter_map(std::result::Result::ok)
+        .flatten()
         .map(|entry| entry.path())
         .filter(|path| is_fragment_path(path))
         .collect();

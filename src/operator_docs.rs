@@ -2,12 +2,15 @@
 //! them.
 
 use std::collections::BTreeMap;
-use std::fs;
 use std::path::Path;
+use std::{env, fs};
 
+use ctl_core::surface;
 use minijinja::{Value, context};
 
 use crate::cli::Cli;
+use crate::config::Config;
+use crate::{git, release, templates};
 
 const SKILL_TEMPLATE: &str = ".ctl/templates/SKILL.md.jinja";
 const INSTRUCTIONS_TEMPLATE: &str = ".ctl/operator/instructions.md.jinja";
@@ -21,8 +24,8 @@ fn crate_file(relative: &str) -> String {
 
 fn render_template(relative: &str, context: &Value) -> String {
     let source = crate_file(relative);
-    let environment = ctl_core::surface::environment()
-        .unwrap_or_else(|error| panic!("operator environment: {error}"));
+    let environment =
+        surface::environment().unwrap_or_else(|error| panic!("operator environment: {error}"));
     environment
         .template_from_named_str(relative, &source)
         .unwrap_or_else(|error| panic!("parse {relative}: {error}"))
@@ -32,7 +35,7 @@ fn render_template(relative: &str, context: &Value) -> String {
 
 fn assert_committed(relative: &str, rendered: &str) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(relative);
-    if std::env::var_os("UPDATE_OPERATOR_DOCS").is_some() {
+    if env::var_os("UPDATE_OPERATOR_DOCS").is_some() {
         fs::write(&path, rendered)
             .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
     }
@@ -71,13 +74,13 @@ fn instructions_are_the_committed_surface_render() {
 fn every_served_template_renders() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     assert!(
-        crate::git::is_repository(root),
+        git::is_repository(root),
         "templates::plan discovers sources from the git index"
     );
-    let config = crate::config::Config::load(&root.join(".ctl/ver.yaml"))
+    let config = Config::load(&root.join(".ctl/ver.yaml"))
         .unwrap_or_else(|error| panic!("load .ctl/ver.yaml: {error:#}"));
-    let versions = crate::release::served_versions(root, &config, &[]);
-    let served = crate::templates::plan(root, &config.templates, &config.pins, &versions)
+    let versions = release::served_versions(root, &config, &[]);
+    let served = templates::plan(root, &config.templates, &config.pins, &versions)
         .unwrap_or_else(|error| panic!("{error:#}"));
     let skill = root.join(SKILL);
     assert!(

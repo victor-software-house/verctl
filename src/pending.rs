@@ -16,6 +16,7 @@
 //! A version an earlier commit set and no release has is listed at the commit
 //! that set it. That happens when a later Version PR merged first.
 
+use std::cmp::Reverse;
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::fmt;
@@ -27,7 +28,7 @@ use serde::de::{IgnoredAny, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::assets::{self, MatrixTarget};
-use crate::config::{Assets, Config};
+use crate::config::{Assets, Config, PackageSpec};
 use crate::driver::Driver;
 use crate::git::{self, VersionCommit};
 use crate::github::{self, ReleaseState};
@@ -333,7 +334,7 @@ impl Versions<'_> {
     /// planned like any other incomplete release.
     fn earlier(
         &self,
-        spec: &crate::config::PackageSpec,
+        spec: &PackageSpec,
         entry: &PublishEntry,
         read: &dyn Fn(&str) -> Option<String>,
     ) -> Result<Vec<PackageState>> {
@@ -362,7 +363,7 @@ impl Versions<'_> {
     /// declared, whether `version` is already uploaded.
     fn probe(
         &self,
-        spec: &crate::config::PackageSpec,
+        spec: &PackageSpec,
         entry: &PublishEntry,
         name: Option<&str>,
         version: &str,
@@ -461,9 +462,7 @@ fn declared_at(root: &Path, path: &Path, sha: &str) -> Result<Option<Vec<String>
     let declared: DeclaredTargets = Input::new(format!("{} at {sha}", path.display()), &raw)
         .parse()
         .with_context(|| format!("the asset targets of {} at commit {sha}", path.display()))?;
-    Ok(Some(
-        declared.assets.map(|assets| assets.0).unwrap_or_default(),
-    ))
+    Ok(Some(declared.assets.map_or_default(|assets| assets.0)))
 }
 
 /// The asset target ids an old revision of the config holds, and nothing
@@ -567,7 +566,7 @@ fn tag_of(planned: &publish::PublishPlan, entry: &PublishEntry) -> Result<String
 fn registry_lists(
     config: &Config,
     root: &Path,
-    spec: &crate::config::PackageSpec,
+    spec: &PackageSpec,
     entry: &PublishEntry,
     release: &ReleaseState,
     env: &[(&str, &str)],
@@ -597,7 +596,7 @@ fn registry_lists(
 fn checks_at(
     config: &Config,
     root: &Path,
-    spec: &crate::config::PackageSpec,
+    spec: &PackageSpec,
     entry: &PublishEntry,
     version: &str,
 ) -> Result<Vec<RegistryCheck>> {
@@ -770,7 +769,7 @@ fn group(states: Vec<PackageState>) -> Pending {
         );
     }
     let mut ordered: Vec<(String, AtCommit)> = by_commit.into_iter().collect();
-    ordered.sort_by_key(|(_, at)| std::cmp::Reverse(at.depth));
+    ordered.sort_by_key(|(_, at)| Reverse(at.depth));
     let mut pending = Pending {
         shortfalls,
         finished,
@@ -839,6 +838,9 @@ pub fn write_github_output(pending: &Pending, path: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+    use std::{env, fs};
+
     use ctl_core::input::Input;
     use indoc::indoc;
 
@@ -852,6 +854,7 @@ mod tests {
     use crate::git::VersionCommit;
     use crate::github::ReleaseState;
     use crate::publish::PublishEntry;
+    use crate::publisher::Upload;
     use crate::registry::RegistryCheck;
 
     fn entry(name: &str, version: &str) -> PublishEntry {
@@ -1313,7 +1316,7 @@ mod tests {
         let pending = group(vec![incomplete("demo", "0.4.6", at("aaa", 1))]);
         write_github_output(&pending, &path).unwrap();
         assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
+            fs::read_to_string(&path).unwrap(),
             indoc! {r#"
                 commits=["aaa"]
                 pending=true
@@ -1324,7 +1327,7 @@ mod tests {
         let nothing = dir.path().join("nothing");
         write_github_output(&Pending::default(), &nothing).unwrap();
         assert_eq!(
-            std::fs::read_to_string(&nothing).unwrap(),
+            fs::read_to_string(&nothing).unwrap(),
             indoc! {r#"
                 commits=[]
                 pending=false
@@ -1352,7 +1355,7 @@ mod tests {
         );
         let pending = group(vec![incomplete("core", "0.3.1", at("aaa", 1)), state]);
         write_github_output(&pending, &path).unwrap();
-        let written = std::fs::read_to_string(&path).unwrap();
+        let written = fs::read_to_string(&path).unwrap();
         assert!(
             written.contains(
                 r#"declared={"aaa":"","bbb":"demo-darwin-arm64.tar.gz,demo-linux-x64.tar.gz"}"#
@@ -1364,7 +1367,7 @@ mod tests {
     fn query(argv: &[&str]) -> RegistryCheck {
         RegistryCheck::Query {
             argv: argv.iter().map(|word| (*word).to_owned()).collect(),
-            dir: std::env::temp_dir(),
+            dir: env::temp_dir(),
         }
     }
 
@@ -1401,11 +1404,11 @@ mod tests {
         }
     }
 
-    fn member(name: &str, version: &str) -> crate::publisher::Upload {
-        crate::publisher::Upload {
+    fn member(name: &str, version: &str) -> Upload {
+        Upload {
             name: name.to_owned(),
             version: version.to_owned(),
-            manifest: std::path::PathBuf::from(format!("{name}/Cargo.toml")),
+            manifest: PathBuf::from(format!("{name}/Cargo.toml")),
             argv: vec!["cargo".to_owned(), "publish".to_owned()],
             check: RegistryCheck::CratesIo {
                 name: name.to_owned(),

@@ -1,5 +1,8 @@
+use std::error::Error;
+use std::fmt;
 use std::io::{self, Read, Write};
 use std::path::Path;
+use std::process::ExitStatus;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
@@ -251,13 +254,13 @@ pub struct ExitFailure {
     /// The argv, joined with spaces.
     pub command: String,
     /// How it exited.
-    pub status: std::process::ExitStatus,
+    pub status: ExitStatus,
     /// Its stderr, trimmed.
     pub stderr: String,
 }
 
-impl std::fmt::Display for ExitFailure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for ExitFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self {
             command,
             status,
@@ -271,7 +274,7 @@ impl std::fmt::Display for ExitFailure {
     }
 }
 
-impl std::error::Error for ExitFailure {}
+impl Error for ExitFailure {}
 
 /// A command that ran longer than its timeout and was killed.
 #[derive(Debug)]
@@ -280,13 +283,13 @@ pub struct TimedOut {
     pub timeout: Duration,
 }
 
-impl std::fmt::Display for TimedOut {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for TimedOut {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "driver command timed out after {:?}", self.timeout)
     }
 }
 
-impl std::error::Error for TimedOut {}
+impl Error for TimedOut {}
 
 fn capture(
     argv: &[String],

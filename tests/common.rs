@@ -5,18 +5,19 @@
 )]
 
 use std::ffi::OsStr;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::{env, fs};
 
 use indoc::indoc;
 use tempfile::TempDir;
+use verctl::config;
 
 /// Write a repo's declarations where verctl looks for them. Return the path, so
 /// a test can pass it to `-c` or `Config::load` without spelling the layout
 /// again.
 pub(crate) fn write_config(root: &Path, yaml: &str) -> PathBuf {
-    let path = root.join(verctl::config::FILE);
+    let path = root.join(config::FILE);
     fs::create_dir_all(path.parent().expect("parent")).expect("dir");
     fs::write(&path, yaml).expect("cfg");
     path
@@ -93,7 +94,7 @@ pub(crate) fn is_cleared(key: &OsStr) -> bool {
 /// matches removed.
 pub(crate) fn verctl() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_verctl"));
-    for (name, _) in std::env::vars_os() {
+    for (name, _) in env::vars_os() {
         if is_cleared(&name) {
             command.env_remove(name);
         }

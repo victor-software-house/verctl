@@ -5,6 +5,7 @@ mod common;
 
 use std::fs;
 use std::path::Path;
+use std::process::Output;
 
 use indoc::indoc;
 use tempfile::TempDir;
@@ -24,7 +25,6 @@ fn manifest(version: &str) -> String {
     format!("[package]\nname = \"demo\"\nversion = \"{version}\"\n")
 }
 
-#[expect(clippy::unwrap_used, reason = "fixture setup fails the test outright")]
 /// A repository whose first commit sets `demo` to 1.0.0 and whose second sets
 /// 1.1.0, with `origin/main` at the second. Returns both commits.
 fn two_versions(root: &Path) -> (String, String) {
@@ -138,8 +138,7 @@ async fn github_with_an_old_draft(first: &str, second: &str) -> MockServer {
     server
 }
 
-#[expect(clippy::unwrap_used, reason = "the spawn fails the test outright")]
-fn run(root: &Path, server: &MockServer, args: &[&str]) -> std::process::Output {
+fn run(root: &Path, server: &MockServer, args: &[&str]) -> Output {
     common::verctl()
         .current_dir(root)
         .env("GITHUB_REPOSITORY", "acme/demo")

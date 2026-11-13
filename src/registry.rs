@@ -8,14 +8,16 @@
 //! the crates.io sparse index. Any other package is checked through its
 //! recipe's `query`, or has no check and keeps the stderr match.
 
+use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use std::{env, fs, thread};
 
 use anyhow::{Context, Result, bail, ensure};
 use semver::Version;
 use toml_edit::{DocumentMut, Item};
 
-use crate::{lookup, process};
+use crate::{github, lookup, process};
 
 /// The root URL of the crates.io sparse index.
 ///
@@ -24,6 +26,9 @@ use crate::{lookup, process};
 ///
 /// [sparse protocol]: https://doc.rust-lang.org/cargo/reference/registry-index.html#sparse-protocol
 pub const CRATES_IO_INDEX: &str = "https://index.crates.io";
+
+/// The root URL of the crates.io API, which `crates_io_user_owners` reads.
+pub const CRATES_IO_API: &str = "https://crates.io/api/v1";
 
 /// The registry name Cargo gives crates.io, in `publish`, `--registry`, and
 /// `registry.default`.
@@ -135,7 +140,7 @@ impl CargoEnv {
     /// process. An empty value counts as unset.
     #[must_use]
     pub fn from_env() -> Self {
-        let non_empty = |key: &str| std::env::var_os(key).filter(|value| !value.is_empty());
+        let non_empty = |key: &str| env::var_os(key).filter(|value| !value.is_empty());
         Self {
             registry_default: non_empty("CARGO_REGISTRY_DEFAULT")
                 .map(|value| value.to_string_lossy().into_owned()),
@@ -182,7 +187,7 @@ pub fn cargo_target(
     if package_registry.is_some_and(|registry| !registry.is_empty() && registry != CRATES_IO) {
         return Ok(CargoTarget::Other);
     }
-    let raw = std::fs::read_to_string(manifest).with_context(|| manifest.display().to_string())?;
+    let raw = fs::read_to_string(manifest).with_context(|| manifest.display().to_string())?;
     let Ok(document) = raw.parse::<DocumentMut>() else {
         return Ok(CargoTarget::Unknown);
     };
@@ -289,7 +294,7 @@ fn config_default(dir: &Path) -> DefaultRegistry {
     else {
         return DefaultRegistry::Unset;
     };
-    let Ok(raw) = std::fs::read_to_string(&path) else {
+    let Ok(raw) = fs::read_to_string(&path) else {
         return DefaultRegistry::Unknown;
     };
     let Ok(document) = raw.parse::<DocumentMut>() else {
@@ -344,7 +349,7 @@ pub fn crates_io_lists(base: &str, name: &str, version: &str) -> Result<bool> {
     );
     let wanted = Version::parse(version).with_context(|| format!("semver {version:?}"))?;
     let url = format!("{}/{}", base.trim_end_matches('/'), index_path(name));
-    let body = crate::github::block(fetch_index(&url))?;
+    let body = github::block(fetch(&url))?;
     let Some(body) = body else {
         return Ok(false);
     };
@@ -352,7 +357,7 @@ pub fn crates_io_lists(base: &str, name: &str, version: &str) -> Result<bool> {
         let record: IndexRecord = serde_json::from_str(line)
             .with_context(|| format!("crates.io index line for {name}"))?;
         if Version::parse(&record.vers)
-            .is_ok_and(|vers| vers.cmp_precedence(&wanted) == std::cmp::Ordering::Equal)
+            .is_ok_and(|vers| vers.cmp_precedence(&wanted) == Ordering::Equal)
         {
             return Ok(true);
         }
@@ -379,7 +384,7 @@ pub fn crates_io_baseline(base: &str, name: &str, current: &Version) -> Result<O
         "{name:?} is not a crates.io crate name"
     );
     let url = format!("{}/{}", base.trim_end_matches('/'), index_path(name));
-    let Some(body) = crate::github::block(fetch_index(&url))? else {
+    let Some(body) = github::block(fetch(&url))? else {
         return Ok(None);
     };
     let mut released = Vec::new();
@@ -400,6 +405,54 @@ pub fn crates_io_baseline(base: &str, name: &str, current: &Version) -> Result<O
     Ok(stable.or(released.last()).map(|(vers, _)| vers.clone()))
 }
 
+/// The logins of the user owners of `name`, from the crates.io API under
+/// `base`. A team owner has a login too, and is left out.
+/// A crate that crates.io does not know has no owners.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - `name` is not ASCII;
+/// - the request fails;
+/// - the API answers with a status other than 200 or 404;
+/// - the body is not the owners JSON.
+///
+/// Only an API that gave no answer is a [`lookup::Unavailable`], under the
+/// conditions of [`RegistryCheck::lists`].
+pub fn crates_io_user_owners(base: &str, name: &str) -> Result<Vec<String>> {
+    ensure!(
+        !name.is_empty() && name.is_ascii(),
+        "{name:?} is not a crates.io crate name"
+    );
+    let url = format!("{}/crates/{name}/owners", base.trim_end_matches('/'));
+    let Some(body) = github::block(fetch(&url))? else {
+        return Ok(Vec::new());
+    };
+    let owners: Owners =
+        serde_json::from_str(&body).with_context(|| format!("crates.io owners of {name}"))?;
+    Ok(owners
+        .users
+        .into_iter()
+        .filter(|owner| owner.kind == "user")
+        .map(|owner| owner.login)
+        .collect())
+}
+
+/// The crates.io owners response.
+#[derive(serde::Deserialize)]
+struct Owners {
+    users: Vec<Owner>,
+}
+
+/// One owner in the owners response.
+#[derive(serde::Deserialize)]
+struct Owner {
+    login: String,
+    /// `user` or `team`.
+    kind: String,
+}
+
 /// One line of a crate's index file.
 #[derive(serde::Deserialize)]
 struct IndexRecord {
@@ -408,8 +461,9 @@ struct IndexRecord {
     yanked: bool,
 }
 
-/// The crate's index file, or `None` when the index has no such crate.
-async fn fetch_index(url: &str) -> Result<Option<String>> {
+/// The body at `url`, or `None` on a 404, which the index and the API both
+/// answer for a crate they do not have.
+async fn fetch(url: &str) -> Result<Option<String>> {
     let client = reqwest::Client::builder()
         .user_agent(user_agent())
         .timeout(INDEX_TIMEOUT)
@@ -502,7 +556,7 @@ pub fn wait_listed(
 ) -> Result<()> {
     let mut last_error = None;
     for delay in delays {
-        std::thread::sleep(*delay);
+        thread::sleep(*delay);
         match check.lists(version, env) {
             Ok(true) => return Ok(()),
             Ok(false) => last_error = None,
@@ -520,16 +574,18 @@ pub fn wait_listed(
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::Path;
     use std::time::Duration;
 
     use indoc::indoc;
     use tempfile::TempDir;
+    use tokio::task;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{
         CargoEnv, CargoTarget, RegistryCheck, cargo_target, crates_io_baseline, crates_io_lists,
-        index_path, wait_listed,
+        crates_io_user_owners, index_path, wait_listed,
     };
     use crate::lookup;
 
@@ -567,7 +623,7 @@ mod tests {
         let base = server.uri();
         let name = name.to_owned();
         let version = version.to_owned();
-        tokio::task::spawn_blocking(move || crates_io_lists(&base, &name, &version))
+        task::spawn_blocking(move || crates_io_lists(&base, &name, &version))
             .await
             .unwrap()
     }
@@ -629,7 +685,7 @@ mod tests {
             .await;
         let base = server.uri();
         let current = semver::Version::parse(current).unwrap();
-        tokio::task::spawn_blocking(move || crates_io_baseline(&base, "demo", &current))
+        task::spawn_blocking(move || crates_io_baseline(&base, "demo", &current))
             .await
             .unwrap()
             .unwrap()
@@ -659,6 +715,62 @@ mod tests {
     async fn an_unpublished_crate_has_no_baseline() {
         assert_eq!(baseline(None, "0.0.1").await, None);
         assert_eq!(baseline(Some(RELEASES), "0.4.3").await, None);
+    }
+
+    /// What `crates_io_user_owners` makes of an API that answers `response`
+    /// for `demo`'s owners.
+    async fn owners(response: ResponseTemplate) -> Vec<String> {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/crates/demo/owners"))
+            .respond_with(response)
+            .mount(&server)
+            .await;
+        let base = server.uri();
+        task::spawn_blocking(move || crates_io_user_owners(&base, "demo"))
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    const OWNERS: &str = indoc! {r#"
+        {"users":[
+          {"id":1,"login":"any-victor","kind":"user","url":"https://github.com/any-victor","name":"Victor"},
+          {"id":2,"login":"github:victor-software-house:owners","kind":"team","url":"https://github.com/orgs/victor-software-house/teams/owners","name":"owners"},
+          {"id":3,"login":"other","kind":"user","url":"https://github.com/other","name":null}
+        ]}
+    "#};
+
+    #[tokio::test]
+    async fn the_owners_of_a_crate_are_its_user_logins() {
+        assert_eq!(
+            owners(ResponseTemplate::new(200).set_body_string(OWNERS)).await,
+            ["any-victor", "other"]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_crate_crates_io_does_not_know_has_no_owners() {
+        assert_eq!(
+            owners(ResponseTemplate::new(404)).await,
+            Vec::<String>::new()
+        );
+    }
+
+    #[tokio::test]
+    async fn an_owners_api_that_cannot_answer_now_is_a_lookup_that_cannot_run() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/crates/demo/owners"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&server)
+            .await;
+        let base = server.uri();
+        let error = task::spawn_blocking(move || crates_io_user_owners(&base, "demo"))
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert!(lookup::is_unavailable(&error), "{error:#}");
     }
 
     fn crate_dir(manifest: &str) -> TempDir {
@@ -726,7 +838,7 @@ mod tests {
         assert_eq!(target(&inherited, None, &no_home()), CargoTarget::Unknown);
     }
 
-    fn write_config(dir: &std::path::Path, name: &str, body: &str) {
+    fn write_config(dir: &Path, name: &str, body: &str) {
         fs::create_dir_all(dir).unwrap();
         fs::write(dir.join(name), body).unwrap();
     }

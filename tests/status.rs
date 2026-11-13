@@ -4,6 +4,8 @@
 mod common;
 
 use std::fs;
+use std::path::Path;
+use std::process::Output;
 
 use common::demo_root;
 use indoc::indoc;
@@ -196,11 +198,7 @@ fn a_depth_1_clone_leaves_unreleased_unchecked() {
 /// `verctl status --format json` with a token and a repository at
 /// `demo@1.0.0` whose `origin` is GitHub. GitHub answers the lookup of tag
 /// `v1.0.0` with `answer`.
-#[expect(
-    clippy::expect_used,
-    reason = "fixture setup fails the test outright; the status run is the result"
-)]
-async fn status_with_tag_lookup(answer: ResponseTemplate) -> std::process::Output {
+async fn status_with_tag_lookup(answer: ResponseTemplate) -> Output {
     let root = TempDir::new().expect("tempdir");
     common::write_config(
         root.path(),
@@ -414,9 +412,8 @@ fn instructions_preserve_the_installed_markdown() {
         .expect("spawn");
     assert!(output.status.success());
     assert_eq!(output.stderr, Vec::<u8>::new());
-    let expected =
-        fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/instructions.md"))
-            .expect("instructions");
+    let expected = fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/instructions.md"))
+        .expect("instructions");
     assert_eq!(output.stdout, expected);
 }
 

@@ -1,3 +1,5 @@
+use std::fs;
+use std::io::ErrorKind;
 use std::path::Path;
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -5,7 +7,7 @@ use jsonc_parser::ParseOptions;
 use jsonc_parser::cst::{CstInputValue, CstObject, CstRootNode};
 use toml_edit::{DocumentMut, Item, value};
 
-use crate::process;
+use crate::{config, gomod, marker, process};
 
 /// The file format a path driver edits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,16 +35,16 @@ pub enum Text {
 impl Text {
     fn read(self, raw: &str) -> Result<String> {
         match self {
-            Self::GoMod => crate::gomod::read(raw),
+            Self::GoMod => gomod::read(raw),
             Self::Version => read_version_file(raw),
-            Self::Marker => crate::marker::read(raw),
+            Self::Marker => marker::read(raw),
         }
     }
 
     fn write(self, raw: &str, new_version: &str) -> Result<String> {
         match self {
-            Self::GoMod => crate::gomod::write(raw, new_version),
-            Self::Marker => crate::marker::write(raw, new_version),
+            Self::GoMod => gomod::write(raw, new_version),
+            Self::Marker => marker::write(raw, new_version),
             Self::Version => {
                 read_version_file(raw)?;
                 Ok(format!("{new_version}\n"))
@@ -52,7 +54,7 @@ impl Text {
 
     fn accepts(self, raw: &str, new_version: &str) -> Result<()> {
         match self {
-            Self::GoMod => crate::gomod::accepts(raw, new_version),
+            Self::GoMod => gomod::accepts(raw, new_version),
             Self::Version | Self::Marker => Ok(()),
         }
     }
@@ -124,7 +126,7 @@ impl Driver {
     /// Returns an error only if the built-in definition fails validation,
     /// which a test guards against.
     pub fn cargo() -> Result<Self> {
-        crate::config::stock_driver("cargo")
+        config::stock_driver("cargo")
     }
 
     /// The stock driver for `package.json`.
@@ -134,7 +136,7 @@ impl Driver {
     /// Returns an error only if the built-in definition fails validation,
     /// which a test guards against.
     pub fn npm() -> Result<Self> {
-        crate::config::stock_driver("npm")
+        config::stock_driver("npm")
     }
 
     /// The text of `path`, the file this driver reads and writes.
@@ -154,10 +156,10 @@ impl Driver {
     /// is an error unless the driver is a `VERSION` file whose directory
     /// exists.
     pub fn source(&self, path: &Path) -> Result<String> {
-        match std::fs::read_to_string(path) {
+        match fs::read_to_string(path) {
             Ok(raw) => Ok(raw),
             Err(error)
-                if error.kind() == std::io::ErrorKind::NotFound
+                if error.kind() == ErrorKind::NotFound
                     && path.parent().is_some_and(Path::is_dir)
                     && matches!(
                         self,

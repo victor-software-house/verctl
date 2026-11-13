@@ -23,6 +23,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::ErrorKind;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 
@@ -163,7 +164,7 @@ pub fn drift(
         let path = root.join(&served.target);
         let matches = match fs::read(&path) {
             Ok(bytes) => bytes == served.body.as_bytes(),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) if error.kind() == ErrorKind::NotFound => false,
             Err(error) => {
                 return Err(error).with_context(|| format!("read {}", served.target.display()));
             }
@@ -408,6 +409,8 @@ fn ensure_inside(root: &Path, target: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::os::unix::fs::symlink;
+
     use indoc::indoc;
     use tempfile::TempDir;
 
@@ -1002,7 +1005,7 @@ mod tests {
         let root = repo(&[(SERVED, BEFORE)]);
         let templates = root.path().join(".ctl/templates");
         fs::create_dir_all(&templates).unwrap();
-        std::os::unix::fs::symlink(elsewhere.path(), templates.join("linked")).unwrap();
+        symlink(elsewhere.path(), templates.join("linked")).unwrap();
         assert_eq!(
             write(
                 root.path(),

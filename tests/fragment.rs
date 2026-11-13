@@ -1,12 +1,12 @@
 //! Fragments in the Changesets format, with their front matter and groups.
 
-use std::fs;
+use std::{fmt, fs};
 
 use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
-use verctl::fragment::{Bump, Group, load_dir, parse_str};
+use verctl::fragment::{Bump, Fragment, Group, load_dir, parse_str};
 
-fn err_text(result: anyhow::Result<impl std::fmt::Debug>) -> String {
+fn err_text(result: anyhow::Result<impl fmt::Debug>) -> String {
     match result {
         Ok(value) => panic!("expected error, got {value:?}"),
         Err(error) => format!("{error:#}"),
@@ -180,7 +180,7 @@ fn load_dir_skips_readme_and_missing_dir() {
     let root = TempDir::new().expect("tempdir");
     assert_eq!(
         load_dir(&root.path().join("missing")).expect("missing"),
-        Vec::<verctl::fragment::Fragment>::new()
+        Vec::<Fragment>::new()
     );
     let dir = root.path().join(".changeset");
     fs::create_dir_all(&dir).expect("dir");

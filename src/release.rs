@@ -1,17 +1,18 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::{env, fs};
+use std::{env, fs, iter, slice};
 
 use anyhow::{Context, Result, ensure};
 use ctl_core::{formatdoc, writedoc};
 
 use crate::changelog::{self, Commit, PullRequest, ReleaseInput};
-use crate::config::Config;
+use crate::config::{Changelog, Config, Proposal};
 use crate::fragment::{Bump, Fragment, Group};
 use crate::git::pull_request_number;
 use crate::prepare::PlanEntry;
-use crate::{git, github};
+use crate::{fragment, git, github};
 
 /// What every Version PR branch starts with. The rest is the base branch, so
 /// each base gets its own Version PR and the name shows which one it is.
@@ -176,7 +177,7 @@ enum Origin {
 pub fn origins(
     root: &Path,
     token: Option<&str>,
-    changelog: &crate::config::Changelog,
+    changelog: &Changelog,
     fragments: &[Fragment],
 ) -> Result<Origins> {
     origins_with(root, token, changelog, fragments, &[])
@@ -193,7 +194,7 @@ pub fn origins(
 pub fn origins_with(
     root: &Path,
     token: Option<&str>,
-    changelog: &crate::config::Changelog,
+    changelog: &Changelog,
     fragments: &[Fragment],
     recovered: &[Recovered],
 ) -> Result<Origins> {
@@ -314,10 +315,10 @@ pub fn recovered_fragments(
         let deleted = git::candidate_deletions(root, &entry.path, &read, dir)
             .with_context(|| format!("package {}", entry.name))?;
         for file in deleted.into_iter().rev() {
-            if !crate::fragment::is_fragment_path(&file.path) {
+            if !fragment::is_fragment_path(&file.path) {
                 continue;
             }
-            let mut fragment = crate::fragment::parse_str(&file.text, file.path.clone())
+            let mut fragment = fragment::parse_str(&file.text, file.path.clone())
                 .with_context(|| format!("a fragment candidate {} consumed", file.parent))?;
             fragment
                 .packages
@@ -347,7 +348,7 @@ fn prerelease(version: &str) -> bool {
 /// from a fork. The fork test only narrows the list; it never credits a listed
 /// login.
 #[must_use]
-pub fn credits(changelog: &crate::config::Changelog, author: &github::PullAuthor) -> bool {
+pub fn credits(changelog: &Changelog, author: &github::PullAuthor) -> bool {
     author.kind == "User" && author.from_fork && !changelog.is_internal(&author.login)
 }
 
@@ -484,7 +485,7 @@ fn group_entries(entries: &[Entry]) -> String {
                 .collect::<Vec<_>>(),
         )
     });
-    std::iter::once(breaking)
+    iter::once(breaking)
         .chain(grouped)
         .filter(|(_, members)| !members.is_empty())
         .map(|(heading, members)| {
@@ -501,7 +502,7 @@ fn group_entries(entries: &[Entry]) -> String {
 ///
 /// Returns an error under the conditions of [`write_changelogs_with`].
 pub fn write_changelogs(
-    config: &crate::config::Config,
+    config: &Config,
     root: &Path,
     plan: &[PlanEntry],
     fragments: &[Fragment],
@@ -523,7 +524,7 @@ pub fn write_changelogs(
 ///
 /// Changelogs before the failing one are already written.
 pub fn write_changelogs_with(
-    config: &crate::config::Config,
+    config: &Config,
     root: &Path,
     plan: &[PlanEntry],
     fragments: &[Fragment],
@@ -533,7 +534,7 @@ pub fn write_changelogs_with(
     for entry in plan {
         let spec = config.find(&entry.name)?;
         let path = spec.changelog_path(root);
-        let section = changelog_sections_with(std::slice::from_ref(entry), fragments, origins)?;
+        let section = changelog_sections_with(slice::from_ref(entry), fragments, origins)?;
         if section.is_empty() {
             continue;
         }
@@ -573,7 +574,7 @@ pub fn changelog_section_for(body: &str, name: &str, version: &str) -> Option<St
 /// only when one Release covers them all.
 #[must_use]
 pub fn notes_for<'a>(
-    config: &crate::config::Config,
+    config: &Config,
     root: &Path,
     packages: impl IntoIterator<Item = (&'a str, &'a str)>,
 ) -> String {
@@ -601,7 +602,7 @@ pub fn notes_for<'a>(
 /// `## name version` or `## version` heading for it.
 /// The latter error lists every such package.
 pub fn require_changelog_versions<'a>(
-    config: &crate::config::Config,
+    config: &Config,
     root: &Path,
     packages: impl IntoIterator<Item = (&'a str, &'a str)>,
 ) -> Result<()> {
@@ -646,7 +647,7 @@ pub fn prepend_changelog(path: &Path, section: &str) -> Result<()> {
             };
             fs::write(path, next).with_context(|| path.display().to_string())
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => fs::write(
+        Err(error) if error.kind() == ErrorKind::NotFound => fs::write(
             path,
             formatdoc! {"
                     # Changelog
@@ -681,7 +682,7 @@ impl VersionPr {
     ///
     /// Returns an error when no base branch can be resolved, as
     /// [`github::base_branch`] describes.
-    pub fn new(proposal: &crate::config::Proposal, root: &Path) -> Result<Self> {
+    pub fn new(proposal: &Proposal, root: &Path) -> Result<Self> {
         Ok(Self {
             title: proposal.title().to_owned(),
             message: proposal.commit_message().to_owned(),
@@ -717,7 +718,7 @@ pub fn open_or_update_pr(
     root: &Path,
     token: &str,
     pr: &VersionPr,
-    paths: &[std::path::PathBuf],
+    paths: &[PathBuf],
     changelog: &str,
 ) -> Result<Option<OpenedPr>> {
     let repo = github::repo(root)?;
@@ -867,6 +868,7 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
+    use crate::config::Changelog;
 
     fn author(login: &str, kind: &str, from_fork: bool) -> github::PullAuthor {
         github::PullAuthor {
@@ -876,8 +878,8 @@ mod tests {
         }
     }
 
-    fn maintainers() -> crate::config::Changelog {
-        crate::config::Changelog {
+    fn maintainers() -> Changelog {
+        Changelog {
             internal_authors: vec!["any-victor".into()],
         }
     }

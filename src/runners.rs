@@ -144,6 +144,8 @@ pub fn check_name(job: &str, machine: &str, fanned_out: bool) -> String {
 
 #[cfg(test)]
 mod tests {
+    use ctl_core::input::Input;
+
     use super::{Machine, check_name, declared, of, one};
     use crate::config::Config;
 
@@ -154,9 +156,7 @@ mod tests {
     /// Shape only. The rules below are the ones `declared` owns, so a fixture
     /// that breaks one must reach it rather than stopping at the boundary.
     fn raw(yaml: &str) -> Config {
-        ctl_core::input::Input::new(".ctl/ver.yaml", yaml)
-            .parse()
-            .expect("parse")
+        Input::new(".ctl/ver.yaml", yaml).parse().expect("parse")
     }
 
     const REGISTRY: &str = indoc::indoc! {"

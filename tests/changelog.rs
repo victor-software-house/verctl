@@ -2,6 +2,7 @@
 //! dependency lists.
 
 use indoc::indoc;
+use verctl::changelog;
 use verctl::changelog::{
     Commit, Dependency, PullRequest, ReleaseInput, render_dependencies, render_release,
 };
@@ -241,7 +242,7 @@ fn release_template_varies_by_data() {
 
 #[test]
 fn override_template_is_used() {
-    let rendered = verctl::changelog::render_release_template(
+    let rendered = changelog::render_release_template(
         "{{ summary }}\n",
         &ReleaseInput {
             summary: "plain".into(),
@@ -256,7 +257,7 @@ fn override_template_is_used() {
 
 #[test]
 fn invalid_template_fails() {
-    let error = verctl::changelog::render_release_template(
+    let error = changelog::render_release_template(
         "{% if %}",
         &ReleaseInput {
             summary: "x".into(),

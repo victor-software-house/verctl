@@ -1,7 +1,10 @@
 # Changes here will be overwritten by Copier; edit with `copier update --data`.
-_commit: v0.0.101
+_commit: v0.0.106
 _src_path: https://github.com/victor-software-house/templates.git
 build_os: linux
+cargo_min_publish_age: 3 days
+cargo_trusted_owners:
+- any-victor
 ci_runner: github-hosted
 clippy_disallowed_methods: []
 clippy_disallowed_types: []
@@ -18,24 +21,6 @@ deny_licenses:
     reason: foldhash, through gix's object cache
 -   license: CDLA-Permissive-2.0
     reason: webpki-root-certs, the CA roots gix's HTTPS transport verifies against
-deny_skip:
--   crate: base64@0.22
-    reason: octocrab 0.54.9, the latest release, requires base64 0.22, and reqwest
-        0.13.5 requires 0.23
--   crate: getrandom@0.2
-    reason: ring 0.17.14 and octocrab 0.54.9, their latest releases, require getrandom
-        0.2
--   crate: hashbrown@0.14
-    reason: dashmap 6.2.1, the latest release, which gix-tempfile takes, requires
-        hashbrown 0.14
--   crate: hashbrown@0.16
-    reason: clru 0.6.3 and gix-status 0.37.0, the latest releases, require hashbrown
-        0.16
--   crate: syn@2
-    reason: garde_derive 0.23.0, the latest release, and other derive crates require
-        syn 2
--   crate: windows-sys@0.52
-    reason: ring 0.17.14, the latest release, requires windows-sys 0.52
 feature_sets: []
 generated_paths: []
 github_owner: victor-software-house
@@ -75,7 +60,7 @@ prose_fail_level: error
 published: true
 repository_visibility: public
 rust_nightly: nightly-2026-11-01
-rust_version: 1.99.1
+rust_version: 1.100.0
 test_profiles: []
 tokio: true
 verify_timeout: 8

@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use clap::builder::OsStringValueParser;
 use clap::error::ErrorKind;
 use clap::{Arg, ArgMatches, Args, FromArgMatches, Parser, Subcommand};
 use ctl_core::{ColorLong, DryRunArgs, EnvPrefix, FormatArgs};
@@ -92,7 +93,7 @@ impl Removed {
                     .num_args(0..)
                     .trailing_var_arg(true)
                     .allow_hyphen_values(true)
-                    .value_parser(clap::builder::OsStringValueParser::new())
+                    .value_parser(OsStringValueParser::new())
                     .hide(true),
             )
     }
@@ -431,8 +432,11 @@ impl VersionArgs {
 #[cfg(test)]
 mod tests {
     use std::ffi::OsString;
+    use std::path::Path;
 
+    use clap::error::ErrorKind;
     use clap::{CommandFactory, FromArgMatches};
+    use ctl_core::flags;
 
     use super::{Cli, Command};
 
@@ -440,7 +444,7 @@ mod tests {
     /// first, so an ambient `VERCTL_*` cannot change what a test asserts.
     fn parse(words: &[&str]) -> Result<Cli, clap::Error> {
         let raw: Vec<OsString> = words.iter().map(OsString::from).collect();
-        let command = ctl_core::flags::env_under_flags(Cli::command(), &raw)?;
+        let command = flags::env_under_flags(Cli::command(), &raw)?;
         Cli::from_arg_matches(&command.try_get_matches_from(raw)?)
     }
 
@@ -541,11 +545,7 @@ mod tests {
             ),
         ] {
             let error = parse(words).expect_err("a removed verb must not parse");
-            assert_eq!(
-                error.kind(),
-                clap::error::ErrorKind::InvalidSubcommand,
-                "{words:?}"
-            );
+            assert_eq!(error.kind(), ErrorKind::InvalidSubcommand, "{words:?}");
             assert_eq!(error.exit_code(), 2, "{words:?}");
             assert!(error.to_string().contains(message), "{words:?}: {error}");
         }
@@ -656,10 +656,7 @@ mod tests {
         else {
             panic!("expected release asset");
         };
-        assert_eq!(
-            asset.prebuilt.as_deref(),
-            Some(std::path::Path::new("build/verctl"))
-        );
+        assert_eq!(asset.prebuilt.as_deref(), Some(Path::new("build/verctl")));
         let command = Cli::command();
         let prebuilt = command
             .find_subcommand("release")
@@ -681,7 +678,7 @@ mod tests {
             "libexample",
         ])
         .expect_err("--prebuilt and --vendored must not combine");
-        assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+        assert_eq!(error.kind(), ErrorKind::ArgumentConflict);
     }
 
     /// The release workflow sets these and runs the bare verb, so each must

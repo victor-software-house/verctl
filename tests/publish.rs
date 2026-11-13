@@ -3,13 +3,14 @@
 mod common;
 
 use std::fs;
+use std::path::Path;
 
 use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-fn publish_stdout(root: &std::path::Path) -> String {
+fn publish_stdout(root: &Path) -> String {
     let output = common::verctl()
         .current_dir(root)
         .args(["release", "--dry-run", "--color", "never"])
@@ -671,7 +672,7 @@ fn publish_asks_no_changelog_of_a_package_at_0_0_0() {
 
 /// A crate at 0.0.1 with its changelog section, committed as the tip of
 /// `main` with an `origin` whose `main` is that commit.
-fn released_crate(root: &std::path::Path) {
+fn released_crate(root: &Path) {
     common::write_config(
         root,
         indoc! {"
@@ -709,7 +710,7 @@ fn released_crate(root: &std::path::Path) {
 
 /// `publish` with no token, so a run that gets past every proof stops at the
 /// token check, before any publisher, tag, or Release call.
-fn publish_without_token(root: &std::path::Path, env: &[(&str, &str)]) -> String {
+fn publish_without_token(root: &Path, env: &[(&str, &str)]) -> String {
     let output = common::verctl()
         .current_dir(root)
         .env_remove("GITHUB_TOKEN")

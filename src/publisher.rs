@@ -11,14 +11,16 @@
 //! no value fails the run instead of dropping its argument.
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 
-use crate::config::PublishOptions;
-use crate::members;
+use crate::config::{Config, PackageSpec, Prerelease, PublishOptions};
+use crate::publish::PublishEntry;
 use crate::registry::{self, CargoEnv, CargoTarget, RegistryCheck};
+use crate::{members, opt_out};
 
 /// A publisher recipe: the command to upload a package and where its registry
 /// config lives.
@@ -402,10 +404,7 @@ pub enum Publisher {
 impl Publisher {
     /// The publisher of `spec` from `.ctl/ver.yaml` alone, reading no
     /// manifest. The error names what to change in the file.
-    fn declared(
-        config: &crate::config::Config,
-        spec: &crate::config::PackageSpec,
-    ) -> Result<Self, String> {
+    fn declared(config: &Config, spec: &PackageSpec) -> Result<Self, String> {
         let name = publisher_name(config, spec);
         if name == RELEASE_ONLY {
             return Ok(Self::ReleaseOnly);
@@ -476,11 +475,7 @@ impl Publisher {
     /// its publisher does not have. It also fails when the manifest cannot be
     /// read or parsed, or opts out while the package sets `registry` or
     /// `publish`.
-    pub fn of(
-        config: &crate::config::Config,
-        spec: &crate::config::PackageSpec,
-        root: &Path,
-    ) -> Result<Self> {
+    pub fn of(config: &Config, spec: &PackageSpec, root: &Path) -> Result<Self> {
         let (publisher, opted_out) = Self::settle(config, spec, root, root)?;
         if let Some(reason) = opted_out {
             ensure!(
@@ -501,8 +496,8 @@ impl Publisher {
     /// `check` reads a merge-base config that may hold it, such as on the
     /// pull request that removes the `registry`.
     pub(crate) fn of_in(
-        config: &crate::config::Config,
-        spec: &crate::config::PackageSpec,
+        config: &Config,
+        spec: &PackageSpec,
         root: &Path,
         tree: &Path,
     ) -> Result<Self> {
@@ -512,8 +507,8 @@ impl Publisher {
     /// The publisher of `spec`, and the manifest's reason when its opt-out
     /// turned an inferred built-in publisher into [`Publisher::ReleaseOnly`].
     fn settle(
-        config: &crate::config::Config,
-        spec: &crate::config::PackageSpec,
+        config: &Config,
+        spec: &PackageSpec,
         root: &Path,
         tree: &Path,
     ) -> Result<(Self, Option<&'static str>)> {
@@ -522,12 +517,10 @@ impl Publisher {
         if spec.publisher.is_some() || !built_in {
             return Ok((declared, None));
         }
-        Ok(
-            match crate::opt_out::opt_out(&root.join(&spec.path), tree)? {
-                Some(reason) => (Self::ReleaseOnly, Some(reason)),
-                None => (declared, None),
-            },
-        )
+        Ok(match opt_out::opt_out(&root.join(&spec.path), tree)? {
+            Some(reason) => (Self::ReleaseOnly, Some(reason)),
+            None => (declared, None),
+        })
     }
 }
 
@@ -547,10 +540,7 @@ fn no_options(package: &str, publisher: &str, options: &PublishOptions) -> Strin
 ///
 /// Returns what to change when an option is unknown to the publisher, has the
 /// wrong type, or sits on a publisher that takes none.
-pub(crate) fn check_options(
-    config: &crate::config::Config,
-    spec: &crate::config::PackageSpec,
-) -> Result<(), String> {
+pub(crate) fn check_options(config: &Config, spec: &PackageSpec) -> Result<(), String> {
     if spec.publish_options().is_none() {
         return Ok(());
     }
@@ -581,7 +571,7 @@ pub(crate) fn prerelease_tag(version: &str) -> Option<String> {
         .split('.')
         .next()
         .filter(|tag| !tag.is_empty())?;
-    if crate::config::Prerelease::new(first).is_err() {
+    if Prerelease::new(first).is_err() {
         return Some("next".to_owned());
     }
     Some(first.to_owned())
@@ -601,8 +591,8 @@ pub(crate) fn prerelease_tag(version: &str) -> Option<String> {
 /// no `argv`, or when the rendered command is empty, which only
 /// `publisher: none` may be.
 pub fn resolve(
-    config: &crate::config::Config,
-    spec: &crate::config::PackageSpec,
+    config: &Config,
+    spec: &PackageSpec,
     root: &Path,
 ) -> Result<(String, String, Vec<String>)> {
     resolve_tagged(config, spec, root, None)
@@ -617,8 +607,8 @@ pub fn resolve(
 ///
 /// Returns the errors of [`resolve`].
 pub fn resolve_for_version(
-    config: &crate::config::Config,
-    spec: &crate::config::PackageSpec,
+    config: &Config,
+    spec: &PackageSpec,
     root: &Path,
     version: &str,
 ) -> Result<(String, String, Vec<String>)> {
@@ -627,8 +617,8 @@ pub fn resolve_for_version(
 
 /// [`resolve`], with the npm dist-tag the stock bun upload carries, if any.
 fn resolve_tagged(
-    config: &crate::config::Config,
-    spec: &crate::config::PackageSpec,
+    config: &Config,
+    spec: &PackageSpec,
     root: &Path,
     dist_tag: Option<&str>,
 ) -> Result<(String, String, Vec<String>)> {
@@ -679,10 +669,7 @@ fn resolve_tagged(
 /// 3. A `publishers` entry or `publish` command under the package's own name.
 /// 4. `none` for a version source no registry reads, such as `go.mod`,
 ///    `VERSION`, or a marker line, whose release is its tag.
-pub(crate) fn publisher_name<'a>(
-    config: &crate::config::Config,
-    spec: &'a crate::config::PackageSpec,
-) -> &'a str {
+pub(crate) fn publisher_name<'a>(config: &Config, spec: &'a PackageSpec) -> &'a str {
     if let Some(name) = spec.publisher.as_deref() {
         return name;
     }
@@ -728,8 +715,8 @@ fn releases_on_github_only(file_name: &str) -> bool {
 /// Returns an error when [`Publisher::of`] fails, or when the manifest cannot
 /// be read or parsed, or names no package.
 pub fn registry_check(
-    config: &crate::config::Config,
-    spec: &crate::config::PackageSpec,
+    config: &Config,
+    spec: &PackageSpec,
     root: &Path,
     version: &str,
 ) -> Result<RegistryCheck> {
@@ -801,10 +788,10 @@ pub struct Upload {
 ///
 /// Returns an error when [`workspace_members`] or [`registry_check`] fails.
 pub fn uploads(
-    config: &crate::config::Config,
-    spec: &crate::config::PackageSpec,
+    config: &Config,
+    spec: &PackageSpec,
     root: &Path,
-    entry: &crate::publish::PublishEntry,
+    entry: &PublishEntry,
 ) -> Result<Vec<Upload>> {
     let manifest = root.join(&spec.path);
     let Some((recipe, options, members)) =
@@ -867,8 +854,8 @@ pub fn uploads(
 /// Returns an error when [`Publisher::of`] fails, when the manifest cannot be
 /// read or parsed, or when [`members::members`] fails.
 pub fn workspace_members(
-    config: &crate::config::Config,
-    spec: &crate::config::PackageSpec,
+    config: &Config,
+    spec: &PackageSpec,
     root: &Path,
 ) -> Result<Option<Vec<members::Member>>> {
     Publisher::of(config, spec, root)?.members(config, spec, root)
@@ -884,8 +871,8 @@ impl Publisher {
     /// [`members::members`] fails.
     pub fn members(
         &self,
-        config: &crate::config::Config,
-        spec: &crate::config::PackageSpec,
+        config: &Config,
+        spec: &PackageSpec,
         root: &Path,
     ) -> Result<Option<Vec<members::Member>>> {
         Ok(workspace(self, config, spec, root)?.map(|(_, _, members)| members))
@@ -896,8 +883,8 @@ impl Publisher {
 /// [`workspace_members`].
 fn workspace(
     publisher: &Publisher,
-    config: &crate::config::Config,
-    spec: &crate::config::PackageSpec,
+    config: &Config,
+    spec: &PackageSpec,
     root: &Path,
 ) -> Result<Option<(PublisherSpec, CargoPublish, Vec<members::Member>)>> {
     let Publisher::Cargo { recipe, options } = publisher else {
@@ -926,7 +913,7 @@ fn workspace(
 fn query_check(
     publisher: &PublisherSpec,
     argv: &[String],
-    spec: &crate::config::PackageSpec,
+    spec: &PackageSpec,
     manifest: &Path,
     version: &str,
     appended: Appended,
@@ -953,7 +940,7 @@ fn query_check(
 /// The package name a manifest declares: `package.name` in `Cargo.toml`,
 /// `name` in `package.json`, which is the name the registry lists it under.
 fn manifest_name(manifest: &Path) -> Result<String> {
-    let raw = std::fs::read_to_string(manifest).with_context(|| manifest.display().to_string())?;
+    let raw = fs::read_to_string(manifest).with_context(|| manifest.display().to_string())?;
     let name = if manifest
         .file_name()
         .is_some_and(|name| name == "package.json")
@@ -985,11 +972,14 @@ fn stock_publisher_for_file(file_name: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::fs;
     use std::path::Path;
 
     use indoc::{formatdoc, indoc};
 
     use super::{PublisherSpec, expand, registry_check, resolve, resolve_for_version};
+    use crate::config::{Config, PublishOptions};
+    use crate::publish::PublishEntry;
     use crate::registry::RegistryCheck;
 
     fn words(parts: &[&str]) -> Vec<String> {
@@ -1060,7 +1050,7 @@ mod tests {
     /// the tree `manifests` builds, with the root a placeholder renders into.
     fn upload_at(yaml: &str, version: &str) -> (Vec<String>, String) {
         let root = manifests();
-        let config = crate::config::Config::parse(yaml).unwrap();
+        let config = Config::parse(yaml).unwrap();
         let (_, _, argv) =
             resolve_for_version(&config, &config.packages[0], root.path(), version).unwrap();
         (argv, root.path().display().to_string())
@@ -1175,7 +1165,7 @@ mod tests {
     /// may produce one.
     #[test]
     fn only_none_renders_an_empty_command() {
-        let config = crate::config::Config::parse(indoc! {"
+        let config = Config::parse(indoc! {"
             packages:
               - name: quiet
                 path: Cargo.toml
@@ -1201,7 +1191,7 @@ mod tests {
     /// only. A publisher the package names still wins.
     #[test]
     fn version_sources_with_no_registry_release_on_github_only() {
-        let config = crate::config::Config::parse(indoc! {"
+        let config = Config::parse(indoc! {"
             packages:
               - name: lib
                 path: go.mod
@@ -1232,7 +1222,7 @@ mod tests {
             registry_check(&config, &config.packages[0], Path::new("."), "0.1.0").unwrap(),
             RegistryCheck::Unchecked
         );
-        let error = crate::config::Config::parse(indoc! {"
+        let error = Config::parse(indoc! {"
             packages:
               - name: lib
                 path: go.mod
@@ -1247,7 +1237,7 @@ mod tests {
 
     fn checks(yaml: &str) -> Vec<RegistryCheck> {
         let root = tempfile::TempDir::new().unwrap();
-        std::fs::write(
+        fs::write(
             root.path().join("Cargo.toml"),
             indoc! {r#"
                 [package]
@@ -1256,8 +1246,8 @@ mod tests {
             "#},
         )
         .unwrap();
-        std::fs::write(root.path().join("package.json"), r#"{"name": "@acme/web"}"#).unwrap();
-        let config = crate::config::Config::parse(yaml).unwrap();
+        fs::write(root.path().join("package.json"), r#"{"name": "@acme/web"}"#).unwrap();
+        let config = Config::parse(yaml).unwrap();
         config
             .packages
             .iter()
@@ -1426,8 +1416,8 @@ mod tests {
         let root = tempfile::TempDir::new().unwrap();
         let write = |path: &str, body: &str| {
             let path = root.path().join(path);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, body).unwrap();
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, body).unwrap();
         };
         write(
             "Cargo.toml",
@@ -1466,10 +1456,10 @@ mod tests {
     }
 
     fn uploads_for(yaml: &str, root: &Path) -> Vec<super::Upload> {
-        let config = crate::config::Config::parse(yaml).unwrap();
+        let config = Config::parse(yaml).unwrap();
         let spec = &config.packages[0];
         let (label, noun, argv) = resolve(&config, spec, root).unwrap();
-        let entry = crate::publish::PublishEntry {
+        let entry = PublishEntry {
             name: spec.name.clone(),
             version: "0.0.2".into(),
             noun,
@@ -1541,7 +1531,7 @@ mod tests {
     }
 
     fn cargo_options(json: &str) -> Result<super::CargoPublish, String> {
-        let written: crate::config::PublishOptions = serde_json::from_str(json).unwrap();
+        let written: PublishOptions = serde_json::from_str(json).unwrap();
         super::CargoPublish::read("demo", Some(&written))
     }
 
@@ -1576,8 +1566,8 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let write = |path: &str, text: &str| {
             let path = root.path().join(path);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, text).unwrap();
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, text).unwrap();
         };
         let crate_toml = |name: &str, publish: &str| {
             formatdoc! {r#"
@@ -1626,7 +1616,7 @@ mod tests {
     #[test]
     fn each_resolution_step_picks_one_publisher() {
         let root = manifests();
-        let config = crate::config::Config::parse(indoc! {"
+        let config = Config::parse(indoc! {"
             packages:
               - name: quiet
                 path: quiet/Cargo.toml
@@ -1680,7 +1670,7 @@ mod tests {
     #[test]
     fn a_publishers_entry_with_its_own_argv_is_a_command() {
         let root = manifests();
-        let config = crate::config::Config::parse(indoc! {"
+        let config = Config::parse(indoc! {"
             publishers:
               bun:
                 argv: [npm, publish]
@@ -1704,7 +1694,7 @@ mod tests {
     #[test]
     fn options_beside_a_manifest_that_opts_out_fail_the_plan_only() {
         let root = manifests();
-        let config = crate::config::Config::parse(indoc! {"
+        let config = Config::parse(indoc! {"
             packages:
               - name: private
                 path: private/Cargo.toml
@@ -1725,7 +1715,7 @@ mod tests {
     #[test]
     fn a_crate_ci_already_packed_skips_the_verify_build() {
         let root = manifests();
-        let config = crate::config::Config::parse(indoc! {"
+        let config = Config::parse(indoc! {"
             packages:
               - name: demo
                 path: demo/Cargo.toml

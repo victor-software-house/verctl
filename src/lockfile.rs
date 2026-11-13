@@ -266,7 +266,7 @@ fn parse_cargo(text: &str) -> Result<Lockfile> {
             format!(
                 "{name} {} {}",
                 version.as_deref().unwrap_or_default(),
-                fields.get("source").map(canonical).unwrap_or_default()
+                fields.get("source").map_or_default(canonical)
             )
         };
         let entry = Entry {
@@ -321,7 +321,7 @@ fn parse_uv(text: &str) -> Result<Lockfile> {
             format!(
                 "{name} {} {}",
                 version.as_deref().unwrap_or_default(),
-                fields.get("source").map(canonical).unwrap_or_default()
+                fields.get("source").map_or_default(canonical)
             )
         };
         let entry = Entry {

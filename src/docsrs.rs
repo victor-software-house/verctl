@@ -7,6 +7,7 @@
 
 use std::path::Path;
 use std::time::{Duration, Instant};
+use std::{fs, thread};
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
@@ -197,7 +198,7 @@ fn released_crates(config: &Config, root: &Path, token: &str) -> Result<Vec<Want
 ///
 /// [target auto-discovery]: https://doc.rust-lang.org/cargo/reference/cargo-targets.html#target-auto-discovery
 pub fn has_library(manifest: &Path) -> Result<bool> {
-    let raw = std::fs::read_to_string(manifest).with_context(|| manifest.display().to_string())?;
+    let raw = fs::read_to_string(manifest).with_context(|| manifest.display().to_string())?;
     let document = raw
         .parse::<DocumentMut>()
         .with_context(|| manifest.display().to_string())?;
@@ -263,7 +264,7 @@ fn wait_built(base: &str, wanted: &[Wanted], timeout: Duration, poll: Duration) 
         if remaining.is_empty() || now >= deadline {
             break;
         }
-        std::thread::sleep(poll.min(deadline - now));
+        thread::sleep(poll.min(deadline - now));
     }
     lines.extend(remaining.into_iter().map(|(crate_version, pending)| {
         let (status, last_error) = match pending {
@@ -338,10 +339,12 @@ async fn fetch_status(url: &str) -> Result<Option<bool>> {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::PathBuf;
     use std::time::Duration;
 
     use indoc::indoc;
     use tempfile::TempDir;
+    use tokio::task;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -358,7 +361,7 @@ mod tests {
 
     async fn wait(server: &MockServer, timeout: Duration) -> DocsStatus {
         let base = server.uri();
-        tokio::task::spawn_blocking(move || wait_built(&base, &demo(), timeout, Duration::ZERO))
+        task::spawn_blocking(move || wait_built(&base, &demo(), timeout, Duration::ZERO))
             .await
             .unwrap()[0]
             .status
@@ -398,7 +401,7 @@ mod tests {
             .mount(&server)
             .await;
         let base = server.uri();
-        let line = tokio::task::spawn_blocking(move || {
+        let line = task::spawn_blocking(move || {
             wait_built(
                 &base,
                 &demo(),
@@ -487,7 +490,7 @@ mod tests {
         assert_eq!(wait(&server, Duration::ZERO).await, DocsStatus::Unbuilt);
     }
 
-    fn manifest(dir: &TempDir, body: &str) -> std::path::PathBuf {
+    fn manifest(dir: &TempDir, body: &str) -> PathBuf {
         let path = dir.path().join("Cargo.toml");
         fs::write(&path, body).unwrap();
         path
