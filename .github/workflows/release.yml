@@ -22,29 +22,30 @@ name: Release
 # action, which downloads tools through the release mirror. A job without
 # the grant downloads from GitHub and logs a notice.
 #
-# Every caller also grants contents: write, which plan, publish, assets,
-# finalize, and propose request. plan needs it to list draft Releases, which
-# GitHub shows only to a token with push access.
+# Every caller also grants contents: write, which plan, publish, and propose
+# request. plan needs it to list draft Releases, which GitHub shows only to a
+# token with push access.
 #
 # One flow, at the commit that started the run: plan every incomplete
-# release of the versions that commit holds, publish them, build the assets
-# each Release lacks, publish each draft Release once its assets are
-# uploaded, check docs.rs, then open or update the Version PR. Every job
-# checks out that one commit.
-# A Release with declared assets stays a draft until finalize, because an
-# immutable Release takes no asset once published. Every job is safe to
-# rerun, and every step sets its
-# settings in env. plan and propose run `mise run ver <verb>`, where the
-# served task execs the verctl the caller pins; the other jobs install and
-# run that same version. verctl's own release passes verctl-artifact
+# release of the versions that commit holds, build the tarballs the draft
+# Release lacks, then release in one job. There verctl uploads the tarballs
+# to the draft, publishes to the registries, and publishes the draft last,
+# which creates the tag. Then it checks docs.rs and opens or updates the
+# Version PR. Every job checks out that one commit.
+# A failure before the draft is published leaves no tag, and a rerun, by
+# dispatch or by "Re-run failed jobs", resumes: the registries skip every
+# version they list, and the draft keeps the tarballs it holds. Every job is
+# safe to rerun, and every step sets its settings in env. plan and propose
+# run `mise run ver <verb>`, where the served task execs the verctl the
+# caller pins; the other jobs install and run that same version. verctl's own release passes verctl-artifact
 # instead, so each job runs the verctl that run built once for its platform.
 #
 # Every other job needs plan, so plan alone checks what they share: the
-# pinned verctl is 0.8.6-rc.2 or later, and each mise-ignored-config-paths entry
-# is a plain relative path. publish, assets, finalize, and docs take the
-# checked paths from plan's outputs.
+# pinned verctl is 0.8.6-rc.2 or later, and each mise-ignored-config-paths
+# entry is a plain relative path. assets, publish, and docs take the checked
+# paths from plan's outputs.
 #
-# publish, assets, finalize, and docs install the verctl plan checked with
+# assets, publish, and docs install the verctl plan checked with
 # `mise install --locked`, from the run's own lock.
 
 on:
@@ -136,8 +137,8 @@ on:
         default: false
       environment:
         description: >-
-          GitHub environment the publish and finalize jobs run in, the only
-          jobs that read a registry token, so the token can live only in an
+          GitHub environment the publish job runs in, the only job that
+          reads a registry token, so the token can live only in an
           environment that admits the default branch. The caller maps the
           token's stored name, such as CARGO_REGISTRY_TOKEN, to the
           registry-token secret, and both jobs receive the environment's
@@ -196,12 +197,9 @@ jobs:
     outputs:
       pending: ${{ steps.plan.outputs.pending }}
       assets: ${{ steps.plan.outputs.assets }}
-      # Whether .ctl/ver.yaml declares an asset target, so a Release is a draft
-      # and finalize has something to publish.
-      has-assets: ${{ steps.plan.outputs.has_assets }}
       # The comma-separated asset file names the run's Release is expected to
-      # hold. publish and finalize declare exactly these, so they agree with
-      # the plan that scheduled the asset jobs.
+      # hold. publish declares exactly these, so it agrees with the plan that
+      # scheduled the asset jobs.
       declared: ${{ steps.plan.outputs.declared }}
       # The verctl every later job runs, whatever its checked-out commit pins.
       # Empty with verctl-artifact: that build is already on each job's PATH.
@@ -289,128 +287,18 @@ jobs:
           VERCTL_SKIP_ASSETS: ${{ !inputs.assets }}
         run: mise run ver status --github-output "$GITHUB_OUTPUT"
 
-  publish:
-    name: Publish
+  assets:
+    name: ${{ matrix.id }}
     needs: plan
     if: >-
       github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
-      inputs.publish && needs.plan.outputs.pending == 'true'
-    # An empty name runs the job in no environment and records no deployment.
-    environment: ${{ inputs.environment }}
-    runs-on: ${{ fromJson(inputs.runner) }}
-    # Recent runs take under 3 minutes; each upload may take up to 10, and a
-    # workspace uploads several crates.
-    timeout-minutes: 30
-    permissions:
-      contents: write # creates the release tag and the GitHub Release
-      id-token: write # crates.io trusted publishing, and the release mirror
-    # One run releases the versions its commit holds. A running publish is
-    # never cancelled half way. GitHub keeps one pending job per group, so a
-    # publish still waiting when a newer run's arrives is cancelled. Nothing is
-    # lost: the newer run plans every version its own commit holds, and reports
-    # one the running publish finished as already done. The older run's
-    # propose is skipped; the newer run proposes.
-    concurrency:
-      group: verctl-publish-${{ github.repository }}
-      cancel-in-progress: false
-    steps:
-      - name: Check out the run's commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-      - name: Ignore mise config paths
-        # plan checked the paths. The variable stays unset when there are
-        # none, so .miserc.toml still applies.
-        if: needs.plan.outputs.mise-ignored-config-paths != ''
-        env:
-          IGNORED: ${{ needs.plan.outputs.mise-ignored-config-paths }}
-        run: echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
-      - name: Set up mise
-        uses: victor-software-house/actions/mise@bead5c01b61e14ecf1e923a5bcff97e8c421f151 # main, 2026-11-11
-        with:
-          mirror-url: ${{ secrets.release-mirror-url }}
-          mirror-key: ${{ secrets.release-mirror-ci-key }}
-          version: ${{ inputs.mise-version }}
-          cache: true
-          # These jobs install fewer tools than propose, so they keep their
-          # own cache rather than share propose's key.
-          cache_key_prefix: ${{ inputs.mise-ignored-config-paths != '' && 'mise-v1-trimmed' || 'mise-v1' }}
-      - run: mise install --locked
-      - name: Download this run's verctl build
-        if: inputs.verctl-artifact != ''
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: ${{ inputs.verctl-artifact }}-${{ runner.os }}-${{ runner.arch }}
-          path: ${{ runner.temp }}/verctl-build
-      - name: Put this run's verctl build first on PATH
-        if: inputs.verctl-artifact != ''
-        env:
-          BUILD_DIR: ${{ runner.temp }}/verctl-build
-        run: |
-          chmod +x "${BUILD_DIR}/verctl"
-          echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
-      - name: Install the plan's verctl
-        if: inputs.verctl-artifact == '' && needs.plan.outputs.verctl-version != ''
-        env:
-          VERCTL_TOOL: github:victor-software-house/verctl@${{ needs.plan.outputs.verctl-version }}
-        # --locked installs only what the run's mise.lock lists.
-        run: |
-          mise install --locked "${VERCTL_TOOL}"
-          bin=$(mise which verctl --tool="${VERCTL_TOOL}")
-          test -x "${bin}"
-          "${bin}" --version
-          echo "VERCTL_BIN=${bin}" >> "${GITHUB_ENV}"
-      # crates.io matches the token's repository and the caller's workflow
-      # file against the crate's trusted publishers, and the action's post
-      # step revokes the token when the job ends.
-      - name: Get a crates.io token by trusted publishing
-        id: crates-io
-        if: inputs.crates-io-trusted-publishing
-        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
-      - name: Publish
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          VERCTL_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          # The plan's assets. None means the plan expects no asset, so the
-          # job declares none whatever the config names.
-          VERCTL_SKIP_ASSETS: ${{ !inputs.assets || needs.plan.outputs.declared == '' }}
-          VERCTL_DECLARED_ASSETS: ${{ needs.plan.outputs.declared }}
-          VERCTL_ALLOW_WORKFLOW_CHANGE: ${{ inputs.allow-workflow-change }}
-          VERCTL_ALLOW_OFF_DEFAULT_BRANCH: ${{ inputs.allow-off-default-branch }}
-          # The token is read only under its declared name. A caller whose
-          # token lives in an environment maps the stored name to
-          # registry-token, and this job, running in that environment,
-          # receives the environment's value. verctl refuses both tokens
-          # at once, checks registry-token-env, and hands the token to each
-          # publisher under that name alone.
-          VERCTL_REGISTRY_TOKEN: ${{ secrets.registry-token }}
-          VERCTL_TRUSTED_PUBLISHING_TOKEN: ${{ steps.crates-io.outputs.token }}
-          VERCTL_REGISTRY_TOKEN_ENV: ${{ inputs.registry-token-env }}
-        # The plan's verctl, not the one this commit's served task pins, which
-        # may predate this workflow. VERCTL_BIN is unset with verctl-artifact,
-        # and this run's build runs from PATH.
-        run: mise exec -- "${VERCTL_BIN:-verctl}" release
-
-  assets:
-    name: ${{ matrix.id }}
-    needs: [plan, publish]
-    # !cancelled() keeps a skipped publish from skipping this job too: without
-    # a status function GitHub adds success(), which is false once a needed
-    # job was skipped.
-    if: >-
-      !cancelled() &&
-      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
-      needs.plan.result == 'success' &&
-      inputs.assets && fromJson(needs.plan.outputs.assets).include[0] != null &&
-      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+      inputs.publish && inputs.assets && fromJson(needs.plan.outputs.assets).include[0] != null
     runs-on: ${{ matrix.labels }}
     # Recent runs take under 8 minutes; prepare and build may each take up to
     # 15, after a cold tool install.
     timeout-minutes: 45
     permissions:
-      contents: write # uploads the tarball to the GitHub Release
+      contents: read # builds the tarball; publish uploads it to the draft
       id-token: write # downloads tools through the release mirror
     # One tool at a time, in every mise command of the job: on macOS runners
     # rustup fails to rename a component download ("could not rename
@@ -482,45 +370,53 @@ jobs:
         with:
           github-cache-mode: objects
           isolate-objects-cache: true
-      - name: Build and upload
+      - name: Build the tarball
+        id: build
         env:
-          GITHUB_TOKEN: ${{ github.token }}
           VERCTL_TARGET: ${{ matrix.id }}
-          VERCTL_TAG: ${{ matrix.tag }}
-          # The build the download step above put on PATH, packed as is. An
-          # empty value is unset, so a run without verctl-artifact compiles.
+          VERCTL_FORMAT: json
           VERCTL_PREBUILT: ${{ inputs.verctl-artifact != '' && format('{0}/verctl-build/verctl', runner.temp) || '' }}
-        # The plan's verctl, as in publish.
-        run: mise exec -- "${VERCTL_BIN:-verctl}" release asset
+          REPORT: ${{ runner.temp }}/asset.json
+        run: |
+          mise exec -- "${VERCTL_BIN:-verctl}" release asset > "${REPORT}"
+          echo "tarball=$(jq -r .tarball "${REPORT}")" >> "${GITHUB_OUTPUT}"
+      # publish downloads every verctl-asset-* artifact of the run into one
+      # directory, so a rerun of publish alone finds the same tarballs.
+      - name: Hand the tarball to publish
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verctl-asset-${{ matrix.id }}
+          path: ${{ steps.build.outputs.tarball }}
+          if-no-files-found: error
 
-  # Publishes each draft Release once its assets are uploaded. publish creates
-  # a Release with declared assets as a draft, because an immutable Release
-  # takes no asset once published. A leg runs release --releases-only, which
-  # starts no publisher and refuses a package the registry does not list.
-  # When an asset job failed, the draft stays, and the next run's plan lists
-  # its commit again.
-  finalize:
-    name: Finalize
-    needs: [plan, publish, assets]
-    # !cancelled() keeps a skipped assets job from skipping this one too.
+  publish:
+    name: Publish
+    needs: [plan, assets]
+    # !cancelled() keeps skipped asset jobs from skipping this job too:
+    # without a status function GitHub adds success(), which is false once a
+    # needed job was skipped. A failed asset job stops it, so no registry
+    # upload runs for a release whose tarballs are missing.
     if: >-
       !cancelled() &&
       github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
       needs.plan.result == 'success' &&
-      inputs.publish && inputs.assets &&
-      needs.plan.outputs.pending == 'true' && needs.plan.outputs.has-assets == 'true' &&
-      needs.publish.result == 'success' &&
+      inputs.publish && needs.plan.outputs.pending == 'true' &&
       (needs.assets.result == 'success' || needs.assets.result == 'skipped')
-    # The environment that holds the registry token, as in publish, so the
-    # registry query below sees a private registry's listing.
+    # An empty name runs the job in no environment and records no deployment.
     environment: ${{ inputs.environment }}
     runs-on: ${{ fromJson(inputs.runner) }}
-    timeout-minutes: 10
+    # Recent runs take under 3 minutes; each upload may take up to 10, and a
+    # workspace uploads several crates.
+    timeout-minutes: 30
     permissions:
-      contents: write # publishes the draft GitHub Release
-      id-token: write # downloads tools through the release mirror
-    # Under the group publish uses, so two runs never publish a Release at
-    # once.
+      contents: write # creates the draft Release, and publishing it creates the tag
+      id-token: write # crates.io trusted publishing, and the release mirror
+    # One run releases the versions its commit holds. A running publish is
+    # never cancelled half way. GitHub keeps one pending job per group, so a
+    # publish still waiting when a newer run's arrives is cancelled. Nothing is
+    # lost: the newer run plans every version its own commit holds, and reports
+    # one the running publish finished as already done. The older run's
+    # propose is skipped; the newer run proposes.
     concurrency:
       group: verctl-publish-${{ github.repository }}
       cancel-in-progress: false
@@ -573,22 +469,47 @@ jobs:
           test -x "${bin}"
           "${bin}" --version
           echo "VERCTL_BIN=${bin}" >> "${GITHUB_ENV}"
-      - name: Publish the draft Release
+      # The asset jobs ran only for the tarballs the draft lacks, so with
+      # none to build there is nothing to download.
+      - name: Download the tarballs
+        if: needs.assets.result == 'success'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: verctl-asset-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/assets
+      # crates.io matches the token's repository and the caller's workflow
+      # file against the crate's trusted publishers, and the action's post
+      # step revokes the token when the job ends.
+      - name: Get a crates.io token by trusted publishing
+        id: crates-io
+        if: inputs.crates-io-trusted-publishing
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+      - name: Publish
         env:
           GITHUB_TOKEN: ${{ github.token }}
           VERCTL_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          # The same assets as publish declared.
+          # The plan's assets. None means the plan expects no asset, so the
+          # job declares none whatever the config names.
           VERCTL_SKIP_ASSETS: ${{ !inputs.assets || needs.plan.outputs.declared == '' }}
           VERCTL_DECLARED_ASSETS: ${{ needs.plan.outputs.declared }}
-          # Creates and publishes Releases only, and never uploads a package.
-          # The registry token is only for the query that says which versions
-          # the registry lists, so there is no trusted-publishing token here.
-          VERCTL_RELEASES_ONLY: true
-          VERCTL_REGISTRY_TOKEN: ${{ secrets.registry-token }}
-          VERCTL_REGISTRY_TOKEN_ENV: ${{ inputs.registry-token-env }}
+          # The tarballs the asset jobs built. A declared tarball the draft
+          # already holds may be absent: the plan built only those it lacks.
+          VERCTL_ASSETS_DIR: ${{ needs.assets.result == 'success' && format('{0}/assets', runner.temp) || '' }}
           VERCTL_ALLOW_WORKFLOW_CHANGE: ${{ inputs.allow-workflow-change }}
           VERCTL_ALLOW_OFF_DEFAULT_BRANCH: ${{ inputs.allow-off-default-branch }}
-        # The plan's verctl, as in publish.
+          # The token is read only under its declared name. A caller whose
+          # token lives in an environment maps the stored name to
+          # registry-token, and this job, running in that environment,
+          # receives the environment's value. verctl refuses both tokens
+          # at once, checks registry-token-env, and hands the token to each
+          # publisher under that name alone.
+          VERCTL_REGISTRY_TOKEN: ${{ secrets.registry-token }}
+          VERCTL_TRUSTED_PUBLISHING_TOKEN: ${{ steps.crates-io.outputs.token }}
+          VERCTL_REGISTRY_TOKEN_ENV: ${{ inputs.registry-token-env }}
+        # The plan's verctl, not the one this commit's served task pins, which
+        # may predate this workflow. VERCTL_BIN is unset with verctl-artifact,
+        # and this run's build runs from PATH.
         run: mise exec -- "${VERCTL_BIN:-verctl}" release
 
   docs:
