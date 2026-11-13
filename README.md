@@ -394,7 +394,7 @@ A crate's first publish maps the token and turns `crates-io-trusted-publishing` 
 The publish step sets `VERCTL_REGISTRY_TOKEN` from the secret and `VERCTL_TRUSTED_PUBLISHING_TOKEN` from trusted publishing.  
 `verctl release` fails when both are set.  
 It gives the token to each publisher and its registry `query` under `--registry-token-env` (`VERCTL_REGISTRY_TOKEN_ENV`).  
-No other command it starts gets either variable.
+No other command it starts gets either variable, or `VERCTL_OWNER_TOKEN`.
 
 To migrate from `version-pr.yml` and `publish.yml`, do it in one pull request:
 
@@ -446,7 +446,12 @@ A manifest that opts out of publishing needs no `publisher: none`: a `Cargo.toml
 `publish: {verify: false}` makes cargo upload with `--no-verify`, for a crate CI already packs on every commit to the default branch, and keeps the crates.io check.
 
 `check registry` proves, with no token, that each crates.io crate the default branch holds exists and lists every login the top-level or per-package `owners` names.  
-`check trust` reads an owner's token from `VERCTL_REGISTRY_TOKEN` and proves that a trusted publisher entry names this repository and `release_workflow`, which is `release.yml` when omitted.  
+`check trust` reads an owner's token from `VERCTL_OWNER_TOKEN` and proves that a trusted publisher entry names this repository and `release_workflow`, which is `release.yml` when omitted.
+
+Before its draft, `release` runs the checks `release_checks` names, `[registry, trust]` when omitted, and stops with nothing published when one fails.  
+`trust` runs only with `VERCTL_OWNER_TOKEN`, and is reported as skipped otherwise.  
+`release --dry-run` prints the plan and runs the same checks.  
+`--crates-io-api` and `--crates-io-index` point a run at another crates.io, such as its staging instance.
 
 ## Operator documents
 

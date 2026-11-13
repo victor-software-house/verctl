@@ -17,9 +17,12 @@ use serde::Serialize;
 
 use crate::config::{Config, NAME_PLACEHOLDER, PackageSpec};
 use crate::publisher::Upload;
-use crate::registry::{self, RegistryCheck};
+use crate::registry::{self, CratesIo, RegistryCheck};
+use crate::registry_check::{Proof, ProofRow};
 use crate::registry_token::RegistryToken;
-use crate::{assets, bump, git, github, pending, process, publisher, release, stop};
+use crate::{
+    assets, bump, git, github, pending, process, publisher, registry_check, release, stop,
+};
 
 /// How long one package upload may run.
 pub const PUBLISH_TIMEOUT: Duration = Duration::from_mins(10);
@@ -126,7 +129,8 @@ pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
 ///
 /// This is [`run_pending`] with assets counted toward completeness, no
 /// assets directory, and no registry token, so each publisher finds its own
-/// credential.
+/// credential. It reads crates.io itself, with no owner's token, so the
+/// release proof reports `trust` as skipped.
 ///
 /// # Errors
 ///
@@ -145,6 +149,7 @@ pub fn run(
         &Scope::default(),
         Allow::default(),
         None,
+        CratesIo::PUBLIC,
     )?
     .published)
 }
@@ -250,6 +255,10 @@ pub struct PublishRun {
     /// Published, immutable Releases that lack declared assets and can take
     /// none.
     pub shortfalls: Vec<pending::Shortfall>,
+    /// What the release proof found beyond a pass: its notices, the checks it
+    /// skipped, and, in a dry run only, its failures. Empty when the run
+    /// found nothing to release, which runs no proof.
+    pub proof: Vec<ProofRow>,
 }
 
 /// Release, from HEAD, every package version HEAD holds whose release is
@@ -279,7 +288,8 @@ pub struct PublishRun {
 /// `scope.declared_assets` names the assets the run declares, and
 /// `scope.releases_only` keeps every publisher from starting.
 /// A package at `0.0.0` is never released and needs no changelog section.
-/// A dry run plans every other package and queries no registry.
+/// A dry run plans every other package and runs the release proof. It reads
+/// no registry listing.
 ///
 /// Before any publisher, tag, or Release call, the run proves HEAD in two
 /// ways:
@@ -290,19 +300,33 @@ pub struct PublishRun {
 /// `allow` lets the run go past either.
 /// [`PublishRun::allowed`] lists each one the run goes past.
 ///
+/// Once the plan finds something left to release, and before the first
+/// write, the run proves what can change on the registry after the merge:
+/// each check `release_checks` names, against the crates.io API in
+/// `crates_io` ([`registry_check::prove`]). `trust` runs only with its owner's
+/// token.
+///
+/// A failed check stops the run before the draft, with nothing published. A
+/// complete release runs no proof. The completeness check and the check
+/// after each upload read the crates.io index in `crates_io`.
+///
 /// # Errors
 ///
 /// Returns an error when:
 ///
 /// - The plan cannot be resolved.
 /// - A changelog lacks the heading for a package version.
-/// - A proof refuses or cannot run.
+/// - A proof refuses or cannot run, or a check of the release proof fails.
 /// - No token is set.
 /// - A registry or GitHub lookup fails.
 /// - The release plan names a commit other than HEAD.
 /// - A tag, or a published Release, is at a commit other than HEAD.
 /// - A declared tarball is neither on the draft nor in `scope.assets_dir`.
 /// - A draft, asset, publisher, or tag step fails.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is one input of the release; a struct would be built once per call"
+)]
 pub fn run_pending(
     config: &Config,
     config_path: &Path,
@@ -311,11 +335,12 @@ pub fn run_pending(
     scope: &Scope,
     allow: Allow,
     registry_token: Option<&RegistryToken>,
+    crates_io: CratesIo<'_>,
 ) -> Result<PublishRun> {
     let planned = plan(config, root)?;
     let declared = declared_assets(config, root, scope)?;
     if dry_run {
-        return dry_run_plan(config, root, &planned, &declared);
+        return dry_run_plan(config, root, &planned, &declared, crates_io);
     }
     full_history(root)?;
     let allowed = prove_version_commit(config, root, &planned, allow)?;
@@ -329,11 +354,19 @@ pub fn run_pending(
         scope.skip_assets,
         &scope.declared_assets,
         registry_token,
+        crates_io.index,
         &release_list,
     )?;
     if pending.is_empty() {
         return Ok(nothing_to_release(allowed, pending.shortfalls));
     }
+    let proof = release_proof(config, root, crates_io)?;
+    let failures = proof.failures();
+    ensure!(
+        failures.is_empty(),
+        "the release proof failed, and nothing was published:\n{}",
+        failures.join("\n")
+    );
     let head = git::head_sha(root)?;
     let here = at_head(&pending, &head)?;
     let selected: Vec<(&PackageSpec, &PublishEntry)> = config
@@ -375,7 +408,7 @@ pub fn run_pending(
             }
         }
     }
-    let lines = match run_uploads(uploads, registry_token) {
+    let lines = match run_uploads(uploads, registry_token, crates_io.index) {
         Ok(lines) => lines,
         Err(stopped) => return Err(record_stop(&token, &repo, &tags, &drafts, stopped)),
     };
@@ -398,7 +431,20 @@ pub fn run_pending(
         published: PublishOutcome { packages, releases },
         allowed,
         shortfalls: pending.shortfalls,
+        proof: proof.rows(),
     })
+}
+
+/// The release proof of `config`: each check `release_checks` names, against
+/// the crates.io API in `crates_io`, with its owner's token for `trust`.
+fn release_proof(config: &Config, root: &Path, crates_io: CratesIo<'_>) -> Result<Proof> {
+    registry_check::prove(
+        config,
+        root,
+        crates_io.api,
+        &config.release_checks,
+        crates_io.owner_token,
+    )
 }
 
 /// The uploads of each package at HEAD, and the lines of those already listed.
@@ -453,6 +499,7 @@ fn nothing_to_release(allowed: Vec<Allowed>, shortfalls: Vec<pending::Shortfall>
         },
         allowed,
         shortfalls,
+        proof: Vec::new(),
     }
 }
 
@@ -483,6 +530,7 @@ struct Stopped {
 fn run_uploads(
     uploads: Vec<(&PublishEntry, Vec<Upload>)>,
     registry_token: Option<&RegistryToken>,
+    index: &str,
 ) -> Result<Vec<PublishLine>, Stopped> {
     let mut packages = Vec::new();
     for (entry, uploads) in uploads {
@@ -491,26 +539,26 @@ fn run_uploads(
             continue;
         }
         for upload in uploads {
-            let note = publish_checked(&upload, registry_token, &registry::LISTING_DELAYS)
+            let note = publish_checked(&upload, registry_token, index, &registry::LISTING_DELAYS)
                 .map_err(|error| {
-                    let stop = if let Some(limited) = error.downcast_ref::<RateLimited>() {
-                        stop::Stop::new(
-                            &upload.name,
-                            &upload.version,
-                            RATE_LIMIT,
-                            limited.limit.retry_after.clone(),
-                        )
-                    } else {
-                        let message = format!("{error:#}");
-                        let cause = message.lines().next().unwrap_or_default();
-                        stop::Stop::new(&upload.name, &upload.version, cause, None)
-                    };
-                    Stopped {
-                        package: entry.name.clone(),
-                        stop: Box::new(stop),
-                        error,
-                    }
-                })?;
+                let stop = if let Some(limited) = error.downcast_ref::<RateLimited>() {
+                    stop::Stop::new(
+                        &upload.name,
+                        &upload.version,
+                        RATE_LIMIT,
+                        limited.limit.retry_after.clone(),
+                    )
+                } else {
+                    let message = format!("{error:#}");
+                    let cause = message.lines().next().unwrap_or_default();
+                    stop::Stop::new(&upload.name, &upload.version, cause, None)
+                };
+                Stopped {
+                    package: entry.name.clone(),
+                    stop: Box::new(stop),
+                    error,
+                }
+            })?;
             packages.push(PublishLine {
                 name: upload.name,
                 version: upload.version,
@@ -791,13 +839,18 @@ impl<'a> TagRelease<'a> {
 
 /// What a dry run would publish: every package not at `0.0.0`, a workspace
 /// package as its members in publish order, and every tag.
-/// It queries no registry.
+/// It reads no registry listing.
 /// With every package at `0.0.0`, there is nothing to release.
+///
+/// With something to release, it then runs the release proof as `release`
+/// does, and its rows carry every failure beside the plan, so the run fails
+/// having written nothing.
 fn dry_run_plan(
     config: &Config,
     root: &Path,
     planned: &PublishPlan,
     declared: &DeclaredAssets,
+    crates_io: CratesIo<'_>,
 ) -> Result<PublishRun> {
     let releases = planned
         .tags
@@ -825,16 +878,20 @@ fn dry_run_plan(
             None => packages.push(PublishLine::from(entry)),
         }
     }
-    let outcome = if packages.is_empty() {
-        Outcome::NothingToRelease
+    let (outcome, proof) = if packages.is_empty() {
+        (Outcome::NothingToRelease, Vec::new())
     } else {
-        Outcome::Released
+        (
+            Outcome::Released,
+            release_proof(config, root, crates_io)?.rows(),
+        )
     };
     Ok(PublishRun {
         outcome,
         published: PublishOutcome { packages, releases },
         allowed: Vec::new(),
         shortfalls: Vec::new(),
+        proof,
     })
 }
 
@@ -877,6 +934,7 @@ fn at_head<'a>(pending: &'a pending::Pending, head: &str) -> Result<&'a pending:
 fn publish_checked(
     upload: &Upload,
     registry_token: Option<&RegistryToken>,
+    index: &str,
     delays: &[Duration],
 ) -> Result<Option<String>> {
     let already = || Some("already".to_owned());
@@ -886,21 +944,21 @@ fn publish_checked(
     let env = env.as_slice();
     if !matches!(check, RegistryCheck::Unchecked)
         && check
-            .lists(&upload.version, env)
+            .lists(index, &upload.version, env)
             .with_context(|| coord.clone())?
     {
         return Ok(already());
     }
     let Err(error) = process::run_inherit_env(&upload.argv, env, PUBLISH_TIMEOUT) else {
         if !matches!(check, RegistryCheck::Unchecked) {
-            registry::wait_listed(check, &coord, &upload.version, env, delays)?;
+            registry::wait_listed(check, index, &coord, &upload.version, env, delays)?;
         }
         return Ok(None);
     };
     let message = format!("{error:#}");
     if already_published(&message) {
         if !matches!(check, RegistryCheck::Unchecked) {
-            registry::wait_listed(check, &coord, &upload.version, env, delays)
+            registry::wait_listed(check, index, &coord, &upload.version, env, delays)
                 .with_context(|| message.clone())?;
         }
         return Ok(already());
@@ -1366,7 +1424,7 @@ mod tests {
 
         use super::super::{publish_checked, rate_limited};
         use crate::publisher::Upload;
-        use crate::registry::RegistryCheck;
+        use crate::registry::{CRATES_IO_INDEX, RegistryCheck};
         use crate::registry_token::RegistryToken;
 
         const NO_WAIT: [Duration; 2] = [Duration::ZERO, Duration::ZERO];
@@ -1448,7 +1506,13 @@ mod tests {
         fn a_listed_version_skips_the_publisher() {
             let dir = TempDir::new().unwrap();
             let check = query(dir.path(), 1);
-            let note = publish_checked(&upload(dir.path(), 0, "", check), None, &NO_WAIT).unwrap();
+            let note = publish_checked(
+                &upload(dir.path(), 0, "", check),
+                None,
+                CRATES_IO_INDEX,
+                &NO_WAIT,
+            )
+            .unwrap();
             assert_eq!(note.as_deref(), Some("already"));
             assert!(!ran(dir.path()));
         }
@@ -1457,8 +1521,13 @@ mod tests {
         fn a_publisher_that_exits_zero_without_publishing_fails() {
             let dir = TempDir::new().unwrap();
             let check = query(dir.path(), 99);
-            let error =
-                publish_checked(&upload(dir.path(), 0, "", check), None, &NO_WAIT).unwrap_err();
+            let error = publish_checked(
+                &upload(dir.path(), 0, "", check),
+                None,
+                CRATES_IO_INDEX,
+                &NO_WAIT,
+            )
+            .unwrap_err();
             assert!(ran(dir.path()));
             assert!(format!("{error:#}").contains("demo@0.4.6"), "{error:#}");
         }
@@ -1467,7 +1536,13 @@ mod tests {
         fn registry_metadata_that_lags_the_publish_passes() {
             let dir = TempDir::new().unwrap();
             let check = query(dir.path(), 3);
-            let note = publish_checked(&upload(dir.path(), 0, "", check), None, &NO_WAIT).unwrap();
+            let note = publish_checked(
+                &upload(dir.path(), 0, "", check),
+                None,
+                CRATES_IO_INDEX,
+                &NO_WAIT,
+            )
+            .unwrap();
             assert_eq!(note, None);
             assert!(ran(dir.path()));
         }
@@ -1476,8 +1551,13 @@ mod tests {
         fn a_failed_publisher_fails_without_waiting() {
             let dir = TempDir::new().unwrap();
             let check = query(dir.path(), 2);
-            let error =
-                publish_checked(&upload(dir.path(), 1, "", check), None, &NO_WAIT).unwrap_err();
+            let error = publish_checked(
+                &upload(dir.path(), 1, "", check),
+                None,
+                CRATES_IO_INDEX,
+                &NO_WAIT,
+            )
+            .unwrap_err();
             assert!(format!("{error:#}").contains("demo@0.4.6"), "{error:#}");
         }
 
@@ -1485,7 +1565,7 @@ mod tests {
         fn without_a_check_a_zero_exit_publishes() {
             let dir = TempDir::new().unwrap();
             let upload = upload(dir.path(), 0, "", RegistryCheck::Unchecked);
-            let note = publish_checked(&upload, None, &NO_WAIT).unwrap();
+            let note = publish_checked(&upload, None, CRATES_IO_INDEX, &NO_WAIT).unwrap();
             assert_eq!(note, None);
             assert!(ran(dir.path()));
         }
@@ -1528,7 +1608,7 @@ mod tests {
             let token =
                 RegistryToken::resolve(Some("t0ken".into()), None, "CARGO_REGISTRIES_DEMO_TOKEN")
                     .unwrap();
-            let note = publish_checked(&upload, token.as_ref(), &NO_WAIT).unwrap();
+            let note = publish_checked(&upload, token.as_ref(), CRATES_IO_INDEX, &NO_WAIT).unwrap();
             assert_eq!(note, None);
             assert_eq!(fs::read_to_string(&seen).unwrap(), "t0ken");
             assert_eq!(fs::read_to_string(&queried).unwrap(), "t0ken".repeat(2));
@@ -1539,7 +1619,7 @@ mod tests {
             let dir = TempDir::new().unwrap();
             let check = query(dir.path(), 99);
             let upload = upload(dir.path(), 101, RATE_LIMITED, check);
-            let error = publish_checked(&upload, None, &NO_WAIT).unwrap_err();
+            let error = publish_checked(&upload, None, CRATES_IO_INDEX, &NO_WAIT).unwrap_err();
             let message = format!("{error:#}");
             assert!(message.contains("demo@0.4.6"), "{message}");
             assert!(

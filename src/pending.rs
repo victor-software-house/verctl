@@ -203,7 +203,8 @@ struct PackageState {
 ///
 /// A registry `query` runs with `registry_token` when one is given, as in
 /// `release`, because a private registry needs the same credential to answer.
-/// `status` holds none.
+/// `status` holds none. A crates.io crate is read from the sparse index at
+/// `crates_io_index`.
 ///
 /// # Errors
 ///
@@ -237,6 +238,7 @@ pub fn pending(
     skip_assets: bool,
     declared_assets: &[String],
     registry_token: Option<&RegistryToken>,
+    crates_io_index: &str,
     list: &ReleaseList,
 ) -> Result<Pending> {
     if config.packages.is_empty() {
@@ -298,7 +300,11 @@ pub fn pending(
         let count = release
             .draft
             .then(|| counts.entry(tag.clone()).or_default());
-        let listed = registry_lists(config, root, spec, entry, release, env, count)?;
+        let asked = Asked {
+            index: crates_io_index,
+            env,
+        };
+        let listed = registry_lists(config, root, spec, entry, release, asked, count)?;
         let head_targets: &[MatrixTarget] = if index == 0 { &targets } else { &[] };
         let declared = checked_targets(head_targets, &release.assets, || {
             declared_at(root, config_path, &release_commit)
@@ -352,14 +358,14 @@ impl Count {
         &mut self,
         check: &RegistryCheck,
         version: &str,
-        env: &[(&str, &str)],
+        asked: Asked<'_>,
         noun: &str,
     ) -> Result<bool> {
         self.total += 1;
         if !self.nouns.iter().any(|known| known == noun) {
             self.nouns.push(noun.to_owned());
         }
-        let live = match check.lists(version, env) {
+        let live = match check.lists(asked.index, version, asked.env) {
             Ok(live) => live,
             Err(_) if self.unlisted => {
                 self.uncounted = true;
@@ -518,21 +524,30 @@ fn tag_of(planned: &publish::PublishPlan, entry: &PublishEntry) -> Result<String
 /// either is the record. GitHub can serve the tag a moment after the Release,
 /// so a published Release whose tag is not served yet counts too.
 ///
-/// A `query` runs with `env`, as [`RegistryCheck::lists`] describes.
+/// Each check reads where `asked` says, as [`RegistryCheck::lists`]
+/// describes.
 fn registry_lists(
     config: &Config,
     root: &Path,
     spec: &PackageSpec,
     entry: &PublishEntry,
     release: &ReleaseState,
-    env: &[(&str, &str)],
+    asked: Asked<'_>,
     count: Option<&mut Count>,
 ) -> Result<bool> {
     if entry.argv.is_empty() {
         return Ok(true);
     }
     let uploads = publisher::uploads(config, spec, root, entry)?;
-    uploads_listed(&uploads, &entry.noun, release, env, count)
+    uploads_listed(&uploads, &entry.noun, release, asked, count)
+}
+
+/// Where a registry check reads: the crates.io sparse index for a crate, and
+/// the variables a `query` runs with.
+#[derive(Clone, Copy)]
+struct Asked<'a> {
+    index: &'a str,
+    env: &'a [(&'a str, &'a str)],
 }
 
 /// Whether every one of `uploads` is listed, as [`registry_lists`] answers
@@ -541,7 +556,7 @@ fn uploads_listed(
     uploads: &[Upload],
     noun: &str,
     release: &ReleaseState,
-    env: &[(&str, &str)],
+    asked: Asked<'_>,
     mut count: Option<&mut Count>,
 ) -> Result<bool> {
     let mut listed = true;
@@ -551,12 +566,12 @@ fn uploads_listed(
                 release.tag.is_some() || (release.release && !release.draft)
             }
             (check @ (RegistryCheck::CratesIo { .. } | RegistryCheck::Query { .. }), None) => {
-                check.lists(&upload.version, env)?
+                check.lists(asked.index, &upload.version, asked.env)?
             }
             (
                 check @ (RegistryCheck::CratesIo { .. } | RegistryCheck::Query { .. }),
                 Some(count),
-            ) => count.ask(check, &upload.version, env, noun)?,
+            ) => count.ask(check, &upload.version, asked, noun)?,
         };
         listed &= live;
         if !listed && count.is_none() {
@@ -727,8 +742,8 @@ mod tests {
     use indoc::{formatdoc, indoc};
 
     use super::{
-        Count, DeclaredTargets, PackageState, Pending, PendingAsset, PendingPackage, Shortfall,
-        checked_targets, group, state_of, uploads_listed, write_github_output,
+        Asked, Count, DeclaredTargets, PackageState, Pending, PendingAsset, PendingPackage,
+        Shortfall, checked_targets, group, state_of, uploads_listed, write_github_output,
     };
     use crate::assets::MatrixTarget;
     use crate::config::{Assets, Config};
@@ -736,8 +751,15 @@ mod tests {
     use crate::github::ReleaseState;
     use crate::publish::PublishEntry;
     use crate::publisher::Upload;
-    use crate::registry::RegistryCheck;
+    use crate::registry::{CRATES_IO_INDEX, RegistryCheck};
     use crate::stop::Record;
+
+    /// The public index, and no variable for a `query`. Every check in these
+    /// tests is a `query`, so none reads the index.
+    const PUBLIC: Asked<'static> = Asked {
+        index: CRATES_IO_INDEX,
+        env: &[],
+    };
 
     fn entry(name: &str, version: &str) -> PublishEntry {
         PublishEntry {
@@ -862,7 +884,7 @@ mod tests {
             upload(dir.path(), "c", Answer::Listed),
         ];
         let listed =
-            uploads_listed(&uploads, "crate", &ReleaseState::default(), &[], None).unwrap();
+            uploads_listed(&uploads, "crate", &ReleaseState::default(), PUBLIC, None).unwrap();
         assert!(!listed);
         assert_eq!(
             calls(dir.path()),
@@ -884,7 +906,8 @@ mod tests {
             upload(dir.path(), "c", Answer::Unlisted),
         ];
         let mut count = Count::default();
-        let listed = uploads_listed(&uploads, "crate", &draft(&[]), &[], Some(&mut count)).unwrap();
+        let listed =
+            uploads_listed(&uploads, "crate", &draft(&[]), PUBLIC, Some(&mut count)).unwrap();
         assert!(!listed);
         let partial = count.partial("v0.4.0".into(), Record::Unreadable).unwrap();
         assert_eq!((partial.live, partial.total), (Some(1), 3));
@@ -903,7 +926,8 @@ mod tests {
             upload(dir.path(), "c", Answer::Fails),
         ];
         let mut count = Count::default();
-        let listed = uploads_listed(&uploads, "crate", &draft(&[]), &[], Some(&mut count)).unwrap();
+        let listed =
+            uploads_listed(&uploads, "crate", &draft(&[]), PUBLIC, Some(&mut count)).unwrap();
         assert!(!listed);
         let partial = count.partial("v0.4.0".into(), Record::Absent).unwrap();
         assert_eq!((partial.live, partial.total), (None, 3));
@@ -920,9 +944,9 @@ mod tests {
             upload(dir.path(), "a", Answer::Unlisted),
             upload(dir.path(), "b", Answer::Fails),
         ];
-        assert!(!uploads_listed(&first, "crate", &release, &[], Some(&mut count)).unwrap());
+        assert!(!uploads_listed(&first, "crate", &release, PUBLIC, Some(&mut count)).unwrap());
         let second = [upload(dir.path(), "c", Answer::Listed)];
-        assert!(uploads_listed(&second, "crate", &release, &[], Some(&mut count)).unwrap());
+        assert!(uploads_listed(&second, "crate", &release, PUBLIC, Some(&mut count)).unwrap());
         assert_eq!(
             calls(dir.path()),
             indoc! {"
@@ -943,7 +967,7 @@ mod tests {
             upload(dir.path(), "b", Answer::Fails),
         ];
         let mut count = Count::default();
-        uploads_listed(&uploads, "crate", &draft(&[]), &[], Some(&mut count)).unwrap();
+        uploads_listed(&uploads, "crate", &draft(&[]), PUBLIC, Some(&mut count)).unwrap();
         assert!(count.partial("v0.4.0".into(), Record::Absent).is_none());
     }
 
@@ -953,7 +977,7 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let uploads = [upload(dir.path(), "a", Answer::Fails)];
         let mut count = Count::default();
-        assert!(uploads_listed(&uploads, "crate", &draft(&[]), &[], Some(&mut count)).is_err());
+        assert!(uploads_listed(&uploads, "crate", &draft(&[]), PUBLIC, Some(&mut count)).is_err());
     }
 
     /// Mixed nouns under one tag read as packages.
@@ -966,7 +990,7 @@ mod tests {
             &[upload(dir.path(), "a", Answer::Listed)],
             "crate",
             &release,
-            &[],
+            PUBLIC,
             Some(&mut count),
         )
         .unwrap();
@@ -974,7 +998,7 @@ mod tests {
             &[upload(dir.path(), "b", Answer::Unlisted)],
             "package",
             &release,
-            &[],
+            PUBLIC,
             Some(&mut count),
         )
         .unwrap();
@@ -991,7 +1015,7 @@ mod tests {
                 upload(dir.path(), "b", answer),
             ];
             let mut count = Count::default();
-            uploads_listed(&uploads, "crate", &draft(&[]), &[], Some(&mut count)).unwrap();
+            uploads_listed(&uploads, "crate", &draft(&[]), PUBLIC, Some(&mut count)).unwrap();
             assert!(count.partial("v1.0.0".into(), Record::Absent).is_none());
         }
     }

@@ -9,9 +9,9 @@
 //! needs the same credential for that query.
 //!
 //! No other child process sees it.
-//! [`crate::process`] removes both source variables from every command it
-//! starts, and only the publisher and its query get the token back under the
-//! named variable.
+//! [`crate::process`] removes both source variables, and the owner's token in
+//! [`OWNER`], from every command it starts, and only the publisher and its
+//! query get the registry token back under the named variable.
 
 use std::{env, fmt};
 
@@ -26,6 +26,19 @@ pub const TRUSTED: &str = "VERCTL_TRUSTED_PUBLISHING_TOKEN";
 
 /// The variables a token arrives in, which no child process inherits.
 pub const SOURCES: [&str; 2] = [SECRET, TRUSTED];
+
+/// The variable an owner's crates.io token with the `trusted-publishing`
+/// scope arrives in, for `check trust` and the release proof to read the
+/// trusted publisher entries. It is not the token `release` publishes with:
+/// that scope can also create and delete entries, so no publisher gets it,
+/// and no child process inherits it.
+pub const OWNER: &str = "VERCTL_OWNER_TOKEN";
+
+/// The owner's token in [`OWNER`], or `None` when it is unset or empty.
+#[must_use]
+pub fn owner_token() -> Option<String> {
+    env::var(OWNER).ok().filter(|token| !token.is_empty())
+}
 
 /// A registry token and the variable its publisher reads it from.
 ///

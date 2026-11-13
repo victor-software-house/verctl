@@ -76,16 +76,13 @@ fn check_report(args: &CheckArgs) -> Result<CheckReport> {
             Check::Fragments => check_fragments(args, &config, root),
             Check::Served => check_served(root, &config).map(|()| CheckResult::Served),
             Check::Versions => check_versions(args, &config, root).map(CheckResult::Versions),
-            Check::Registry => registry_check::registry(&config, root, registry::CRATES_IO_API)
+            Check::Registry => registry_check::registry(&config, root, &args.crates_io_api)
                 .map(CheckResult::Registry),
             Check::Trust => registry_check::trust(
                 &config,
                 root,
-                registry::CRATES_IO_API,
-                env::var(registry_token::SECRET)
-                    .ok()
-                    .filter(|token| !token.is_empty())
-                    .as_deref(),
+                &args.crates_io_api,
+                registry_token::owner_token().as_deref(),
             )
             .map(CheckResult::Trust),
         })
@@ -421,6 +418,12 @@ fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
         releases_only: args.releases_only,
         assets_dir: args.assets_dir.clone(),
     };
+    let owner_token = registry_token::owner_token();
+    let crates_io = registry::CratesIo {
+        index: &args.crates_io_index,
+        api: &args.crates_io_api,
+        owner_token: owner_token.as_deref(),
+    };
     let run = publish::run_pending(
         &config,
         &args.config,
@@ -429,6 +432,7 @@ fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
         &scope,
         allow,
         registry_token.as_ref(),
+        crates_io,
     )?;
     let notices: Vec<String> = run.shortfalls.iter().map(ToString::to_string).collect();
     Ok(ReleaseReport {
@@ -438,6 +442,7 @@ fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
         allowed: run.allowed,
         dry_run: args.dry_run(),
         notices,
+        proof: run.proof,
     })
 }
 
@@ -648,6 +653,7 @@ fn unreleased_state(args: &StatusArgs, config: &Config, root: &Path) -> Result<U
                 args.skip_assets,
                 &[],
                 None,
+                &args.crates_io_index,
                 &github::ReleaseList::default(),
             ) {
                 Ok(planned) => {

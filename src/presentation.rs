@@ -36,10 +36,10 @@ impl Present for Report {
     fn outcome(&self) -> Outcome {
         match self {
             Self::Check(report) => report.outcome(),
+            Self::Release(report) => report.outcome(),
             Self::Instructions(_)
             | Self::Status(_)
             | Self::Version(_)
-            | Self::Release(_)
             | Self::Render(_)
             | Self::Assets(_)
             | Self::Vendored(_)
@@ -691,9 +691,43 @@ pub(super) struct ReleaseReport {
     /// assets.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) notices: Vec<String>,
+    /// What the release proof found beyond a pass.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) proof: Vec<registry_check::ProofRow>,
 }
 
 impl ReleaseReport {
+    /// One `skipped` row per check of the release proof that did not run.
+    fn skipped_rows(&self, fields: Fields) -> Fields {
+        self.proof.iter().fold(fields, |fields, row| match row {
+            registry_check::ProofRow::Skipped { check, variable } => {
+                fields.row("skipped", format!("{}, {variable} is unset", check.name()))
+            }
+            registry_check::ProofRow::Failed { .. } | registry_check::ProofRow::Notice { .. } => {
+                fields
+            }
+        })
+    }
+
+    /// `document` with one warning per notice, the release's and the
+    /// proof's, and one error per failure of the proof.
+    fn with_proof(&self, document: Document) -> Document {
+        let mut notices = self.notices.clone();
+        let mut failures = Vec::new();
+        for row in &self.proof {
+            match row {
+                registry_check::ProofRow::Failed { check, message } => {
+                    failures.push(format!("{}: {message}", check.name()));
+                }
+                registry_check::ProofRow::Notice { check, message } => {
+                    notices.push(format!("{}: {message}", check.name()));
+                }
+                registry_check::ProofRow::Skipped { .. } => {}
+            }
+        }
+        with_findings(document, &notices, &failures)
+    }
+
     /// One `allowed` row per proof the run went past. The log of such a run
     /// shows each one.
     fn allowed_rows(&self, fields: Fields) -> Fields {
@@ -769,15 +803,29 @@ impl Present for ReleaseReport {
         if self.dry_run {
             fields = fields.row("dry-run", "nothing published");
         }
-        let fields = self.allowed_rows(fields);
+        let fields = self.skipped_rows(self.allowed_rows(fields));
         let mut document = Document::new();
         if !self.packages.is_empty() {
             document = document.table(table);
         }
         if fields.is_empty() {
-            with_warnings(document, &self.notices)
+            self.with_proof(document)
         } else {
-            with_warnings(document.fields(fields), &self.notices)
+            self.with_proof(document.fields(fields))
+        }
+    }
+
+    /// An error when the proof of a dry run failed, after the plan is shown.
+    /// `release` itself stops with an error before it reports.
+    fn outcome(&self) -> Outcome {
+        if self
+            .proof
+            .iter()
+            .any(|row| matches!(row, registry_check::ProofRow::Failed { .. }))
+        {
+            Outcome::Error
+        } else {
+            Outcome::Success
         }
     }
 }
@@ -901,6 +949,7 @@ mod tests {
             allowed: Vec::new(),
             dry_run: false,
             notices: Vec::new(),
+            proof: Vec::new(),
         })
     }
 
@@ -919,6 +968,7 @@ mod tests {
             }],
             dry_run: false,
             notices: Vec::new(),
+            proof: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
             .width(120)
@@ -1179,6 +1229,7 @@ mod tests {
             allowed: Vec::new(),
             dry_run: false,
             notices: Vec::new(),
+            proof: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
             .width(80)
@@ -1200,6 +1251,7 @@ mod tests {
             allowed: Vec::new(),
             dry_run: false,
             notices: Vec::new(),
+            proof: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
             .width(80)

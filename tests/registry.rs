@@ -21,7 +21,7 @@ use verctl::github::{self, Repo};
 use verctl::registry_check::{
     self, Crate, Evidence, RegistryReport, RegistryState, TrustReport, TrustState,
 };
-use verctl::registry_token::SECRET;
+use verctl::registry_token::OWNER;
 use verctl::versions;
 use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -485,7 +485,7 @@ async fn trust_looks_for_the_release_workflow() {
     assert_eq!(report.failures(), Vec::<String>::new());
 }
 
-/// No token: `trust` fails naming `VERCTL_REGISTRY_TOKEN`, and sends no
+/// No token: `trust` fails naming `VERCTL_OWNER_TOKEN`, and sends no
 /// request to `/api/v1/trusted_publishing/github_configs`, or anywhere.
 #[tokio::test]
 async fn trust_with_no_token_sends_no_request() {
@@ -499,11 +499,11 @@ async fn trust_with_no_token_sends_no_request() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(report, TrustReport::Unset { variable: SECRET });
+    assert_eq!(report, TrustReport::Unset { variable: OWNER });
     let failures = report.failures();
     assert_eq!(failures.len(), 1);
     assert!(
-        failures[0].starts_with("VERCTL_REGISTRY_TOKEN is unset"),
+        failures[0].starts_with("VERCTL_OWNER_TOKEN is unset"),
         "{failures:?}"
     );
     let requests = server.received_requests().await.unwrap();
