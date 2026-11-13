@@ -1,4 +1,4 @@
-//! What `check --versions` requires of a pull request that is not the Version
+//! What `check versions` requires of a pull request that is not the Version
 //! PR, beyond its versions.
 //!
 //! Such a pull request may not add a CHANGELOG section for a version. Only the

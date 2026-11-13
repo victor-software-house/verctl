@@ -1,4 +1,5 @@
-# verctl checks its own release with the verctl this checkout builds. The
-# shared check:versions and semver run `mise run ver`, which is this checkout.
+# verctl checks its own release with the verctl this checkout builds.
+# check:versions in mise.toml and the shared semver run `mise run ver`, which
+# is this checkout.
 "fragments" = { description = "Fail on a pending fragment version would refuse", run = "cargo run -- check" }
 "ver" = { description = "Run verctl from this checkout", run = "cargo run --" }

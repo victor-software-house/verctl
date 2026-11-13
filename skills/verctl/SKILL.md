@@ -32,7 +32,7 @@ The `--` in `#USAGE mount` is mise's completion bootstrap.
 |:--|:--|:--|
 | `instructions` | — | Print the installed-version operator contract |
 | `status` | — | List pending fragments, the asset plan, and HEAD's incomplete releases. `--github-output` writes the release workflow's plan |
-| `check` | — | Validate fragments, or `--versions` against the default branch |
+| `check` | — | Run the named checks, or `fragments` and `served` when none is named |
 | `version` | — | Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews |
 | `release` | — | Release the versions on HEAD: publish with cargo or bun, and create the GitHub Release. `release asset <target>` builds one asset |
 | `render` | — | Rewrite pins and render served templates at the versions on HEAD |
@@ -116,8 +116,9 @@ The Version PR gets no label.
 
 ### Checks on pull requests
 
+`check [CHECK]...` runs `fragments`, `served`, and `versions`, each once, as named; bare `check` runs `fragments` and `served`, and `--all` (`-a`) runs every check.  
 The PR comes from `verctl/release/<base>`, derived and never configured.  
-On that branch, `check --versions` replays the version step on the merge-base in place of the version comparison.  
+On that branch, `check versions` replays the version step on the merge-base in place of the version comparison.  
 It fails any change the replay does not make.  
 The replay runs no lockfile owner and no `prepare.after` command.
 
@@ -133,8 +134,7 @@ It also fails when it changes whether a package publishes without a fragment tha
 It needs `GITHUB_TOKEN` or `GH_TOKEN`.  
 Without one, or when a lookup cannot run, it reports `unreleased` as not checked.
 
-`status --github-output <file>` fetches the history and writes the `commits`, `pending`, `assets`, `declared`, `has_assets`, `tag`, and `matrix` outputs.  
-`release --plan` fails and names it.
+`status --github-output <file>` fetches the history and writes the `commits`, `pending`, `assets`, `declared`, `has_assets`, `tag`, and `matrix` outputs.
 
 `release` reports `nothing to release` when every release is complete.  
 A version HEAD's manifests do not hold stays unreleased.  

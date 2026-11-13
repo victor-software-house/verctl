@@ -365,7 +365,7 @@ fn json_output_holds_no_escape_byte_under_forced_colour() {
         &["status", "--format", "json", "-d", good],
         &["check", "--format", "json", "-d", bad],
         &["version", "--bogus", "--format", "json"],
-        &["--format", "json", "pin", "--dry-run"],
+        &["--format", "json", "check", "nosuchcheck"],
         &["--format=json", "nosuchverb"],
     ];
     for args in cases {
@@ -607,8 +607,7 @@ fn check_ok_when_dir_missing() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("ok"), "{stdout}");
-    assert!(stdout.contains("0 fragment(s)"), "{stdout}");
+    assert!(stdout.contains("fragments  ok, 0 fragment(s)"), "{stdout}");
 }
 
 /// verctl never arms a Version PR's merge: a person merges it, so the
@@ -778,33 +777,35 @@ fn check_leaves_a_missing_version_file_missing() {
     assert!(!root.path().join("actions/setup/VERSION").exists());
 }
 
-/// `prepare` is now `version`. The hidden verb takes any arguments, reads no
-/// config, and fails as a usage error that names the replacement.
+/// The verbs 0.8.0 renamed are unknown commands: each exits 2 before it
+/// reads any config, with clap's unrecognized subcommand error.
 #[test]
-fn prepare_exits_2_and_names_version() {
+fn a_renamed_verb_is_an_unknown_command() {
     let root = TempDir::new().expect("tempdir");
-    let output = common::verctl()
-        .current_dir(root.path())
-        .args(["prepare", "--pr", "--color", "never"])
-        .output()
-        .expect("spawn");
-    assert_eq!(output.status.code(), Some(2));
-    assert_eq!(output.stdout, Vec::<u8>::new());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("prepare is now version: run verctl version"),
-        "{stderr}"
-    );
+    for verb in ["prepare", "pin", "publish", "assets"] {
+        let output = common::verctl()
+            .current_dir(root.path())
+            .args([verb, "--dry-run", "--color", "never"])
+            .output()
+            .expect("spawn");
+        assert_eq!(output.status.code(), Some(2), "{verb}");
+        assert_eq!(output.stdout, Vec::<u8>::new(), "{verb}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains(&format!("unrecognized subcommand '{verb}'")),
+            "{stderr}"
+        );
+    }
 }
 
-/// `pin` is now `render`. Under `--format json` the failure is the JSON error
-/// on stdout.
+/// `release --plan` is an unknown flag, and under `--format json` the
+/// failure is the JSON error on stdout.
 #[test]
-fn pin_exits_2_and_names_render_in_json() {
+fn release_plan_is_an_unknown_flag_in_json() {
     let root = TempDir::new().expect("tempdir");
     let output = common::verctl()
         .current_dir(root.path())
-        .args(["--format", "json", "pin", "--dry-run"])
+        .args(["--format", "json", "release", "--plan"])
         .output()
         .expect("spawn");
     assert_eq!(output.status.code(), Some(2));
@@ -813,8 +814,43 @@ fn pin_exits_2_and_names_render_in_json() {
     assert_eq!(value["status"], "err");
     let message = value["error"]["message"].as_str().expect("message");
     assert!(
-        message.contains("pin is now render: run verctl render"),
+        message.contains("unexpected argument '--plan'"),
         "{message}"
+    );
+}
+
+/// `check --versions` is an unknown flag: `check versions` replaced it.
+#[test]
+fn check_versions_flag_is_an_unknown_argument() {
+    let root = TempDir::new().expect("tempdir");
+    let output = common::verctl()
+        .current_dir(root.path())
+        .args(["check", "--versions", "--color", "never"])
+        .output()
+        .expect("spawn");
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, Vec::<u8>::new());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("unexpected argument '--versions'"),
+        "{stderr}"
+    );
+}
+
+/// An unknown check exits 2 and lists the known ones.
+#[test]
+fn an_unknown_check_exits_2_listing_the_checks() {
+    let root = TempDir::new().expect("tempdir");
+    let output = common::verctl()
+        .current_dir(root.path())
+        .args(["check", "release", "--color", "never"])
+        .output()
+        .expect("spawn");
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("[possible values: fragments, served, versions]"),
+        "{stderr}"
     );
 }
 

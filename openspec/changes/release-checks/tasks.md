@@ -2,11 +2,12 @@
 
 ## 1. Named checks
 
-- [ ] 1.1 `verctl check [CHECK]...` with `fragments`, `served`, `versions`, `registry`, `trust` and `--all`; bare `check` runs `fragments` and `served`. Proof: CI tests of `Cli` parsing and of each name's report.
-- [ ] 1.2 Remove `--versions` and its `CheckArgs` field, with no hidden flag. Proof: a CI test that `check --versions` exits 2, and `rg -- '--versions' src tests` finds nothing.
-- [ ] 1.3 Move every reader of `check --versions` in this repository to `check versions`: `src/cli.rs` and its test, `src/main.rs`, `tests/versions.rs`, the doc comments in `src/content.rs` and `src/pull_request.rs`, `src/instructions.md`, `.ctl/operator/instructions.md.jinja`, `.ctl/templates/SKILL.md.jinja`, `skills/verctl/SKILL.md`, `AGENTS.md`, `README.md`, and the comment in `mise-tasks/release.toml`. Proof: `rg 'check --versions'` outside `CHANGELOG.md` and archived changes finds nothing.
+- [x] 1.1 `verctl check [CHECK]...` with `fragments`, `served`, `versions`, `registry`, `trust` and `--all`; bare `check` runs `fragments` and `served`. Proof: CI tests of `Cli` parsing and of each name's report.
+  - This change's first pull request ships `fragments`, `served`, `versions` and `--all`; `registry` and `trust` arrive in the next pull request of the stack, each as one `Check` variant and one dispatch arm.
+- [x] 1.2 Remove `--versions` and its `CheckArgs` field, with no hidden flag. Proof: a CI test that `check --versions` exits 2, and `rg -- '--versions' src tests` finds nothing.
+- [x] 1.3 Move every reader of `check --versions` in this repository to `check versions`: `src/cli.rs` and its test, `src/main.rs`, `tests/versions.rs`, the doc comments in `src/content.rs` and `src/pull_request.rs`, `src/instructions.md`, `.ctl/operator/instructions.md.jinja`, `.ctl/templates/SKILL.md.jinja`, `skills/verctl/SKILL.md`, `AGENTS.md`, `README.md`, and the comment in `mise-tasks/release.toml`. Proof: `rg 'check --versions'` outside `CHANGELOG.md` and archived changes finds nothing.
   - Outside this repository: the actions repository's `check:versions` task in `tasks/rust.toml` runs `mise run ver check --versions`, and every repository on the templates repository's `verify` runs it. The open changes `derived-release-state`, `release-state-machine` and `version-pr-identity` also name the flag.
-- [ ] 1.4 Remove the hidden verbs `prepare`, `pin`, `publish` and `assets`, and the hidden `release --plan`: the `Removed` enum, `REMOVED` and `moved_plan` in `src/cli.rs`. Proof: `rg 'Removed|moved_plan' src` finds nothing, and the cli tests assert that each old verb and `--plan` exits 2 as unknown.
+- [x] 1.4 Remove the hidden verbs `prepare`, `pin`, `publish` and `assets`, and the hidden `release --plan`: the `Removed` enum, `REMOVED` and `moved_plan` in `src/cli.rs`. Proof: `rg 'Removed|moved_plan' src` finds nothing, and the cli tests assert that each old verb and `--plan` exits 2 as unknown.
 
 ## 2. Registry and trust
 

@@ -20,7 +20,7 @@ The `--` in `#USAGE mount` is mise's completion bootstrap.
 |:--|:--|:--|
 | `instructions` | — | Print the installed-version operator contract |
 | `status` | — | List pending fragments, the asset plan, and HEAD's incomplete releases. `--github-output` writes the release workflow's plan |
-| `check` | — | Validate fragments, or `--versions` against the default branch |
+| `check` | — | Run the named checks, or `fragments` and `served` when none is named |
 | `version` | — | Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews |
 | `release` | — | Release the versions on HEAD: publish with cargo or bun, and create the GitHub Release. `release asset <target>` builds one asset |
 | `render` | — | Rewrite pins and render served templates at the versions on HEAD |
@@ -140,15 +140,20 @@ The candidate sections stay in the CHANGELOG below the stable one.
 
 ### Validation
 
-`check` plans the pending fragments against `.ctl/ver.yaml` the way `version` does.  
+`verctl check [CHECK]...` runs each check it names once, in the order `fragments`, `served`, `versions`, and the report lists each check that ran.  
+Bare `check` runs `fragments` and `served`, which need only the checkout, with no network and no token.  
+`--all` (`-a`) runs every check, including any named beside it.  
+An unknown name exits 2 and lists the known ones.
+
+`check fragments` plans the pending fragments against `.ctl/ver.yaml` the way `version` does.  
 A repo that runs it in its verify task therefore fails the pull request that adds such a fragment.
 
-`check` also renders every template and rewrites every `pins` entry in memory, at the versions the manifests hold.  
+`check served` renders every template and rewrites every `pins` entry in memory, at the versions the manifests hold.  
 This happens with or without fragments.  
 It fails on each served file whose bytes differ, naming the file and its template.  
 A pin fails too when it names another version or its pattern matches nothing.
 
-`verctl render` writes what `check` compares, so it fixes a hand edit and a template change alike.  
+`verctl render` writes what `check served` compares, so it fixes a hand edit and a template change alike.  
 A file that a template renders and a `pins` entry also names has two owners.  
 `version`, `check`, and `render` refuse it before writing anything.
 
@@ -348,7 +353,7 @@ Inside a git hook it ignores `GIT_INDEX_FILE`, `GIT_WORK_TREE`, and `GIT_DIR`, a
 ### The version check
 
 Do not hand-edit versions.  
-`verctl check --versions` compares each declared manifest to the merge-base of HEAD and the default branch.  
+`verctl check versions` compares each declared manifest to the merge-base of HEAD and the default branch.  
 It fails when they differ.  
 CI does not skip.  
 A fragment-only commit does not change versions.
@@ -491,7 +496,6 @@ Any other error, such as a release tag on the wrong commit or a 401 from a bad t
 
 ### Refusals
 
-`release --plan` fails and names `status --github-output`.  
 `release` releases every incomplete version HEAD holds.  
 When every release is complete, `release` reports `nothing to release` and exits zero.  
 Its JSON report's `outcome` is `nothing-to-release` or `released`.

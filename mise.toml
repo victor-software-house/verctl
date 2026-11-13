@@ -66,6 +66,12 @@ depends = [
   "check:repo",
 ]
 
+# Overrides the actions catalog's task, which still passes `--versions`,
+# until that catalog runs `check versions`.
+[tasks."check:versions"]
+description = "Manifest versions match the default branch outside a Version PR"
+run = "mise run ver check versions"
+
 # mise-tasks/ holds this repository's task fragments and file tasks. An
 # includes list replaces the default task dirs, so mise-tasks comes first; add
 # pinned git:: catalogs after it.

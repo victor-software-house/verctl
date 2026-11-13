@@ -129,17 +129,19 @@ fn the_served_task_pipes_json_without_an_escape_byte() {
     );
 }
 
-/// mise reads `hide` and leaves a hidden command out of help and completion.
+/// The usage spec lists none of the verbs 0.8.0 renamed, so neither help nor
+/// completion offers them.
 #[test]
-fn usage_spec_marks_the_removed_verbs_hidden() {
+fn usage_spec_lists_no_renamed_verb() {
     let output = verctl(&["--usage-spec=ver"]);
     assert!(output.status.success(), "{}", stderr(&output));
     let spec = stdout(&output);
     for removed in ["prepare", "pin", "publish", "assets"] {
-        let line = spec
-            .lines()
-            .find(|line| line.trim_start().starts_with(&format!("cmd {removed} ")))
-            .unwrap_or_else(|| panic!("no cmd {removed}:\n{spec}"));
-        assert!(line.contains("hide=#true"), "{line}");
+        assert!(
+            !spec
+                .lines()
+                .any(|line| line.trim_start().starts_with(&format!("cmd {removed} "))),
+            "cmd {removed}:\n{spec}"
+        );
     }
 }

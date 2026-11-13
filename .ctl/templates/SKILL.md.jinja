@@ -98,8 +98,9 @@ The Version PR gets no label.
 
 ### Checks on pull requests
 
+`check [CHECK]...` runs `fragments`, `served`, and `versions`, each once, as named; bare `check` runs `fragments` and `served`, and `--all` (`-a`) runs every check.  
 The PR comes from `verctl/release/<base>`, derived and never configured.  
-On that branch, `check --versions` replays the version step on the merge-base in place of the version comparison.  
+On that branch, `check versions` replays the version step on the merge-base in place of the version comparison.  
 It fails any change the replay does not make.  
 The replay runs no lockfile owner and no `prepare.after` command.
 
@@ -115,8 +116,7 @@ It also fails when it changes whether a package publishes without a fragment tha
 It needs `GITHUB_TOKEN` or `GH_TOKEN`.  
 Without one, or when a lookup cannot run, it reports `unreleased` as not checked.
 
-`status --github-output <file>` fetches the history and writes the `commits`, `pending`, `assets`, `declared`, `has_assets`, `tag`, and `matrix` outputs.  
-`release --plan` fails and names it.
+`status --github-output <file>` fetches the history and writes the `commits`, `pending`, `assets`, `declared`, `has_assets`, `tag`, and `matrix` outputs.
 
 `release` reports `nothing to release` when every release is complete.  
 A version HEAD's manifests do not hold stays unreleased.  
