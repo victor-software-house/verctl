@@ -17,10 +17,11 @@
 //! That covers a crate with no library target and a proc-macro.
 //! The 1.0 rule is about API breaks, so it does not apply to such a crate.
 
-use std::fs;
-use std::io::ErrorKind;
+use std::collections::BTreeSet;
+use std::io::{self, ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use std::{env, fs};
 
 use anyhow::{Context, Result, bail};
 use semver::Version;
@@ -106,6 +107,7 @@ struct Planned {
 ///   crate.
 pub fn run(config: &Config, root: &Path, fragments: &[Fragment]) -> Result<Vec<SemverLine>> {
     let planned = plan(config, root, fragments)?;
+    let logins = trusted_logins();
     let mut lines = Vec::with_capacity(planned.len());
     let mut failed = Vec::new();
     for Planned {
@@ -128,14 +130,10 @@ pub fn run(config: &Config, root: &Path, fragments: &[Fragment]) -> Result<Vec<S
                 "--release-type",
                 "minor",
             ]);
-            line.decision = match process::run_inherit(&argv, CHECK_TIMEOUT) {
+            line.decision = match check_crate(&argv, &line.name, &line.version, &logins) {
                 Ok(()) => Decision::Passed,
-                Err(error) => {
-                    // The full output is already on stderr; the first line
-                    // shows whether the tool exited, timed out, or never ran.
-                    let error = format!("{error:#}");
-                    let cause = error.lines().next().unwrap_or_default();
-                    failed.push(format!("{}@{} ({cause})", line.name, line.version));
+                Err(detail) => {
+                    failed.push(format!("{}@{} {detail}", line.name, line.version));
                     Decision::Failed
                 }
             };
@@ -149,6 +147,164 @@ pub fn run(config: &Config, root: &Path, fragments: &[Fragment]) -> Result<Vec<S
         );
     }
     Ok(lines)
+}
+
+/// The variable that names the crates.io logins `semver` trusts, as the
+/// templates repository renders it into `mise.toml`.
+const TRUSTED_OWNERS: &str = "CARGO_TRUSTED_OWNERS";
+
+/// The crates.io logins in `CARGO_TRUSTED_OWNERS`, split on whitespace, or
+/// none when it is unset.
+fn trusted_logins() -> Vec<String> {
+    env::var(TRUSTED_OWNERS)
+        .unwrap_or_default()
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Run one crate's check. A failure returns the text that follows
+/// `name@version` in the error: the tool's first line of failure, and why
+/// no second run followed when the cooldown rejected a crate.
+///
+/// When the publish-age cooldown rejected only crates that `logins` own on
+/// crates.io, the check runs once more without the cooldown, and that run
+/// decides.
+fn check_crate(
+    argv: &[String],
+    name: &str,
+    version: &str,
+    logins: &[String],
+) -> Result<(), String> {
+    let Err(error) = process::run_inherit(argv, CHECK_TIMEOUT) else {
+        return Ok(());
+    };
+    // The full output is already on stderr; the first line shows whether the
+    // tool exited, timed out, or never ran.
+    let error = format!("{error:#}");
+    let cause = first_line(&error);
+    let rejected = cooldown_rejections(&error);
+    if rejected.is_empty() {
+        return Err(format!("({cause})"));
+    }
+    let owners =
+        |crate_name: &str| registry::crates_io_user_owners(registry::CRATES_IO_API, crate_name);
+    match retry_decision(&rejected, logins, owners) {
+        Err(lookup) => Err(format!("({cause}) (the owners lookup failed: {lookup:#})")),
+        Ok(Retry::NoRetry(reason)) => Err(format!("({cause}) ({reason})")),
+        Ok(Retry::Allow) => {
+            let _ = writeln!(
+                io::stderr(),
+                "verctl: cargo semver-checks for {name}@{version} hit the publish-age cooldown on {}, all owned by {TRUSTED_OWNERS}; checking again without it",
+                rejected.join(", ")
+            );
+            process::run_inherit_env(argv, &[COOLDOWN_OFF], CHECK_TIMEOUT)
+                .map_err(|error| format!("({})", first_line(&format!("{error:#}"))))
+        }
+    }
+}
+
+/// The first line of `text`, or nothing.
+fn first_line(text: &str) -> &str {
+    text.lines().next().unwrap_or_default()
+}
+
+/// The setting that lets cargo resolve a release younger than the cooldown.
+const COOLDOWN_OFF: (&str, &str) = ("CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE", "allow");
+
+/// Whether a second run without the cooldown may decide the check.
+#[derive(Debug, PartialEq, Eq)]
+enum Retry {
+    /// Every crate the cooldown rejected has a trusted owner.
+    Allow,
+    /// The check stays failed, for this reason.
+    NoRetry(String),
+}
+
+/// Decide whether the check may run again past the cooldown, given the crates
+/// it rejected (at least one) and the trusted `logins`.
+/// `owners` returns a crate's user logins, as
+/// [`registry::crates_io_user_owners`] does.
+///
+/// # Errors
+///
+/// Returns the error of the first `owners` call that fails.
+fn retry_decision(
+    rejected: &[String],
+    logins: &[String],
+    owners: impl Fn(&str) -> Result<Vec<String>>,
+) -> Result<Retry> {
+    let names = rejected.join(", ");
+    if logins.is_empty() {
+        return Ok(Retry::NoRetry(format!(
+            "the publish-age cooldown rejected {names}; {TRUSTED_OWNERS} is unset, so no retry"
+        )));
+    }
+    let mut untrusted = Vec::new();
+    for name in rejected {
+        if !owners(name)?.iter().any(|login| logins.contains(login)) {
+            untrusted.push(name.as_str());
+        }
+    }
+    if untrusted.is_empty() {
+        return Ok(Retry::Allow);
+    }
+    Ok(Retry::NoRetry(format!(
+        "the publish-age cooldown rejected {names}; {} have no owner in {TRUSTED_OWNERS}, so no retry",
+        untrusted.join(", ")
+    )))
+}
+
+/// The crates whose release the publish-age cooldown rejected, from cargo's
+/// error in `output`, sorted and without repeats.
+///
+/// Cargo 1.100 reports one as `failed to select a version for the
+/// requirement` naming the crate, and a `version ... is too new (published
+/// ...)` line follows within three lines. Another resolution error, which has
+/// no such line, names no crate.
+fn cooldown_rejections(output: &str) -> Vec<String> {
+    const REQUIREMENT: &str = "failed to select a version for the requirement `";
+    const TOO_NEW: &str = " is too new (published ";
+    let plain = strip_ansi(output);
+    let lines: Vec<&str> = plain.lines().collect();
+    let mut names = BTreeSet::new();
+    for (index, line) in lines.iter().enumerate() {
+        let Some((_, rest)) = line.split_once(REQUIREMENT) else {
+            continue;
+        };
+        let Some((name, _)) = rest.split_once(" = ") else {
+            continue;
+        };
+        let too_new = lines
+            .iter()
+            .skip(index + 1)
+            .filter(|next| !next.trim().is_empty())
+            .take(3)
+            .any(|next| next.contains(TOO_NEW));
+        if too_new {
+            names.insert(name.to_owned());
+        }
+    }
+    names.into_iter().collect()
+}
+
+/// `text` without its ANSI escape sequences: `ESC [`, then everything up to a
+/// final byte in `@` to `~`.
+fn strip_ansi(text: &str) -> String {
+    let mut plain = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(next) = chars.next() {
+        if next == '\x1b' && chars.next_if_eq(&'[').is_some() {
+            for skipped in chars.by_ref() {
+                if ('@'..='~').contains(&skipped) {
+                    break;
+                }
+            }
+        } else {
+            plain.push(next);
+        }
+    }
+    plain
 }
 
 fn plan(config: &Config, root: &Path, fragments: &[Fragment]) -> Result<Vec<Planned>> {
@@ -292,11 +448,15 @@ fn skip_reason(
 mod tests {
     use std::fs;
 
+    use anyhow::{Context, Result};
     use indoc::indoc;
     use semver::Version;
     use tempfile::TempDir;
 
-    use super::{Decision, checkable, marked_breaking, pending_bump, released_mark, skip_reason};
+    use super::{
+        Decision, Retry, checkable, cooldown_rejections, marked_breaking, pending_bump,
+        released_mark, retry_decision, skip_reason,
+    };
     use crate::fragment::{Bump, Fragment, PackageBump};
 
     fn version(raw: &str) -> Version {
@@ -514,5 +674,149 @@ mod tests {
         ];
         assert_eq!(pending_bump(&fragments, "demo"), Bump::Minor);
         assert_eq!(pending_bump(&fragments, "none"), Bump::None);
+    }
+
+    const CTL_TEXT: &str = indoc! {"
+        error: `cargo metadata` exited with an error:     Updating crates.io index
+        error: failed to select a version for the requirement `ctl-text = \"=0.7.4\"`
+          version 0.7.4 is too new (published 36 hours ago, minimum age 3 days)
+        location searched: crates.io index
+        required by package `ctl-core v0.7.4 (/home/runner/work/ctl-core/ctl-core/ctl-core)`
+        help: to preserve the min-publish-age, downgrade the requirement to \"0.7.0\"
+        help: to use too-new packages anyways, re-resolve with `CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow`
+    "};
+
+    const YAMLED: &str = indoc! {"
+        error: `cargo metadata` exited with an error:     Updating crates.io index
+        error: failed to select a version for the requirement `yamled = \"=0.0.13\"`
+          version 0.0.13 is too new (published 39 hours ago, minimum age 3 days)
+        location searched: crates.io index
+        required by package `ctl-core v0.7.4 (/home/runner/work/ctl-core/ctl-core/ctl-core)`
+        help: to preserve the min-publish-age, downgrade the requirement to \"0.0.12\"
+        help: to use too-new packages anyways, re-resolve with `CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow`
+    "};
+
+    const QCTL: &str = indoc! {"
+        error: `cargo metadata` exited with an error:     Updating crates.io index
+        error: failed to select a version for the requirement `qctl = \"=0.7.0\"`
+          version 0.7.0 is too new (published 3 days ago, minimum age 3 days)
+        location searched: crates.io index
+        required by package `qctl v0.7.1 (/home/runner/work/qctl/qctl)`
+        help: to preserve the min-publish-age, downgrade the requirement to \"0.6.0\"
+        help: to use too-new packages anyways, re-resolve with `CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow`
+    "};
+
+    #[test]
+    fn the_cooldown_names_the_crate_it_rejected() {
+        assert_eq!(cooldown_rejections(CTL_TEXT), ["ctl-text"]);
+        assert_eq!(cooldown_rejections(QCTL), ["qctl"]);
+    }
+
+    #[test]
+    fn several_rejections_are_sorted_and_listed_once() {
+        let output = format!("{YAMLED}{CTL_TEXT}{YAMLED}");
+        assert_eq!(cooldown_rejections(&output), ["ctl-text", "yamled"]);
+    }
+
+    #[test]
+    fn ansi_colour_codes_do_not_hide_a_rejection() {
+        let output = indoc! {"
+            \u{1b}[1m\u{1b}[31merror\u{1b}[0m: failed to select a version for the requirement `ctl-text = \"=0.7.4\"`
+            \u{1b}[1m\u{1b}[33m  version 0.7.4 is too new (published 36 hours ago, minimum age 3 days)\u{1b}[0m
+        "};
+        assert_eq!(cooldown_rejections(output), ["ctl-text"]);
+    }
+
+    #[test]
+    fn another_resolution_error_names_no_crate() {
+        let output = indoc! {"
+            error: failed to select a version for the requirement `demo = \"^9.0.0\"`
+            candidate versions found which didn't match: 0.1.0
+            location searched: crates.io index
+            required by package `ctl-core v0.7.4 (/work/ctl-core)`
+            help: version 0.9.0 is too new (published 1 hour ago, minimum age 3 days)
+        "};
+        assert_eq!(cooldown_rejections(output), Vec::<String>::new());
+        assert_eq!(
+            cooldown_rejections("error: could not compile `demo`"),
+            Vec::<String>::new()
+        );
+    }
+
+    fn owners_of(
+        table: &'static [(&'static str, &'static [&'static str])],
+    ) -> impl Fn(&str) -> Result<Vec<String>> {
+        move |name| {
+            table
+                .iter()
+                .find(|(crate_name, _)| *crate_name == name)
+                .map(|(_, logins)| logins.iter().map(|login| (*login).to_owned()).collect())
+                .context("owners lookup failed")
+        }
+    }
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|name| (*name).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_rejection_of_trusted_crates_only_allows_a_second_run() {
+        let owners = owners_of(&[
+            ("ctl-text", &["any-victor"]),
+            ("yamled", &["any-victor", "x"]),
+        ]);
+        assert_eq!(
+            retry_decision(
+                &names(&["ctl-text", "yamled"]),
+                &names(&["any-victor"]),
+                owners
+            )
+            .unwrap(),
+            Retry::Allow
+        );
+    }
+
+    /// The reason of a [`Retry::NoRetry`], or nothing for [`Retry::Allow`].
+    fn reason(decision: Retry) -> String {
+        match decision {
+            Retry::NoRetry(reason) => reason,
+            Retry::Allow => String::new(),
+        }
+    }
+
+    #[test]
+    fn one_untrusted_crate_stops_the_second_run_and_is_named() {
+        let owners = owners_of(&[("ctl-text", &["any-victor"]), ("serde", &["dtolnay"])]);
+        let decision = retry_decision(
+            &names(&["ctl-text", "serde"]),
+            &names(&["any-victor"]),
+            owners,
+        )
+        .unwrap();
+        let reason = reason(decision);
+        assert!(reason.contains("rejected ctl-text, serde"), "{reason}");
+        assert!(
+            reason.contains("serde have no owner in CARGO_TRUSTED_OWNERS"),
+            "{reason}"
+        );
+    }
+
+    /// The lookup here fails, so a decision that returns means it never ran.
+    #[test]
+    fn no_trusted_logins_means_no_lookup_and_no_second_run() {
+        let decision = retry_decision(&names(&["ctl-text"]), &[], owners_of(&[])).unwrap();
+        let reason = reason(decision);
+        assert!(reason.contains("CARGO_TRUSTED_OWNERS is unset"), "{reason}");
+    }
+
+    #[test]
+    fn a_failed_owners_lookup_is_an_error() {
+        let owners = owners_of(&[]);
+        let error =
+            retry_decision(&names(&["ctl-text"]), &names(&["any-victor"]), owners).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("owners lookup failed"),
+            "{error:#}"
+        );
     }
 }
