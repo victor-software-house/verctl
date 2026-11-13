@@ -27,3 +27,13 @@ A crate that the pull request removes or renames SHALL not be proven.
 
 - **WHEN** the default branch holds `demo-extra`, crates.io has none, and `verctl check registry` runs on any pull request
 - **THEN** it exits non-zero, names `demo-extra` as missing from crates.io, and names `verctl release bootstrap demo-extra` as the fix
+
+### Requirement: A new crate starts at the version `versioning` allows
+
+The `registry` check SHALL leave a new crate's version to the rule of the `versioning` delta in `first-publish`, which `check` applies.
+That rule allows `0.0.0` for a standalone package and the group's version for a shared-version member.
+
+#### Scenario: A new standalone crate past `0.0.0`
+
+- **WHEN** a pull request adds standalone package `demo-extra` at `0.3.0`, which neither the default branch nor crates.io holds, and `verctl check` runs
+- **THEN** it exits non-zero, because a never-published standalone package must be at `0.0.0`
