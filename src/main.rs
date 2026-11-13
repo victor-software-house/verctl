@@ -7,8 +7,8 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use ctl_core::prelude::*;
 use verctl::cli::{
-    AssetArgs, CheckArgs, CiArgs, Cli, Command, DocsArgs, ReleaseArgs, ReleaseStep, RenderArgs,
-    SemverArgs, StatusArgs, VersionArgs,
+    AssetArgs, Check, CheckArgs, CiArgs, Cli, Command, DocsArgs, ReleaseArgs, ReleaseStep,
+    RenderArgs, SemverArgs, StatusArgs, VersionArgs,
 };
 use verctl::config::{self, Config};
 use verctl::content::Inputs;
@@ -22,9 +22,10 @@ use verctl::{
 mod presentation;
 
 use presentation::{
-    AssetsReport, CheckReport, CiReport, DocsReport, InstructionsReport, PartialRow, ReleaseReport,
-    ReleaseRow, RenderReport, Report, SemverReport, StatusAssets, StatusFragment, StatusPackage,
-    StatusReport, Unchecked, VendoredReport, VersionBump, VersionCheckReport, VersionReport,
+    AssetsReport, CheckReport, CheckResult, CiReport, DocsReport, InstructionsReport, PartialRow,
+    ReleaseReport, ReleaseRow, RenderReport, Report, SemverReport, StatusAssets, StatusFragment,
+    StatusPackage, StatusReport, Unchecked, VendoredReport, VersionBump, VersionCheckReport,
+    VersionReport,
 };
 
 const INSTRUCTIONS: &str = include_str!("instructions.md");
@@ -40,7 +41,6 @@ fn execute(cli: Cli) -> Result<Report> {
     match cli.command {
         Command::Instructions => Ok(Report::Instructions(InstructionsReport::new(INSTRUCTIONS))),
         Command::Status(args) => status_report(&args).map(Report::Status),
-        Command::Check(args) if args.versions => versions_report(&args).map(Report::VersionCheck),
         Command::Check(args) => check_report(&args).map(Report::Check),
         Command::Version(args) => version_report(&args).map(Report::Version),
         Command::Release(args) => match &args.step {
@@ -54,7 +54,6 @@ fn execute(cli: Cli) -> Result<Report> {
         Command::Ci(args) => ci_report(&args).map(Report::Ci),
         Command::Docs(args) => docs_report(&args).map(Report::Docs),
         Command::Semver(args) => semver_report(&args).map(Report::Semver),
-        Command::Removed(removed) => match removed {},
     }
 }
 
@@ -75,26 +74,40 @@ fn docs_report(args: &DocsArgs) -> Result<DocsReport> {
     })
 }
 
-/// Fragments that parse and that `version` would accept. Every package they
-/// name is declared, and no bump in them is refused. The served files are
-/// checked too, whether or not a fragment is pending. A hand edit then fails
-/// here, before the next release overwrites it.
+/// Each check [`CheckArgs::selected`] names, in order. A check that cannot
+/// finish fails the run with its own error, and the checks after it do not
+/// run.
 fn check_report(args: &CheckArgs) -> Result<CheckReport> {
-    let fragments = fragment::load_dir(&args.dir)?;
     let config = Config::load(&args.config)?;
     let root = &config::root_of(&args.config);
+    let checks = args
+        .selected()
+        .into_iter()
+        .map(|check| match check {
+            Check::Fragments => check_fragments(args, &config, root),
+            Check::Served => check_served(root, &config).map(|()| CheckResult::Served),
+            Check::Versions => check_versions(args, &config, root).map(CheckResult::Versions),
+        })
+        .collect::<Result<_>>()?;
+    Ok(CheckReport { checks })
+}
+
+/// Fragments that parse and that `version` would accept. Every package they
+/// name is declared, and no bump in them is refused.
+fn check_fragments(args: &CheckArgs, config: &Config, root: &Path) -> Result<CheckResult> {
+    let fragments = fragment::load_dir(&args.dir)?;
     if !fragments.is_empty() {
-        prepare::plan(&config, &fragments, root)?;
+        prepare::plan(config, &fragments, root)?;
     }
-    check_served(root, &config)?;
-    Ok(CheckReport {
+    Ok(CheckResult::Fragments {
         ok: fragments.len(),
     })
 }
 
 /// Every template target and `pins` file that differs from what verctl would
 /// write at the versions the manifests hold. One error lists them all, so one
-/// run names every file to fix.
+/// run names every file to fix. It runs whether or not a fragment is pending,
+/// so a hand edit fails here before the next release overwrites it.
 fn check_served(root: &Path, config: &Config) -> Result<()> {
     let mut problems = Vec::new();
     if !config.pins.is_empty() {
@@ -129,11 +142,11 @@ fn check_served(root: &Path, config: &Config) -> Result<()> {
     );
 }
 
-fn versions_report(args: &CheckArgs) -> Result<VersionCheckReport> {
-    let root = &config::root_of(&args.config);
-    let config = Config::load(&args.config)?;
+/// Each declared manifest version against the merge-base of HEAD and the
+/// default branch.
+fn check_versions(args: &CheckArgs, config: &Config, root: &Path) -> Result<VersionCheckReport> {
     let inputs = Inputs::new(&args.config, &args.dir);
-    let report = versions::report(root, &config, &inputs)?;
+    let report = versions::report(root, config, &inputs)?;
     Ok(VersionCheckReport {
         skip: report.skip,
         rows: report.rows,

@@ -50,7 +50,7 @@ impl fmt::Display for BaseConfigFailed {
 /// The most keys a manifest difference names.
 const KEYS_NAMED: usize = 8;
 
-/// The files `check --versions` reads, as its command line names them.
+/// The files `check versions` reads, as its command line names them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Inputs {
     pub(crate) config: PathBuf,
@@ -126,7 +126,7 @@ pub fn check(
 
 /// Whether the working tree deletes a fragment that exists at `base`, as a
 /// Version PR does when it consumes one. A Version PR that bumps no version
-/// still consumes its fragments, so `check --versions` asks whether such a
+/// still consumes its fragments, so `check versions` asks whether such a
 /// pull request is the Version PR.
 ///
 /// # Errors

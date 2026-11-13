@@ -131,13 +131,20 @@ fn inherited(
     })
 }
 
-fn check_cmd(root: &Path) -> Command {
+/// `check` with `checks` named, in `root`, with no host Actions key.
+fn checks_cmd(root: &Path, checks: &[&str]) -> Command {
     let mut cmd = common::verctl();
     cmd.env_clear()
         .envs(inherited(env::vars_os()))
         .current_dir(root)
-        .args(["check", "--versions", "--color", "never"]);
+        .arg("check")
+        .args(checks)
+        .args(["--color", "never"]);
     cmd
+}
+
+fn check_cmd(root: &Path) -> Command {
+    checks_cmd(root, &["versions"])
 }
 
 #[test]
@@ -477,17 +484,22 @@ async fn pull_api(head_repo: &str, head_ref: &str, base_ref: &str) -> MockServer
     server
 }
 
-/// `check --versions` as the CI job of pull request 7 runs it, with the pull
+/// `check versions` as the CI job of pull request 7 runs it, with the pull
 /// request read from `server`. The payload claims a Version PR, which the
 /// check must not trust.
 fn pull_request_cmd(root: &Path, server: &MockServer) -> Command {
+    pull_request_checks_cmd(root, server, &["versions"])
+}
+
+/// `check` with `checks` named, as the CI job of pull request 7 runs it.
+fn pull_request_checks_cmd(root: &Path, server: &MockServer, checks: &[&str]) -> Command {
     let event = root.join("event.json");
     fs::write(
         &event,
         r#"{"pull_request":{"number":7,"labels":[{"name":"verctl:version"}],"head":{"ref":"verctl/release/main"},"base":{"ref":"main"}}}"#,
     )
     .unwrap();
-    let mut cmd = check_cmd(root);
+    let mut cmd = checks_cmd(root, checks);
     cmd.env("GITHUB_ACTIONS", "true")
         .env("GITHUB_EVENT_PATH", &event)
         .env("GITHUB_REPOSITORY", "owner/demo")
@@ -496,7 +508,7 @@ fn pull_request_cmd(root: &Path, server: &MockServer) -> Command {
     cmd
 }
 
-/// Whether `check --versions` passes for pull request 7 as `server` describes
+/// Whether `check versions` passes for pull request 7 as `server` describes
 /// it, with the changes of a Version PR.
 fn pull_request_passes(server: &MockServer) -> bool {
     let dir = version_pr();
@@ -509,6 +521,52 @@ fn pull_request_passes(server: &MockServer) -> bool {
         "{stdout}{stderr}"
     );
     output.status.success()
+}
+
+/// Bare `check` runs `fragments` and `served`, which need only the checkout.
+/// The CI job of a Version PR, whose `check versions` reads the pull request
+/// from the API, passes it with no request sent.
+#[tokio::test]
+async fn bare_check_sends_no_request() {
+    let server = MockServer::start().await;
+    let dir = version_pr();
+    let output = pull_request_checks_cmd(dir.path(), &server, &[])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{stdout}{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(stdout.contains("fragments  ok, 0 fragment(s)"), "{stdout}");
+    assert!(stdout.contains("   served  ok"), "{stdout}");
+    assert!(!stdout.contains("versions"), "{stdout}");
+    let requests = server.received_requests().await.expect("recorded");
+    assert!(requests.is_empty(), "{requests:?}");
+}
+
+/// Named checks run in their own order, each once, and the report lists each
+/// one that ran.
+#[test]
+fn the_report_lists_each_check_that_ran() {
+    let dir = repo_with_origin_main("1.0.0");
+    let output = checks_cmd(dir.path(), &["versions", "fragments", "versions"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{stdout}{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        stdout,
+        indoc! {"
+            fragments  ok, 0 fragment(s)
+             versions  match
+        "}
+    );
 }
 
 /// An ordinary pull request that changes no version reads no API, so it
@@ -748,7 +806,7 @@ fn old_version_packages_branch_is_not_exempt() {
     assert!(stderr.contains("1.0.1"), "{stderr}");
 }
 
-/// Run `check --versions` and return whether it passed, with its output.
+/// Run `check versions` and return whether it passed, with its output.
 fn run(mut cmd: Command) -> (bool, String) {
     let output = cmd.output().unwrap();
     let text = format!(

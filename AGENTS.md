@@ -135,7 +135,7 @@ Do not save them up for a release dump.
 Never hand-edit versions or CHANGELOG.  
 `version --pr` is the Version PR.
 
-`verctl check --versions` compares each manifest to the merge-base of HEAD and the default branch.  
+`verctl check versions` compares each manifest to the merge-base of HEAD and the default branch.  
 It exempts the Version PR in two places:
 
 - locally, on a `verctl/release/<base>` branch;

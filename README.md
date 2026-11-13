@@ -12,6 +12,7 @@ It is not `@changesets/cli`, not Knope, and not a forkctl verb.
 ```sh
 mise run ver status
 mise run ver check
+mise run ver check versions
 mise run ver version
 mise run ver version --pr
 mise run ver release
@@ -425,7 +426,7 @@ There is no local token setup.
 For a hand-written workflow, use these actions; most repositories call the reusable workflow instead.
 
 The Version PR comes from `verctl/release/<base>`, one per base branch.  
-`check --versions` fails it when it changes anything the version step does not write from the merge-base.  
+`check versions` fails it when it changes anything the version step does not write from the merge-base.  
 That covers a source file, a manifest key no pin names, and a lockfile entry other than a workspace version the plan moves.
 
 Any other pull request fails when it adds a CHANGELOG section for a version.  

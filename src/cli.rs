@@ -1,8 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use clap::builder::OsStringValueParser;
-use clap::error::ErrorKind;
-use clap::{Arg, ArgMatches, Args, FromArgMatches, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use ctl_core::{ColorLong, DryRunArgs, EnvPrefix, FormatArgs};
 
 /// Stack-agnostic version PRs from Changesets-format fragments.
@@ -37,7 +35,7 @@ pub enum Command {
     /// List pending fragments, the asset plan, and HEAD's incomplete
     /// releases. `--github-output` writes the release workflow's plan.
     Status(StatusArgs),
-    /// Validate fragments, or `--versions` against the default branch.
+    /// Run the named checks, or `fragments` and `served` when none is named.
     Check(CheckArgs),
     /// Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews.
     Version(VersionArgs),
@@ -53,81 +51,6 @@ pub enum Command {
     Docs(DocsArgs),
     /// Check the API of each crates.io crate whose next release is a patch.
     Semver(SemverArgs),
-    /// The hidden verbs `prepare`, `pin`, `publish`, and `assets`, which fail
-    /// and name their replacement.
-    #[command(flatten)]
-    Removed(Removed),
-}
-
-/// The verbs verctl 0.8.0 renamed, each paired with the command that
-/// replaced it.
-const REMOVED: [(&str, &str); 4] = [
-    ("prepare", "version"),
-    ("pin", "render"),
-    ("publish", "release"),
-    ("assets", "release asset"),
-];
-
-/// A renamed verb. Each one is hidden from help, and the usage spec marks it
-/// `hide`. It takes any arguments and fails the parse with a usage error. It
-/// then exits 2, reads no config, and names the command that replaced it.
-///
-/// The enum has no variants. No parse ever produces one, so a handler has
-/// nothing to run.
-///
-/// Not `#[non_exhaustive]`: the binary matches it with no arm, which that
-/// attribute would refuse from another crate.
-#[derive(Debug)]
-pub enum Removed {}
-
-impl Removed {
-    /// The hidden command for `old`. It takes every argument, so the failure
-    /// always names `new` and never an unexpected flag.
-    fn command(old: &'static str, new: &'static str) -> clap::Command {
-        clap::Command::new(old)
-            .hide(true)
-            .about(format!("Renamed to `{new}`."))
-            .arg(
-                Arg::new("ignored")
-                    .help("Ignored: the command fails before it reads them.")
-                    .num_args(0..)
-                    .trailing_var_arg(true)
-                    .allow_hyphen_values(true)
-                    .value_parser(OsStringValueParser::new())
-                    .hide(true),
-            )
-    }
-}
-
-impl FromArgMatches for Removed {
-    fn from_arg_matches(matches: &ArgMatches) -> Result<Self, clap::Error> {
-        let name = matches.subcommand_name().unwrap_or_default();
-        Err(match REMOVED.iter().find(|(old, _)| *old == name) {
-            Some((old, new)) => clap::Error::raw(
-                ErrorKind::InvalidSubcommand,
-                format!("{old} is now {new}: run verctl {new}"),
-            ),
-            None => clap::Error::new(ErrorKind::MissingSubcommand),
-        })
-    }
-
-    fn update_from_arg_matches(&mut self, _: &ArgMatches) -> Result<(), clap::Error> {
-        match *self {}
-    }
-}
-
-impl Subcommand for Removed {
-    fn augment_subcommands(command: clap::Command) -> clap::Command {
-        command.subcommands(REMOVED.map(|(old, new)| Self::command(old, new)))
-    }
-
-    fn augment_subcommands_for_update(command: clap::Command) -> clap::Command {
-        Self::augment_subcommands(command)
-    }
-
-    fn has_subcommand(name: &str) -> bool {
-        REMOVED.iter().any(|(old, _)| *old == name)
-    }
 }
 
 /// Arguments of `semver`.
@@ -177,10 +100,6 @@ pub struct ReleaseArgs {
     /// The shared `--dry-run` flag.
     #[command(flatten)]
     pub dry: DryRunArgs,
-    /// Moved to `verctl status --github-output`. Hidden; setting it, or
-    /// `VERCTL_PLAN`, fails the parse and names the replacement.
-    #[arg(long, hide = true, value_parser = moved_plan)]
-    pub plan: bool,
     /// Leave declared assets out of the completeness check, for a workflow
     /// that builds none.
     #[arg(long)]
@@ -217,18 +136,6 @@ pub struct ReleaseArgs {
     /// `release asset <target>`. Without it, `release` publishes.
     #[command(subcommand)]
     pub step: Option<ReleaseStep>,
-}
-
-/// The value parser of the hidden `release --plan`. `status --github-output`
-/// writes the plan. Any value other than `false` fails the parse with a usage
-/// error that names the replacement, and exits 2 as a renamed verb does.
-fn moved_plan(value: &str) -> Result<bool, String> {
-    match value {
-        "false" => Ok(false),
-        _ => Err(
-            "--plan is now status --github-output: run verctl status --github-output".to_owned(),
-        ),
-    }
 }
 
 /// The value parser of `--registry-token-env`: a variable name as POSIX
@@ -392,9 +299,53 @@ pub struct CheckArgs {
     /// Package map. The fragments are planned against it as `version` would.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
     pub config: PathBuf,
-    /// Fail when a declared manifest version differs from the default branch.
-    #[arg(long)]
-    pub versions: bool,
+    /// The checks to run. With none, `check` runs `fragments` and `served`,
+    /// which need only the checkout.
+    #[arg(value_name = "CHECK")]
+    pub checks: Vec<Check>,
+    /// Run every check. Any check named beside it runs once, with the rest.
+    #[arg(short = 'a', long)]
+    pub all: bool,
+}
+
+impl CheckArgs {
+    /// The checks this run makes, each once, in the order [`Check`] declares
+    /// them, whatever order the command line names them in.
+    #[must_use]
+    pub fn selected(&self) -> Vec<Check> {
+        let named: &[Check] = if self.checks.is_empty() {
+            &Check::DEFAULT
+        } else {
+            &self.checks
+        };
+        Check::value_variants()
+            .iter()
+            .copied()
+            .filter(|check| self.all || named.contains(check))
+            .collect()
+    }
+}
+
+/// A check `check` runs by name, as `cargo deny check` runs its named checks.
+/// Names add up and never overlap.
+///
+/// Not `#[non_exhaustive]`: the binary matches every check, so a new one
+/// fails its build until it runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum Check {
+    /// Every pending fragment parses, and `version` would accept it.
+    Fragments,
+    /// Every served file and pin matches what `render` writes.
+    Served,
+    /// Each declared manifest version matches the default branch, outside the
+    /// Version PR.
+    Versions,
+}
+
+impl Check {
+    /// The checks a bare `check` runs: both need only the checkout, with no
+    /// network and no token.
+    pub const DEFAULT: [Self; 2] = [Self::Fragments, Self::Served];
 }
 
 /// Arguments of `version`.
@@ -442,7 +393,7 @@ mod tests {
     use clap::{CommandFactory, FromArgMatches};
     use ctl_core::flags;
 
-    use super::{Cli, Command};
+    use super::{Check, Cli, Command};
 
     /// Parse as `App` does: variables the command line overrules are unbound
     /// first, so an ambient `VERCTL_*` cannot change what a test asserts.
@@ -493,13 +444,55 @@ mod tests {
         assert!(version_from(&["--no-pr", "--pr"]).open_pr());
     }
 
+    fn checks_from(args: &[&str]) -> Vec<Check> {
+        let mut words = vec!["verctl", "check"];
+        words.extend_from_slice(args);
+        match parse(&words).expect("parse") {
+            Cli {
+                command: Command::Check(args),
+                ..
+            } => args.selected(),
+            _ => panic!("expected check"),
+        }
+    }
+
+    /// Bare `check` runs the offline checks. Names run once each, in the
+    /// order `Check` declares them, and `--all` runs every check.
     #[test]
-    fn check_versions_flag_parses() {
-        let cli = parse(&["verctl", "check", "--versions"]).expect("parse");
-        let Command::Check(args) = cli.command else {
-            panic!("expected check");
-        };
-        assert!(args.versions);
+    fn check_runs_the_checks_it_names() {
+        assert_eq!(checks_from(&[]), [Check::Fragments, Check::Served]);
+        assert_eq!(
+            checks_from(&["versions", "served"]),
+            [Check::Served, Check::Versions]
+        );
+        assert_eq!(checks_from(&["versions", "versions"]), [Check::Versions]);
+        let every = [Check::Fragments, Check::Served, Check::Versions];
+        assert_eq!(checks_from(&["--all"]), every);
+        assert_eq!(checks_from(&["-a"]), every);
+        assert_eq!(checks_from(&["-a", "versions"]), every);
+    }
+
+    /// An unknown name fails the parse and lists the known ones.
+    #[test]
+    fn an_unknown_check_lists_the_known_names() {
+        let error = parse(&["verctl", "check", "release"]).expect_err("release is no check");
+        assert_eq!(error.kind(), ErrorKind::InvalidValue);
+        assert_eq!(error.exit_code(), 2);
+        assert!(
+            error
+                .to_string()
+                .contains("[possible values: fragments, served, versions]"),
+            "{error}"
+        );
+    }
+
+    /// `check --versions` is gone, with no hidden flag: `check versions`
+    /// replaced it.
+    #[test]
+    fn check_takes_no_versions_flag() {
+        let error = parse(&["verctl", "check", "--versions"]).expect_err("--versions is gone");
+        assert_eq!(error.kind(), ErrorKind::UnknownArgument);
+        assert_eq!(error.exit_code(), 2);
     }
 
     #[test]
@@ -522,69 +515,40 @@ mod tests {
         }
     }
 
-    /// A renamed verb takes any arguments and fails the parse as a usage
-    /// error that names its replacement.
+    /// The verbs 0.8.0 renamed, and `release --plan`, are unknown: verctl
+    /// keeps no hidden command or flag for an old name.
     #[test]
-    fn removed_verbs_name_their_replacement() {
-        for (words, message) in [
+    fn the_renamed_verbs_and_release_plan_are_unknown() {
+        for (words, kind) in [
             (
                 ["verctl", "publish", "--dry-run"].as_slice(),
-                "publish is now release: run verctl release",
+                ErrorKind::InvalidSubcommand,
             ),
             (
-                ["verctl", "assets", "--build", "linux-x64", "--upload"].as_slice(),
-                "assets is now release asset: run verctl release asset",
+                ["verctl", "assets", "--build", "linux-x64"].as_slice(),
+                ErrorKind::InvalidSubcommand,
             ),
             (
                 ["verctl", "prepare", "--pr"].as_slice(),
-                "prepare is now version: run verctl version",
+                ErrorKind::InvalidSubcommand,
             ),
             (
                 ["verctl", "pin", "--dry-run"].as_slice(),
-                "pin is now render: run verctl render",
+                ErrorKind::InvalidSubcommand,
             ),
             (
-                ["verctl", "--format", "json", "pin"].as_slice(),
-                "pin is now render: run verctl render",
+                ["verctl", "release", "--plan"].as_slice(),
+                ErrorKind::UnknownArgument,
             ),
         ] {
-            let error = parse(words).expect_err("a removed verb must not parse");
-            assert_eq!(error.kind(), ErrorKind::InvalidSubcommand, "{words:?}");
+            let error = parse(words).expect_err("an old name must not parse");
+            assert_eq!(error.kind(), kind, "{words:?}");
             assert_eq!(error.exit_code(), 2, "{words:?}");
-            assert!(error.to_string().contains(message), "{words:?}: {error}");
         }
-    }
-
-    #[test]
-    fn removed_verbs_are_hidden() {
         let command = Cli::command();
         for name in ["prepare", "pin", "publish", "assets"] {
-            let removed = command
-                .find_subcommand(name)
-                .unwrap_or_else(|| panic!("{name}"));
-            assert!(removed.is_hide_set(), "{name}");
+            assert!(command.find_subcommand(name).is_none(), "{name}");
         }
-    }
-
-    /// `release --plan` moved to `status --github-output`. The flag is
-    /// hidden, and setting it fails as a usage error that names the move.
-    #[test]
-    fn release_plan_names_status_github_output() {
-        let error = parse(&["verctl", "release", "--plan"]).expect_err("--plan must not parse");
-        assert_eq!(error.exit_code(), 2);
-        assert!(
-            error.to_string().contains(
-                "--plan is now status --github-output: run verctl status --github-output"
-            ),
-            "{error}"
-        );
-        let command = Cli::command();
-        let release = command.find_subcommand("release").expect("release");
-        let plan = release
-            .get_arguments()
-            .find(|arg| arg.get_id() == "plan")
-            .expect("plan");
-        assert!(plan.is_hide_set());
         assert!(parse(&["verctl", "release", "--dry-run"]).is_ok());
     }
 

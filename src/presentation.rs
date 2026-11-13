@@ -7,7 +7,6 @@ use verctl::{assets, ci, docsrs, publish, semver_check, stop, versions};
 pub(super) enum Report {
     Instructions(InstructionsReport),
     Check(CheckReport),
-    VersionCheck(VersionCheckReport),
     Status(StatusReport),
     Version(VersionReport),
     Release(ReleaseReport),
@@ -24,7 +23,6 @@ impl Present for Report {
         match self {
             Self::Instructions(report) => report.present(),
             Self::Check(report) => report.present(),
-            Self::VersionCheck(report) => report.present(),
             Self::Status(report) => report.present(),
             Self::Version(report) => report.present(),
             Self::Release(report) => report.present(),
@@ -39,9 +37,8 @@ impl Present for Report {
 
     fn outcome(&self) -> Outcome {
         match self {
-            Self::VersionCheck(report) => report.outcome(),
+            Self::Check(report) => report.outcome(),
             Self::Instructions(_)
-            | Self::Check(_)
             | Self::Status(_)
             | Self::Version(_)
             | Self::Release(_)
@@ -136,15 +133,64 @@ impl Present for InstructionsReport {
     }
 }
 
+/// What `check` found: one result per check that ran, in the order
+/// `cli::Check` declares them.
 #[derive(Serialize)]
 pub(super) struct CheckReport {
-    pub(super) ok: usize,
+    pub(super) checks: Vec<CheckResult>,
+}
+
+/// The result of one check that finished. A check that cannot finish fails
+/// the run with its own error, so it has no result here.
+#[derive(Serialize)]
+#[serde(tag = "check", rename_all = "kebab-case")]
+pub(super) enum CheckResult {
+    /// Every pending fragment parses, and `version` would accept it.
+    Fragments {
+        /// How many fragments are pending.
+        ok: usize,
+    },
+    /// Every served file and pin matches what `render` writes.
+    Served,
+    /// The manifests' versions against the default branch.
+    Versions(VersionCheckReport),
 }
 
 impl Present for CheckReport {
+    /// One row per check, then the drifted versions and the notices of the
+    /// `versions` check.
     fn present(&self) -> Document {
-        Document::new()
-            .fields(Fields::new().row("ok", format!("{count} fragment(s)", count = self.ok)))
+        let mut fields = Fields::new();
+        let mut versions = None;
+        for check in &self.checks {
+            fields = match check {
+                CheckResult::Fragments { ok } => {
+                    fields.row("fragments", format!("ok, {ok} fragment(s)"))
+                }
+                CheckResult::Served => fields.row("served", "ok"),
+                CheckResult::Versions(report) => {
+                    versions = Some(report);
+                    fields.row("versions", report.summary())
+                }
+            };
+        }
+        let document = Document::new().fields(fields);
+        match versions {
+            Some(report) => report.details(document),
+            None => document,
+        }
+    }
+
+    fn outcome(&self) -> Outcome {
+        let drifted = self.checks.iter().any(|check| match check {
+            CheckResult::Versions(report) => !report.drifted().is_empty(),
+            CheckResult::Fragments { .. } | CheckResult::Served => false,
+        });
+        if drifted {
+            Outcome::Error
+        } else {
+            Outcome::Success
+        }
     }
 }
 
@@ -181,16 +227,23 @@ impl VersionCheckReport {
     }
 }
 
-impl Present for VersionCheckReport {
-    fn present(&self) -> Document {
-        if let Some(skip) = &self.skip {
-            return self
-                .with_notices(Document::new().fields(Fields::new().row("exempt", skip.clone())));
+impl VersionCheckReport {
+    /// The one-line result: why the comparison was skipped, `match`, or
+    /// `differ`.
+    fn summary(&self) -> String {
+        match &self.skip {
+            Some(skip) => format!("exempt, {skip}"),
+            None if self.drifted().is_empty() => "match".to_owned(),
+            None => "differ".to_owned(),
         }
+    }
+
+    /// `document` with the drifted versions, one warning per skipped rule,
+    /// and the error that names each drifted package.
+    fn details(&self, document: Document) -> Document {
         let drifted = self.drifted();
-        if drifted.is_empty() {
-            return self
-                .with_notices(Document::new().fields(Fields::new().row("versions", "match")));
+        if self.skip.is_some() || drifted.is_empty() {
+            return self.with_notices(document);
         }
         let table = drifted.iter().fold(
             Table::new(["name", "default", "local"]).id_column(0),
@@ -202,19 +255,11 @@ impl Present for VersionCheckReport {
                 ])
             },
         );
-        let document = self.with_notices(Document::new().table(table));
+        let document = self.with_notices(document.table(table));
         if let Some(message) = self.failure() {
             document.notice(Notice::new(NoticeLevel::Error, message))
         } else {
             document
-        }
-    }
-
-    fn outcome(&self) -> Outcome {
-        if self.drifted().is_empty() {
-            Outcome::Success
-        } else {
-            Outcome::Error
         }
     }
 }
@@ -735,13 +780,13 @@ impl Present for CiReport {
 
 #[cfg(test)]
 mod tests {
-    use ctl_core::prelude::{ColorMode, Destination, OutputFormat, View};
+    use ctl_core::prelude::{ColorMode, Destination, Outcome, OutputFormat, Present, View};
     use indoc::formatdoc;
-    use verctl::{publish, stop};
+    use verctl::{publish, stop, versions};
 
     use super::{
-        CheckReport, PartialRow, ReleaseReport, ReleaseRow, Report, StatusFragment, StatusPackage,
-        StatusReport, Unchecked, VersionReport,
+        CheckReport, CheckResult, PartialRow, ReleaseReport, ReleaseRow, Report, StatusFragment,
+        StatusPackage, StatusReport, Unchecked, VersionCheckReport, VersionReport,
     };
 
     fn release_report(outcome: publish::Outcome) -> Report {
@@ -815,9 +860,20 @@ mod tests {
         assert_eq!(value["outcome"], "nothing-to-release");
     }
 
+    /// The report lists each check that ran, in both shapes.
     #[test]
-    fn check_report_keeps_pretty_and_json_shapes() {
-        let report = Report::Check(CheckReport { ok: 2 });
+    fn check_report_lists_each_check_that_ran() {
+        let report = Report::Check(CheckReport {
+            checks: vec![
+                CheckResult::Fragments { ok: 2 },
+                CheckResult::Served,
+                CheckResult::Versions(VersionCheckReport {
+                    skip: None,
+                    rows: Vec::new(),
+                    notices: Vec::new(),
+                }),
+            ],
+        });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
             .width(80)
             .capture(&report)
@@ -826,7 +882,9 @@ mod tests {
         assert_eq!(
             pretty.text(),
             formatdoc! {"
-                ok  2 fragment(s)
+                fragments  ok, 2 fragment(s)
+                   served  ok
+                 versions  match
             "},
         );
 
@@ -836,9 +894,47 @@ mod tests {
         assert_eq!(json.stream(), Destination::Stdout);
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(json.text()).expect("JSON"),
-            serde_json::json!({ "ok": 2 })
+            serde_json::json!({
+                "checks": [
+                    { "check": "fragments", "ok": 2 },
+                    { "check": "served" },
+                    { "check": "versions", "skip": null, "rows": [] },
+                ]
+            })
         );
         assert!(!json.text().contains('\u{1b}'));
+    }
+
+    /// A drifted version fails the run, keeps its table and its error, and
+    /// still lists the checks that passed.
+    #[test]
+    fn a_drifted_version_fails_the_check_report() {
+        let report = Report::Check(CheckReport {
+            checks: vec![
+                CheckResult::Served,
+                CheckResult::Versions(VersionCheckReport {
+                    skip: None,
+                    rows: vec![versions::VersionRow {
+                        name: "demo".into(),
+                        path: "Cargo.toml".into(),
+                        local: "1.0.1".into(),
+                        remote: Some("1.0.0".into()),
+                        released: Some("1.0.0".into()),
+                    }],
+                    notices: Vec::new(),
+                }),
+            ],
+        });
+        assert_eq!(report.outcome(), Outcome::Error);
+        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+            .width(120)
+            .capture(&report)
+            .expect("pretty report");
+        assert_eq!(pretty.stream(), Destination::Stderr);
+        let text = pretty.text();
+        assert!(text.contains("  served  ok"), "{text}");
+        assert!(text.contains("versions  differ"), "{text}");
+        assert!(text.contains("demo 1.0.0 -> 1.0.1"), "{text}");
     }
 
     #[test]
