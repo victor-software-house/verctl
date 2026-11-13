@@ -33,7 +33,7 @@ use crate::github::{self, ReleaseState};
 use crate::publish::{self, PublishEntry};
 use crate::registry::RegistryCheck;
 use crate::registry_token::RegistryToken;
-use crate::{bump, publisher};
+use crate::{bump, publisher, stop};
 
 /// The incomplete releases of the versions HEAD holds, and the assets missing
 /// from them.
@@ -47,6 +47,29 @@ pub struct Pending {
     /// Published Releases that are immutable and lack declared assets. They
     /// count complete, and no asset job is planned for them.
     pub shortfalls: Vec<Shortfall>,
+    /// Releases whose registries list some, but not all, of their uploads.
+    pub partials: Vec<Partial>,
+}
+
+/// A release whose registries list some, but not all, of the uploads that
+/// have a registry check, such as a run that crates.io stopped with a 429
+/// partway through.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Partial {
+    /// The release tag.
+    pub tag: String,
+    /// The uploads with a registry check that their registry lists.
+    pub live: usize,
+    /// Every upload with a registry check under the tag's packages. A
+    /// workspace package counts each member.
+    pub total: usize,
+    /// What they are, plural: the publisher's noun when every package under
+    /// the tag shares it, such as `crates`, and `packages` otherwise.
+    pub noun: String,
+    /// The stop record of the tag's draft, as the last run that failed an
+    /// upload wrote it. Display only.
+    pub stop: stop::Record,
 }
 
 /// A published, immutable Release that lacks declared assets.
@@ -227,6 +250,7 @@ pub fn pending(
     let env = env.as_slice();
     let mut states = Vec::new();
     let mut releases: BTreeMap<String, ReleaseState> = BTreeMap::new();
+    let mut counts: BTreeMap<String, Count> = BTreeMap::new();
     for (index, (spec, entry)) in config.packages.iter().zip(&planned.packages).enumerate() {
         if bump::unreleased(&entry.version) {
             continue;
@@ -260,7 +284,12 @@ pub fn pending(
             sha: head.clone(),
             depth: 0,
         };
-        let listed = registry_lists(config, root, spec, entry, release, env)?;
+        let listing = registry_lists(config, root, spec, entry, release, env)?;
+        counts
+            .entry(tag.clone())
+            .or_default()
+            .add(&listing, &entry.noun);
+        let listed = listing.listed;
         let head_targets: &[MatrixTarget] = if index == 0 { &targets } else { &[] };
         let declared = checked_targets(head_targets, &release.assets, || {
             declared_at(root, config_path, &release_commit)
@@ -274,7 +303,64 @@ pub fn pending(
             &assets_tag,
         ));
     }
-    Ok(group(states))
+    let partials = counts
+        .into_iter()
+        .filter_map(|(tag, count)| {
+            let stop = releases.get(&tag).map(|release| release.stop.clone())?;
+            count.partial(tag, stop)
+        })
+        .collect();
+    Ok(Pending {
+        partials,
+        ..group(states)
+    })
+}
+
+/// The uploads with a registry check under one tag, and how many are live.
+#[derive(Default)]
+struct Count {
+    live: usize,
+    total: usize,
+    nouns: Vec<String>,
+}
+
+impl Count {
+    /// Add one package's `listing`, whose publisher calls it `noun`.
+    fn add(&mut self, listing: &Listing, noun: &str) {
+        if listing.checked == 0 {
+            return;
+        }
+        self.live += listing.live;
+        self.total += listing.checked;
+        if !self.nouns.iter().any(|known| known == noun) {
+            self.nouns.push(noun.to_owned());
+        }
+    }
+
+    /// The partial release of `tag`, when some but not all uploads are live.
+    fn partial(self, tag: String, stop: stop::Record) -> Option<Partial> {
+        let noun = match self.nouns.as_slice() {
+            [one] => format!("{one}s"),
+            _ => "packages".to_owned(),
+        };
+        (self.live > 0 && self.live < self.total).then_some(Partial {
+            tag,
+            live: self.live,
+            total: self.total,
+            noun,
+            stop,
+        })
+    }
+}
+
+/// What the registry lists of one package's uploads.
+struct Listing {
+    /// Every upload is listed, or counts as listed.
+    listed: bool,
+    /// The uploads with a registry check.
+    checked: usize,
+    /// The uploads with a registry check that the registry lists.
+    live: usize,
 }
 
 /// The asset targets a release is checked for. HEAD declares `targets`, and
@@ -388,7 +474,8 @@ fn tag_of(planned: &publish::PublishPlan, entry: &PublishEntry) -> Result<String
 }
 
 /// Whether the registry has `entry`'s version: for a workspace package, every
-/// member's.
+/// member's. Every upload with a registry check is asked, so a partial
+/// release can count what is live.
 ///
 /// A package with no registry counts as listed. An upload with no check
 /// counts as listed once its tag or its published Release exists: `release`
@@ -404,9 +491,14 @@ fn registry_lists(
     entry: &PublishEntry,
     release: &ReleaseState,
     env: &[(&str, &str)],
-) -> Result<bool> {
+) -> Result<Listing> {
+    let mut listing = Listing {
+        listed: true,
+        checked: 0,
+        live: 0,
+    };
     if entry.argv.is_empty() {
-        return Ok(true);
+        return Ok(listing);
     }
     for upload in publisher::uploads(config, spec, root, entry)? {
         let listed = match &upload.check {
@@ -414,14 +506,15 @@ fn registry_lists(
                 release.tag.is_some() || (release.release && !release.draft)
             }
             check @ (RegistryCheck::CratesIo { .. } | RegistryCheck::Query { .. }) => {
-                check.lists(&upload.version, env)?
+                listing.checked += 1;
+                let live = check.lists(&upload.version, env)?;
+                listing.live += usize::from(live);
+                live
             }
         };
-        if !listed {
-            return Ok(false);
-        }
+        listing.listed &= listed;
     }
-    Ok(true)
+    Ok(listing)
 }
 
 /// One package's state at its release commit.
@@ -584,14 +677,15 @@ mod tests {
     use indoc::indoc;
 
     use super::{
-        DeclaredTargets, PackageState, Pending, PendingAsset, PendingPackage, Shortfall,
-        checked_targets, group, state_of, write_github_output,
+        Count, DeclaredTargets, Listing, PackageState, Pending, PendingAsset, PendingPackage,
+        Shortfall, checked_targets, group, state_of, write_github_output,
     };
     use crate::assets::MatrixTarget;
     use crate::config::{Assets, Config};
     use crate::git::VersionCommit;
     use crate::github::ReleaseState;
     use crate::publish::PublishEntry;
+    use crate::stop::Record;
 
     fn entry(name: &str, version: &str) -> PublishEntry {
         PublishEntry {
@@ -629,6 +723,7 @@ mod tests {
             draft: false,
             immutable: false,
             assets: assets.iter().map(|name| (*name).to_owned()).collect(),
+            stop: Record::Absent,
         }
     }
 
@@ -655,6 +750,50 @@ mod tests {
             &[],
             "v0.4.6",
         )
+    }
+
+    fn listing(checked: usize, live: usize) -> Listing {
+        Listing {
+            listed: live == checked,
+            checked,
+            live,
+        }
+    }
+
+    /// One crate of three live is partial, and every upload's noun names
+    /// them.
+    #[test]
+    fn some_crates_live_is_a_partial_release() {
+        let mut count = Count::default();
+        count.add(&listing(1, 1), "crate");
+        count.add(&listing(1, 0), "crate");
+        count.add(&listing(1, 0), "crate");
+        let partial = count.partial("v0.4.0".into(), Record::Unreadable).unwrap();
+        assert_eq!((partial.live, partial.total), (1, 3));
+        assert_eq!(partial.noun, "crates");
+        assert_eq!(partial.stop, Record::Unreadable);
+    }
+
+    /// A workspace counts each member, a package with no registry check
+    /// counts for nothing, and mixed nouns read as packages.
+    #[test]
+    fn members_count_and_mixed_nouns_are_packages() {
+        let mut count = Count::default();
+        count.add(&listing(2, 2), "crate");
+        count.add(&listing(0, 0), "release");
+        count.add(&listing(1, 0), "package");
+        let partial = count.partial("v1.0.0".into(), Record::Absent).unwrap();
+        assert_eq!((partial.live, partial.total), (2, 3));
+        assert_eq!(partial.noun, "packages");
+    }
+
+    #[test]
+    fn none_or_every_upload_live_is_not_partial() {
+        for live in [0, 2] {
+            let mut count = Count::default();
+            count.add(&listing(2, live), "crate");
+            assert!(count.partial("v1.0.0".into(), Record::Absent).is_none());
+        }
     }
 
     /// Two packages whose versions different commits set are one entry of the

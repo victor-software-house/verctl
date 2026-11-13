@@ -374,6 +374,7 @@ A caller grants `contents: write` to the whole called workflow.
 
 Every Release starts as a draft with no tag, and the tag appears only when the draft is published, after every registry upload.  
 So a failed upload leaves no tag, and a rerun resumes: the registries skip every version they list, and the draft keeps its tarballs.  
+`status` reports such a release as partially published, with the cause the failed run recorded in the draft.  
 The tarballs go on the draft first, so it works with GitHub immutable Releases, which take no asset once published.  
 `--skip-assets` declares no asset, and publishes a draft found without its assets.  
 A hand-written workflow builds each tarball with `actions/asset`, hands them to its release job, and runs `actions/publish` there with `assets-dir`.

@@ -708,7 +708,8 @@ async fn a_release_drafts_uploads_publishes_then_tags() {
 }
 
 /// crates.io's 429 on the second crate stops the run with the draft holding
-/// its asset: the draft is never published and no tag is created.
+/// its asset: the draft is never published and no tag is created. The only
+/// update writes the stop record into the draft's notes.
 #[tokio::test]
 async fn a_rate_limit_on_the_second_crate_leaves_the_draft_and_no_tag() {
     let root = TempDir::new().unwrap();
@@ -743,12 +744,36 @@ async fn a_rate_limit_on_the_second_crate_leaves_the_draft_and_no_tag() {
     );
     assert!(sent(&seen, "GET", "/__upload/app"), "{seen:?}");
     assert!(
-        !sent(&seen, "PATCH", "/repos/acme/demo/releases"),
-        "{seen:?}"
-    );
-    assert!(
         !sent(&seen, "POST", "/repos/acme/demo/git/refs"),
         "{seen:?}"
+    );
+    let updates: Vec<serde_json::Value> = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|request| request.method.as_str() == "PATCH")
+        .map(|request| serde_json::from_slice(&request.body).unwrap())
+        .collect();
+    let [update] = updates.as_slice() else {
+        panic!("one PATCH, the stop record: {updates:?}");
+    };
+    assert!(update.get("draft").is_none(), "{update}");
+    let body = update["body"].as_str().unwrap();
+    let record = body
+        .lines()
+        .find_map(|line| line.strip_prefix("<!-- verctl:stop "))
+        .and_then(|rest| rest.strip_suffix(" -->"))
+        .unwrap_or_else(|| panic!("no stop record in {body}"));
+    let record: serde_json::Value = serde_json::from_str(record).unwrap();
+    assert_eq!(
+        record,
+        serde_json::json!({
+            "package": "app",
+            "version": "0.4.0",
+            "cause": "429 Too Many Requests",
+            "retry_after": "Fri, 13 Nov 2026 19:00:00 GMT"
+        })
     );
 }
 

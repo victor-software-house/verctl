@@ -5,6 +5,8 @@
 //! How tags are named comes from `[tags].template`; see [`tags_for`].
 
 use std::collections::BTreeMap;
+use std::error::Error;
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -16,7 +18,7 @@ use crate::config::{Config, NAME_PLACEHOLDER, PackageSpec};
 use crate::publisher::Upload;
 use crate::registry::{self, RegistryCheck};
 use crate::registry_token::RegistryToken;
-use crate::{assets, bump, git, github, pending, process, publisher, release};
+use crate::{assets, bump, git, github, pending, process, publisher, release, stop};
 
 /// How long one package upload may run.
 pub const PUBLISH_TIMEOUT: Duration = Duration::from_mins(10);
@@ -366,10 +368,11 @@ pub fn run_pending(
             github::upload_release_asset(&token, &repo, carrier, file)?;
         }
     }
-    let packages = already
-        .into_iter()
-        .chain(run_uploads(uploads, registry_token)?)
-        .collect();
+    let lines = match run_uploads(uploads, registry_token) {
+        Ok(lines) => lines,
+        Err(stopped) => return Err(record_stop(&token, &repo, &tags, &drafts, stopped)),
+    };
+    let packages = already.into_iter().chain(lines).collect();
     let mut releases = Vec::with_capacity(tags.len());
     for (tag, opened) in tags.iter().zip(drafts) {
         releases.push(tag.publish(&token, &repo, &head, &declared, opened)?);
@@ -455,11 +458,25 @@ fn listed(here: &pending::PendingCommit, name: &str) -> bool {
         .any(|package| package.name == name && package.listed)
 }
 
-/// Run every upload, and return each package's line.
+/// An upload that failed: the package it belongs to, the stop its draft
+/// records, and the error the run returns.
+struct Stopped {
+    /// The package under whose tag the draft is.
+    package: String,
+    stop: Box<stop::Stop>,
+    error: anyhow::Error,
+}
+
+/// Run every upload, and return each package's line, or the first upload that
+/// failed.
+///
+/// A registry rate limit is recorded as its status with the time the
+/// registry gave for the next attempt. Any other failure is recorded as the
+/// first line of its error.
 fn run_uploads(
     uploads: Vec<(&PublishEntry, Vec<Upload>)>,
     registry_token: Option<&RegistryToken>,
-) -> Result<Vec<PublishLine>> {
+) -> Result<Vec<PublishLine>, Stopped> {
     let mut packages = Vec::new();
     for (entry, uploads) in uploads {
         if entry.argv.is_empty() {
@@ -467,7 +484,26 @@ fn run_uploads(
             continue;
         }
         for upload in uploads {
-            let note = publish_checked(&upload, registry_token, &registry::LISTING_DELAYS)?;
+            let note = publish_checked(&upload, registry_token, &registry::LISTING_DELAYS)
+                .map_err(|error| {
+                    let stop = if let Some(limited) = error.downcast_ref::<RateLimited>() {
+                        stop::Stop::new(
+                            &upload.name,
+                            &upload.version,
+                            RATE_LIMIT,
+                            limited.limit.retry_after.clone(),
+                        )
+                    } else {
+                        let message = format!("{error:#}");
+                        let cause = message.lines().next().unwrap_or_default();
+                        stop::Stop::new(&upload.name, &upload.version, cause, None)
+                    };
+                    Stopped {
+                        package: entry.name.clone(),
+                        stop: Box::new(stop),
+                        error,
+                    }
+                })?;
             packages.push(PublishLine {
                 name: upload.name,
                 version: upload.version,
@@ -477,6 +513,36 @@ fn run_uploads(
         }
     }
     Ok(packages)
+}
+
+/// `stopped`'s error, after its stop is written into the draft of its
+/// package's tag, so `status` can name the cause.
+/// A Release published before the run has no draft and gets no record.
+/// A failure to write the record joins the error's context and never hides
+/// the upload's error.
+fn record_stop(
+    token: &str,
+    repo: &github::Repo,
+    tags: &[TagRelease<'_>],
+    drafts: &[Held],
+    stopped: Stopped,
+) -> anyhow::Error {
+    let Some((tag, Held::Draft(id))) = tags.iter().zip(drafts).find(|(tag, _)| {
+        tag.plan
+            .packages
+            .iter()
+            .any(|entry| entry.name == stopped.package)
+    }) else {
+        return stopped.error;
+    };
+    let written = stop::write(&tag.notes, &stopped.stop)
+        .and_then(|body| github::write_draft_body(token, repo, &tag.plan.tag, *id, &body));
+    match written {
+        Ok(()) => stopped.error,
+        Err(failed) => stopped
+            .error
+            .context(format!("the upload failed, and {failed:#}")),
+    }
 }
 
 /// The tag that carries the declared assets, and their file names.
@@ -795,15 +861,53 @@ fn publish_checked(
         return Ok(already());
     }
     if let Some(limit) = rate_limited(&message) {
-        bail!(
-            "{coord}: the registry's rate limit stopped the upload ({limit}). No tag exists until the draft Release is published, after the last upload. Rerun release then: it skips every crate the registry already lists."
-        );
+        return Err(RateLimited { coord, limit }.into());
     }
     Err(error).context(coord)
 }
 
+/// The cause a stop record gives for a registry rate limit.
+const RATE_LIMIT: &str = "429 Too Many Requests";
+
 /// What a registry reported when it refused an upload for its rate limit.
-/// That is the time it gives after "try again after", or the status alone.
+#[derive(Debug)]
+struct RateLimit {
+    /// The time it gave after "try again after", or `None` when it gave the
+    /// status alone.
+    retry_after: Option<String>,
+}
+
+impl fmt::Display for RateLimit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.retry_after {
+            Some(time) => write!(f, "try again after {time}"),
+            None => f.write_str(RATE_LIMIT),
+        }
+    }
+}
+
+/// An upload the registry's rate limit stopped.
+#[derive(Debug)]
+struct RateLimited {
+    /// The package and version, as `name@version`.
+    coord: String,
+    limit: RateLimit,
+}
+
+impl fmt::Display for RateLimited {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{coord}: the registry's rate limit stopped the upload ({limit}). No tag exists until the draft Release is published, after the last upload. Rerun release then: it skips every crate the registry already lists.",
+            coord = self.coord,
+            limit = self.limit
+        )
+    }
+}
+
+impl Error for RateLimited {}
+
+/// What a registry reported when it refused an upload for its rate limit, or
 /// `None` when `message` is no rate limit.
 ///
 /// crates.io answers with status 429 and "Please try again after <time> or
@@ -811,14 +915,14 @@ fn publish_checked(
 /// The [rate limits] page of crates.io documents this reply.
 ///
 /// [rate limits]: https://crates.io/docs/rate-limits
-fn rate_limited(message: &str) -> Option<String> {
+fn rate_limited(message: &str) -> Option<RateLimit> {
     let lower = message.to_ascii_lowercase();
     if !lower.contains("too many requests") {
         return None;
     }
     let marker = "try again after ";
     let Some(at) = lower.find(marker) else {
-        return Some("429 Too Many Requests".to_owned());
+        return Some(RateLimit { retry_after: None });
     };
     let rest = &message[at + marker.len()..];
     let end = [" or email", "\n"]
@@ -826,10 +930,9 @@ fn rate_limited(message: &str) -> Option<String> {
         .filter_map(|stop| rest.find(stop))
         .min()
         .unwrap_or(rest.len());
-    Some(format!(
-        "try again after {}",
-        rest[..end].trim().trim_end_matches('.')
-    ))
+    Some(RateLimit {
+        retry_after: Some(rest[..end].trim().trim_end_matches('.').to_owned()),
+    })
 }
 
 impl From<&PublishEntry> for PublishLine {
@@ -1371,10 +1474,12 @@ mod tests {
         #[test]
         fn a_rate_limit_without_a_time_still_says_so() {
             assert_eq!(
-                rate_limited("status 429 Too Many Requests").as_deref(),
+                rate_limited("status 429 Too Many Requests")
+                    .map(|limit| limit.to_string())
+                    .as_deref(),
                 Some("429 Too Many Requests")
             );
-            assert_eq!(rate_limited("error: token is required"), None);
+            assert!(rate_limited("error: token is required").is_none());
         }
     }
 

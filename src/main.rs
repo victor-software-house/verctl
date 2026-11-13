@@ -22,9 +22,9 @@ use verctl::{
 mod presentation;
 
 use presentation::{
-    AssetsReport, CheckReport, CiReport, DocsReport, InstructionsReport, ReleaseReport, ReleaseRow,
-    RenderReport, Report, SemverReport, StatusAssets, StatusFragment, StatusPackage, StatusReport,
-    Unchecked, VendoredReport, VersionBump, VersionCheckReport, VersionReport,
+    AssetsReport, CheckReport, CiReport, DocsReport, InstructionsReport, PartialRow, ReleaseReport,
+    ReleaseRow, RenderReport, Report, SemverReport, StatusAssets, StatusFragment, StatusPackage,
+    StatusReport, Unchecked, VendoredReport, VersionBump, VersionCheckReport, VersionReport,
 };
 
 const INSTRUCTIONS: &str = include_str!("instructions.md");
@@ -546,6 +546,7 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
     let Unreleased {
         rows: unreleased,
         unchecked: unreleased_unchecked,
+        partial,
         notices,
     } = if args.vendored.is_some() {
         Unreleased::unchecked(Unchecked::vendored())
@@ -583,6 +584,7 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
         assets,
         unreleased,
         unreleased_unchecked,
+        partial,
         notices,
     })
 }
@@ -594,6 +596,9 @@ struct Unreleased {
     rows: Option<Vec<ReleaseRow>>,
     /// Why `rows` was not checked.
     unchecked: Option<Unchecked>,
+    /// Every release some of whose uploads are live, or `None` when not
+    /// checked.
+    partial: Option<Vec<PartialRow>>,
     /// One warning per published, immutable Release that lacks declared
     /// assets.
     notices: Vec<String>,
@@ -604,6 +609,7 @@ impl Unreleased {
         Self {
             rows: None,
             unchecked: Some(reason),
+            partial: None,
             notices: Vec::new(),
         }
     }
@@ -636,6 +642,7 @@ fn unreleased_state(args: &StatusArgs, config: &Config, root: &Path) -> Result<U
                     Unreleased {
                         rows: Some(unreleased_rows(&planned)),
                         unchecked: None,
+                        partial: Some(partial_rows(&planned)),
                         notices: planned.shortfalls.iter().map(ToString::to_string).collect(),
                     }
                 }
@@ -647,6 +654,21 @@ fn unreleased_state(args: &StatusArgs, config: &Config, root: &Path) -> Result<U
         }
         None => Unreleased::unchecked(Unchecked::missing_token()),
     })
+}
+
+/// Every release some, but not all, of whose uploads are live.
+fn partial_rows(planned: &pending::Pending) -> Vec<PartialRow> {
+    planned
+        .partials
+        .iter()
+        .map(|partial| PartialRow {
+            tag: partial.tag.clone(),
+            live: partial.live,
+            total: partial.total,
+            noun: partial.noun.clone(),
+            stop: partial.stop.clone(),
+        })
+        .collect()
 }
 
 /// Every package whose release at HEAD is incomplete.

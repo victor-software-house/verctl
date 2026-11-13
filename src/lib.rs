@@ -101,6 +101,7 @@ pub mod release;
 pub mod runners;
 /// cargo-semver-checks at the release type the pending release allows.
 pub mod semver_check;
+pub mod stop;
 pub mod templates;
 pub mod versions;
 
