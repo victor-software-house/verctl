@@ -7,3 +7,4 @@ A failed upload leaves no tag, and a rerun resumes, skipping every version a reg
 `release asset` builds its tarball and uploads nothing, and loses `--tag`.
 The reusable workflow builds the tarballs before the release job and drops the `finalize` job.
 A hand-written workflow passes the tarballs to `actions/publish` through its new `assets-dir` input, and `actions/asset` loses its `token` and `tag` inputs.
+Each row of the plan's `assets` matrix names its tarball as `asset`, so a job hands the file on without reading verctl's output.

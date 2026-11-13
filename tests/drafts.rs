@@ -223,7 +223,7 @@ async fn a_draft_at_head_is_planned_at_head_with_its_assets() {
     assert!(written.contains("pending=true"), "{written}");
     assert!(
         written.contains(&format!(
-            r#"assets={{"include":[{{"commit":"{second}","id":"linux-x64","labels":["ubuntu-26.04"],"tag":"v1.1.0"}}]}}"#
+            r#"assets={{"include":[{{"commit":"{second}","id":"linux-x64","labels":["ubuntu-26.04"],"tag":"v1.1.0","asset":"demo_1.1.0_linux_x64.tar.gz"}}]}}"#
         )),
         "{written}"
     );

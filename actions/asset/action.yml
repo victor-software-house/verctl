@@ -2,8 +2,10 @@ name: verctl asset
 description: >-
   Build one declared native target's tarball and upload nothing. Hand the
   tarball to the release job, whose `verctl release --assets-dir` uploads it
-  to the draft Release before any registry upload. Skip the job when no
-  `[assets.NAME]` table is declared.
+  to the draft Release before any registry upload. The tarball is the
+  `asset` file name of the target's row in `verctl status --github-output`,
+  beside the config's root. Skip the job when no `[assets.NAME]` table is
+  declared.
 author: victor-software-house
 branding:
   icon: package
@@ -18,22 +20,12 @@ inputs:
     description: Name of an `[assets.NAME]` table (`darwin-arm64`, `linux-x64`).
     required: true
 
-outputs:
-  tarball:
-    description: Path of the tarball, relative to the repository root.
-    value: ${{ steps.build.outputs.tarball }}
-
 runs:
   using: composite
   steps:
     - name: Build
-      id: build
       shell: bash
       env:
         VERCTL_CONFIG: ${{ inputs.config }}
         VERCTL_TARGET: ${{ inputs.target }}
-        VERCTL_FORMAT: json
-        REPORT: ${{ runner.temp }}/verctl-asset.json
-      run: |
-        verctl release asset > "${REPORT}"
-        echo "tarball=$(jq -r .tarball "${REPORT}")" >> "${GITHUB_OUTPUT}"
+      run: exec verctl release asset

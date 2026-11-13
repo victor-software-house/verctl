@@ -371,22 +371,22 @@ jobs:
           github-cache-mode: objects
           isolate-objects-cache: true
       - name: Build the tarball
-        id: build
         env:
           VERCTL_TARGET: ${{ matrix.id }}
-          VERCTL_FORMAT: json
+          # The build the download step above put on PATH, packed as is. An
+          # empty value is unset, so a run without verctl-artifact compiles.
           VERCTL_PREBUILT: ${{ inputs.verctl-artifact != '' && format('{0}/verctl-build/verctl', runner.temp) || '' }}
-          REPORT: ${{ runner.temp }}/asset.json
-        run: |
-          mise exec -- "${VERCTL_BIN:-verctl}" release asset > "${REPORT}"
-          echo "tarball=$(jq -r .tarball "${REPORT}")" >> "${GITHUB_OUTPUT}"
+        # The plan's verctl, as in publish.
+        run: mise exec -- "${VERCTL_BIN:-verctl}" release asset
       # publish downloads every verctl-asset-* artifact of the run into one
-      # directory, so a rerun of publish alone finds the same tarballs.
+      # directory, so a rerun of publish alone finds the same tarballs. The
+      # tarball sits beside the config's root, which the config input moves,
+      # and its name is unique, so the glob finds the one file.
       - name: Hand the tarball to publish
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: verctl-asset-${{ matrix.id }}
-          path: ${{ steps.build.outputs.tarball }}
+          path: "**/${{ matrix.asset }}"
           if-no-files-found: error
 
   publish:
