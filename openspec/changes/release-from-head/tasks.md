@@ -6,8 +6,8 @@
 
 ## 2. Release
 
-- [ ] 2.1 `status` and `release` take HEAD as the release reference; `refuse_skipped_versions`, the oldest-first plan and the version-commit refusal are gone. Proof: `rg refuse_skipped_versions src` finds nothing, and the CI tests of `pending` cover HEAD only.
-- [ ] 2.2 `status --github-output` writes HEAD as the only commit. Proof: a CI test with two packages bumped at different commits.
+- [x] 2.1 `status` and `release` take HEAD as the release reference; `refuse_skipped_versions`, the oldest-first plan and the version-commit refusal are gone. Proof: `rg refuse_skipped_versions src` finds nothing, and the CI tests of `pending` cover HEAD only.
+- [x] 2.2 `status --github-output` writes HEAD as the only commit. Proof: a CI test with two packages bumped at different commits.
 
 ## 3. Workflow
 

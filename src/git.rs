@@ -34,7 +34,7 @@ use gix::{open, status};
 use semver::Version;
 
 use crate::github::Repo;
-use crate::{bump, github, lookup, process};
+use crate::{github, lookup, process};
 
 /// The checked-out branch, or `None` for a detached HEAD or no repository.
 #[must_use]
@@ -642,88 +642,21 @@ fn files_under(commit: &gix::Commit<'_>, dir: &Path) -> Result<BTreeMap<PathBuf,
     Ok(files)
 }
 
-/// The commit that set a package's version, and how far it sits below HEAD.
+/// A commit that carries a package's release, and how far it sits below HEAD.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct VersionCommit {
     /// Full hex SHA of the commit.
     pub sha: String,
-    /// First-parent steps from HEAD: 0 is HEAD itself. A larger depth is an
-    /// older commit, so sorting by depth, largest first, orders releases the
-    /// way history made them.
+    /// First-parent steps from HEAD: 0 is HEAD itself.
     pub depth: usize,
-}
-
-/// The newest commit on HEAD's first-parent history where the version `read`
-/// finds in `path` became the version it has at HEAD.
-///
-/// The walk follows first parents only. A merge therefore counts as the commit
-/// that brought the version to this branch, which is where the release
-/// happens.
-/// `read` returns `None` when a revision of the file holds no version, which
-/// counts as a different version.
-///
-/// # Errors
-///
-/// Returns an error when:
-///
-/// - `root` is in no repository;
-/// - `path` is outside it;
-/// - HEAD has no version in `path`;
-/// - a commit or tree cannot be read.
-///
-/// It also returns an error when the walk reaches a shallow clone's boundary
-/// before the version changes. The commit that set the version is not in the
-/// clone, so a full fetch is needed. That error is a [`lookup::Unavailable`].
-pub fn version_commit(
-    root: &Path,
-    path: &Path,
-    read: &dyn Fn(&str) -> Option<String>,
-) -> Result<VersionCommit> {
-    let repo = discover(root).context("finding a version commit needs a git repository")?;
-    let rel = git_path(root, path, repo.workdir())
-        .with_context(|| format!("{} is not in the repository", path.display()))?;
-    let version_at = |commit: &gix::Commit<'_>| -> Result<Option<String>> {
-        Ok(blob_at(&commit.tree()?, &rel).and_then(|raw| read(&raw)))
-    };
-    let mut commit = repo
-        .head_commit()
-        .context("finding a version commit needs HEAD")?;
-    let wanted = version_at(&commit)?
-        .with_context(|| format!("HEAD has no version in {}", rel.display()))?;
-    let boundary: Vec<gix::ObjectId> = repo
-        .shallow_commits()?
-        .map_or_default(|commits| commits.iter().copied().collect());
-    let mut depth = 0;
-    loop {
-        if boundary.contains(&commit.id().detach()) {
-            return Err(lookup::unavailable(anyhow!(
-                "cannot find the commit that set {} to {wanted}: the clone is shallow; fetch the full history{}",
-                rel.display(),
-                shallow_hint()
-            )));
-        }
-        let Some(parent) = commit.parent_ids().next() else {
-            break;
-        };
-        let parent = repo.find_commit(parent.detach())?;
-        if version_at(&parent)?.as_deref() != Some(wanted.as_str()) {
-            break;
-        }
-        commit = parent;
-        depth += 1;
-    }
-    Ok(VersionCommit {
-        sha: commit.id().to_string(),
-        depth,
-    })
 }
 
 /// `sha` as the release commit of the version `read` finds in `path` at HEAD,
 /// when HEAD contains `sha` and `sha` carries that version.
 ///
-/// A release tag can name a commit other than [`version_commit`] and still be
-/// that version's release. Three cases qualify:
+/// A release tag can name a commit other than HEAD and still be that
+/// version's release. Three cases qualify:
 ///
 /// - A publish rerun after later commits tagged a newer HEAD at the same
 ///   version.
@@ -996,136 +929,6 @@ fn env_run_sha() -> Option<String> {
 
 /// Where a repository keeps its GitHub Actions workflows.
 const WORKFLOWS: &str = ".github/workflows";
-
-/// A version an earlier commit set and no release has.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub struct Unreleased {
-    /// The version.
-    pub version: String,
-    /// Full hex SHA of the commit on the first-parent line that set it.
-    pub sha: String,
-    /// First-parent steps from HEAD, as in [`VersionCommit::depth`].
-    pub depth: usize,
-}
-
-/// The versions earlier commits set on HEAD's first-parent line since the last
-/// release, newest first, leaving out the one HEAD carries.
-///
-/// In the first-parent range from HEAD back to the stop point, version v is
-/// skipped when all of these hold:
-///
-/// 1. Some commit in the range has version v.
-/// 2. v is below HEAD's version.
-/// 3. No commit newer than v's oldest commit in the range has a version
-///    strictly below v, so v was not abandoned.
-///
-/// List each skipped v once, at the oldest commit in the range whose version
-/// is v. A revert is then a later commit that sets an older v again, and the
-/// listing stays at the original version commit.
-///
-/// The range stops at whichever comes first:
-///
-/// - below a version `released` accepts;
-/// - below `0.0.0`;
-/// - below a revision with no version;
-/// - below a version that is not semver;
-/// - at the root, which it includes.
-///
-/// Each version change in the range is collected, newest first, and the
-/// definition applied to them. Empty means the version commit of HEAD's
-/// version is the only one since the last release. `read` reads one revision of
-/// `path`, as in [`version_commit`].
-///
-/// # Errors
-///
-/// Returns an error when:
-///
-/// - `root` is in no repository;
-/// - `path` is outside it;
-/// - HEAD has no version in `path`;
-/// - a commit or tree cannot be read;
-/// - `released` fails.
-///
-/// It also returns a [`lookup::Unavailable`] error when the walk reaches a
-/// shallow clone's boundary before it stops.
-pub fn unreleased_below(
-    root: &Path,
-    path: &Path,
-    read: &dyn Fn(&str) -> Option<String>,
-    released: &mut dyn FnMut(&str) -> Result<bool>,
-) -> Result<Vec<Unreleased>> {
-    let repo = discover(root).context("finding earlier versions needs a git repository")?;
-    let rel = git_path(root, path, repo.workdir())
-        .with_context(|| format!("{} is not in the repository", path.display()))?;
-    let version_at = |commit: &gix::Commit<'_>| -> Result<Option<String>> {
-        Ok(blob_at(&commit.tree()?, &rel).and_then(|raw| read(&raw)))
-    };
-    let mut commit = repo
-        .head_commit()
-        .context("finding earlier versions needs HEAD")?;
-    let mut version = version_at(&commit)?
-        .with_context(|| format!("HEAD has no version in {}", rel.display()))?;
-    let boundary: Vec<gix::ObjectId> = repo
-        .shallow_commits()?
-        .map_or_default(|commits| commits.iter().copied().collect());
-    if Version::parse(&version).is_err() {
-        return Ok(Vec::new());
-    }
-    let head = version.clone();
-    let mut changes = Vec::new();
-    let mut depth = 0;
-    loop {
-        if boundary.contains(&commit.id().detach()) {
-            return Err(lookup::unavailable(anyhow!(
-                "cannot find the versions set before {version} in {}: the clone is shallow; fetch the full history{}",
-                rel.display(),
-                shallow_hint()
-            )));
-        }
-        let Some(parent) = commit.parent_ids().next() else {
-            changes.push(Unreleased {
-                version,
-                sha: commit.id().to_string(),
-                depth,
-            });
-            break;
-        };
-        let parent = repo.find_commit(parent.detach())?;
-        let earlier = version_at(&parent)?;
-        if earlier.as_deref() == Some(version.as_str()) {
-            commit = parent;
-            depth += 1;
-            continue;
-        }
-        changes.push(Unreleased {
-            version,
-            sha: commit.id().to_string(),
-            depth,
-        });
-        let Some(earlier) = earlier else { break };
-        if Version::parse(&earlier).is_err() || bump::unreleased(&earlier) || released(&earlier)? {
-            break;
-        }
-        version = earlier;
-        commit = parent;
-        depth += 1;
-    }
-    Ok(changes
-        .iter()
-        .enumerate()
-        .filter(|&(at, change)| {
-            bump::lower(&change.version, &head)
-                && !changes[at + 1..]
-                    .iter()
-                    .any(|older| older.version == change.version)
-                && !changes[..at]
-                    .iter()
-                    .any(|newer| bump::lower(&newer.version, &change.version))
-        })
-        .map(|(_, change)| change.clone())
-        .collect())
-}
 
 /// How to fetch `origin/<branch>` when that ref is missing.
 #[non_exhaustive]
@@ -2131,8 +1934,8 @@ mod tests {
     use wiremock::matchers;
 
     use super::{
-        AddedBy, Unreleased, VersionCommit, added_by, added_by_from, candidate_deletions, file_at,
-        origin_url, tagged_commit, unreleased_below, version_commit,
+        AddedBy, VersionCommit, added_by, added_by_from, candidate_deletions, file_at, origin_url,
+        tagged_commit,
     };
     use crate::github::Repo;
     use crate::test_git::{commit_all, git, init};
@@ -2297,186 +2100,6 @@ mod tests {
             "#},
         )
         .unwrap();
-    }
-
-    #[test]
-    fn head_moved_past_the_release_finds_the_commit_that_set_it() {
-        let dir = tempfile::TempDir::new().unwrap();
-        init(dir.path());
-        write_version(dir.path(), "0.4.5");
-        commit_all(dir.path(), "chore: start");
-        write_version(dir.path(), "0.4.6");
-        let set = commit_all(dir.path(), "chore(release): version packages (#7)");
-        fs::write(dir.path().join("README"), "later\n").unwrap();
-        commit_all(dir.path(), "docs: later (#8)");
-        let found =
-            version_commit(dir.path(), &dir.path().join("Cargo.toml"), &version_line).unwrap();
-        assert_eq!(found, VersionCommit { sha: set, depth: 1 });
-    }
-
-    #[test]
-    fn the_first_commit_is_the_version_commit_when_nothing_changed_it() {
-        let dir = tempfile::TempDir::new().unwrap();
-        init(dir.path());
-        write_version(dir.path(), "0.0.1");
-        let first = commit_all(dir.path(), "chore: start");
-        let found =
-            version_commit(dir.path(), &dir.path().join("Cargo.toml"), &version_line).unwrap();
-        assert_eq!(found.sha, first);
-        assert_eq!(found.depth, 0);
-    }
-
-    /// The versions below HEAD's that no release has, with `released`
-    /// accepting the versions listed.
-    fn unreleased(dir: &Path, released: &[&str]) -> Vec<Unreleased> {
-        unreleased_below(
-            dir,
-            &dir.join("Cargo.toml"),
-            &version_line,
-            &mut |version| Ok(released.contains(&version)),
-        )
-        .unwrap()
-    }
-
-    #[test]
-    fn one_version_commit_since_the_last_release_leaves_nothing_below() {
-        let dir = tempfile::TempDir::new().unwrap();
-        init(dir.path());
-        write_version(dir.path(), "0.7.4");
-        commit_all(dir.path(), "chore: start");
-        write_version(dir.path(), "0.7.5");
-        commit_all(dir.path(), "chore(release): version packages (#7)");
-        fs::write(dir.path().join("README"), "later\n").unwrap();
-        commit_all(dir.path(), "docs: later (#8)");
-        assert_eq!(unreleased(dir.path(), &["0.7.4"]), Vec::new());
-    }
-
-    /// One history for the walk: each commit's version, oldest first, the
-    /// versions tagged, and the indexes of the commits listed, newest first.
-    struct Walk {
-        tagged: &'static [&'static str],
-        history: &'static [&'static str],
-        listed: &'static [usize],
-    }
-
-    /// The definition over each history the review raised:
-    ///
-    /// - A skipped version is listed at the oldest commit in the range, even
-    ///   below a revert.
-    /// - An abandoned version, one a later commit took strictly below, is not
-    ///   listed.
-    /// - A version first set by a downward change is listed.
-    /// - The untagged history reaches the root, which is in the range.
-    #[test]
-    fn the_walk_lists_each_live_skipped_version_once() {
-        let walks = [
-            Walk {
-                tagged: &["0.7.4"],
-                history: &["0.7.4", "0.7.5", "0.7.6"],
-                listed: &[1],
-            },
-            Walk {
-                tagged: &["0.7.4"],
-                history: &["0.7.4", "0.7.6", "0.7.5", "0.7.6"],
-                listed: &[2],
-            },
-            Walk {
-                tagged: &["0.7.4"],
-                history: &["0.7.4", "0.7.5", "0.7.6", "0.7.5", "0.7.6"],
-                listed: &[1],
-            },
-            Walk {
-                tagged: &["0.7.5"],
-                history: &["0.7.5", "0.7.6", "0.7.5", "0.7.7"],
-                listed: &[],
-            },
-            Walk {
-                tagged: &["0.7.4"],
-                history: &["0.7.4", "0.7.5", "0.7.6", "0.7.5", "0.7.7"],
-                listed: &[1],
-            },
-            Walk {
-                tagged: &[],
-                history: &["0.7.4", "0.7.6", "0.7.5", "0.7.6"],
-                listed: &[2, 0],
-            },
-            Walk {
-                tagged: &["0.7.4"],
-                history: &["0.7.4", "0.7.5", "0.7.7", "0.7.6", "0.7.8"],
-                listed: &[3, 1],
-            },
-        ];
-        for walk in walks {
-            let dir = tempfile::TempDir::new().unwrap();
-            init(dir.path());
-            let shas: Vec<String> = walk
-                .history
-                .iter()
-                .map(|version| {
-                    write_version(dir.path(), version);
-                    commit_all(dir.path(), &format!("chore(release): {version}"))
-                })
-                .collect();
-            let expected: Vec<Unreleased> = walk
-                .listed
-                .iter()
-                .map(|&at| Unreleased {
-                    version: walk.history[at].to_owned(),
-                    sha: shas[at].clone(),
-                    depth: walk.history.len() - 1 - at,
-                })
-                .collect();
-            assert_eq!(
-                unreleased(dir.path(), walk.tagged),
-                expected,
-                "{:?} with {:?} tagged",
-                walk.history,
-                walk.tagged
-            );
-        }
-    }
-
-    /// With no release at all, the walk counts from the root, and stops at
-    /// `0.0.0`, which is never released.
-    #[test]
-    fn an_untagged_package_counts_from_the_root() {
-        let dir = tempfile::TempDir::new().unwrap();
-        init(dir.path());
-        write_version(dir.path(), "0.0.1");
-        let root = commit_all(dir.path(), "chore: start");
-        write_version(dir.path(), "0.0.2");
-        commit_all(dir.path(), "chore(release): version packages (#7)");
-        assert_eq!(
-            unreleased(dir.path(), &[]),
-            [Unreleased {
-                version: "0.0.1".to_owned(),
-                sha: root,
-                depth: 1,
-            }]
-        );
-
-        let fresh = tempfile::TempDir::new().unwrap();
-        init(fresh.path());
-        write_version(fresh.path(), "0.0.0");
-        commit_all(fresh.path(), "chore: adopt");
-        write_version(fresh.path(), "0.0.1");
-        commit_all(fresh.path(), "chore(release): version packages (#1)");
-        assert_eq!(unreleased(fresh.path(), &[]), Vec::new());
-    }
-
-    #[test]
-    fn a_version_set_again_after_a_revert_names_the_newest_change() {
-        let dir = tempfile::TempDir::new().unwrap();
-        init(dir.path());
-        write_version(dir.path(), "0.4.6");
-        commit_all(dir.path(), "chore: start");
-        write_version(dir.path(), "0.4.5");
-        commit_all(dir.path(), "revert: 0.4.6");
-        write_version(dir.path(), "0.4.6");
-        let again = commit_all(dir.path(), "chore(release): version packages (#9)");
-        let found =
-            version_commit(dir.path(), &dir.path().join("Cargo.toml"), &version_line).unwrap();
-        assert_eq!(found.sha, again);
     }
 
     #[test]
@@ -3555,7 +3178,7 @@ mod tests {
     }
 
     #[test]
-    fn a_shallow_clone_gets_the_history_that_set_the_version() {
+    fn a_shallow_clone_gets_the_history_that_holds_the_tagged_commit() {
         let upstream = tempfile::TempDir::new().unwrap();
         init(upstream.path());
         write_version(upstream.path(), "0.0.1");
@@ -3573,12 +3196,12 @@ mod tests {
         );
         let work = parent.path().join("work");
         let manifest = work.join("Cargo.toml");
-        let error = version_commit(&work, &manifest, &version_line).unwrap_err();
+        let error = tagged_commit(&work, &manifest, &set, &version_line).unwrap_err();
         assert!(format!("{error:#}").contains("shallow"), "{error:#}");
 
         super::ensure_full_history(&work, "main", &super::FetchDefault::Origin).unwrap();
-        let found = version_commit(&work, &manifest, &version_line).unwrap();
-        assert_eq!(found, VersionCommit { sha: set, depth: 1 });
+        let found = tagged_commit(&work, &manifest, &set, &version_line).unwrap();
+        assert_eq!(found, Some(VersionCommit { sha: set, depth: 1 }));
     }
 
     #[test]
