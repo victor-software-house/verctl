@@ -2,7 +2,9 @@
 
 ### Requirement: `check --registry` proves the registry side on every pull request
 
-`verctl check --registry` SHALL prove, for each crate the repository publishes to crates.io, that the crate exists, that a trusted publisher config names the repository's release workflow, and that the publishing identity is among the crate's owners.
+`verctl check --registry` SHALL prove, for each crate the repository publishes to crates.io, that the crate exists, and that its owners include every login the `owners` key of `.ctl/ver.yaml` lists.
+Without the `owners` key it SHALL skip the owner proof and say so.
+
 It SHALL need the network, and a rerun SHALL repeat every request whatever the state of the pull request.
 It SHALL exit non-zero and name each crate and each failed proof.
 
@@ -16,10 +18,25 @@ It SHALL exit non-zero and name each crate and each failed proof.
 - **WHEN** `verctl check --registry` failed on `demo-extra`, the operator ran `verctl release --first` for it, and the CI job reruns with "Re-run failed jobs"
 - **THEN** the rerun queries crates.io again and exits zero
 
-#### Scenario: Every crate is ready
+#### Scenario: Every crate is ready, without a token
 
-- **WHEN** each crate exists, lists `release.yml` as its trusted publisher, and lists the publishing identity as an owner
-- **THEN** `verctl check --registry` exits zero
+- **WHEN** `.ctl/ver.yaml` sets `owners: [any-victor]`, each crate exists and lists `any-victor` as an owner, `VERCTL_REGISTRY_TOKEN` is unset, and `verctl check --registry` runs
+- **THEN** it exits zero, and reports for each crate whether its latest version came through trusted publishing from the repository, with the trusted publisher marked as not checked
+
+#### Scenario: An owner is missing
+
+- **WHEN** `.ctl/ver.yaml` sets `owners: [any-victor]` and crate `demo` lists only `alice` as an owner
+- **THEN** `verctl check --registry` exits non-zero, names `demo`, the missing login `any-victor`, and the owners it found
+
+### Requirement: `check --registry` proves the trusted publisher only with an owner's token
+
+With `VERCTL_REGISTRY_TOKEN` set to an owner's token, `verctl check --registry` SHALL prove that a trusted publisher config names the repository's release workflow.
+Without it, the check SHALL report as evidence whether the crate's latest version was published by trusted publishing from the repository, and SHALL state that the trusted publisher was not checked.
+
+#### Scenario: With an owner's token
+
+- **WHEN** `VERCTL_REGISTRY_TOKEN` holds an owner's token with the trusted-publishing scope, and crate `demo` has no trusted publisher config naming `release.yml`
+- **THEN** `verctl check --registry` exits non-zero and names `demo` as lacking a trusted publisher for `release.yml`
 
 ### Requirement: `check --release` proves a release before it lands
 

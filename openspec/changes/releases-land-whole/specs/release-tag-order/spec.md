@@ -3,6 +3,7 @@
 ### Requirement: The tag comes with the published Release, after every upload
 
 `verctl publish` SHALL create a tag only by publishing the draft Release of the run, after every upload of the run has succeeded.
+
 The run SHALL upload every declared asset to a draft Release first, then publish to the registries in dependency order, then publish the draft, which creates the tag at HEAD.
 A run that finds the tag and a published Release SHALL create neither, and SHALL fail before any upload when the tag names a commit other than HEAD.
 

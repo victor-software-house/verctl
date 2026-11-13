@@ -57,6 +57,24 @@ It lost because the name hides what runs where.
 **Disable.**
 A repository leaves `check --registry` out of its CI; `check --release` still runs inside `release`.
 
+## 4.1 What a check can prove without a token
+
+**Decision.**
+crates.io serves a crate's trusted publisher configs only to an owner's token.
+
+1. From public endpoints, `check --registry` proves existence and the owners that the new `owners` key of `.ctl/ver.yaml` lists.
+2. Without a token, it reports as evidence whether the latest version came through trusted publishing from the repository.
+3. With an owner's token, in CI by opt-in or locally through `verctl trust --check`, it proves the trusted publisher.
+
+A missing trusted publisher can then come only from its removal, because `release --first` registers it.
+
+**Alternative.**
+Require an owner's token on every pull request.
+It lost because that scope can also create and delete trusted publisher configs, so every repository would store a sensitive token.
+
+**Disable.**
+Leave out the `owners` key, and the owner proof is skipped with a notice.
+
 ## 5. Freeze the default branch until the release completes
 
 **Decision.**

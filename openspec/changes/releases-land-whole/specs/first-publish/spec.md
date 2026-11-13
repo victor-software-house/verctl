@@ -3,9 +3,10 @@
 ### Requirement: `release --first` publishes the packages the registry lacks
 
 `verctl release --first` SHALL run locally, read the registry token from `VERCTL_REGISTRY_TOKEN`, and publish the real code of each package the registry lacks, at the version the default branch holds.
-It SHALL then tag each published standalone package, and then run `verctl trust`.
-It SHALL create no tag for a member of a shared-version group, whose tag belongs to the group's release.
-It SHALL refuse to run without `VERCTL_REGISTRY_TOKEN`, and SHALL name the variable.
+
+1. After the uploads, it SHALL tag each published standalone package, and then run `verctl trust`.
+2. A member of a shared-version group SHALL get no tag, because its tag belongs to the group's release.
+3. Without `VERCTL_REGISTRY_TOKEN`, the command SHALL refuse to run and SHALL name the variable.
 
 #### Scenario: A new crate
 

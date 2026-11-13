@@ -2,24 +2,22 @@
 
 ### Requirement: verctl reads crate owners and trusted publishers
 
-For each crate that publishes to crates.io, verctl SHALL read the crate's owners from the crates.io owners API, `GET /api/v1/crates/{name}/owners`, and the trusted publisher configs of the crate.
-It SHALL report a crate by name when any of these holds:
+For each crate that publishes to crates.io, verctl SHALL read the crate's owners from `GET /api/v1/crates/{name}/owners`, which needs no token.
 
-1. the crate does not exist on crates.io
-2. no trusted publisher config of the crate names the repository's release workflow
-3. the owner list lacks the publishing identity
+It SHALL read the trusted publisher configs from `GET /api/v1/trusted_publishing/github_configs?crate={name}` only with an owner's token, because crates.io serves them to owners alone.
+It SHALL name each crate that is missing, lacks a listed owner, or, with that token, lacks a trusted publisher for the release workflow.
 
 #### Scenario: A crate the registry lacks
 
 - **WHEN** workspace member `shrub-process` is at `0.7.0` and `GET /api/v1/crates/shrub-process/owners` answers 404
 - **THEN** verctl reports `shrub-process` as missing from crates.io
 
-#### Scenario: A crate with no trusted publisher
+#### Scenario: Owners against the declared list
 
-- **WHEN** crate `demo` exists on crates.io and none of its trusted publisher configs names `release.yml` of the repository
-- **THEN** verctl reports `demo` as lacking a trusted publisher for `release.yml`
+- **WHEN** `.ctl/ver.yaml` sets `owners: [any-victor]` and `GET /api/v1/crates/demo/owners` lists only `alice`
+- **THEN** verctl reports `demo` as lacking owner `any-victor`, and names the owners it found
 
-#### Scenario: An owner list without the publishing identity
+#### Scenario: Trusted publishers without a token
 
-- **WHEN** `GET /api/v1/crates/demo/owners` lists `alice` and the publishing identity is the repository's GitHub Actions identity
-- **THEN** verctl reports `demo` as not owned by the publishing identity, and names the owners it found
+- **WHEN** no owner's token is set
+- **THEN** verctl sends no request to `/api/v1/trusted_publishing/github_configs`, and reports the trusted publisher as not checked
