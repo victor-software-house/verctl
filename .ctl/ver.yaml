@@ -16,6 +16,9 @@ prepare:
 packages:
   - name: verctl
     path: Cargo.toml
+    # The release changes planned in openspec/changes/ land as breaking
+    # patches, so each Version PR ships a candidate, such as 0.8.6-rc.1.
+    prerelease: rc
     # The required verify job runs `cargo package` on every pull request and
     # merge-queue entry, so the commit a release publishes was already packed
     # and built. The upload skips cargo's second build of it.
