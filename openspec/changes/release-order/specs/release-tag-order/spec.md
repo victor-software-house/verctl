@@ -29,7 +29,9 @@ A run that finds the tag and a published Release SHALL create neither, and SHALL
 ### Requirement: The tag proof waits for GitHub to serve the release's own tag
 
 After publishing the draft, `verctl release` SHALL read the new tag to prove it names HEAD.
+
 The tag belongs to the release when the run published the draft, or when a rerun finds the Release for that version published at HEAD.
+
 For such a tag, a 404 SHALL lead to more reads with a bounded backoff, at most 5 reads in total within 30 seconds.
 Any other error, and a 404 on any other tag, SHALL fail at once.
 
