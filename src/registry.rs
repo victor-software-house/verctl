@@ -602,13 +602,17 @@ pub fn crates_io_github_configs(base: &str, name: &str, token: &str) -> Result<T
 
 /// The reason in a crates.io error response, `{"errors":[{"detail":"..."}]}`:
 /// each `detail` joined by `; `. A body of another shape is its own reason,
-/// trimmed.
+/// trimmed, and an empty one reads as the status, so the message never
+/// names an empty reason.
 fn refusal(body: &str) -> String {
     serde_json::from_str::<ApiErrors>(body)
         .ok()
         .filter(|parsed| !parsed.errors.is_empty())
         .map_or_else(
-            || body.trim().to_owned(),
+            || match body.trim() {
+                "" => StatusCode::BAD_REQUEST.to_string(),
+                text => text.to_owned(),
+            },
             |parsed| {
                 parsed
                     .errors
@@ -1204,6 +1208,23 @@ mod tests {
             publishers_of_demo(server.uri()).await.unwrap(),
             TrustedPublishers::Refused {
                 detail: "You are not an owner of this crate".into()
+            }
+        );
+    }
+
+    /// A 400 with an empty body reads as its status.
+    #[tokio::test]
+    async fn an_empty_400_reads_as_its_status() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/trusted_publishing/github_configs"))
+            .respond_with(ResponseTemplate::new(400))
+            .mount(&server)
+            .await;
+        assert_eq!(
+            publishers_of_demo(server.uri()).await.unwrap(),
+            TrustedPublishers::Refused {
+                detail: "400 Bad Request".into()
             }
         );
     }
