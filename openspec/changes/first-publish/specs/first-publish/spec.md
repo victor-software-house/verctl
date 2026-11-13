@@ -25,7 +25,7 @@ It SHALL read the registry token from `VERCTL_REGISTRY_TOKEN`, and publish the r
 
 Run on its own, `verctl release bootstrap` SHALL tag each published standalone package after its uploads, and then run `verctl release trust` for the same packages.
 Inside a release run, it SHALL only upload, and the publish of the run's draft Release SHALL create the tag, as release-order requires.
-A member of a shared-version group SHALL get no tag, because its tag belongs to the group's release.
+A member of a shared-version group SHALL get no tag of its own.
 
 #### Scenario: A new standalone package
 
