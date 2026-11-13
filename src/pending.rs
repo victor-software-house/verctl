@@ -230,7 +230,7 @@ pub fn pending(
         let driver = spec.resolve(config, root)?;
         let tag = tag_of(&planned, entry)?;
         let release = match releases.entry(tag.clone()) {
-            Entry::Occupied(held) => held.into_mut(),
+            Entry::Occupied(found) => found.into_mut(),
             Entry::Vacant(slot) => {
                 let state = github::release_state(token, &repo, slot.key())?;
                 slot.insert(state)
