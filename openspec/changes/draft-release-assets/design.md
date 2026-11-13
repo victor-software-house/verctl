@@ -78,7 +78,7 @@ The `plan` job needs `contents: write`, because with `contents: read` it would n
 
 Alternatives considered:
 
-1. **A `--draft` flag and a separate `finalize` verb.** It lost because whether a Release is a draft follows from the declaration, and a flag could disagree with it.
+1. **A `--draft` flag and a separate `finalize` verb.** It lost because whether a Release is a draft follows from the declaration, and a flag could conflict with it.
    Running `release` again is the finalize, so a rerun at any stage is safe.
 2. **The last asset upload publishes the draft.** It lost because parallel asset jobs would race to publish, and each would need every other target's state.
 3. **Upload with `gh release upload` outside verctl.** It lost because `release` could not tell when the draft is complete.

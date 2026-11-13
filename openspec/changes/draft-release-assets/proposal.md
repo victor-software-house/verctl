@@ -1,4 +1,4 @@
-# Keep a Release with assets a draft until its assets are uploaded
+# Keep a Release with assets a draft until every asset is uploaded
 
 ## Motivation
 
