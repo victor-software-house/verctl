@@ -2,7 +2,7 @@
 
 ## 1. Before this change
 
-- [ ] 1.1 Archive the open changes that already shipped: `draft-release-assets`, `release-build-once`, `release-jobs-run-head-verctl`, `release-asset-targets`, `registry-token-secret` and `version-pr-proposal`, so this change's deltas apply to current specs. Proof: `openspec list` no longer shows them, and `openspec validate --strict release-from-head` passes.
+- [ ] 1.1 Archive the open changes that already shipped: `draft-release-assets`, `release-build-once`, `release-jobs-run-head-verctl`, `release-asset-targets`, `registry-token-secret` and `version-pr-proposal`. Then archive `breaking-patch`, `command-renames` and `version-pr-body-cap`, each after verifying in code that it shipped. The deltas of this change and of `release-checks` then apply to current specs. Proof: `openspec list` no longer shows them, and `openspec validate --strict release-from-head` passes.
 
 ## 2. Release
 
@@ -16,3 +16,4 @@
 ## 4. Documents
 
 - [ ] 4.1 Update AGENTS.md, the instructions, the operator skill and the README for HEAD as the release reference. Proof: `UPDATE_OPERATOR_DOCS=1 cargo test operator_docs` leaves no diff in CI.
+- [ ] 4.2 A `patch!` fragment for verctl lists the HEAD-only release under `### Breaking`. Proof: `verctl version --dry-run` shows the entry under that heading.

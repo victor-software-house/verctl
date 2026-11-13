@@ -36,6 +36,11 @@ Queue row: [VER-129][ver-129].
 This replaces the earlier draft of this change, which installed only the release tools at an old version commit.
 No run checks out an old commit any more.
 
+## Release
+
+A breaking patch, through a `patch!` fragment listed under `### Breaking` (operator, 2026-11-13).
+A version HEAD no longer holds is no longer released, `status --github-output` writes HEAD as the only commit, and a release no longer refuses a skipped version.
+
 [shrub-070]: https://github.com/victor-software-house/shrub/actions/runs/40251818311
 [release-order]: ../release-order/proposal.md
 [release-checks]: ../release-checks/proposal.md

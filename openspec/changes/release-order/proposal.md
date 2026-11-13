@@ -19,5 +19,10 @@ Queue row: [VER-134][ver-134].
 3. **Rate limits.**
    Trusted-publishing uploads count against no crates.io limit, so a release of existing crates meets none, and a rerun after another failure skips every crate the index lists.
 
+## Release
+
+A breaking patch, through a `patch!` fragment listed under `### Breaking` (operator, 2026-11-13).
+The tag now appears only when the draft Release is published, after every upload, so a hand-written workflow that reads the tag between `actions/publish` and `actions/asset` no longer finds it.
+
 [release-from-head]: ../release-from-head/proposal.md
 [ver-134]: ../../../tasks.yaml

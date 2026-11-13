@@ -9,3 +9,4 @@
 ## 2. Documents
 
 - [ ] 2.1 Update AGENTS.md, the instructions, the operator skill and the README for the order and the partial state. Proof: `UPDATE_OPERATOR_DOCS=1 cargo test operator_docs` leaves no diff in CI.
+- [ ] 2.2 A `patch!` fragment for verctl lists the later tag under `### Breaking`. Proof: `verctl version --dry-run` shows the entry under that heading.

@@ -17,7 +17,7 @@ It lost because a tag then exists for a release that may never complete.
 None: the order holds for every package kind.
 A package with no registry check still tags after its upload, as today.
 
-## 2. A partial release is a state, and a rerun resumes it
+## 2. A partial release is a state that a rerun resumes
 
 **Decision.**
 `status` reports a release with some but not all uploads as partial, with the count, the cause, and the resume time when the registry sent one.
