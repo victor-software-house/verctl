@@ -92,7 +92,7 @@ on:
           JSON label list for the plan, publish, docs, and propose jobs. Asset
           jobs take their runners from .ctl/ver.yaml.
         type: string
-        default: '["ubuntu-latest"]'
+        default: '["ubuntu-26.04"]'
       mise-version:
         description: The mise that installs the caller's tools, verctl included.
         type: string
@@ -117,6 +117,8 @@ on:
           for verctl's own release. Each job downloads
           <prefix>-<runner.os>-<runner.arch> and puts it first on PATH, so the
           caller's ver task must run verctl from PATH with no pin of its own.
+          An asset job whose version commit is the run's commit packs that
+          build as its tarball binary, and compiles any older commit's.
           Empty uses the verctl the caller's ver task pins.
         type: string
         default: ""
@@ -540,10 +542,13 @@ jobs:
           test -x "${bin}"
           "${bin}" --version
           echo "VERCTL_BIN=${bin}" >> "${GITHUB_ENV}"
-      # Each asset job compiles its binary from the version commit, so mbx
-      # keeps the compiled objects between releases on the same runner. The
-      # objects payload with a private store is the shape a remote backend
-      # replaces later; a cargo-less build skips the step.
+      # With verctl-artifact, the tarball reuses this run's build when the
+      # version commit is the run's commit. An older version commit still
+      # compiles its binary from its own tree, and so does every consumer
+      # without verctl-artifact, so mbx keeps the compiled objects between
+      # releases on the same runner. The objects payload with a private store
+      # is the shape a remote backend replaces later; a cargo-less build skips
+      # the step.
       - name: Cache builds with mbx
         if: hashFiles('**/Cargo.toml') != ''
         uses: jdx/mr-boxington-action@88acf2bb50552c7c508cbac13e5f8c576b95b1de # v1.7.3
@@ -555,6 +560,10 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           VERCTL_TARGET: ${{ matrix.id }}
           VERCTL_TAG: ${{ matrix.tag }}
+          # The build the download step above put on PATH, packed as is. An
+          # empty value is unset, so an older version commit, and a run
+          # without verctl-artifact, compile as before.
+          VERCTL_PREBUILT: ${{ inputs.verctl-artifact != '' && matrix.commit == github.sha && format('{0}/verctl-build/verctl', runner.temp) || '' }}
         # The plan's verctl, as in publish.
         run: mise exec -- "${VERCTL_BIN:-verctl}" release asset
 

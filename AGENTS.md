@@ -184,6 +184,7 @@ CI runs `MISE_ENV=ci`.
 
 `self-release.yml` builds verctl once per platform in its `build` job.  
 It calls `release.yml` with `verctl-artifact: verctl` and `MISE_ENV=ci,release`, so every release job runs that build.  
+An asset job packs that build with `release asset --prebuilt` when its version commit is the run's commit, and compiles an older commit from its own tree.  
 `mise.release.toml` is only a `ver` task that runs `verctl` from `PATH`, with no pin.  
 Build verctl from source only there, never in every job.  
 `.miserc.toml` defaults local `MISE_ENV` to `dev`.

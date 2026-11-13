@@ -1,5 +1,5 @@
 # Validation jobs come from `[ci]`. Omit that table and this runs
-# one `verify` on ubuntu-latest.
+# one `verify` on ubuntu-26.04.
 #
 # runs-on must be known before a job exists, so the machine cannot come from
 # a tool running inside that job. `plan` reads the config on a fixed runner
@@ -31,7 +31,7 @@ concurrency:
 jobs:
   plan:
     name: Plan the validation jobs
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:

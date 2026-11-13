@@ -475,6 +475,22 @@ queue:
     notes:
       - "2026-11-12: nishiki Release run 43146966330 failed to open the Version PR with body is too long (maximum is 65536 characters), with 275 pending fragments."
 
+  - id: VER-128
+    title: Build verctl once per platform in its own release
+    scope: release asset, release workflow, defaults
+    outcome: >-
+      verctl's own release packs each platform's tarball from the binary its build
+      job compiled, and every default GitHub-hosted Ubuntu label verctl owns is
+      ubuntu-26.04 or ubuntu-26.04-arm.
+    blocked_by: []
+    acceptance:
+      - release asset --prebuilt packs a binary built earlier without running prepare or build, and refuses a target that packs files and a path that is not a file.
+      - The assets job reuses the run's verctl build when the version commit is the run's commit, and compiles an older version commit from its own tree.
+      - The release workflow, the built-in linux-x64 target, the ci default, and this repository's runners name ubuntu-26.04 or ubuntu-26.04-arm.
+    plan: openspec/changes/release-build-once/proposal.md
+    notes:
+      - '2026-11-13, stacked on draft-release-assets: the self-release build job compiled verctl once and each assets job compiled it again from the same commit.'
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all

@@ -166,7 +166,7 @@ mod tests {
 
         runners:
           linux:
-            labels: [ubuntu-latest]
+            labels: [ubuntu-26.04]
           big:
             labels: [self-hosted, linux, x64]
     "};
@@ -183,14 +183,14 @@ mod tests {
             "verify",
             None,
             "hosted",
-            &["ubuntu-latest"],
+            &["ubuntu-26.04"],
         )
         .unwrap();
         assert_eq!(
             machines,
             [Machine {
                 name: "hosted".to_owned(),
-                labels: vec!["ubuntu-latest".to_owned()],
+                labels: vec!["ubuntu-26.04".to_owned()],
             }]
         );
     }
@@ -264,7 +264,7 @@ mod tests {
             "verify",
             Some(&Vec::new()),
             "hosted",
-            &["ubuntu-latest"],
+            &["ubuntu-26.04"],
         )
         .unwrap_err();
         assert!(
@@ -336,7 +336,7 @@ mod tests {
               - name: verctl
                 path: Cargo.toml
             runners:
-              linux: [ubuntu-latest]
+              linux: [ubuntu-26.04]
         "})
         .unwrap_err();
         assert!(

@@ -1,7 +1,7 @@
 //! Which machines run PR and push validation.
 //!
 //! A `ci` entry is one job; its `runners` name machines from `runners`, one
-//! check each. Write nothing and one `verify` job runs on `ubuntu-latest`,
+//! check each. Write nothing and one `verify` job runs on `ubuntu-26.04`,
 //! which is what every repo in this family did before the section existed.
 //!
 //! GitHub needs `runs-on` before a job exists, so a job cannot read its own
@@ -17,8 +17,8 @@ use crate::config::Config;
 use crate::runners;
 
 const DEFAULT_JOB: &str = "verify";
-const DEFAULT_MACHINE: &str = "ubuntu-latest";
-const DEFAULT_LABELS: &[&str] = &["ubuntu-latest"];
+const DEFAULT_MACHINE: &str = "ubuntu-26.04";
+const DEFAULT_LABELS: &[&str] = &["ubuntu-26.04"];
 
 /// One row of a GitHub Actions `strategy.matrix`, and one check.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -126,7 +126,7 @@ mod tests {
 
         runners:
           linux:
-            labels: [ubuntu-latest]
+            labels: [ubuntu-26.04]
           macos:
             labels: [macos-latest]
           big:
@@ -143,13 +143,13 @@ mod tests {
         assert_eq!(planned.matrix.include.len(), 1);
         assert_eq!(planned.matrix.include[0].id, "verify");
         assert_eq!(planned.matrix.include[0].name, "verify");
-        assert_eq!(planned.matrix.include[0].labels, ["ubuntu-latest"]);
+        assert_eq!(planned.matrix.include[0].labels, ["ubuntu-26.04"]);
     }
 
     #[test]
     fn a_job_with_no_runners_takes_the_default_machine() {
         let planned = plan(&with("ci:\n  verify: {}\n")).unwrap();
-        assert_eq!(planned.matrix.include[0].labels, ["ubuntu-latest"]);
+        assert_eq!(planned.matrix.include[0].labels, ["ubuntu-26.04"]);
         assert_eq!(planned.matrix.include[0].name, "verify");
     }
 
@@ -257,7 +257,7 @@ mod tests {
         let err = plan(&with(indoc::indoc! {"
             ci:
               verify:
-                runners: [ubuntu-latest]
+                runners: [ubuntu-26.04]
         "}))
         .unwrap_err();
         assert!(
@@ -282,7 +282,7 @@ mod tests {
         let first = &json["include"][0];
         assert_eq!(first["id"], "verify");
         assert_eq!(first["name"], "verify");
-        assert_eq!(first["labels"][0], "ubuntu-latest");
+        assert_eq!(first["labels"][0], "ubuntu-26.04");
         assert_eq!(text.lines().count(), 1, "{text}");
     }
 

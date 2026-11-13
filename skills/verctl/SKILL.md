@@ -195,6 +195,8 @@ An `assets` tarball holds the one `binary`.
 Set `assets.dir` and `assets.files` instead when it holds more (a second executable, a service unit, a licence).  
 `release asset` packs `tar czf <asset> -C <dir> <files>` with `{triple}` and the other placeholders replaced.  
 A target that ships other files, such as a tool built only on Linux, lists its own `files`, which replace `assets.files` for that target.
+`release asset --prebuilt <path>` (`VERCTL_PREBUILT`) packs a binary built earlier as `bin` and runs neither `prepare` nor `build`.
+A target that packs `files` refuses it.
 
 ### Vendored sets
 
@@ -268,7 +270,7 @@ An `assets` target takes a single `runner`, because one tarball is one machine.
 Only `labels` reach `runs-on`; a name resolves against `runners` or fails.
 
 verctl decides how many jobs there are; the workflow file decides where a fixed job runs.  
-The release workflow's `plan`, `publish`, `docs`, and `propose` jobs run on its `runner` input, a JSON label list that defaults to `["ubuntu-latest"]`.  
+The release workflow's `plan`, `publish`, `docs`, and `propose` jobs run on its `runner` input, a JSON label list that defaults to `["ubuntu-26.04"]`.  
 It is never a `.ctl/ver.yaml` key, and there is no `release` runner section.
 
 ## Docs and semver

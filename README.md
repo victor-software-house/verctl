@@ -180,7 +180,7 @@ runners:
     labels: [self-hosted, linux, x64]
 
 # One validation job per entry. Naming two machines gives two checks,
-# `verify (big)` and `verify (ns)`. Omit `ci` for one `verify` on ubuntu-latest.
+# `verify (big)` and `verify (ns)`. Omit `ci` for one `verify` on ubuntu-26.04.
 ci:
   verify:
     runners: [big]
@@ -196,7 +196,7 @@ assets:
 | section | one entry is | its name is | with no `runners` / `runner` |
 |:--|:--|:--|:--|
 | `runners` | one machine | how jobs refer to it | — |
-| `ci` | a job that validates a PR or a push | the check name | `ubuntu-latest` |
+| `ci` | a job that validates a PR or a push | the check name | `ubuntu-26.04` |
 | `assets` | a release build job and its tarball | the check name, the `release asset` argument, part of the filename | the built-in record for that name |
 
 Two sections take runners and no others, because of what config is for here:
@@ -207,7 +207,7 @@ Two sections take runners and no others, because of what config is for here:
 To declare N jobs, a static workflow has to hold N, and only the repo's config holds it.  
 That fan-out is what `ci` and `assets` buy; the machine rides along on it.  
 No other job's machine is a config key.  
-The release workflow's `plan`, `publish`, `docs`, and `propose` jobs run on its `runner` input, a JSON label list that defaults to `["ubuntu-latest"]`.
+The release workflow's `plan`, `publish`, `docs`, and `propose` jobs run on its `runner` input, a JSON label list that defaults to `["ubuntu-26.04"]`.
 
 A CI `plan` job's `runs-on` is one literal in a workflow you own and already copied from `examples/`:
 
@@ -235,7 +235,7 @@ Built-in target records, so a public repo needs no config to stay on free hosted
 | name | labels | `os` | `arch` | `triple` |
 |:--|:--|:--|:--|:--|
 | `darwin-arm64` | `["macos-latest"]` | `darwin` | `arm64` | `aarch64-apple-darwin` |
-| `linux-x64` | `["ubuntu-latest"]` | `linux` | `x64` | `x86_64-unknown-linux-gnu` |
+| `linux-x64` | `["ubuntu-26.04"]` | `linux` | `x64` | `x86_64-unknown-linux-gnu` |
 
 Each field is a default the repo overrides one at a time: naming a `runner` moves the machine and leaves the platform alone.  
 verctl has no record for a name outside that set, so the entry must describe the whole platform.  
@@ -271,6 +271,10 @@ assets:
 `verctl release asset <id>` runs the build, checks that each listed path exists under `dir`, then packs `tar czf <asset> -C <dir> <files>`.  
 `dir` and `files` take the placeholders `binary` takes, come together, and replace `binary`, which may not be set beside them.  
 A file the build does not write, such as a licence, is copied into `dir` by the build command.
+
+`verctl release asset <id> --prebuilt <path>` (`VERCTL_PREBUILT`) skips `prepare` and `build` and packs the file at `<path>` as `bin`, for a binary an earlier step built.  
+Only a target that packs the one `binary` takes it: a target with `dir` and `files` fails, and so does a path that is not a file.  
+It does not combine with `--vendored`.
 
 A target that ships other files, such as a tool built only on Linux, lists its own `files`.  
 They replace the shared list for that target alone:

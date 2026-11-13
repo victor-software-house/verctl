@@ -886,7 +886,7 @@ fn a_config_with_no_packages_has_no_package_assets_to_plan() {
         indoc! {"
             runners:
               linux:
-                labels: [ubuntu-24.04]
+                labels: [ubuntu-26.04]
             vendored:
               libexample:
                 version: 1.4.0

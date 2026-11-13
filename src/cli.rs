@@ -291,6 +291,12 @@ pub struct AssetArgs {
     /// `.sha256` beside the archive.
     #[arg(long, conflicts_with = "tag")]
     pub vendored: Option<String>,
+    /// The already-built release binary for this target. With it, `release
+    /// asset` runs neither `prepare` nor `build` and packs this file as the
+    /// binary. A target that packs `files` refuses it. A workflow sets
+    /// `VERCTL_PREBUILT`; an empty variable is unset.
+    #[arg(long, value_name = "PATH", value_hint = clap::ValueHint::FilePath, conflicts_with = "vendored")]
+    pub prebuilt: Option<PathBuf>,
     /// Release tag (`v0.0.1`). Defaults to the first package's tag. A vendored
     /// set declares its own.
     #[arg(long)]
@@ -627,6 +633,55 @@ mod tests {
             target.get_env(),
             Some(OsString::from("VERCTL_TARGET").as_os_str())
         );
+    }
+
+    /// `release asset --prebuilt` names the binary to pack, reads
+    /// `VERCTL_PREBUILT`, and refuses to combine with `--vendored`, whose
+    /// archive packs more than one binary.
+    #[test]
+    fn release_asset_takes_a_prebuilt_binary() {
+        let cli = parse(&[
+            "verctl",
+            "release",
+            "asset",
+            "linux-x64",
+            "--prebuilt",
+            "build/verctl",
+        ])
+        .expect("parse");
+        let Command::Release(super::ReleaseArgs {
+            step: Some(super::ReleaseStep::Asset(asset)),
+            ..
+        }) = cli.command
+        else {
+            panic!("expected release asset");
+        };
+        assert_eq!(
+            asset.prebuilt.as_deref(),
+            Some(std::path::Path::new("build/verctl"))
+        );
+        let command = Cli::command();
+        let prebuilt = command
+            .find_subcommand("release")
+            .and_then(|release| release.find_subcommand("asset"))
+            .and_then(|asset| asset.get_arguments().find(|arg| arg.get_id() == "prebuilt"))
+            .expect("prebuilt");
+        assert_eq!(
+            prebuilt.get_env(),
+            Some(OsString::from("VERCTL_PREBUILT").as_os_str())
+        );
+        let error = parse(&[
+            "verctl",
+            "release",
+            "asset",
+            "linux-x64",
+            "--prebuilt",
+            "build/verctl",
+            "--vendored",
+            "libexample",
+        ])
+        .expect_err("--prebuilt and --vendored must not combine");
+        assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 
     /// The release workflow sets these and runs the bare verb, so each must

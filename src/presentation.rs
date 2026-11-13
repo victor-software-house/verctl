@@ -615,6 +615,8 @@ pub(super) struct AssetsReport {
     #[serde(flatten)]
     pub(super) plan: assets::AssetsPlan,
     pub(super) tarball: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) prebuilt: Option<String>,
     pub(super) uploaded: Option<String>,
 }
 
@@ -631,6 +633,9 @@ impl Present for AssetsReport {
         let mut fields = Fields::new().row("tag", self.plan.tag.clone());
         if let Some(path) = &self.tarball {
             fields = fields.row("tarball", path.clone());
+        }
+        if let Some(path) = &self.prebuilt {
+            fields = fields.row("prebuilt", path.clone());
         }
         if let Some(url) = &self.uploaded {
             fields = fields.row("upload", url.clone());
