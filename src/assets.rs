@@ -273,9 +273,8 @@ fn write_matrix_output(
 ///
 /// With `prebuilt`, nothing is built: neither `prepare` nor `build` runs, and
 /// the tarball holds that file as `bin`. The file is staged in
-/// `.verctl-prebuilt-{id}` under `root`, which is removed after `tar` runs.
-/// `tempfile` is a development dependency, so a system temporary directory is
-/// not available here.
+/// `.verctl-prebuilt-{id}` under `root`, beside the tarball, and removed after
+/// `tar` runs.
 ///
 /// # Errors
 ///
