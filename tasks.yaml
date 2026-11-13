@@ -374,7 +374,7 @@ queue:
   - id: VER-104
     title: release.yml takes the registry token only as the registry-token secret
     scope: release.yml publish job
-    outcome: "A caller passes its registry token by name, from a repository or an environment, and never passes secrets: inherit."
+    outcome: 'A caller passes its registry token by name, from a repository or an environment, and never passes secrets: inherit.'
     blocked_by: []
     acceptance:
       - The publish job reads only `secrets.registry-token`, and jactionlint finds no overprovisioned-secrets or obfuscation finding in `release.yml`.
@@ -449,7 +449,7 @@ queue:
 
   - id: VER-125
     title: Place an asset target's problems on its own line
-    scope: "config: assets"
+    scope: 'config: assets'
     outcome: >-
       A problem in a target under assets names the path the file holds and lands on
       that line.
@@ -463,7 +463,7 @@ queue:
 
   - id: VER-126
     title: Cap the Version PR body at GitHub's limit
-    scope: "release: Version PR"
+    scope: 'release: Version PR'
     outcome: >-
       A Version PR opens at any changelog size, so a repository with many pending
       fragments still releases.
@@ -473,7 +473,7 @@ queue:
       - A longer changelog gives a body of at most 65,536 characters that keeps every whole line that fits, never cuts inside a fenced code block, never ends on a heading, and ends with a note that points at the changelog files in the diff.
     plan: openspec/changes/version-pr-body-cap/proposal.md
     notes:
-      - "2026-11-12: nishiki Release run 43146966330 failed to open the Version PR with body is too long (maximum is 65536 characters), with 275 pending fragments."
+      - '2026-11-12: nishiki Release run 43146966330 failed to open the Version PR with body is too long (maximum is 65536 characters), with 275 pending fragments.'
 
   - id: VER-128
     title: Build verctl once per platform in its own release
@@ -490,6 +490,102 @@ queue:
     plan: openspec/changes/release-build-once/proposal.md
     notes:
       - '2026-11-13, stacked on draft-release-assets: the self-release build job compiled verctl once and each assets job compiled it again from the same commit.'
+
+  - id: VER-129
+    title: 'Release from HEAD: drop the old-commit plan and refuse_skipped_versions'
+    scope: release, status, release.yml
+    outcome: >-
+      A run releases the versions HEAD holds, from HEAD, and no job checks out an older commit.
+    blocked_by: []
+    acceptance:
+      - status and release read HEAD only, and src/ holds no refuse_skipped_versions.
+      - release.yml checks out github.sha in every job and has no matrix of version commits.
+      - release no longer refuses a commit that is not a version commit.
+    plan: openspec/changes/release-from-head/proposal.md
+    notes:
+      - On 2026-11-13, every shrub Release run since 2026-11-11 failed at `mise install --locked` on version commit `1ecc0b5`. Its lock has no checksum for taplo 0.10.0.
+      - mise 2026.11.6 refuses a locked download without a checksum, through the `locked_require_checksum` setting.
+      - The operator decided the design on 2026-11-13; docs/research/2026-11-13-atomic-releases.md holds it.
+
+  - id: VER-134
+    title: "Release order: assets in a draft, then the registries, then the tag"
+    scope: release, status
+    outcome: >-
+      A release creates its tag only by publishing the draft Release after every
+      upload, and status reports a partial release that a rerun resumes.
+    blocked_by:
+      - VER-129
+    acceptance:
+      - A release publishes the tag last, with the draft Release that already holds every asset.
+      - status reports a partial release with its count and cause, and a rerun skips every crate the index lists.
+    plan: openspec/changes/release-order/proposal.md
+    notes:
+      - The operator decided the design on 2026-11-13; docs/research/2026-11-13-atomic-releases.md holds it.
+
+  - id: VER-135
+    title: "Release checks: named checks, release --dry-run, and the freeze"
+    scope: check, release, status, .ctl/ver.yaml
+    outcome: >-
+      Every upload is proven before the first, and the default branch takes no other
+      change until a landed release completes.
+    blocked_by:
+      - VER-134
+    acceptance:
+      - verctl check runs the checks it names, bare check runs fragments and served, and check --versions no longer parses.
+      - The registry check proves existence and owners without a token, and the trust check proves the trusted publisher with an owner token.
+      - release --dry-run runs the checks, cargo publish --workspace --dry-run, the version replay and the asset builds, and uploads nothing; release runs the same proof first.
+      - 'The registry check fails every other pull request while the default branch holds an incomplete release, unless the pull request is labelled verctl: unfreeze.'
+    plan: openspec/changes/release-checks/proposal.md
+    notes:
+      - The operator decided the design on 2026-11-13; docs/research/2026-11-13-atomic-releases.md holds it.
+
+  - id: VER-136
+    title: "First publish: release bootstrap and release trust for a crate the registry lacks"
+    scope: release, release.yml
+    outcome: >-
+      A crate crates.io lacks is published with the operator token at the version the
+      default branch holds, and its trusted publisher is registered once.
+    blocked_by:
+      - VER-135
+    acceptance:
+      - verctl release bootstrap publishes each package the registry lacks, or each named one, and runs verctl release trust.
+      - verctl release trust adds the trusted publisher entry only when it is missing, and release trust --dry-run sends no POST.
+      - The bootstrap input lets CI run release bootstrap with the registry-token secret, and defaults to false.
+      - shrub-process is published through release bootstrap.
+    plan: openspec/changes/first-publish/proposal.md
+    notes:
+      - The operator decided the design on 2026-11-13; docs/research/2026-11-13-atomic-releases.md holds it.
+
+  - id: VER-137
+    title: Give every hand-typed verctl flag a short form
+    scope: cli
+    outcome: A person types every verctl flag they type by hand in a short form.
+    blocked_by: []
+    acceptance:
+      - Every long flag a person types by hand has a short form.
+      - No two short forms collide within one command.
+      - A flag only CI sets through VERCTL_* variables stays long-only.
+    notes:
+      - 'Decided 2026-11-13 (operator): short forms for hand-typed flags only.'
+      - Today only -d, -c, -n and -f exist; -a for check --all comes with release-checks.
+
+  - id: VER-138
+    title: Stream progress and diagnostics from release, check and docs
+    scope: cli, presentation
+    outcome: >-
+      A run of release, check or docs shows each step as it happens, and every
+      warning and error as a diagnostic.
+    blocked_by: []
+    acceptance:
+      - Progress goes to stderr as each step starts and ends, and the report stays on stdout in both --format pretty and --format json.
+      - 'With no flag, a run shows a live region when stderr is a terminal, one ::group:: per step on GitHub Actions with the failing step log outside any group, and plain start and end lines with times otherwise.'
+      - The --quiet flag keeps only failures.
+      - The --progress flag, live, plain or github (VERCTL_PROGRESS, long-only), overrides the detected mode.
+      - 'Each warning and error is a diagnostic with a code: a ▲ line, a GitHub ::warning or ::error annotation with file and line, at most 10 per level per step and then one that counts the rest, a diagnostics array in JSON, and a row in $GITHUB_STEP_SUMMARY.'
+      - version --pr emits the warning version-pr-body-cut when the Version PR body is cut at the GitHub limit.
+    notes:
+      - Blocked on ctl-core CTC-036, live regions and progress, which owns streams and the live region.
+      - 'Decided 2026-11-13 (operator): the mode follows the run, and a flag only overrides it.'
 
 horizon:
   - id: VER-038
@@ -1001,7 +1097,63 @@ horizon:
     notes:
       - Needs a release.yml input and a release asset path that packs a given binary; it helps only callers that build their own binary first.
 
+  - id: VER-131
+    title: Release whole on npm and GitHub Packages
+    scope: >-
+      check registry, check trust, release --dry-run, release bootstrap, release trust, the npm and bun publishers
+    outcome: >-
+      A spike states what each check, the first publish and trust do for npm and GitHub Packages, and which parts of the four crates.io changes, release-from-head to first-publish, carry over.
+    kind: research
+    open: >-
+      The four changes cover crates.io only; nobody has mapped their checks onto npm or GitHub Packages.
+    notes:
+      - npm needs a package to exist before trusted publishing, and npm trust configures it, from npm 11.10.0; npm/cli#8544 asks for first-publish support.
+      - npm refuses a republished version and allows unpublish only within 72 hours with no dependents; staged publishing needs a human 2FA approval and its batch approval is not atomic.
+      - GitHub Packages takes the job GITHUB_TOKEN, with no trusted publishing, and a package first published by a personal token lacks the repository write grant.
+      - The operator asked for horizon rows for the other registries, with no decision yet (operator, 2026-11-13).
+
+  - id: VER-132
+    title: Release whole for Go modules
+    scope: check registry, release --dry-run, the go publisher, tags
+    outcome: >-
+      A spike states what the four crates.io changes, release-from-head to first-publish, mean for a Go module, whose release is its tag.
+    kind: research
+    open: Nobody has mapped the checks and the freeze onto a release that uploads nothing.
+    notes:
+      - A Go module release is its tag; the module proxy and the checksum database keep a version once fetched, so a moved or deleted tag does not take it back.
+      - The operator asked for horizon rows for the other registries, with no decision yet (operator, 2026-11-13).
+
+  - id: VER-133
+    title: Registry checks for a custom publisher and for registries verctl does not ship
+    scope: publisher query recipes, check registry, release bootstrap
+    outcome: >-
+      An evaluation states what a custom publisher must declare, beside its query, for check registry, check trust, release bootstrap and release trust, and which registries to support next.
+    kind: evaluation
+    open: >-
+      No repository has asked for a registry beyond crates.io, npm, GitHub Packages
+      and Go modules.
+    notes:
+      - 'PyPI pending publishers configure trusted publishing before a project exists, and reserve no name: prior art for a first publish without a token.'
+      - The operator asked for horizon rows for the other registries, with no decision yet (operator, 2026-11-13).
+
 archive:
+  - id: VER-130
+    title: Decide which commit a release publishes from, and which versions a run releases
+    scope: release workflow, pending
+    outcome: >-
+      One approved rule states which commit each release publishes from, and which
+      pending versions a run releases, with defaults and opt-in overrides.
+    notes:
+      - A release run is idempotent and can be retried as often as needed (operator, 2026-11-13).
+      - A run releases only what needs releasing, and does not release past versions before new ones, or in the same run, by default (operator, 2026-11-13).
+      - Releasing a skipped past version stays possible as an opt-in. Releases are immutable by default, and a repository may choose otherwise (operator, 2026-11-13).
+      - The latest HEAD and the commit a release publishes from are different things. Any move between them is decided with the operator, never implied by another change (operator, 2026-11-13).
+      - 'Related rows: `VER-092` derives release state from facts, `VER-093` states how each release completes, and `VER-124` rebuilds or retires missing assets.'
+    completed: 2026-11-13T07:16:29
+    evidence:
+      - 'Decided 2026-11-13 in docs/research/2026-11-13-atomic-releases.md, section 4: HEAD is the release reference, and a run never releases an older version. VER-129 implements it.'
+    disposition: completed
+
   - id: VER-020
     title: check validates served files, and one file has one owner
     scope: verctl
@@ -1307,7 +1459,7 @@ archive:
   - id: VER-079
     title: Remove Version PR auto-merge
     scope: verctl prepare, release workflow, actions/version-pr
-    outcome: "No repository releases on its own: a release starts only when a person merges the Version PR."
+    outcome: 'No repository releases on its own: a release starts only when a person merges the Version PR.'
     plan: openspec/changes/archive/2026-11-09-remove-version-pr-auto-merge/proposal.md
     notes:
       - Operator decision 2026-11-02, no repository releases on its own.
