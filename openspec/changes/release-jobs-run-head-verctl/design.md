@@ -26,7 +26,7 @@ The version commit's `mise.lock` lists the verctl that commit pins, and HEAD's l
 
 ### 1. The plan job outputs the checked verctl version
 
-The "Require verctl 0.8.0 or later" step already reads `mise run --quiet ver --version` at HEAD, under the caller's locks.
+The "Require verctl 0.8.4 or later" step already reads `mise run --quiet ver --version` at HEAD, under the caller's locks.
 It writes the version to a step output, and the job exposes it as `verctl-version`.
 A run with `verctl-artifact` leaves it empty, because that build is already the run's verctl.
 

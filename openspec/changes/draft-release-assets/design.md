@@ -56,7 +56,7 @@ The alternative, to keep an immutable Release pending, loses: no run could finis
 Drafts are listed only by `GET /repos/{owner}/{repo}/releases`, and only to a token with push access ([list releases][list]).
 The lookup reads the tag endpoint first, and on a 404 pages the list, 100 per page, newest first, for the Release whose `tag_name` is the tag.
 A new draft is on the first page, and only a tag with no Release at all reads every page, up to ten.
-After ten pages the lookup fails and names the tag.
+After ten pages the lookup finds no Release, which is right for a new draft, because it is the newest.
 `release_state`, `ensure_release_as`, and the upload and checksum lookups all use it.
 
 A draft's assets carry a `state`, and an upload that broke off is in another state than `uploaded`.

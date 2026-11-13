@@ -38,7 +38,7 @@ name: Release
 # instead, so each job runs the verctl that run built once for its platform.
 #
 # Every other job needs plan, so plan alone checks what they share: the
-# pinned verctl is 0.8.0 or later, and each mise-ignored-config-paths entry
+# pinned verctl is 0.8.4 or later, and each mise-ignored-config-paths entry
 # is a plain relative path. publish, assets, finalize, and docs take the
 # checked paths from plan's outputs.
 #
@@ -264,14 +264,14 @@ jobs:
         run: |
           chmod +x "${BUILD_DIR}/verctl"
           echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
-      - name: Require verctl 0.8.0 or later
+      - name: Require verctl 0.8.4 or later
         id: minimum
         # The caller's pin at HEAD chooses verctl, apart from this workflow's
         # ref. A build from this run already matches the workflow, so it skips.
         # Every later job runs the version this step checked, so it checks once.
         if: inputs.verctl-artifact == ''
         env:
-          MINIMUM: 0.8.0
+          MINIMUM: 0.8.4
         run: |
           installed="$(mise run --quiet ver --version)"
           installed="${installed##* }"
@@ -401,8 +401,8 @@ jobs:
           # The plan's assets for this commit. None means the plan expects no
           # asset here, so the leg declares none whatever the commit's config
           # names.
-          VERCTL_SKIP_ASSETS: ${{ !inputs.assets || fromJson(needs.plan.outputs.declared || '{}')[matrix.commit] == '' }}
-          VERCTL_DECLARED_ASSETS: ${{ fromJson(needs.plan.outputs.declared || '{}')[matrix.commit] }}
+          VERCTL_SKIP_ASSETS: ${{ !inputs.assets || fromJson(needs.plan.outputs.declared)[matrix.commit] == '' }}
+          VERCTL_DECLARED_ASSETS: ${{ fromJson(needs.plan.outputs.declared)[matrix.commit] }}
           VERCTL_ALLOW_WORKFLOW_CHANGE: ${{ inputs.allow-workflow-change }}
           VERCTL_ALLOW_OFF_DEFAULT_BRANCH: ${{ inputs.allow-off-default-branch }}
           # The token is read only under its declared name. A caller whose
@@ -640,8 +640,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           VERCTL_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           # The same assets as publish declared for this commit.
-          VERCTL_SKIP_ASSETS: ${{ !inputs.assets || fromJson(needs.plan.outputs.declared || '{}')[matrix.commit] == '' }}
-          VERCTL_DECLARED_ASSETS: ${{ fromJson(needs.plan.outputs.declared || '{}')[matrix.commit] }}
+          VERCTL_SKIP_ASSETS: ${{ !inputs.assets || fromJson(needs.plan.outputs.declared)[matrix.commit] == '' }}
+          VERCTL_DECLARED_ASSETS: ${{ fromJson(needs.plan.outputs.declared)[matrix.commit] }}
           # Creates and publishes Releases only. This job holds no registry
           # credential and never uploads a package.
           VERCTL_RELEASES_ONLY: true

@@ -975,9 +975,9 @@ struct ForgeAsset {
 /// Releases read per page; GitHub's maximum.
 const RELEASES_PER_PAGE: usize = 100;
 
-/// Pages of Releases a lookup reads before it gives up, so a repository with
-/// thousands of Releases costs ten requests and an error instead of one request
-/// per page.
+/// Pages of Releases a lookup reads before it finds none, so a repository with
+/// thousands of Releases costs ten requests for a tag with no Release yet.
+/// A draft verctl creates is the newest Release, so it is on the first page.
 const MAX_RELEASE_PAGES: u32 = 10;
 
 /// The Release for `tag`, draft or published, or `None`.
@@ -989,7 +989,7 @@ const MAX_RELEASE_PAGES: u32 = 10;
 /// The list is newest first, so a draft created a moment ago is on the first
 /// page.
 /// Only a tag with no Release at all reads every page, up to
-/// [`MAX_RELEASE_PAGES`], and then the lookup fails and names the tag.
+/// [`MAX_RELEASE_PAGES`], and then no Release is found.
 ///
 /// [get a release by tag name]: https://docs.github.com/en/rest/releases/releases#get-a-release-by-tag-name
 /// [list releases]: https://docs.github.com/en/rest/releases/releases#list-releases
@@ -1029,11 +1029,9 @@ async fn find_release(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<Option<
         if last {
             return Ok(None);
         }
-        ensure!(
-            page < MAX_RELEASE_PAGES,
-            "release {tag} is not among the newest {newest} Releases, and verctl reads no further to find a draft",
-            newest = usize::try_from(MAX_RELEASE_PAGES).unwrap_or(usize::MAX) * RELEASES_PER_PAGE
-        );
+        if page >= MAX_RELEASE_PAGES {
+            return Ok(None);
+        }
         page += 1;
     }
 }
@@ -1924,7 +1922,7 @@ mod tests {
     }
 
     /// A tag with no Release in a repository with many reads ten pages, then
-    /// fails and names the tag, instead of one request per page forever.
+    /// finds none, instead of one request per page forever.
     #[tokio::test]
     async fn the_release_list_is_read_for_ten_pages_at_most() {
         let server = MockServer::start().await;
@@ -1935,12 +1933,10 @@ mod tests {
             .expect(10)
             .mount(&server)
             .await;
-        let error = super::find_release(&crab(&server.uri()), &repo(), TAG)
+        let found = super::find_release(&crab(&server.uri()), &repo(), TAG)
             .await
-            .unwrap_err();
-        let message = format!("{error:#}");
-        assert!(message.contains(TAG), "{message}");
-        assert!(message.contains("1000"), "{message}");
+            .unwrap();
+        assert!(found.is_none());
     }
 
     #[tokio::test]
