@@ -4,7 +4,7 @@ The research note `docs/research/2026-11-13-atomic-releases.md` holds the eviden
 The operator made each decision on 2026-11-13.
 
 The change covers crates.io.
-npm and GitHub Packages, Go modules, and other registries are horizon rows VER-131, VER-132 and VER-133.
+npm and GitHub Packages, Go modules, and other registries are horizon rows of the [work queue][queue].
 
 ## 1. Prove every upload before the first
 
@@ -128,3 +128,5 @@ The `registry-token` secret with the new `first-publish` input lets the workflow
 
 Trusted-publishing uploads count against no crates.io limit, so a release of existing crates meets none.
 Only a first publish meets the new-crate limit of 5, then 1 every 10 minutes, and `release --first` waits it out.
+
+[queue]: ../../../tasks.yaml
