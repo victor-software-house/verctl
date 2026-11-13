@@ -15,5 +15,5 @@
 
 ## 4. Documents
 
-- [ ] 4.1 Update AGENTS.md, the instructions, the operator skill and the README for HEAD as the release reference. Proof: `UPDATE_OPERATOR_DOCS=1 cargo test operator_docs` leaves no diff in CI.
+- [x] 4.1 Update AGENTS.md, the instructions, the operator skill and the README for HEAD as the release reference. Proof: `UPDATE_OPERATOR_DOCS=1 cargo test operator_docs` leaves no diff in CI.
 - [ ] 4.2 A `patch!` fragment for verctl lists the HEAD-only release under `### Breaking`. Proof: `verctl version --dry-run` shows the entry under that heading.

@@ -31,7 +31,7 @@ The `--` in `#USAGE mount` is mise's completion bootstrap.
 | Command | Aliases | Purpose |
 |:--|:--|:--|
 | `instructions` | — | Print the installed-version operator contract |
-| `status` | — | List pending fragments, the asset plan, and the incomplete version commits. `--github-output` writes the release workflow's plan |
+| `status` | — | List pending fragments, the asset plan, and HEAD's incomplete releases. `--github-output` writes the release workflow's plan |
 | `check` | — | Validate fragments, or `--versions` against the default branch |
 | `version` | — | Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews |
 | `release` | — | Release the versions on HEAD: publish with cargo or bun, and create the GitHub Release. `release asset <target>` builds and uploads one asset |
@@ -55,9 +55,9 @@ JSON errors use stdout, while human errors use stderr.
 
 1. A pull request that changes behaviour adds a fragment.
 2. Each push to the default branch runs the release workflow.  
-   It releases every incomplete version commit, then opens or updates the Version PR.
+   It releases every incomplete version HEAD holds, from HEAD, then opens or updates the Version PR.
 3. A person merges the Version PR, and verctl never merges it.
-4. The push that merges it releases the new version commit.
+4. The push that merges it releases the new versions.
 
 ## Configuration
 
@@ -126,18 +126,19 @@ It also fails when it changes whether a package publishes without a fragment tha
 
 ## Release
 
-### Version commits
+### HEAD is the release reference
 
-`release` acts on version commits: the commit that set each package's version.  
-`status` lists every one whose release is incomplete (registry, tag, published Release, assets unless `--skip-assets`), oldest first, under `unreleased`.  
+`release` releases, from HEAD, every version HEAD's manifests hold whose release is incomplete, whichever commit set it.  
+`status` lists those (registry, tag, published Release, assets unless `--skip-assets`) under `unreleased`.  
 It needs `GITHUB_TOKEN` or `GH_TOKEN`.  
 Without one, or when a lookup cannot run, it reports `unreleased` as not checked.
 
-`status --github-output <file>` fetches the history and writes the `commits`, `pending`, `assets`, `has_assets`, `tag`, and `matrix` outputs.  
+`status --github-output <file>` fetches the history and writes the `commits`, `pending`, `assets`, `declared`, `has_assets`, `tag`, and `matrix` outputs.  
 `release --plan` fails and names it.
 
-`release` releases only the packages whose version commit is HEAD, and reports `nothing to release` when every release is complete.  
-A Release with declared assets is a draft until every asset is uploaded, and `release` run again at its commit publishes it.  
+`release` reports `nothing to release` when every release is complete.  
+A version HEAD's manifests do not hold stays unreleased.  
+A Release with declared assets is a draft until every asset is uploaded, and `release` run again publishes it.  
 A hand-written workflow that runs `actions/publish` and then `actions/asset` runs `verctl release` again after its uploads.  
 `--skip-assets` also publishes an existing draft without its assets.  
 A release tag on a commit HEAD holds only through a merge passes when the version there matches HEAD's.
@@ -151,9 +152,6 @@ The `.github/workflows/` tree at `GITHUB_SHA`, else HEAD, equals the one at the 
 `--allow-off-default-branch` and `--allow-workflow-change` go past one, and the report lists it under `allowed`.  
 Their variables are `VERCTL_ALLOW_OFF_DEFAULT_BRANCH` and `VERCTL_ALLOW_WORKFLOW_CHANGE`, and the `release.yml` inputs are `allow-off-default-branch` and `allow-workflow-change`.  
 A check that cannot run refuses anyway.
-
-A package with an earlier unreleased version commit since its last tag is refused, and no flag allows it.  
-`status` lists that commit first, so release it before the newer one.
 
 `verctl release` fetches the default branch (that one ref, with history) only when `origin/<default>` is missing.  
 It rewrites `origin/HEAD` only from `VERCTL_DEFAULT_BRANCH`.  

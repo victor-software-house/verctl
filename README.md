@@ -351,10 +351,10 @@ To replace an archive, delete it and its `.sha256` together.
 A repository releases through one thin caller of verctl's reusable workflow ([`examples/workflows/release.yml`](examples/workflows/release.yml)).  
 It triggers on push to the default branch and on `workflow_dispatch`, and runs one flow:
 
-1. `plan` runs `verctl status --github-output`, which lists every version commit whose release is incomplete.
-2. `publish` runs `verctl release` at each, oldest first.
+1. `plan` runs `verctl status --github-output`, which lists every version HEAD holds whose release is incomplete.
+2. `publish` runs `verctl release`, which releases them from HEAD.
 3. `assets` runs `verctl release asset` for the tarballs each Release lacks.
-4. `finalize` runs `verctl release` again at each, which publishes a draft Release once every asset is uploaded.
+4. `finalize` runs `verctl release` again, which publishes a draft Release once every asset is uploaded.
 5. `docs` waits for docs.rs to build each released crate.
 6. `propose` opens or updates the Version PR.
 
@@ -377,7 +377,7 @@ A Release with declared asset targets is a draft until every asset is uploaded, 
 `publish` creates the tag, then the draft.  
 `assets` uploads to it, and `finalize` publishes it.  
 `--skip-assets` publishes the Release at once, and publishes an existing draft without its assets.  
-A hand-written workflow that runs `actions/publish` and then `actions/asset` runs `verctl release` again at the version commit after its uploads, which publishes the draft.
+A hand-written workflow that runs `actions/publish` and then `actions/asset` runs `verctl release` again at the same commit after its uploads, which publishes the draft.
 
 A registry token stored in a GitHub environment that admits only the default branch is out of reach of every other branch.  
 Pass `environment: <name>`, and map the token by its stored name: `registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}`.  
@@ -402,9 +402,8 @@ To migrate from `version-pr.yml` and `publish.yml`, do it in one pull request:
 
 The first push after the merge opens the Version PR from `verctl/release/<base>`.
 
-Adopt the caller when no release is pending, or merge the adoption before the Version PR.  
-Each release runs at its version commit, and an older version commit lacks the `ver` task the reusable workflow runs.  
-The later jobs still run the verctl the plan job checked at HEAD, installed from HEAD's lock, so a pending version commit that pins an older verctl releases.
+Every job checks out the commit that started the run, so a release pending before the adoption releases from the first run after it.  
+A version HEAD's manifests do not hold stays unreleased.
 
 GitHub refuses a Release at a commit whose `.github/workflows` differs from the default branch unless the token holds `workflows: write`, which `GITHUB_TOKEN` cannot.  
 So some packages get their tag and Release before their uploads, in the run that merged the Version PR.
