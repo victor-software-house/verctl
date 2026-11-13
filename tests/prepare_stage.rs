@@ -9,9 +9,12 @@ mod common;
 
 use std::fs;
 use std::path::Path;
+use std::process::Output;
 
 use indoc::indoc;
 use tempfile::TempDir;
+use verctl::config::Config;
+use verctl::{config, publish};
 
 fn init_repo(root: &Path) {
     common::init(root);
@@ -53,7 +56,7 @@ fn write_min(root: &Path, extra: &str) {
     .unwrap();
 }
 
-fn prepare(root: &Path) -> std::process::Output {
+fn prepare(root: &Path) -> Output {
     common::verctl()
         .current_dir(root)
         .args(["version", "--no-pr"])
@@ -151,8 +154,8 @@ fn bunfig_is_passed_as_config() {
         "#},
     )
     .unwrap();
-    let planned = verctl::publish::plan(
-        &verctl::config::Config::load(&root.path().join(verctl::config::FILE)).unwrap(),
+    let planned = publish::plan(
+        &Config::load(&root.path().join(config::FILE)).unwrap(),
         root.path(),
     )
     .unwrap();
@@ -423,7 +426,7 @@ const HOOK_ENV: [(&str, &str); 3] = [
     ("GIT_WORK_TREE", "."),
 ];
 
-fn verctl(root: &Path, args: &[&str], env: &[(&str, &str)]) -> std::process::Output {
+fn verctl(root: &Path, args: &[&str], env: &[(&str, &str)]) -> Output {
     common::verctl()
         .current_dir(root)
         .args(args)

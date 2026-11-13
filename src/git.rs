@@ -1,25 +1,40 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::env;
+use std::fs::{File, Metadata, Permissions};
+use std::io::{ErrorKind, Read};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
+use std::{env, fmt, fs, path};
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
-use gix::bstr::ByteSlice;
+use gix::actor::Signature;
+use gix::bstr::{BString, ByteSlice};
 use gix::credentials::helper::Action;
 use gix::credentials::protocol::Outcome;
+use gix::date::Time;
+use gix::dir::entry::Status;
+use gix::dir::walk::EmissionMode;
+use gix::filter::Pipeline;
+use gix::index::State;
+use gix::index::entry::Mode;
+use gix::objs::Commit;
 use gix::objs::tree::EntryKind;
-use gix::refs::Target;
+use gix::progress::Discard;
 use gix::refs::transaction::{PreviousValue, RefEdit};
-use gix::remote::Direction;
-use gix::remote::fetch::Shallow;
+use gix::refs::{FullName, Target};
+use gix::remote::fetch::{Shallow, Tags};
+use gix::remote::{Direction, ref_map};
 use gix::sec::identity::Account;
 use gix::sec::trust::{DefaultForLevel, Mapping};
 use gix::sec::{Permission, Trust};
+use gix::status::tree_index::TrackRenames;
+use gix::status::{UntrackedFiles, index_worktree};
+use gix::worktree::stack::state::ignore::Source;
+use gix::{open, status};
 use semver::Version;
 
 use crate::github::Repo;
-use crate::{bump, lookup, process};
+use crate::{bump, github, lookup, process};
 
 /// The checked-out branch, or `None` for a detached HEAD or no repository.
 #[must_use]
@@ -275,12 +290,12 @@ impl MergeBase {
             };
             let path = dir.join(rel);
             if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)
+                fs::create_dir_all(parent)
                     .with_context(|| format!("create {}", parent.display()))?;
             }
             let bytes = self.base_bytes(rel)?.unwrap_or_default();
-            std::fs::write(&path, bytes).with_context(|| format!("write {}", path.display()))?;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode))
+            fs::write(&path, bytes).with_context(|| format!("write {}", path.display()))?;
+            fs::set_permissions(&path, Permissions::from_mode(mode))
                 .with_context(|| format!("chmod {}", path.display()))?;
         }
         Ok(())
@@ -299,16 +314,16 @@ enum Worktree {
 impl Worktree {
     fn read(path: &Path) -> Result<Self> {
         use std::os::unix::ffi::OsStrExt as _;
-        let metadata = match std::fs::symlink_metadata(path) {
+        let metadata = match fs::symlink_metadata(path) {
             Ok(metadata) => metadata,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Self::Missing),
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Self::Missing),
             Err(error) => return Err(error).with_context(|| path.display().to_string()),
         };
         if metadata.file_type().is_symlink() {
-            let target = std::fs::read_link(path).with_context(|| path.display().to_string())?;
+            let target = fs::read_link(path).with_context(|| path.display().to_string())?;
             return Ok(Self::Link(target.as_os_str().as_bytes().to_vec()));
         }
-        let bytes = std::fs::read(path).with_context(|| path.display().to_string())?;
+        let bytes = fs::read(path).with_context(|| path.display().to_string())?;
         Ok(Self::File(bytes))
     }
 }
@@ -319,9 +334,9 @@ impl Worktree {
 ///
 /// Returns an error when the file exists but cannot be read.
 pub fn read_optional(path: &Path) -> Result<Option<Vec<u8>>> {
-    match std::fs::read(path) {
+    match fs::read(path) {
         Ok(bytes) => Ok(Some(bytes)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error).with_context(|| path.display().to_string()),
     }
 }
@@ -468,8 +483,7 @@ fn added_from(
     }
     let boundary: Vec<gix::ObjectId> = repo
         .shallow_commits()?
-        .map(|commits| commits.iter().copied().collect())
-        .unwrap_or_default();
+        .map_or_default(|commits| commits.iter().copied().collect());
     let mut commit = head;
     let mut named_merge = None;
     loop {
@@ -559,8 +573,7 @@ pub fn candidate_deletions(
     };
     let boundary: Vec<gix::ObjectId> = repo
         .shallow_commits()?
-        .map(|commits| commits.iter().copied().collect())
-        .unwrap_or_default();
+        .map_or_default(|commits| commits.iter().copied().collect());
     let mut commit = repo
         .head_commit()
         .context("reading earlier candidates needs HEAD")?;
@@ -680,8 +693,7 @@ pub fn version_commit(
         .with_context(|| format!("HEAD has no version in {}", rel.display()))?;
     let boundary: Vec<gix::ObjectId> = repo
         .shallow_commits()?
-        .map(|commits| commits.iter().copied().collect())
-        .unwrap_or_default();
+        .map_or_default(|commits| commits.iter().copied().collect());
     let mut depth = 0;
     loop {
         if boundary.contains(&commit.id().detach()) {
@@ -761,8 +773,7 @@ pub fn tagged_commit(
         .with_context(|| format!("HEAD has no version in {}", rel.display()))?;
     let boundary: Vec<gix::ObjectId> = repo
         .shallow_commits()?
-        .map(|commits| commits.iter().copied().collect())
-        .unwrap_or_default();
+        .map_or_default(|commits| commits.iter().copied().collect());
     let mut line = Vec::new();
     loop {
         if commit.id().to_string().eq_ignore_ascii_case(sha) {
@@ -1057,8 +1068,7 @@ pub fn unreleased_below(
         .with_context(|| format!("HEAD has no version in {}", rel.display()))?;
     let boundary: Vec<gix::ObjectId> = repo
         .shallow_commits()?
-        .map(|commits| commits.iter().copied().collect())
-        .unwrap_or_default();
+        .map_or_default(|commits| commits.iter().copied().collect());
     if Version::parse(&version).is_err() {
         return Ok(Vec::new());
     }
@@ -1133,8 +1143,8 @@ pub enum FetchDefault {
 
 /// Prints the repository but never the token, so a logged value leaks no
 /// credential.
-impl std::fmt::Debug for FetchDefault {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for FetchDefault {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Origin => f.write_str("Origin"),
             Self::GitHub { repository, .. } => f
@@ -1216,9 +1226,9 @@ pub fn ensure_origin_head(root: &Path, branch: &str, fetch: &FetchDefault) -> Re
         peel_remote(&repo, &remote_ref).is_some(),
         "cannot resolve the default branch ({remote_ref} is missing; fetch the default branch)"
     );
-    let target = gix::refs::FullName::try_from(remote_ref.as_str())
+    let target = FullName::try_from(remote_ref.as_str())
         .context("point origin/HEAD at the default branch")?;
-    let name = gix::refs::FullName::try_from("refs/remotes/origin/HEAD")
+    let name = FullName::try_from("refs/remotes/origin/HEAD")
         .context("point origin/HEAD at the default branch")?;
     repo.edit_reference(RefEdit::update(
         name,
@@ -1330,7 +1340,7 @@ fn fetch_one_branch(
     let remote = repo
         .remote_at(url.as_str())
         .context("fetch the default branch")?
-        .with_fetch_tags(gix::remote::fetch::Tags::None)
+        .with_fetch_tags(Tags::None)
         .with_refspecs([spec.as_str()], Direction::Fetch)
         .context("fetch the default branch")?;
     let connection = remote
@@ -1339,22 +1349,16 @@ fn fetch_one_branch(
     let interrupt = AtomicBool::new(false);
     match fetch {
         FetchDefault::Origin => connection
-            .prepare_fetch(
-                gix::progress::Discard,
-                gix::remote::ref_map::Options::default(),
-            )
+            .prepare_fetch(Discard, ref_map::Options::default())
             .with_context(|| format!("git fetch {spec}"))?
             .with_shallow(shallow)
-            .receive(gix::progress::Discard, &interrupt),
+            .receive(Discard, &interrupt),
         FetchDefault::GitHub { token, .. } => connection
             .with_credentials(github_credentials(token))
-            .prepare_fetch(
-                gix::progress::Discard,
-                gix::remote::ref_map::Options::default(),
-            )
+            .prepare_fetch(Discard, ref_map::Options::default())
             .with_context(|| format!("git fetch {spec}"))?
             .with_shallow(shallow)
-            .receive(gix::progress::Discard, &interrupt),
+            .receive(Discard, &interrupt),
     }
     .with_context(|| format!("git fetch {spec}"))?;
     Ok(())
@@ -1464,11 +1468,8 @@ pub fn is_ignored(root: &Path, rel: &Path) -> bool {
     let Ok(index) = repo.index_or_empty() else {
         return false;
     };
-    let Ok(mut excludes) = repo.excludes(
-        &index,
-        None,
-        gix::worktree::stack::state::ignore::Source::WorktreeThenIdMappingIfNotSkipped,
-    ) else {
+    let Ok(mut excludes) = repo.excludes(&index, None, Source::WorktreeThenIdMappingIfNotSkipped)
+    else {
         return false;
     };
     let mut ignored_at = |path: &Path, mode| {
@@ -1479,7 +1480,7 @@ pub fn is_ignored(root: &Path, rel: &Path) -> bool {
     path.ancestors()
         .skip(1)
         .filter(|dir| !dir.as_os_str().is_empty())
-        .any(|dir| ignored_at(dir, Some(gix::index::entry::Mode::DIR)))
+        .any(|dir| ignored_at(dir, Some(Mode::DIR)))
         || ignored_at(&path, None)
 }
 
@@ -1539,8 +1540,8 @@ fn discover(dir: &Path) -> Result<gix::Repository> {
 }
 
 /// gix's defaults for `trust`, without the repository-local `GIT_*` overrides.
-fn open_options(trust: Trust) -> gix::open::Options {
-    let mut options = gix::open::Options::default_for_level(trust);
+fn open_options(trust: Trust) -> open::Options {
+    let mut options = open::Options::default_for_level(trust);
     options.permissions.env.git_prefix = Permission::Deny;
     options
 }
@@ -1615,7 +1616,7 @@ pub fn default_branch_candidates() -> Vec<String> {
 pub fn release_branch_candidates() -> Vec<String> {
     release_candidate_names(
         configured_default_branch().as_deref(),
-        crate::github::event_default_branch().as_deref(),
+        github::event_default_branch().as_deref(),
         env_base_ref().as_deref(),
     )
 }
@@ -1653,7 +1654,7 @@ pub fn comparison_branches() -> Vec<String> {
     let mut names = Vec::new();
     let sources = [
         configured_default_branch(),
-        crate::github::event_default_branch(),
+        github::event_default_branch(),
         env_base_ref(),
     ];
     for name in sources.into_iter().flatten() {
@@ -1801,18 +1802,16 @@ pub fn assert_only_allowed(
 /// files `patterns` select, each listed on its own.
 fn status_paths(
     repo: &gix::Repository,
-    patterns: Vec<gix::bstr::BString>,
+    patterns: Vec<BString>,
     ignored: bool,
 ) -> Result<BTreeSet<String>> {
     let status = repo
-        .status(gix::progress::Discard)?
-        .untracked_files(gix::status::UntrackedFiles::Files)
+        .status(Discard)?
+        .untracked_files(UntrackedFiles::Files)
         .index_worktree_rewrites(None)
-        .tree_index_track_renames(gix::status::tree_index::TrackRenames::Disabled);
+        .tree_index_track_renames(TrackRenames::Disabled);
     let status = if ignored {
-        status.dirwalk_options(|options| {
-            options.emit_ignored(Some(gix::dir::walk::EmissionMode::Matching))
-        })
+        status.dirwalk_options(|options| options.emit_ignored(Some(EmissionMode::Matching)))
     } else {
         status
     };
@@ -1821,10 +1820,10 @@ fn status_paths(
         let item = item?;
         let is_ignored = matches!(
             &item,
-            gix::status::Item::IndexWorktree(gix::status::index_worktree::Item::DirectoryContents {
+            status::Item::IndexWorktree(index_worktree::Item::DirectoryContents {
                 entry,
                 ..
-            }) if matches!(entry.status, gix::dir::entry::Status::Ignored(_))
+            }) if matches!(entry.status, Status::Ignored(_))
         );
         if is_ignored == ignored {
             paths.insert(item.location().to_str_lossy().into_owned());
@@ -1883,8 +1882,7 @@ pub fn commit_branch_and_push(
 /// strip that prefix.
 fn absolute_workdir(repo: &gix::Repository) -> Result<PathBuf> {
     let workdir = repo.workdir().context("repository has no workdir")?;
-    std::path::absolute(workdir)
-        .with_context(|| format!("resolve the workdir {}", workdir.display()))
+    path::absolute(workdir).with_context(|| format!("resolve the workdir {}", workdir.display()))
 }
 
 /// The token reaches `git push` through this variable, which only the push's
@@ -1993,7 +1991,7 @@ fn write_commit_on_branch(
         return Ok(None);
     }
     let signature = signature(repo);
-    let commit = gix::objs::Commit {
+    let commit = Commit {
         tree,
         parents: [parent.id().detach()].into_iter().collect(),
         author: signature.clone(),
@@ -2017,31 +2015,31 @@ fn write_commit_on_branch(
 /// in the working tree. A symbolic link stores its target. A file stores what
 /// the clean `filters` make of it and keeps its executable bit.
 fn worktree_entry(
-    filters: &mut gix::filter::Pipeline<'_>,
-    index: &gix::index::State,
+    filters: &mut Pipeline<'_>,
+    index: &State,
     abs: &Path,
     rel: &Path,
 ) -> Result<(EntryKind, Vec<u8>)> {
-    let meta = std::fs::symlink_metadata(abs).with_context(|| abs.display().to_string())?;
+    let meta = fs::symlink_metadata(abs).with_context(|| abs.display().to_string())?;
     if meta.file_type().is_symlink() {
-        let target = std::fs::read_link(abs).with_context(|| abs.display().to_string())?;
+        let target = fs::read_link(abs).with_context(|| abs.display().to_string())?;
         let target = target
             .to_str()
             .with_context(|| format!("link target is not UTF-8: {}", abs.display()))?;
         return Ok((EntryKind::Link, target.as_bytes().to_vec()));
     }
-    let file = std::fs::File::open(abs).with_context(|| abs.display().to_string())?;
+    let file = File::open(abs).with_context(|| abs.display().to_string())?;
     let mut clean = filters
         .convert_to_git(file, rel, index)
         .with_context(|| format!("filter {}", rel.display()))?;
     let mut data = Vec::new();
-    std::io::Read::read_to_end(&mut clean, &mut data)
+    Read::read_to_end(&mut clean, &mut data)
         .with_context(|| format!("filter {}", rel.display()))?;
     Ok((file_kind(&meta), data))
 }
 
 #[cfg(unix)]
-fn file_kind(meta: &std::fs::Metadata) -> EntryKind {
+fn file_kind(meta: &Metadata) -> EntryKind {
     use std::os::unix::fs::PermissionsExt;
     if meta.permissions().mode() & 0o111 == 0 {
         EntryKind::Blob
@@ -2072,7 +2070,7 @@ fn workdir_rel(workdir: &Path, path: &Path) -> Result<PathBuf> {
     };
     let normalized: PathBuf = absolute
         .components()
-        .filter(|component| !matches!(component, std::path::Component::CurDir))
+        .filter(|component| !matches!(component, Component::CurDir))
         .collect();
     let workdirs = [Some(workdir.to_path_buf()), workdir.canonicalize().ok()];
     let through_parent = normalized
@@ -2096,14 +2094,14 @@ fn workdir_rel(workdir: &Path, path: &Path) -> Result<PathBuf> {
 
 /// Who the Version PR commit is by: `user.name` and `user.email` when the
 /// repository's git config sets both, else the [`fallback_identity`].
-fn signature(repo: &gix::Repository) -> gix::actor::Signature {
-    let time = gix::date::Time::now_local_or_utc();
+fn signature(repo: &gix::Repository) -> Signature {
+    let time = Time::now_local_or_utc();
     let config = repo.config_snapshot();
     if let (Some(name), Some(email)) = (config.string("user.name"), config.string("user.email")) {
-        return gix::actor::Signature { name, email, time };
+        return Signature { name, email, time };
     }
     let (name, email) = fallback_identity();
-    gix::actor::Signature {
+    Signature {
         name: name.into(),
         email: email.into(),
         time,
@@ -2124,14 +2122,19 @@ fn fallback_identity() -> (String, String) {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::fs;
+    use std::os::unix::fs::symlink;
+    use std::path::{Path, PathBuf};
 
     use indoc::indoc;
+    use tokio::task;
+    use wiremock::matchers;
 
     use super::{
         AddedBy, Unreleased, VersionCommit, added_by, added_by_from, candidate_deletions, file_at,
         origin_url, tagged_commit, unreleased_below, version_commit,
     };
+    use crate::github::Repo;
     use crate::test_git::{commit_all, git, init};
 
     /// The version a `VERSION` fixture holds, or `None` for an empty file.
@@ -2157,27 +2160,27 @@ mod tests {
     /// candidate's parent.
     fn two_candidates(dir: &Path) -> (String, String) {
         init(dir);
-        std::fs::create_dir(dir.join(".changeset")).unwrap();
-        std::fs::write(dir.join("VERSION"), "0.8.0\n").unwrap();
-        std::fs::write(dir.join(".changeset/old.md"), fragment("patch", "Old.")).unwrap();
+        fs::create_dir(dir.join(".changeset")).unwrap();
+        fs::write(dir.join("VERSION"), "0.8.0\n").unwrap();
+        fs::write(dir.join(".changeset/old.md"), fragment("patch", "Old.")).unwrap();
         commit_all(dir, "chore: start");
-        std::fs::write(dir.join("VERSION"), "0.8.1\n").unwrap();
-        std::fs::remove_file(dir.join(".changeset/old.md")).unwrap();
+        fs::write(dir.join("VERSION"), "0.8.1\n").unwrap();
+        fs::remove_file(dir.join(".changeset/old.md")).unwrap();
         commit_all(dir, "chore: release demo 0.8.1 (#1)");
-        std::fs::write(dir.join(".changeset/one.md"), fragment("patch", "One.")).unwrap();
+        fs::write(dir.join(".changeset/one.md"), fragment("patch", "One.")).unwrap();
         let added = commit_all(dir, "fix: one (#2)");
-        std::fs::write(dir.join("VERSION"), "0.8.2-rc.1\n").unwrap();
-        std::fs::remove_file(dir.join(".changeset/one.md")).unwrap();
+        fs::write(dir.join("VERSION"), "0.8.2-rc.1\n").unwrap();
+        fs::remove_file(dir.join(".changeset/one.md")).unwrap();
         commit_all(dir, "chore: release demo 0.8.2-rc.1 (#3)");
         let first_parent = git(dir, &["rev-parse", "HEAD~1"]);
-        std::fs::write(dir.join(".changeset/stray.md"), fragment("patch", "Stray.")).unwrap();
+        fs::write(dir.join(".changeset/stray.md"), fragment("patch", "Stray.")).unwrap();
         commit_all(dir, "docs: stray (#4)");
-        std::fs::remove_file(dir.join(".changeset/stray.md")).unwrap();
+        fs::remove_file(dir.join(".changeset/stray.md")).unwrap();
         commit_all(dir, "docs: drop stray (#5)");
-        std::fs::write(dir.join(".changeset/two.md"), fragment("minor", "Two.")).unwrap();
+        fs::write(dir.join(".changeset/two.md"), fragment("minor", "Two.")).unwrap();
         commit_all(dir, "feat: two (#6)");
-        std::fs::write(dir.join("VERSION"), "0.8.2-rc.2\n").unwrap();
-        std::fs::remove_file(dir.join(".changeset/two.md")).unwrap();
+        fs::write(dir.join("VERSION"), "0.8.2-rc.2\n").unwrap();
+        fs::remove_file(dir.join(".changeset/two.md")).unwrap();
         commit_all(dir, "chore: release demo 0.8.2-rc.2 (#7)");
         (added, first_parent)
     }
@@ -2221,7 +2224,7 @@ mod tests {
     fn candidate_deletions_is_empty_on_a_stable_head() {
         let dir = tempfile::TempDir::new().unwrap();
         two_candidates(dir.path());
-        std::fs::write(dir.path().join("VERSION"), "0.8.2\n").unwrap();
+        fs::write(dir.path().join("VERSION"), "0.8.2\n").unwrap();
         commit_all(dir.path(), "chore: release demo 0.8.2 (#8)");
         assert_eq!(
             candidate_deletions(
@@ -2257,7 +2260,7 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         two_candidates(dir.path());
         let boundary = git(dir.path(), &["rev-parse", "HEAD~2"]);
-        std::fs::write(dir.path().join(".git/shallow"), format!("{boundary}\n")).unwrap();
+        fs::write(dir.path().join(".git/shallow"), format!("{boundary}\n")).unwrap();
         let error = candidate_deletions(
             dir.path(),
             &dir.path().join("VERSION"),
@@ -2285,7 +2288,7 @@ mod tests {
     }
 
     fn write_version(dir: &Path, version: &str) {
-        std::fs::write(
+        fs::write(
             dir.join("Cargo.toml"),
             indoc::formatdoc! {r#"
                 [package]
@@ -2304,7 +2307,7 @@ mod tests {
         commit_all(dir.path(), "chore: start");
         write_version(dir.path(), "0.4.6");
         let set = commit_all(dir.path(), "chore(release): version packages (#7)");
-        std::fs::write(dir.path().join("README"), "later\n").unwrap();
+        fs::write(dir.path().join("README"), "later\n").unwrap();
         commit_all(dir.path(), "docs: later (#8)");
         let found =
             version_commit(dir.path(), &dir.path().join("Cargo.toml"), &version_line).unwrap();
@@ -2343,7 +2346,7 @@ mod tests {
         commit_all(dir.path(), "chore: start");
         write_version(dir.path(), "0.7.5");
         commit_all(dir.path(), "chore(release): version packages (#7)");
-        std::fs::write(dir.path().join("README"), "later\n").unwrap();
+        fs::write(dir.path().join("README"), "later\n").unwrap();
         commit_all(dir.path(), "docs: later (#8)");
         assert_eq!(unreleased(dir.path(), &["0.7.4"]), Vec::new());
     }
@@ -2482,9 +2485,9 @@ mod tests {
         init(dir.path());
         write_version(dir.path(), "0.4.6");
         let set = commit_all(dir.path(), "chore(release): version packages (#9)");
-        std::fs::write(dir.path().join("README"), "later\n").unwrap();
+        fs::write(dir.path().join("README"), "later\n").unwrap();
         let later = commit_all(dir.path(), "docs: later");
-        std::fs::write(dir.path().join("README"), "head\n").unwrap();
+        fs::write(dir.path().join("README"), "head\n").unwrap();
         commit_all(dir.path(), "docs: head");
         let manifest = dir.path().join("Cargo.toml");
         let found = tagged_commit(dir.path(), &manifest, &later, &version_line).unwrap();
@@ -2530,13 +2533,13 @@ mod tests {
     fn rewritten_and_merged_back(dir: &Path, published_version: &str) -> String {
         init(dir);
         write_version(dir, "0.0.1");
-        std::fs::write(dir.join("publish.yml"), "one\n").unwrap();
+        fs::write(dir.join("publish.yml"), "one\n").unwrap();
         let set = commit_all(dir, "chore: start");
         write_version(dir, published_version);
-        std::fs::write(dir.join("publish.yml"), "two\n").unwrap();
+        fs::write(dir.join("publish.yml"), "two\n").unwrap();
         let published = commit_all(dir, "ci: publish");
         git(dir, &["checkout", "-q", "--detach", &set]);
-        std::fs::write(dir.join("publish.yml"), "three\n").unwrap();
+        fs::write(dir.join("publish.yml"), "three\n").unwrap();
         commit_all(dir, "ci: rewritten publish");
         git(
             dir,
@@ -2586,7 +2589,7 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let published = rewritten_and_merged_back(dir.path(), "0.0.1");
         for later in 1..=5 {
-            std::fs::write(dir.path().join("README"), format!("later {later}\n")).unwrap();
+            fs::write(dir.path().join("README"), format!("later {later}\n")).unwrap();
             commit_all(dir.path(), &format!("docs: later {later}"));
         }
         let found = tagged_commit(
@@ -2627,10 +2630,10 @@ mod tests {
         init(dir.path());
         write_version(dir.path(), "0.0.1");
         let set = commit_all(dir.path(), "chore: start");
-        std::fs::write(dir.path().join("publish.yml"), "two\n").unwrap();
+        fs::write(dir.path().join("publish.yml"), "two\n").unwrap();
         let abandoned = commit_all(dir.path(), "ci: publish");
         git(dir.path(), &["checkout", "-q", "--detach", &set]);
-        std::fs::write(dir.path().join("publish.yml"), "three\n").unwrap();
+        fs::write(dir.path().join("publish.yml"), "three\n").unwrap();
         commit_all(dir.path(), "ci: rewritten publish");
         assert_eq!(
             tagged_commit(
@@ -2648,12 +2651,12 @@ mod tests {
     fn file_at_reads_a_file_at_a_commit_and_nothing_before_it() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        std::fs::write(dir.path().join("README"), "start\n").unwrap();
+        fs::write(dir.path().join("README"), "start\n").unwrap();
         let before = commit_all(dir.path(), "chore: start");
-        std::fs::create_dir_all(dir.path().join(".ctl")).unwrap();
-        std::fs::write(dir.path().join(".ctl/ver.yaml"), "packages: []\n").unwrap();
+        fs::create_dir_all(dir.path().join(".ctl")).unwrap();
+        fs::write(dir.path().join(".ctl/ver.yaml"), "packages: []\n").unwrap();
         let added = commit_all(dir.path(), "chore: add the config");
-        std::fs::write(dir.path().join(".ctl/ver.yaml"), "packages: [later]\n").unwrap();
+        fs::write(dir.path().join(".ctl/ver.yaml"), "packages: [later]\n").unwrap();
         commit_all(dir.path(), "chore: change the config");
         let path = Path::new(".ctl/ver.yaml");
         assert_eq!(
@@ -2667,11 +2670,11 @@ mod tests {
     fn added_by_names_the_commit_that_added_the_file() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        std::fs::write(dir.path().join("README"), "start\n").unwrap();
+        fs::write(dir.path().join("README"), "start\n").unwrap();
         commit_all(dir.path(), "chore: start");
-        std::fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
+        fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
         let added = commit_all(dir.path(), "fix: the parser (#12)");
-        std::fs::write(dir.path().join("README"), "later\n").unwrap();
+        fs::write(dir.path().join("README"), "later\n").unwrap();
         commit_all(dir.path(), "docs: later");
         assert_eq!(
             added_by(dir.path(), &dir.path().join("fix.md")).unwrap(),
@@ -2688,14 +2691,14 @@ mod tests {
     fn added_by_follows_a_merge_to_the_commit_that_added_the_file() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        std::fs::write(dir.path().join("README"), "start\n").unwrap();
+        fs::write(dir.path().join("README"), "start\n").unwrap();
         let base = commit_all(dir.path(), "chore: start");
-        std::fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
+        fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
         let side = commit_all(dir.path(), "fix: the parser (#12)");
         git(dir.path(), &["reset", "-q", "--hard", &base]);
-        std::fs::write(dir.path().join("README"), "later\n").unwrap();
+        fs::write(dir.path().join("README"), "later\n").unwrap();
         let main = commit_all(dir.path(), "docs: later (#13)");
-        std::fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
+        fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
         git(dir.path(), &["add", "-A"]);
         let tree = git(dir.path(), &["write-tree"]);
         let merge = git(
@@ -2728,12 +2731,12 @@ mod tests {
     fn added_by_names_a_titled_merge_over_an_unnamed_branch_commit() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        std::fs::write(dir.path().join("README"), "start\n").unwrap();
+        fs::write(dir.path().join("README"), "start\n").unwrap();
         let base = commit_all(dir.path(), "chore: start");
-        std::fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
+        fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
         let side = commit_all(dir.path(), "wip");
         git(dir.path(), &["reset", "-q", "--hard", &base]);
-        std::fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
+        fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
         git(dir.path(), &["add", "-A"]);
         let tree = git(dir.path(), &["write-tree"]);
         let merge = git(
@@ -2766,12 +2769,12 @@ mod tests {
     fn added_by_keeps_the_adding_pull_request_after_an_edit() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        std::fs::write(dir.path().join("README"), "start\n").unwrap();
+        fs::write(dir.path().join("README"), "start\n").unwrap();
         let base = commit_all(dir.path(), "chore: start");
-        std::fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
+        fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
         let side = commit_all(dir.path(), "wip");
         git(dir.path(), &["reset", "-q", "--hard", &base]);
-        std::fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
+        fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
         git(dir.path(), &["add", "-A"]);
         let tree = git(dir.path(), &["write-tree"]);
         let added = git(
@@ -2788,10 +2791,10 @@ mod tests {
             ],
         );
         git(dir.path(), &["reset", "-q", "--hard", &added]);
-        std::fs::write(dir.path().join("fix.md"), "Fix, reworded.\n").unwrap();
+        fs::write(dir.path().join("fix.md"), "Fix, reworded.\n").unwrap();
         let edit = commit_all(dir.path(), "docs: reword the fix");
         git(dir.path(), &["reset", "-q", "--hard", &added]);
-        std::fs::write(dir.path().join("fix.md"), "Fix, reworded.\n").unwrap();
+        fs::write(dir.path().join("fix.md"), "Fix, reworded.\n").unwrap();
         git(dir.path(), &["add", "-A"]);
         let tree = git(dir.path(), &["write-tree"]);
         let edited = git(
@@ -2808,7 +2811,7 @@ mod tests {
             ],
         );
         git(dir.path(), &["reset", "-q", "--hard", &edited]);
-        std::fs::write(dir.path().join("fix.md"), "Fix, reworded again.\n").unwrap();
+        fs::write(dir.path().join("fix.md"), "Fix, reworded again.\n").unwrap();
         commit_all(dir.path(), "docs: reword the fix again (#14)");
         assert_eq!(
             added_by(dir.path(), &dir.path().join("fix.md")).unwrap(),
@@ -2825,11 +2828,11 @@ mod tests {
     fn added_by_names_nothing_past_a_shallow_boundary() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        std::fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
+        fs::write(dir.path().join("fix.md"), "Fix.\n").unwrap();
         commit_all(dir.path(), "fix: the parser (#12)");
-        std::fs::write(dir.path().join("README"), "later\n").unwrap();
+        fs::write(dir.path().join("README"), "later\n").unwrap();
         let boundary = commit_all(dir.path(), "docs: later (#13)");
-        std::fs::write(dir.path().join(".git/shallow"), format!("{boundary}\n")).unwrap();
+        fs::write(dir.path().join(".git/shallow"), format!("{boundary}\n")).unwrap();
         assert_eq!(
             git(dir.path(), &["rev-parse", "--is-shallow-repository"]),
             "true"
@@ -2866,7 +2869,7 @@ mod tests {
         init(dir.path());
         commit_all(dir.path(), "init");
         let before = git(dir.path(), &["symbolic-ref", "HEAD"]);
-        let repo_id = crate::github::Repo {
+        let repo_id = Repo {
             owner: "victor-software-house".into(),
             name: "verctl".into(),
         };
@@ -2887,7 +2890,7 @@ mod tests {
     fn unexpected_dirty_fails_unless_globbed() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        std::fs::write(
+        fs::write(
             dir.path().join("Cargo.toml"),
             indoc! {r#"
                 [package]
@@ -2896,7 +2899,7 @@ mod tests {
         )
         .unwrap();
         commit_all(dir.path(), "init");
-        std::fs::write(dir.path().join("secret.env"), "TOKEN=leak\n").unwrap();
+        fs::write(dir.path().join("secret.env"), "TOKEN=leak\n").unwrap();
         let allowed = [dir.path().join("Cargo.toml")];
         let err = super::assert_only_allowed(dir.path(), &allowed, &[], false).unwrap_err();
         assert!(format!("{err:#}").contains("secret.env"), "{err:#}");
@@ -2910,8 +2913,8 @@ mod tests {
     fn stage_glob_collects_a_deleted_file() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        std::fs::write(dir.path().join("Cargo.lock"), "old\n").unwrap();
-        std::fs::write(
+        fs::write(dir.path().join("Cargo.lock"), "old\n").unwrap();
+        fs::write(
             dir.path().join("Cargo.toml"),
             indoc! {r#"
                 [package]
@@ -2920,7 +2923,7 @@ mod tests {
         )
         .unwrap();
         commit_all(dir.path(), "init");
-        std::fs::remove_file(dir.path().join("Cargo.lock")).unwrap();
+        fs::remove_file(dir.path().join("Cargo.lock")).unwrap();
         let staged = super::assert_only_allowed(
             dir.path(),
             &[dir.path().join("Cargo.toml")],
@@ -2937,7 +2940,7 @@ mod tests {
     fn stage_glob_collects_files_under_a_tree_not_the_directory() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        std::fs::write(
+        fs::write(
             dir.path().join("Cargo.toml"),
             indoc! {r#"
                 [package]
@@ -2946,8 +2949,8 @@ mod tests {
         )
         .unwrap();
         commit_all(dir.path(), "init");
-        std::fs::create_dir_all(dir.path().join("src")).unwrap();
-        std::fs::write(dir.path().join("src/lib.rs"), "fn x() {}\n").unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/lib.rs"), "fn x() {}\n").unwrap();
         let staged = super::assert_only_allowed(
             dir.path(),
             &[dir.path().join("Cargo.toml")],
@@ -2964,8 +2967,8 @@ mod tests {
     fn ignored_workdir_paths_are_not_unexpected() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        std::fs::write(dir.path().join(".gitignore"), "/target\n").unwrap();
-        std::fs::write(
+        fs::write(dir.path().join(".gitignore"), "/target\n").unwrap();
+        fs::write(
             dir.path().join("Cargo.toml"),
             indoc! {r#"
                 [package]
@@ -2974,8 +2977,8 @@ mod tests {
         )
         .unwrap();
         commit_all(dir.path(), "init");
-        std::fs::create_dir_all(dir.path().join("target/debug")).unwrap();
-        std::fs::write(dir.path().join("target/debug/verctl"), "bin\n").unwrap();
+        fs::create_dir_all(dir.path().join("target/debug")).unwrap();
+        fs::write(dir.path().join("target/debug/verctl"), "bin\n").unwrap();
         super::assert_only_allowed(dir.path(), &[dir.path().join("Cargo.toml")], &[], false)
             .unwrap();
     }
@@ -2984,8 +2987,8 @@ mod tests {
     fn stage_ignored_opt_in_collects_gitignored_files() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        std::fs::write(dir.path().join(".gitignore"), "/generated.rs\n").unwrap();
-        std::fs::write(
+        fs::write(dir.path().join(".gitignore"), "/generated.rs\n").unwrap();
+        fs::write(
             dir.path().join("Cargo.toml"),
             indoc! {r#"
                 [package]
@@ -2994,7 +2997,7 @@ mod tests {
         )
         .unwrap();
         commit_all(dir.path(), "init");
-        std::fs::write(dir.path().join("generated.rs"), "gen\n").unwrap();
+        fs::write(dir.path().join("generated.rs"), "gen\n").unwrap();
         let allowed = [dir.path().join("Cargo.toml")];
         let off = super::assert_only_allowed(dir.path(), &allowed, &["generated.rs".into()], false)
             .unwrap();
@@ -3009,8 +3012,8 @@ mod tests {
     fn stage_ignored_recurses_a_gitignored_directory() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        std::fs::write(dir.path().join(".gitignore"), "/dist\n").unwrap();
-        std::fs::write(
+        fs::write(dir.path().join(".gitignore"), "/dist\n").unwrap();
+        fs::write(
             dir.path().join("Cargo.toml"),
             indoc! {r#"
                 [package]
@@ -3019,8 +3022,8 @@ mod tests {
         )
         .unwrap();
         commit_all(dir.path(), "init");
-        std::fs::create_dir_all(dir.path().join("dist")).unwrap();
-        std::fs::write(dir.path().join("dist/out.js"), "ok\n").unwrap();
+        fs::create_dir_all(dir.path().join("dist")).unwrap();
+        fs::write(dir.path().join("dist/out.js"), "ok\n").unwrap();
         let allowed = [dir.path().join("Cargo.toml")];
         let staged =
             super::assert_only_allowed(dir.path(), &allowed, &["dist/**".into()], true).unwrap();
@@ -3032,8 +3035,8 @@ mod tests {
     fn stage_ignored_pathspec_does_not_collect_other_ignored_trees() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        std::fs::write(dir.path().join(".gitignore"), "/dist\n/target\n").unwrap();
-        std::fs::write(
+        fs::write(dir.path().join(".gitignore"), "/dist\n/target\n").unwrap();
+        fs::write(
             dir.path().join("Cargo.toml"),
             indoc! {r#"
                 [package]
@@ -3042,11 +3045,11 @@ mod tests {
         )
         .unwrap();
         commit_all(dir.path(), "init");
-        std::fs::create_dir_all(dir.path().join("dist")).unwrap();
-        std::fs::write(dir.path().join("dist/out.js"), "ok\n").unwrap();
-        std::fs::create_dir_all(dir.path().join("target/debug")).unwrap();
-        std::fs::write(dir.path().join("target/debug/verctl"), "bin\n").unwrap();
-        std::fs::write(dir.path().join("target/CACHEDIR.TAG"), "tag\n").unwrap();
+        fs::create_dir_all(dir.path().join("dist")).unwrap();
+        fs::write(dir.path().join("dist/out.js"), "ok\n").unwrap();
+        fs::create_dir_all(dir.path().join("target/debug")).unwrap();
+        fs::write(dir.path().join("target/debug/verctl"), "bin\n").unwrap();
+        fs::write(dir.path().join("target/CACHEDIR.TAG"), "tag\n").unwrap();
         let staged = super::assert_only_allowed(
             dir.path(),
             &[dir.path().join("Cargo.toml")],
@@ -3068,8 +3071,8 @@ mod tests {
     fn write_commit_on_branch_removes_a_deleted_staged_path() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        std::fs::write(dir.path().join("Cargo.lock"), "old\n").unwrap();
-        std::fs::write(
+        fs::write(dir.path().join("Cargo.lock"), "old\n").unwrap();
+        fs::write(
             dir.path().join("Cargo.toml"),
             indoc! {r#"
                 [package]
@@ -3078,7 +3081,7 @@ mod tests {
         )
         .unwrap();
         commit_all(dir.path(), "init");
-        std::fs::remove_file(dir.path().join("Cargo.lock")).unwrap();
+        fs::remove_file(dir.path().join("Cargo.lock")).unwrap();
         let staged = super::assert_only_allowed(
             dir.path(),
             &[dir.path().join("Cargo.toml")],
@@ -3096,7 +3099,7 @@ mod tests {
     fn commit_only_lists_given_paths() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        std::fs::write(
+        fs::write(
             dir.path().join("Cargo.toml"),
             indoc! {r#"
                 [package]
@@ -3105,7 +3108,7 @@ mod tests {
         )
         .unwrap();
         let parent = commit_all(dir.path(), "init");
-        std::fs::write(
+        fs::write(
             dir.path().join("Cargo.toml"),
             indoc! {r#"
                 [package]
@@ -3113,7 +3116,7 @@ mod tests {
             "#},
         )
         .unwrap();
-        std::fs::write(
+        fs::write(
             dir.path().join("secret.env"),
             indoc! {"
                 TOKEN=leak
@@ -3131,7 +3134,7 @@ mod tests {
     fn dotted_relative_paths_stage() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        std::fs::write(
+        fs::write(
             dir.path().join("Cargo.toml"),
             indoc! {r#"
                 [package]
@@ -3140,7 +3143,7 @@ mod tests {
         )
         .unwrap();
         commit_all(dir.path(), "init");
-        std::fs::write(
+        fs::write(
             dir.path().join("Cargo.toml"),
             indoc! {r#"
                 [package]
@@ -3159,7 +3162,7 @@ mod tests {
     #[tokio::test]
     async fn push_keeps_the_token_out_of_the_error() {
         let server = wiremock::MockServer::start().await;
-        wiremock::Mock::given(wiremock::matchers::any())
+        wiremock::Mock::given(matchers::any())
             .respond_with(
                 wiremock::ResponseTemplate::new(401)
                     .insert_header("WWW-Authenticate", r#"Basic realm="git""#),
@@ -3170,7 +3173,7 @@ mod tests {
         git(dir.path(), &["branch", "verctl/release/main"]);
         let url = format!("{}/owner/repo.git", server.uri());
         let token = "verctl-push-token-5f3a9c";
-        let error = tokio::task::spawn_blocking(move || {
+        let error = task::spawn_blocking(move || {
             super::push(&dir.path().join(".git"), &url, "verctl/release/main", token)
         })
         .await
@@ -3220,10 +3223,10 @@ mod tests {
     fn the_commit_applies_clean_filters() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        std::fs::write(dir.path().join(".gitattributes"), "*.md text\n").unwrap();
-        std::fs::write(dir.path().join("CHANGELOG.md"), "old\n").unwrap();
+        fs::write(dir.path().join(".gitattributes"), "*.md text\n").unwrap();
+        fs::write(dir.path().join("CHANGELOG.md"), "old\n").unwrap();
         commit_all(dir.path(), "init");
-        std::fs::write(dir.path().join("CHANGELOG.md"), "a\r\nb\r\n").unwrap();
+        fs::write(dir.path().join("CHANGELOG.md"), "a\r\nb\r\n").unwrap();
         let oid = write_commit(dir.path(), &[dir.path().join("CHANGELOG.md")]).expect("commit");
         let blob = format!("{oid}:CHANGELOG.md");
         assert_eq!(git(dir.path(), &["cat-file", "-p", &blob]), "a\nb");
@@ -3241,9 +3244,9 @@ mod tests {
             dir.path(),
             &["config", "user.email", "configured@example.com"],
         );
-        std::fs::write(dir.path().join("Cargo.toml"), "version = 1\n").unwrap();
+        fs::write(dir.path().join("Cargo.toml"), "version = 1\n").unwrap();
         commit_all(dir.path(), "init");
-        std::fs::write(dir.path().join("Cargo.toml"), "version = 2\n").unwrap();
+        fs::write(dir.path().join("Cargo.toml"), "version = 2\n").unwrap();
         let oid = write_commit(dir.path(), &[dir.path().join("Cargo.toml")]).expect("commit");
         let configured = "Configured Name <configured@example.com>";
         assert_eq!(
@@ -3290,12 +3293,12 @@ mod tests {
     fn a_symlinked_workdir_takes_canonical_paths() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        std::fs::write(dir.path().join("Cargo.toml"), "version = 1\n").unwrap();
+        fs::write(dir.path().join("Cargo.toml"), "version = 1\n").unwrap();
         commit_all(dir.path(), "init");
-        std::fs::write(dir.path().join("Cargo.toml"), "version = 2\n").unwrap();
+        fs::write(dir.path().join("Cargo.toml"), "version = 2\n").unwrap();
         let links = tempfile::TempDir::new().unwrap();
         let link = links.path().join("checkout");
-        std::os::unix::fs::symlink(dir.path(), &link).unwrap();
+        symlink(dir.path(), &link).unwrap();
         let canonical = dir.path().canonicalize().unwrap().join("Cargo.toml");
         let workdir = super::absolute_workdir(&super::discover(&link).unwrap()).unwrap();
         assert_eq!(
@@ -3310,7 +3313,7 @@ mod tests {
 
     /// Writes the Version PR commit of `paths` the way `commit_branch_and_push`
     /// does, and returns its SHA.
-    fn write_commit(dir: &Path, paths: &[std::path::PathBuf]) -> Option<String> {
+    fn write_commit(dir: &Path, paths: &[PathBuf]) -> Option<String> {
         let repo = super::discover(dir).unwrap();
         let workdir = super::absolute_workdir(&repo).unwrap();
         let parent = repo.head_commit().unwrap();
@@ -3368,7 +3371,7 @@ mod tests {
     }
 
     /// The proof as a pass or a failure: being off the branch fails too.
-    fn prove(root: &std::path::Path, candidates: &[String]) -> anyhow::Result<()> {
+    fn prove(root: &Path, candidates: &[String]) -> anyhow::Result<()> {
         match super::prove_default_history(root, candidates)? {
             None => Ok(()),
             Some(off) => anyhow::bail!(off),
@@ -3559,7 +3562,7 @@ mod tests {
         commit_all(upstream.path(), "chore: start");
         write_version(upstream.path(), "0.0.2");
         let set = commit_all(upstream.path(), "chore(release): version packages");
-        std::fs::write(upstream.path().join("README"), "later\n").unwrap();
+        fs::write(upstream.path().join("README"), "later\n").unwrap();
         commit_all(upstream.path(), "docs: later");
 
         let parent = tempfile::TempDir::new().unwrap();
@@ -3605,7 +3608,7 @@ mod tests {
         write_version(up, "0.0.2");
         commit_all(up, "chore(release): version packages");
         git(up, &["checkout", "-q", "-b", "pr"]);
-        std::fs::write(up.join("README"), "change\n").unwrap();
+        fs::write(up.join("README"), "change\n").unwrap();
         commit_all(up, "docs: change");
         git(up, &["checkout", "-q", "--detach", "main"]);
         git(
@@ -3745,9 +3748,9 @@ mod tests {
             &["update-ref", "--no-deref", "HEAD", &first],
         );
 
-        std::fs::write(upstream_dir.path().join("b.txt"), "b\n").unwrap();
+        fs::write(upstream_dir.path().join("b.txt"), "b\n").unwrap();
         commit_all(upstream_dir.path(), "B");
-        std::fs::write(upstream_dir.path().join("c.txt"), "c\n").unwrap();
+        fs::write(upstream_dir.path().join("c.txt"), "c\n").unwrap();
         commit_all(upstream_dir.path(), "C");
 
         git(
@@ -3766,7 +3769,7 @@ mod tests {
     fn origin_head_wins_over_main_when_they_differ() {
         let (dir, first) = fixture();
         add_origin(dir.path());
-        std::fs::write(dir.path().join("extra.txt"), "x\n").unwrap();
+        fs::write(dir.path().join("extra.txt"), "x\n").unwrap();
         let second = commit_all(dir.path(), "ahead");
         track(dir.path(), "main", &first);
         track(dir.path(), "trunk", &second);
@@ -3783,7 +3786,7 @@ mod tests {
         track(dir.path(), "main", &first);
         git(dir.path(), &["update-ref", "refs/heads/other", &first]);
         git(dir.path(), &["symbolic-ref", "HEAD", "refs/heads/other"]);
-        std::fs::write(dir.path().join("extra.txt"), "x\n").unwrap();
+        fs::write(dir.path().join("extra.txt"), "x\n").unwrap();
         let head = commit_all(dir.path(), "ahead");
         let off = super::prove_default_history(dir.path(), &stock())
             .unwrap()
@@ -3796,10 +3799,10 @@ mod tests {
     #[test]
     fn workflows_at_the_default_tip_match() {
         let (dir, _) = fixture();
-        std::fs::create_dir_all(dir.path().join(".github/workflows")).unwrap();
-        std::fs::write(dir.path().join(".github/workflows/ci.yml"), "on: push\n").unwrap();
+        fs::create_dir_all(dir.path().join(".github/workflows")).unwrap();
+        fs::write(dir.path().join(".github/workflows/ci.yml"), "on: push\n").unwrap();
         let release = commit_all(dir.path(), "chore(release): version packages");
-        std::fs::write(dir.path().join("README"), "later\n").unwrap();
+        fs::write(dir.path().join("README"), "later\n").unwrap();
         let tip = commit_all(dir.path(), "docs: later");
         add_origin(dir.path());
         track(dir.path(), "main", &tip);
@@ -3812,10 +3815,10 @@ mod tests {
     #[test]
     fn a_workflow_changed_since_the_release_commit_differs() {
         let (dir, _) = fixture();
-        std::fs::create_dir_all(dir.path().join(".github/workflows")).unwrap();
-        std::fs::write(dir.path().join(".github/workflows/ci.yml"), "on: push\n").unwrap();
+        fs::create_dir_all(dir.path().join(".github/workflows")).unwrap();
+        fs::write(dir.path().join(".github/workflows/ci.yml"), "on: push\n").unwrap();
         let release = commit_all(dir.path(), "chore(release): version packages");
-        std::fs::write(
+        fs::write(
             dir.path().join(".github/workflows/ci.yml"),
             "on: [push, pull_request]\n",
         )
@@ -3831,8 +3834,8 @@ mod tests {
 
         let (bare, first) = fixture();
         add_origin(bare.path());
-        std::fs::create_dir_all(bare.path().join(".github/workflows")).unwrap();
-        std::fs::write(bare.path().join(".github/workflows/ci.yml"), "on: push\n").unwrap();
+        fs::create_dir_all(bare.path().join(".github/workflows")).unwrap();
+        fs::write(bare.path().join(".github/workflows/ci.yml"), "on: push\n").unwrap();
         let added = commit_all(bare.path(), "ci: add");
         track(bare.path(), "main", &added);
         git(bare.path(), &["update-ref", "--no-deref", "HEAD", &first]);
@@ -3846,10 +3849,10 @@ mod tests {
     #[test]
     fn the_workflows_compared_are_those_of_the_run_commit() {
         let (dir, _) = fixture();
-        std::fs::create_dir_all(dir.path().join(".github/workflows")).unwrap();
-        std::fs::write(dir.path().join(".github/workflows/ci.yml"), "on: push\n").unwrap();
+        fs::create_dir_all(dir.path().join(".github/workflows")).unwrap();
+        fs::write(dir.path().join(".github/workflows/ci.yml"), "on: push\n").unwrap();
         let release = commit_all(dir.path(), "chore(release): version packages");
-        std::fs::write(
+        fs::write(
             dir.path().join(".github/workflows/ci.yml"),
             "on: [push, pull_request]\n",
         )
@@ -3886,7 +3889,7 @@ mod tests {
     fn head_behind_origin_main_is_ok() {
         let (dir, first) = fixture();
         add_origin(dir.path());
-        std::fs::write(dir.path().join("extra.txt"), "x\n").unwrap();
+        fs::write(dir.path().join("extra.txt"), "x\n").unwrap();
         let second = commit_all(dir.path(), "ahead");
         track(dir.path(), "main", &second);
         git(dir.path(), &["update-ref", "--no-deref", "HEAD", &first]);

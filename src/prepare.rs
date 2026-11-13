@@ -1,12 +1,14 @@
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 
-use crate::bump;
 use crate::config::Config;
 use crate::driver::Driver;
 use crate::fragment::{Bump, Fragment};
+use crate::{bump, detect, process};
 
 /// One package's planned version change.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,7 +117,7 @@ pub fn apply_plan(entries: &[PlanEntry]) -> Result<()> {
         }
         let raw = entry.driver.source(&entry.path)?;
         let updated = entry.driver.write(&raw, &entry.to)?;
-        std::fs::write(&entry.path, updated).with_context(|| entry.path.display().to_string())?;
+        fs::write(&entry.path, updated).with_context(|| entry.path.display().to_string())?;
     }
     Ok(())
 }
@@ -167,7 +169,7 @@ pub fn steps(entries: &[PlanEntry], prepare_after: Option<&[String]>, cwd: &Path
         let Some(after) = entry.driver.after() else {
             continue;
         };
-        match crate::detect::owner(&entry.path) {
+        match detect::owner(&entry.path) {
             Some(owner) if owner.command() == after => push(Step {
                 argv: owner.argv,
                 dir: owner.dir,
@@ -198,12 +200,8 @@ pub fn steps(entries: &[PlanEntry], prepare_after: Option<&[String]>, cwd: &Path
 /// five minutes. Steps before it have run.
 pub fn run_steps(steps: &[Step]) -> Result<()> {
     for step in steps {
-        crate::process::run_inherit_in(
-            &step.argv,
-            Some(&step.dir),
-            std::time::Duration::from_mins(5),
-        )
-        .with_context(|| format!("version step `{}`", step.command()))?;
+        process::run_inherit_in(&step.argv, Some(&step.dir), Duration::from_mins(5))
+            .with_context(|| format!("version step `{}`", step.command()))?;
     }
     Ok(())
 }

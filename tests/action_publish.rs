@@ -3,6 +3,8 @@
 //! Every action passes settings as `VERCTL_*` variables and runs the bare verb.
 //! Every action is YAML that GitHub can load.
 
+use ctl_core::input::Input;
+
 const ACTION: &str = include_str!("../actions/publish/action.yml");
 const VERSION_PR: &str = include_str!("../actions/version-pr/action.yml");
 const ASSET: &str = include_str!("../actions/asset/action.yml");
@@ -65,7 +67,7 @@ fn every_action_is_yaml() {
         ("actions/version-pr/action.yml", VERSION_PR),
         ("actions/asset/action.yml", ASSET),
     ] {
-        let parsed: serde_json::Value = ctl_core::input::Input::new(name, action)
+        let parsed: serde_json::Value = Input::new(name, action)
             .parse()
             .unwrap_or_else(|error| panic!("{error}"));
         assert!(parsed["runs"].is_object(), "{name}: {parsed}");

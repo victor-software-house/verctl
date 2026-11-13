@@ -4,6 +4,8 @@
 use std::error::Error;
 use std::fmt;
 
+use reqwest::header::HeaderMap;
+
 /// A lookup that could not run. Three cases qualify:
 ///
 /// - The walk reached a shallow clone's boundary.
@@ -47,10 +49,7 @@ pub fn unavailable(error: anyhow::Error) -> anyhow::Error {
 ///
 /// [rate limit docs]: https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api#exceeding-the-primary-rate-limit
 #[must_use]
-pub fn no_answer(
-    status: reqwest::StatusCode,
-    headers: Option<&reqwest::header::HeaderMap>,
-) -> bool {
+pub fn no_answer(status: reqwest::StatusCode, headers: Option<&HeaderMap>) -> bool {
     status.is_server_error()
         || status == reqwest::StatusCode::TOO_MANY_REQUESTS
         || (status == reqwest::StatusCode::FORBIDDEN

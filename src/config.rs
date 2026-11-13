@@ -5,12 +5,15 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
 use ctl_core::input::{FieldPath, Input};
+use ctl_core::validate;
 use ctl_core::validate::{at_least_one, cannot_be_empty, inside_the_repo};
 use garde::Validate;
-use serde::Deserialize;
+use serde::de::{IgnoredAny, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, de};
 
 use crate::driver::{CommandSpec, Driver, Format, Text};
-use crate::publisher::PublisherSpec;
+use crate::publisher::{PublisherSpec, RELEASE_ONLY};
+use crate::{detect, publisher};
 
 /// A driver's read or write step: a mise task or an argv.
 #[derive(Debug, Clone, Deserialize)]
@@ -222,7 +225,7 @@ pub struct PackageSpec {
         clippy::zero_sized_map_values,
         reason = "the keys are all that is read, and serde has no set to flatten into"
     )]
-    unknown: BTreeMap<String, serde::de::IgnoredAny>,
+    unknown: BTreeMap<String, IgnoredAny>,
 }
 
 /// The tag of a candidate version: lowercase ASCII letters.
@@ -329,7 +332,7 @@ impl PackageSpec {
             .unwrap_or_default();
         spec = spec.merge(self.spec.clone());
         if spec.after.is_none() {
-            spec.after = crate::detect::follow_up(&root.join(&self.path));
+            spec.after = detect::follow_up(&root.join(&self.path));
         }
         spec.into_driver(driver_name.unwrap_or(self.name.as_str()))
     }
@@ -387,14 +390,14 @@ impl<'de> Deserialize<'de> for Publish {
 
 struct PublishVisitor;
 
-impl<'de> serde::de::Visitor<'de> for PublishVisitor {
+impl<'de> Visitor<'de> for PublishVisitor {
     type Value = Publish;
 
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "{PUBLISH_SHAPES}")
     }
 
-    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut parts: A) -> Result<Publish, A::Error> {
+    fn visit_seq<A: SeqAccess<'de>>(self, mut parts: A) -> Result<Publish, A::Error> {
         let mut argv = Vec::new();
         while let Some(part) = parts.next_element::<String>()? {
             argv.push(part);
@@ -402,7 +405,7 @@ impl<'de> serde::de::Visitor<'de> for PublishVisitor {
         Ok(Publish::Command(argv))
     }
 
-    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut entries: A) -> Result<Publish, A::Error> {
+    fn visit_map<A: MapAccess<'de>>(self, mut entries: A) -> Result<Publish, A::Error> {
         let mut options = PublishOptions::new();
         while let Some((key, value)) = entries.next_entry::<String, serde_json::Value>()? {
             options.insert(key, value);
@@ -615,7 +618,7 @@ pub struct VendoredTarget {
 /// Two targets under one archive name would overwrite each other, and `tar
 /// czf` writes only a gzipped tarball.
 fn one_archive_per_target(archive: &str, config: &Config) -> garde::Result {
-    ctl_core::validate::one_file_name(archive, config)?;
+    validate::one_file_name(archive, config)?;
     if !archive.contains("{id}") {
         return Err(garde::Error::new(
             "must contain {id}, or every target writes the same archive",
@@ -1019,7 +1022,7 @@ fn none_is_not_a_publisher(
     publishers: &BTreeMap<String, PublisherSpec>,
     _: &Config,
 ) -> garde::Result {
-    if publishers.contains_key(crate::publisher::RELEASE_ONLY) {
+    if publishers.contains_key(RELEASE_ONLY) {
         return Err(garde::Error::new(
             "publishers.none is reserved for release-only packages; rename that publisher",
         ));
@@ -1067,7 +1070,7 @@ fn a_prerelease_is_lowercase_letters(packages: &[PackageSpec], _: &Config) -> ga
 /// setting nothing reads.
 fn release_only_names_no_registry(packages: &[PackageSpec], config: &Config) -> garde::Result {
     for package in packages {
-        if crate::publisher::publisher_name(config, package) == crate::publisher::RELEASE_ONLY
+        if publisher::publisher_name(config, package) == RELEASE_ONLY
             && (package.registry.is_some() || package.publish.is_some())
         {
             return Err(garde::Error::new(format!(
@@ -1084,7 +1087,7 @@ fn release_only_names_no_registry(packages: &[PackageSpec], config: &Config) -> 
 /// publisher's words.
 fn publish_options_fit_the_publisher(packages: &[PackageSpec], config: &Config) -> garde::Result {
     for package in packages {
-        if let Err(problem) = crate::publisher::check_options(config, package) {
+        if let Err(problem) = publisher::check_options(config, package) {
             return Err(garde::Error::new(problem));
         }
     }
@@ -1425,14 +1428,14 @@ impl<'de> Deserialize<'de> for Occurrences {
 
 struct OccurrencesVisitor;
 
-impl<'de> serde::de::Visitor<'de> for OccurrencesVisitor {
+impl<'de> Visitor<'de> for OccurrencesVisitor {
     type Value = Occurrences;
 
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "{ARITY}")
     }
 
-    fn visit_str<E: serde::de::Error>(self, word: &str) -> Result<Occurrences, E> {
+    fn visit_str<E: de::Error>(self, word: &str) -> Result<Occurrences, E> {
         match word {
             "once" => Ok(Occurrences::Once),
             "many" => Ok(Occurrences::Many),
@@ -1441,10 +1444,7 @@ impl<'de> serde::de::Visitor<'de> for OccurrencesVisitor {
         }
     }
 
-    fn visit_map<A: serde::de::MapAccess<'de>>(
-        self,
-        mut bound: A,
-    ) -> Result<Occurrences, A::Error> {
+    fn visit_map<A: MapAccess<'de>>(self, mut bound: A) -> Result<Occurrences, A::Error> {
         use serde::de::Error;
         let wrong = || A::Error::custom(format!("must be {ARITY}"));
         let key: String = bound.next_key()?.ok_or_else(wrong)?;
@@ -1453,7 +1453,7 @@ impl<'de> serde::de::Visitor<'de> for OccurrencesVisitor {
             reason = "the report names the accepted shapes; the number parse error adds nothing"
         )]
         let count: usize = bound.next_value().map_err(|_| wrong())?;
-        if bound.next_key::<serde::de::IgnoredAny>()?.is_some() {
+        if bound.next_key::<IgnoredAny>()?.is_some() {
             return Err(wrong());
         }
         match key.as_str() {
@@ -1543,7 +1543,7 @@ pub struct Prepare {
 /// the same value for `version_label: ~` as for a file that never set it.
 /// serde calls this only when the key is in the document.
 fn key_present<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
-    serde::de::IgnoredAny::deserialize(deserializer).map(|_| true)
+    IgnoredAny::deserialize(deserializer).map(|_| true)
 }
 
 /// The Version PR's title and commit message.

@@ -6,14 +6,10 @@
 //! on `verctl/release/main` with the version step's own library calls. The
 //! expected bytes therefore come from the code under test.
 
-#![expect(
-    clippy::expect_used,
-    reason = "the fixture helpers fail fast, as in tests/common.rs"
-)]
-
 mod common;
 
 use std::fs;
+use std::os::unix::fs::symlink;
 use std::path::Path;
 
 use indoc::{formatdoc, indoc};
@@ -198,7 +194,7 @@ fn a_version_pr_that_carries_a_source_change_fails() {
 #[test]
 fn a_version_pr_that_retargets_a_symlink_fails() {
     let repo = crate_repo(Some("demo: patch"));
-    std::os::unix::fs::symlink("Cargo.toml", repo.root().join("link")).expect("symlink");
+    symlink("Cargo.toml", repo.root().join("link")).expect("symlink");
     common::commit_all(repo.root(), "link");
     common::git(
         repo.root(),
@@ -206,7 +202,7 @@ fn a_version_pr_that_retargets_a_symlink_fails() {
     );
     repo.version_step();
     fs::remove_file(repo.root().join("link")).expect("remove");
-    std::os::unix::fs::symlink("CHANGELOG.md", repo.root().join("link")).expect("symlink");
+    symlink("CHANGELOG.md", repo.root().join("link")).expect("symlink");
     repo.commit();
     repo.fails_naming(&["link", "does not write"]);
 }
@@ -216,7 +212,7 @@ fn a_version_pr_that_retargets_a_symlink_fails() {
 #[test]
 fn an_uncommitted_symlink_retarget_fails() {
     let repo = crate_repo(Some("demo: patch"));
-    std::os::unix::fs::symlink("Cargo.toml", repo.root().join("link")).expect("symlink");
+    symlink("Cargo.toml", repo.root().join("link")).expect("symlink");
     common::commit_all(repo.root(), "link");
     common::git(
         repo.root(),
@@ -224,7 +220,7 @@ fn an_uncommitted_symlink_retarget_fails() {
     );
     repo.version_step();
     fs::remove_file(repo.root().join("link")).expect("remove");
-    std::os::unix::fs::symlink("CHANGELOG.md", repo.root().join("link")).expect("symlink");
+    symlink("CHANGELOG.md", repo.root().join("link")).expect("symlink");
     repo.fails_naming(&["link", "does not write"]);
 }
 

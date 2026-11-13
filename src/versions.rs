@@ -6,7 +6,7 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
 
 use crate::config::Config;
-use crate::{content, git, pull_request, release};
+use crate::{content, git, github, pull_request, release};
 
 /// Whether, and why, the version comparison is skipped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,13 +40,13 @@ impl Skip {
         if on_version_branch(root) {
             return Ok(Self::VersionBranch);
         }
-        if crate::github::event_is_merge_group() {
+        if github::event_is_merge_group() {
             return Ok(Self::MergeQueue);
         }
         // Detached Actions checkout: the pull request's head repository, head
         // branch, and live base, read from the API. Not GITHUB_HEAD_REF /
         // GITHUB_REF_NAME.
-        if crate::github::pull_request_is_version_pr()? {
+        if github::pull_request_is_version_pr()? {
             return Ok(Self::VersionBranch);
         }
         Ok(Self::None)

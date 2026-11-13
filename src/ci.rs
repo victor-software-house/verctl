@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 
 use crate::config::Config;
-use crate::runners;
+use crate::{github, runners};
 
 const DEFAULT_JOB: &str = "verify";
 const DEFAULT_MACHINE: &str = "ubuntu-26.04";
@@ -101,11 +101,13 @@ fn push(include: &mut Vec<CiJob>, id: &str, resolved: Vec<runners::Machine>) {
 /// file at `path` cannot be opened or written.
 pub fn write_github_output(plan: &CiPlan, path: &Path) -> Result<()> {
     let encoded = serde_json::to_string(&plan.matrix).context("encode matrix")?;
-    crate::github::write_output(path, &format!("matrix={encoded}\n"))
+    github::write_output(path, &format!("matrix={encoded}\n"))
 }
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::plan;
     use crate::config::Config;
 
@@ -272,7 +274,7 @@ mod tests {
         let root = tempfile::TempDir::new().unwrap();
         let out = root.path().join("out");
         super::write_github_output(&planned, &out).unwrap();
-        let text = std::fs::read_to_string(&out).unwrap();
+        let text = fs::read_to_string(&out).unwrap();
         let matrix_line = text
             .lines()
             .find(|line| line.starts_with("matrix="))
@@ -291,9 +293,9 @@ mod tests {
         let planned = plan(&load(PACKAGE)).unwrap();
         let root = tempfile::TempDir::new().unwrap();
         let out = root.path().join("out");
-        std::fs::write(&out, "earlier=kept\n").unwrap();
+        fs::write(&out, "earlier=kept\n").unwrap();
         super::write_github_output(&planned, &out).unwrap();
-        let text = std::fs::read_to_string(&out).unwrap();
+        let text = fs::read_to_string(&out).unwrap();
         assert!(text.starts_with("earlier=kept\n"), "{text}");
         assert!(text.contains("matrix={"), "{text}");
     }
@@ -303,9 +305,9 @@ mod tests {
         let planned = plan(&load(PACKAGE)).unwrap();
         let root = tempfile::TempDir::new().unwrap();
         let out = root.path().join("out");
-        std::fs::write(&out, "earlier=kept").unwrap();
+        fs::write(&out, "earlier=kept").unwrap();
         super::write_github_output(&planned, &out).unwrap();
-        let text = std::fs::read_to_string(&out).unwrap();
+        let text = fs::read_to_string(&out).unwrap();
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines[0], "earlier=kept");
         assert!(lines[1].starts_with("matrix={"), "{text}");

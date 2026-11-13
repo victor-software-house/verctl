@@ -4,17 +4,20 @@
 mod common;
 
 use std::fs;
+use std::path::PathBuf;
 
 use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
+use verctl::config::Config;
+use verctl::driver::{Driver, Format};
 use verctl::fragment::{self, Bump, Fragment, Group, PackageBump};
 use verctl::prepare::PlanEntry;
-use verctl::release;
+use verctl::{config, release};
 
 #[test]
 fn contributing_fragments_skip_unused() {
     let used = Fragment {
-        path: std::path::PathBuf::from("used.md"),
+        path: PathBuf::from("used.md"),
         packages: vec![PackageBump {
             name: "demo".into(),
             bump: Bump::Patch,
@@ -24,7 +27,7 @@ fn contributing_fragments_skip_unused() {
         group: None,
     };
     let unused = Fragment {
-        path: std::path::PathBuf::from("skip.md"),
+        path: PathBuf::from("skip.md"),
         packages: vec![PackageBump {
             name: "other".into(),
             bump: Bump::Patch,
@@ -38,9 +41,9 @@ fn contributing_fragments_skip_unused() {
         from: "1.0.0".into(),
         to: "1.0.1".into(),
         bump: Bump::Patch,
-        path: std::path::PathBuf::from("Cargo.toml"),
-        driver: verctl::driver::Driver::Path {
-            format: verctl::driver::Format::Toml,
+        path: PathBuf::from("Cargo.toml"),
+        driver: Driver::Path {
+            format: Format::Toml,
             keys: vec!["package.version".into()],
             after: None,
         },
@@ -133,8 +136,8 @@ fn write_changelogs_renders_fragment_summaries() {
         to: "1.0.1".into(),
         bump: Bump::Patch,
         path: root.path().join("Cargo.toml"),
-        driver: verctl::driver::Driver::Path {
-            format: verctl::driver::Format::Toml,
+        driver: Driver::Path {
+            format: Format::Toml,
             keys: vec!["package.version".into()],
             after: None,
         },
@@ -147,7 +150,7 @@ fn write_changelogs_renders_fragment_summaries() {
                 path: Cargo.toml
         "},
     );
-    let config = verctl::config::Config::load(&root.path().join(verctl::config::FILE)).unwrap();
+    let config = Config::load(&root.path().join(config::FILE)).unwrap();
     release::write_changelogs(&config, root.path(), &plan, &[fragment]).unwrap();
     let body = fs::read_to_string(&changelog).unwrap();
     assert!(body.contains("## demo 1.0.1"), "{body}");
@@ -260,7 +263,7 @@ fn notes_for_reads_each_package_changelog() {
         "},
     )
     .unwrap();
-    let config = verctl::config::Config::load(&root.path().join(verctl::config::FILE)).unwrap();
+    let config = Config::load(&root.path().join(config::FILE)).unwrap();
     let notes = release::notes_for(&config, root.path(), [("a", "1.0.1"), ("b", "2.1.0")]);
     assert!(notes.contains("## a 1.0.1"), "{notes}");
     assert!(notes.contains("First crate"), "{notes}");
@@ -279,7 +282,7 @@ fn missing_changelog_section_fails_closed() {
                 path: Cargo.toml
         "},
     );
-    let config = verctl::config::Config::load(&root.path().join(verctl::config::FILE)).unwrap();
+    let config = Config::load(&root.path().join(config::FILE)).unwrap();
     let err =
         release::require_changelog_versions(&config, root.path(), [("demo", "1.0.1")]).unwrap_err();
     assert!(format!("{err:#}").contains("demo@1.0.1"), "{err:#}");
@@ -642,9 +645,9 @@ fn demo_plan() -> [PlanEntry; 1] {
         from: "1.0.0".into(),
         to: "1.0.1".into(),
         bump: Bump::Patch,
-        path: std::path::PathBuf::from("Cargo.toml"),
-        driver: verctl::driver::Driver::Path {
-            format: verctl::driver::Format::Toml,
+        path: PathBuf::from("Cargo.toml"),
+        driver: Driver::Path {
+            format: Format::Toml,
             keys: vec!["package.version".into()],
             after: None,
         },
@@ -653,7 +656,7 @@ fn demo_plan() -> [PlanEntry; 1] {
 
 fn demo_fragment(summary: &str, group: Option<Group>) -> Fragment {
     Fragment {
-        path: std::path::PathBuf::from(format!("{summary}.md")),
+        path: PathBuf::from(format!("{summary}.md")),
         packages: vec![PackageBump {
             name: "demo".into(),
             bump: Bump::Patch,
@@ -763,7 +766,7 @@ fn a_patch_bang_entry_is_breaking_only_in_its_package() {
         ..demo
     };
     let fragment = Fragment {
-        path: std::path::PathBuf::from("split.md"),
+        path: PathBuf::from("split.md"),
         packages: vec![
             PackageBump {
                 name: "demo-core".into(),

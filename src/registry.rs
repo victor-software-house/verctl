@@ -8,14 +8,16 @@
 //! the crates.io sparse index. Any other package is checked through its
 //! recipe's `query`, or has no check and keeps the stderr match.
 
+use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use std::{env, fs, thread};
 
 use anyhow::{Context, Result, bail, ensure};
 use semver::Version;
 use toml_edit::{DocumentMut, Item};
 
-use crate::{lookup, process};
+use crate::{github, lookup, process};
 
 /// The root URL of the crates.io sparse index.
 ///
@@ -135,7 +137,7 @@ impl CargoEnv {
     /// process. An empty value counts as unset.
     #[must_use]
     pub fn from_env() -> Self {
-        let non_empty = |key: &str| std::env::var_os(key).filter(|value| !value.is_empty());
+        let non_empty = |key: &str| env::var_os(key).filter(|value| !value.is_empty());
         Self {
             registry_default: non_empty("CARGO_REGISTRY_DEFAULT")
                 .map(|value| value.to_string_lossy().into_owned()),
@@ -182,7 +184,7 @@ pub fn cargo_target(
     if package_registry.is_some_and(|registry| !registry.is_empty() && registry != CRATES_IO) {
         return Ok(CargoTarget::Other);
     }
-    let raw = std::fs::read_to_string(manifest).with_context(|| manifest.display().to_string())?;
+    let raw = fs::read_to_string(manifest).with_context(|| manifest.display().to_string())?;
     let Ok(document) = raw.parse::<DocumentMut>() else {
         return Ok(CargoTarget::Unknown);
     };
@@ -289,7 +291,7 @@ fn config_default(dir: &Path) -> DefaultRegistry {
     else {
         return DefaultRegistry::Unset;
     };
-    let Ok(raw) = std::fs::read_to_string(&path) else {
+    let Ok(raw) = fs::read_to_string(&path) else {
         return DefaultRegistry::Unknown;
     };
     let Ok(document) = raw.parse::<DocumentMut>() else {
@@ -344,7 +346,7 @@ pub fn crates_io_lists(base: &str, name: &str, version: &str) -> Result<bool> {
     );
     let wanted = Version::parse(version).with_context(|| format!("semver {version:?}"))?;
     let url = format!("{}/{}", base.trim_end_matches('/'), index_path(name));
-    let body = crate::github::block(fetch_index(&url))?;
+    let body = github::block(fetch_index(&url))?;
     let Some(body) = body else {
         return Ok(false);
     };
@@ -352,7 +354,7 @@ pub fn crates_io_lists(base: &str, name: &str, version: &str) -> Result<bool> {
         let record: IndexRecord = serde_json::from_str(line)
             .with_context(|| format!("crates.io index line for {name}"))?;
         if Version::parse(&record.vers)
-            .is_ok_and(|vers| vers.cmp_precedence(&wanted) == std::cmp::Ordering::Equal)
+            .is_ok_and(|vers| vers.cmp_precedence(&wanted) == Ordering::Equal)
         {
             return Ok(true);
         }
@@ -379,7 +381,7 @@ pub fn crates_io_baseline(base: &str, name: &str, current: &Version) -> Result<O
         "{name:?} is not a crates.io crate name"
     );
     let url = format!("{}/{}", base.trim_end_matches('/'), index_path(name));
-    let Some(body) = crate::github::block(fetch_index(&url))? else {
+    let Some(body) = github::block(fetch_index(&url))? else {
         return Ok(None);
     };
     let mut released = Vec::new();
@@ -502,7 +504,7 @@ pub fn wait_listed(
 ) -> Result<()> {
     let mut last_error = None;
     for delay in delays {
-        std::thread::sleep(*delay);
+        thread::sleep(*delay);
         match check.lists(version, env) {
             Ok(true) => return Ok(()),
             Ok(false) => last_error = None,
@@ -520,10 +522,12 @@ pub fn wait_listed(
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::Path;
     use std::time::Duration;
 
     use indoc::indoc;
     use tempfile::TempDir;
+    use tokio::task;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -567,7 +571,7 @@ mod tests {
         let base = server.uri();
         let name = name.to_owned();
         let version = version.to_owned();
-        tokio::task::spawn_blocking(move || crates_io_lists(&base, &name, &version))
+        task::spawn_blocking(move || crates_io_lists(&base, &name, &version))
             .await
             .unwrap()
     }
@@ -629,7 +633,7 @@ mod tests {
             .await;
         let base = server.uri();
         let current = semver::Version::parse(current).unwrap();
-        tokio::task::spawn_blocking(move || crates_io_baseline(&base, "demo", &current))
+        task::spawn_blocking(move || crates_io_baseline(&base, "demo", &current))
             .await
             .unwrap()
             .unwrap()
@@ -726,7 +730,7 @@ mod tests {
         assert_eq!(target(&inherited, None, &no_home()), CargoTarget::Unknown);
     }
 
-    fn write_config(dir: &std::path::Path, name: &str, body: &str) {
+    fn write_config(dir: &Path, name: &str, body: &str) {
         fs::create_dir_all(dir).unwrap();
         fs::write(dir.join(name), body).unwrap();
     }

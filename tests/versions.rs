@@ -10,13 +10,15 @@
 mod common;
 
 use std::ffi::OsString;
-use std::fs;
 use std::path::Path;
+use std::process::Command;
+use std::{env, fs};
 
 use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
 use verctl::config::Config;
 use verctl::versions::{self, Skip};
+use verctl::{config, git};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -95,7 +97,7 @@ fn version_pr() -> TempDir {
 }
 
 fn load(root: &Path) -> Config {
-    Config::load(&root.join(verctl::config::FILE)).unwrap()
+    Config::load(&root.join(config::FILE)).unwrap()
 }
 
 /// The check of a pull request into `main`: its base is the default branch.
@@ -129,10 +131,10 @@ fn inherited(
     })
 }
 
-fn check_cmd(root: &Path) -> std::process::Command {
+fn check_cmd(root: &Path) -> Command {
     let mut cmd = common::verctl();
     cmd.env_clear()
-        .envs(inherited(std::env::vars_os()))
+        .envs(inherited(env::vars_os()))
         .current_dir(root)
         .args(["check", "--versions", "--color", "never"]);
     cmd
@@ -226,7 +228,7 @@ fn ci_is_exempt() {
 fn new_package_not_on_default_is_ok() {
     let dir = repo_with_origin_main("1.0.0");
     fs::write(
-        dir.path().join(verctl::config::FILE),
+        dir.path().join(config::FILE),
         indoc! {"
             packages:
               - name: demo
@@ -412,7 +414,7 @@ fn nested_config_maps_onto_the_git_tree() {
     .unwrap();
     let err = versions::require_with(
         &dir.path().join("crates/demo"),
-        &Config::load(&dir.path().join("crates/demo").join(verctl::config::FILE)).unwrap(),
+        &Config::load(&dir.path().join("crates/demo").join(config::FILE)).unwrap(),
         Skip::None,
         &versions::stock_candidates(),
         &versions::stock_candidates(),
@@ -429,7 +431,7 @@ fn current_branch_reads_the_version_branch() {
     let dir = repo_with_origin_main("1.0.0");
     common::git(dir.path(), &["checkout", "-q", "-b", "verctl/release/main"]);
     assert_eq!(
-        verctl::git::current_branch(dir.path()).as_deref(),
+        git::current_branch(dir.path()).as_deref(),
         Some("verctl/release/main")
     );
 }
@@ -478,7 +480,7 @@ async fn pull_api(head_repo: &str, head_ref: &str, base_ref: &str) -> MockServer
 /// `check --versions` as the CI job of pull request 7 runs it, with the pull
 /// request read from `server`. The payload claims a Version PR, which the
 /// check must not trust.
-fn pull_request_cmd(root: &Path, server: &MockServer) -> std::process::Command {
+fn pull_request_cmd(root: &Path, server: &MockServer) -> Command {
     let event = root.join("event.json");
     fs::write(
         &event,
@@ -655,7 +657,7 @@ fn check_next(root: &Path) -> anyhow::Result<versions::VersionReport> {
         root,
         &load(root),
         Skip::None,
-        &verctl::git::default_branch_candidates_from(Some("next")),
+        &git::default_branch_candidates_from(Some("next")),
         &versions::stock_candidates(),
     )
 }
@@ -747,7 +749,7 @@ fn old_version_packages_branch_is_not_exempt() {
 }
 
 /// Run `check --versions` and return whether it passed, with its output.
-fn run(mut cmd: std::process::Command) -> (bool, String) {
+fn run(mut cmd: Command) -> (bool, String) {
     let output = cmd.output().unwrap();
     let text = format!(
         "{}{}",

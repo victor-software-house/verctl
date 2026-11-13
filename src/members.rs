@@ -9,6 +9,7 @@
 //! [`cargo metadata`]: https://doc.rust-lang.org/cargo/commands/cargo-metadata.html
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -43,7 +44,7 @@ pub struct Member {
 ///
 /// Returns an error when the manifest cannot be read or is not TOML.
 pub fn is_virtual(manifest: &Path) -> Result<bool> {
-    let raw = std::fs::read_to_string(manifest).with_context(|| manifest.display().to_string())?;
+    let raw = fs::read_to_string(manifest).with_context(|| manifest.display().to_string())?;
     let document = raw
         .parse::<DocumentMut>()
         .with_context(|| manifest.display().to_string())?;
@@ -238,7 +239,7 @@ fn visit(
     marks: &mut [Option<Mark>],
     path: &mut Vec<usize>,
     order: &mut Vec<usize>,
-) -> std::result::Result<(), Vec<usize>> {
+) -> Result<(), Vec<usize>> {
     match marks[at] {
         Some(Mark::Done) => return Ok(()),
         Some(Mark::Visiting) => {

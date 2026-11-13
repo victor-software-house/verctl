@@ -5,6 +5,8 @@
 //! `publisher: none` beside it. Nothing here follows a symlink or leaves the
 //! tree it is given.
 
+use std::fs;
+use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -170,13 +172,13 @@ fn without_links(tree: &Path, path: &Path) -> Result<Option<PathBuf>> {
             Component::Normal(name) => {
                 resolved.push(name);
                 depth += 1;
-                match std::fs::symlink_metadata(&resolved) {
+                match fs::symlink_metadata(&resolved) {
                     Ok(metadata) if metadata.file_type().is_symlink() => return Ok(None),
                     Ok(_) => {}
                     Err(error)
                         if matches!(
                             error.kind(),
-                            std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                            ErrorKind::NotFound | ErrorKind::NotADirectory
                         ) =>
                     {
                         return Ok(None);
@@ -195,6 +197,7 @@ fn without_links(tree: &Path, path: &Path) -> Result<Option<PathBuf>> {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::os::unix::fs::symlink;
     use std::path::Path;
 
     use indoc::{formatdoc, indoc};
@@ -346,7 +349,7 @@ mod tests {
             "},
         )
         .expect("write");
-        std::os::unix::fs::symlink(&outside, tree.join("Cargo.toml")).expect("symlink");
+        symlink(&outside, tree.join("Cargo.toml")).expect("symlink");
         let text = indoc! {r#"
             [package]
             name = "a"
@@ -386,8 +389,8 @@ mod tests {
             "},
         )
         .expect("write");
-        std::os::unix::fs::symlink("real", tree.join("linked")).expect("symlink");
-        std::os::unix::fs::symlink("../real/a", tree.join("crates/b")).expect("symlink");
+        symlink("real", tree.join("linked")).expect("symlink");
+        symlink("../real/a", tree.join("crates/b")).expect("symlink");
         let named = |workspace: &str| {
             formatdoc! {r#"
                 [package]

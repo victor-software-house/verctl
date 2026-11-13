@@ -20,7 +20,7 @@ use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
 use crate::config::{AssetTarget, Assets, Config};
-use crate::{github, process, runners};
+use crate::{git, github, process, release, runners};
 
 /// Time limit for each build step of one target.
 pub const BUILD_TIMEOUT: Duration = Duration::from_mins(15);
@@ -415,7 +415,7 @@ fn stage_prebuilt(
 /// the GitHub repository cannot be determined, or when the upload fails, as
 /// described for [`crate::github::upload_release_asset`].
 pub fn upload(root: &Path, tag: &str, tarball: &Path) -> Result<String> {
-    let token = crate::release::resolve_token()?;
+    let token = release::resolve_token()?;
     let repo = github::repo(root)?;
     github::upload_release_asset(&token, &repo, tag, tarball)
 }
@@ -604,14 +604,14 @@ pub fn build_vendored(plan: &VendoredPlan, id: &str, root: &Path) -> Result<Path
 /// - GitHub reports no digest for the archive;
 /// - the checksum file cannot be written.
 pub fn upload_vendored(plan: &VendoredPlan, root: &Path, archive: &Path) -> Result<VendoredUpload> {
-    let token = crate::release::resolve_token()?;
+    let token = release::resolve_token()?;
     let repo = github::repo(root)?;
     let notes = match &plan.notes {
         Some(path) => fs::read_to_string(root.join(path))
             .with_context(|| format!("vendored.{}.notes {}", plan.name, path.display()))?,
         None => String::new(),
     };
-    let sha = crate::git::head_sha(root)?;
+    let sha = git::head_sha(root)?;
     let release = github::ensure_vendored_release(&token, &repo, &plan.tag, &notes, &sha)?;
     let uploaded = github::upload_release_asset(&token, &repo, &plan.tag, archive)?;
     let name = archive
@@ -728,6 +728,11 @@ fn expand_one(part: &str, ctx: &BTreeMap<&str, String>) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
     use anyhow::Result;
 
     use super::plan;
@@ -755,8 +760,8 @@ mod tests {
         load(&format!("{REGISTRY}{extra}"))
     }
 
-    fn write_cargo(root: &std::path::Path, version: &str) {
-        std::fs::write(
+    fn write_cargo(root: &Path, version: &str) {
+        fs::write(
             root.join("Cargo.toml"),
             indoc::formatdoc! {r#"
                 [package]
@@ -971,7 +976,7 @@ mod tests {
         };
         assert_eq!(
             plan.packs,
-            std::collections::BTreeMap::from([
+            BTreeMap::from([
                 (
                     "darwin-arm64".to_owned(),
                     files("out/{triple}", &["proof"], "assets.darwin-arm64.files"),
@@ -997,7 +1002,7 @@ mod tests {
         let plan = plan(&config, root.path()).unwrap();
         let out = root.path().join("out");
         super::write_github_output(&plan, &out).unwrap();
-        let text = std::fs::read_to_string(&out).unwrap();
+        let text = fs::read_to_string(&out).unwrap();
         let matrix_line = text
             .lines()
             .find(|line| line.starts_with("matrix="))
@@ -1026,7 +1031,7 @@ mod tests {
         let plan = plan(&config, root.path()).unwrap();
         let out = root.path().join("out");
         super::write_github_output(&plan, &out).unwrap();
-        let text = std::fs::read_to_string(&out).unwrap();
+        let text = fs::read_to_string(&out).unwrap();
         assert!(text.contains("has_assets=false\n"), "{text}");
         assert!(text.contains("tag=v0.0.1\n"), "{text}");
         assert!(text.contains("matrix={\"include\":[]}"), "{text}");
@@ -1035,18 +1040,18 @@ mod tests {
 
     /// A root holding `config`'s plan and a prebuilt file that is not
     /// executable, so a mode of `0755` in the tarball comes from `build`.
-    fn prebuilt_root(extra: &str) -> (tempfile::TempDir, super::AssetsPlan, std::path::PathBuf) {
+    fn prebuilt_root(extra: &str) -> (tempfile::TempDir, super::AssetsPlan, PathBuf) {
         let config = with(extra).unwrap();
         let root = tempfile::TempDir::new().unwrap();
         write_cargo(root.path(), "1.2.3");
         let planned = plan(&config, root.path()).unwrap();
         let prebuilt = root.path().join("input-verctl");
-        std::fs::write(&prebuilt, "binary").unwrap();
+        fs::write(&prebuilt, "binary").unwrap();
         (root, planned, prebuilt)
     }
 
-    fn listing(tarball: &std::path::Path) -> String {
-        let output = std::process::Command::new("tar")
+    fn listing(tarball: &Path) -> String {
+        let output = Command::new("tar")
             .arg("tvzf")
             .arg(tarball)
             .output()

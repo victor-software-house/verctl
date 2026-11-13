@@ -1,14 +1,17 @@
 //! The `verctl` binary: parses the command line and runs the chosen command.
 
-use std::path::Path;
+use std::env;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use ctl_core::prelude::*;
 use verctl::cli::{
-    AssetArgs, CheckArgs, Cli, Command, ReleaseArgs, ReleaseStep, RenderArgs, StatusArgs,
-    VersionArgs,
+    AssetArgs, CheckArgs, CiArgs, Cli, Command, DocsArgs, ReleaseArgs, ReleaseStep, RenderArgs,
+    SemverArgs, StatusArgs, VersionArgs,
 };
 use verctl::config::{self, Config};
+use verctl::content::Inputs;
 use verctl::fragment::{self, Bump};
 use verctl::registry_token::RegistryToken;
 use verctl::{
@@ -55,7 +58,7 @@ fn execute(cli: Cli) -> Result<Report> {
     }
 }
 
-fn semver_report(args: &verctl::cli::SemverArgs) -> Result<SemverReport> {
+fn semver_report(args: &SemverArgs) -> Result<SemverReport> {
     let config = Config::load(&args.config)?;
     let fragments = fragment::load_dir(&args.dir)?;
     Ok(SemverReport {
@@ -63,10 +66,10 @@ fn semver_report(args: &verctl::cli::SemverArgs) -> Result<SemverReport> {
     })
 }
 
-fn docs_report(args: &verctl::cli::DocsArgs) -> Result<DocsReport> {
+fn docs_report(args: &DocsArgs) -> Result<DocsReport> {
     let config = Config::load(&args.config)?;
     let root = &config::root_of(&args.config);
-    let timeout = std::time::Duration::from_secs(args.timeout.saturating_mul(60));
+    let timeout = Duration::from_secs(args.timeout.saturating_mul(60));
     Ok(DocsReport {
         crates: docsrs::run(&config, root, timeout)?,
     })
@@ -129,7 +132,7 @@ fn check_served(root: &Path, config: &Config) -> Result<()> {
 fn versions_report(args: &CheckArgs) -> Result<VersionCheckReport> {
     let root = &config::root_of(&args.config);
     let config = Config::load(&args.config)?;
-    let inputs = verctl::content::Inputs::new(&args.config, &args.dir);
+    let inputs = Inputs::new(&args.config, &args.dir);
     let report = versions::report(root, &config, &inputs)?;
     Ok(VersionCheckReport {
         skip: report.skip,
@@ -214,7 +217,7 @@ fn version_report(args: &VersionArgs) -> Result<VersionReport> {
         &config.pins,
         &served,
     )?);
-    let cwd = std::env::current_dir()
+    let cwd = env::current_dir()
         .and_then(|dir| dir.canonicalize())
         .context("the working directory")?;
     let steps = prepare::steps(&plan, config.prepare.after.as_deref(), &cwd);
@@ -249,7 +252,7 @@ fn version_report(args: &VersionArgs) -> Result<VersionReport> {
     let changelogs = release::write_changelogs_with(&config, root, &plan, &shown, &origins)?;
     prepare::run_steps(&steps)?;
     let consume = file_names(&consumed);
-    let mut paths: Vec<std::path::PathBuf> = plan.iter().map(|entry| entry.path.clone()).collect();
+    let mut paths: Vec<PathBuf> = plan.iter().map(|entry| entry.path.clone()).collect();
     paths.extend(pinned.iter().cloned());
     paths.extend(changelogs);
     paths.extend(consumed.iter().map(|fragment| fragment.path.clone()));
@@ -306,7 +309,7 @@ fn file_names(fragments: &[&fragment::Fragment]) -> Vec<String> {
         .collect()
 }
 
-fn display_paths(paths: Vec<std::path::PathBuf>) -> Vec<String> {
+fn display_paths(paths: Vec<PathBuf>) -> Vec<String> {
     paths
         .into_iter()
         .map(|path| path.display().to_string())
@@ -316,7 +319,7 @@ fn display_paths(paths: Vec<std::path::PathBuf>) -> Vec<String> {
 /// What `version --dry-run` reports beside the changelog it renders.
 struct Preview {
     bumps: Vec<VersionBump>,
-    pinned: Vec<std::path::PathBuf>,
+    pinned: Vec<PathBuf>,
     after: Vec<String>,
     open_pr: bool,
 }
@@ -500,7 +503,7 @@ fn vendored_report(args: &AssetArgs, release: &ReleaseArgs, name: &str) -> Resul
     })
 }
 
-fn ci_report(args: &verctl::cli::CiArgs) -> Result<CiReport> {
+fn ci_report(args: &CiArgs) -> Result<CiReport> {
     let config = Config::load(&args.config)?;
     let planned = ci::plan(&config)?;
     if let Some(path) = &args.github_output {
@@ -675,11 +678,12 @@ fn unreleased_rows(planned: &pending::Pending) -> Vec<ReleaseRow> {
 #[cfg(test)]
 mod tests {
     use clap::CommandFactory;
+    use ctl_core::parser;
     use verctl::cli::Cli;
 
     #[test]
     fn cli_debug_assert() {
-        ctl_core::parser::verify::<Cli>();
+        parser::verify::<Cli>();
         let _ = Cli::command();
     }
 }

@@ -5,6 +5,7 @@
 //! How tags are named comes from `[tags].template`; see [`tags_for`].
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::Path;
 use std::time::Duration;
 
@@ -12,7 +13,7 @@ use anyhow::{Context, Result, bail, ensure};
 use ctl_core::formatdoc;
 use serde::Serialize;
 
-use crate::config::{Config, NAME_PLACEHOLDER};
+use crate::config::{Config, NAME_PLACEHOLDER, PackageSpec};
 use crate::publisher::Upload;
 use crate::registry::{self, RegistryCheck};
 use crate::registry_token::RegistryToken;
@@ -186,8 +187,8 @@ pub struct Draft {
     pub lacks: Vec<String>,
 }
 
-impl std::fmt::Display for Draft {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Draft {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "draft {url} lacks {lacks}",
@@ -361,7 +362,7 @@ pub fn run_pending(
         return Ok(nothing_to_release(waiting, allowed, pending.shortfalls));
     };
     refuse_skipped_versions(here, &waiting, &head)?;
-    let selected: Vec<(&crate::config::PackageSpec, &PublishEntry)> = config
+    let selected: Vec<(&PackageSpec, &PublishEntry)> = config
         .packages
         .iter()
         .zip(&planned.packages)
@@ -438,7 +439,7 @@ fn gather_uploads<'a>(
     config: &Config,
     root: &Path,
     here: &pending::PendingCommit,
-    selected: &[(&crate::config::PackageSpec, &'a PublishEntry)],
+    selected: &[(&PackageSpec, &'a PublishEntry)],
     releases_only: bool,
     head: &str,
 ) -> Result<Gathered<'a>> {
@@ -1194,6 +1195,8 @@ mod tests {
 
     /// Which tag a run drafts, and which assets it declares for it.
     mod declared {
+        use std::fs;
+
         use indoc::indoc;
 
         use super::super::{Scope, assets_of, declared_assets};
@@ -1201,7 +1204,7 @@ mod tests {
 
         fn demo(yaml: &str) -> (tempfile::TempDir, Config) {
             let dir = tempfile::TempDir::new().unwrap();
-            std::fs::write(
+            fs::write(
                 dir.path().join("Cargo.toml"),
                 indoc! {r#"
                     [package]

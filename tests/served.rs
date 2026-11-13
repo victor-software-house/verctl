@@ -2,11 +2,6 @@
 //! fixes what `check` refuses. Both run through the binary in a real
 //! repository.
 
-#![expect(
-    clippy::expect_used,
-    reason = "the fixture helpers fail fast, as in tests/common.rs"
-)]
-
 mod common;
 
 use std::fs;

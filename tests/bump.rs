@@ -3,15 +3,15 @@
 
 mod common;
 
-use std::fs;
+use std::{fs, slice};
 
 use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
 use verctl::bump::{apply, apply_with};
 use verctl::config::{Config, Prerelease};
-use verctl::driver::Driver;
+use verctl::driver::{CommandSpec, Driver, Format};
 use verctl::fragment::{Bump, parse_str};
-use verctl::prepare;
+use verctl::{config, prepare};
 
 #[test]
 fn patch_and_minor() {
@@ -134,7 +134,7 @@ fn prepare_fails_closed_on_unknown_package() {
         "#},
     )
     .expect("cargo");
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let config = Config::load(&root.path().join(config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---
@@ -170,7 +170,7 @@ fn prepare_applies_max_bump_across_fragments() {
         "#},
     )
     .expect("cargo");
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let config = Config::load(&root.path().join(config::FILE)).expect("load");
     let patch = parse_str(
         indoc! {"
             ---
@@ -231,7 +231,7 @@ fn declared_toml_keys_are_the_same_as_cargo() {
         "#},
     )
     .expect("cargo");
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let config = Config::load(&root.path().join(config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---
@@ -270,7 +270,7 @@ fn detects_bun_from_lockfile() {
     )
     .expect("pkg");
     fs::write(root.path().join("bun.lock"), "{}\n").expect("lock");
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let config = Config::load(&root.path().join(config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---
@@ -307,7 +307,7 @@ fn a_cargo_lock_asks_for_the_narrowest_refresh() {
     )
     .expect("manifest");
     fs::write(root.path().join("Cargo.lock"), "version = 4\n").expect("lock");
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let config = Config::load(&root.path().join(config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---
@@ -345,7 +345,7 @@ fn no_cargo_lock_asks_for_nothing() {
         "#},
     )
     .expect("manifest");
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let config = Config::load(&root.path().join(config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---
@@ -380,7 +380,7 @@ fn detects_pnpm_from_lockfile() {
     )
     .expect("pkg");
     fs::write(root.path().join("pnpm-lock.yaml"), "lockfileVersion: '9'\n").expect("lock");
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let config = Config::load(&root.path().join(config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---
@@ -416,7 +416,7 @@ fn package_after_overrides_detection() {
     )
     .expect("pkg");
     fs::write(root.path().join("bun.lock"), "{}\n").expect("lock");
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let config = Config::load(&root.path().join(config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---
@@ -445,7 +445,7 @@ fn json_write_follows_the_full_key_path() {
         }
     "#};
     let driver = Driver::Path {
-        format: verctl::driver::Format::Json,
+        format: Format::Json,
         keys: vec!["workspaces.app.version".into()],
         after: None,
     };
@@ -459,8 +459,8 @@ fn json_write_follows_the_full_key_path() {
 #[test]
 fn argv_driver_reads_and_writes_without_a_shell() {
     let driver = Driver::Command {
-        read: verctl::driver::CommandSpec::Argv(vec!["tr".into(), "-d".into(), "\n".into()]),
-        write: verctl::driver::CommandSpec::Argv(vec!["printenv".into(), "VERCTL_VERSION".into()]),
+        read: CommandSpec::Argv(vec!["tr".into(), "-d".into(), "\n".into()]),
+        write: CommandSpec::Argv(vec!["printenv".into(), "VERCTL_VERSION".into()]),
         after: None,
     };
     assert_eq!(driver.read("1.2.3\n").expect("read"), "1.2.3");
@@ -473,8 +473,8 @@ fn argv_driver_reads_and_writes_without_a_shell() {
 #[test]
 fn argv_write_driver_does_not_deadlock_on_large_stdin() {
     let driver = Driver::Command {
-        read: verctl::driver::CommandSpec::Argv(vec!["tr".into(), "-d".into(), "\n".into()]),
-        write: verctl::driver::CommandSpec::Argv(vec!["cat".into()]),
+        read: CommandSpec::Argv(vec!["tr".into(), "-d".into(), "\n".into()]),
+        write: CommandSpec::Argv(vec!["cat".into()]),
         after: None,
     };
     let payload = format!("{}\n", "x".repeat(200_000));
@@ -552,8 +552,7 @@ fn prepare_reads_first_minor_from_the_package() {
         "},
     );
     let config = Config::load(&path).expect("load");
-    let error =
-        prepare::plan(&config, std::slice::from_ref(&minor), root.path()).expect_err("refused");
+    let error = prepare::plan(&config, slice::from_ref(&minor), root.path()).expect_err("refused");
     assert!(format!("{error:#}").contains("package demo"), "{error:#}");
     let path = common::write_config(
         root.path(),
@@ -594,7 +593,7 @@ fn pyproject_changes_only_the_version() {
     );
     fs::write(root.path().join("pyproject.toml"), raw).expect("pyproject");
     fs::write(root.path().join("uv.lock"), "version = 1\n").expect("lock");
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let config = Config::load(&root.path().join(config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---
@@ -642,7 +641,7 @@ fn a_dynamic_python_version_fails_the_plan() {
         "#},
     )
     .expect("pyproject");
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let config = Config::load(&root.path().join(config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---
@@ -665,10 +664,6 @@ fn a_dynamic_python_version_fails_the_plan() {
 /// `module`, a `go.mod`; returns the plan and the file afterwards. Only the
 /// plan and its writes return an error, so a test that expects one cannot
 /// pass on a broken fixture.
-#[expect(
-    clippy::expect_used,
-    reason = "fixture setup fails the test outright; only prepare's errors are the result"
-)]
 fn bump_go_module(module: &str, bump: &str) -> anyhow::Result<(Vec<prepare::PlanEntry>, String)> {
     let root = TempDir::new().expect("tmp");
     common::write_config(
@@ -680,7 +675,7 @@ fn bump_go_module(module: &str, bump: &str) -> anyhow::Result<(Vec<prepare::Plan
         "},
     );
     fs::write(root.path().join("go.mod"), module).expect("go.mod");
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let config = Config::load(&root.path().join(config::FILE)).expect("load");
     let fragment = formatdoc! {"
         ---
         demo: {bump}
@@ -751,10 +746,6 @@ fn a_go_major_needs_the_module_path() {
 /// in `VERSION`; `None` leaves the file missing. Returns the plan and the
 /// file afterwards. Only the plan and its writes return an error, as in
 /// [`bump_go_module`].
-#[expect(
-    clippy::expect_used,
-    reason = "fixture setup fails the test outright; only prepare's errors are the result"
-)]
 fn bump_version_file(raw: Option<&str>) -> anyhow::Result<(Vec<prepare::PlanEntry>, String)> {
     let root = TempDir::new().expect("tmp");
     common::write_config(
@@ -768,7 +759,7 @@ fn bump_version_file(raw: Option<&str>) -> anyhow::Result<(Vec<prepare::PlanEntr
     if let Some(raw) = raw {
         fs::write(root.path().join("VERSION"), raw).expect("VERSION");
     }
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let config = Config::load(&root.path().join(config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---
@@ -826,7 +817,7 @@ fn a_version_file_in_a_missing_directory_fails() {
                 path: actions/setup/VERSION
         "},
     );
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let config = Config::load(&root.path().join(config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---
@@ -867,7 +858,7 @@ fn a_marker_line_versions_a_single_file() {
     "};
     fs::create_dir_all(root.path().join(".github/workflows")).expect("dir");
     fs::write(root.path().join(".github/workflows/ci.yml"), workflow).expect("workflow");
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("load");
+    let config = Config::load(&root.path().join(config::FILE)).expect("load");
     let fragment = parse_str(
         indoc! {"
             ---

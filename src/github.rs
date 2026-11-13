@@ -1,11 +1,19 @@
-use std::env;
+use std::fs::OpenOptions;
+use std::future::Future;
 use std::path::Path;
+use std::time::Duration;
+use std::{env, fmt, fs, io};
 
 use anyhow::{Context, Result, bail, ensure};
 use octocrab::Octocrab;
+use octocrab::models::repos::Object;
 use octocrab::params::State;
+use octocrab::params::repos::Reference;
+use octocrab::repos::releases::MakeLatest;
+use tokio::runtime::Builder;
+use tokio::time;
 
-use crate::lookup;
+use crate::{git, lookup, release};
 
 /// Append to `$GITHUB_OUTPUT`. That file belongs to the whole step, so a
 /// writer that truncates would drop assignments another step already made.
@@ -19,7 +27,7 @@ use crate::lookup;
 /// or written.
 pub fn write_output(path: &Path, body: &str) -> Result<()> {
     use std::io::{Read, Seek, SeekFrom, Write};
-    let mut file = std::fs::OpenOptions::new()
+    let mut file = OpenOptions::new()
         .create(true)
         .read(true)
         .append(true)
@@ -67,7 +75,7 @@ pub fn repo(root: &Path) -> Result<Repo> {
     {
         return parse_slug(&slug);
     }
-    crate::git::origin_url(root)
+    git::origin_url(root)
         .and_then(|url| parse_remote(url.trim()))
         .map_err(lookup::unavailable)
 }
@@ -140,8 +148,8 @@ pub fn base_branch(root: &Path) -> Result<String> {
     {
         return Ok(name);
     }
-    crate::git::configured_default_branch()
-        .or_else(|| crate::git::upstream_default_branch(root))
+    git::configured_default_branch()
+        .or_else(|| git::upstream_default_branch(root))
         .context(
             "cannot tell which branch the Version PR targets: set VERCTL_DEFAULT_BRANCH, or run `git remote set-head origin --auto`",
         )
@@ -266,13 +274,13 @@ pub fn pull_request_is_version_pr() -> Result<bool> {
     let Ok(path) = env::var("GITHUB_EVENT_PATH") else {
         return Ok(false);
     };
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = fs::read_to_string(path) else {
         return Ok(false);
     };
     let Some(number) = pull_request_number(&raw) else {
         return Ok(false);
     };
-    let token = crate::release::env_token().context(
+    let token = release::env_token().context(
         "the version check reads the pull request and needs GITHUB_TOKEN with pull-requests: read",
     )?;
     let slug = env::var("GITHUB_REPOSITORY").unwrap_or_default();
@@ -290,7 +298,7 @@ pub fn pull_request_is_version_pr() -> Result<bool> {
             .as_ref()
             .and_then(|head| head.full_name.as_deref())
             .is_some_and(|name| name.eq_ignore_ascii_case(&slug));
-        Ok(same_repo && pr.head.ref_field == crate::release::version_branch(&pr.base.ref_field))
+        Ok(same_repo && pr.head.ref_field == release::version_branch(&pr.base.ref_field))
     })
 }
 
@@ -311,7 +319,7 @@ pub fn pull_request_number(raw: &str) -> Option<u64> {
 pub fn event_is_merge_group() -> bool {
     env::var("GITHUB_EVENT_PATH")
         .ok()
-        .and_then(|path| std::fs::read_to_string(path).ok())
+        .and_then(|path| fs::read_to_string(path).ok())
         .is_some_and(|raw| is_merge_group(&raw))
 }
 
@@ -328,7 +336,7 @@ pub fn is_merge_group(raw: &str) -> bool {
 /// `None` without an event.
 #[must_use]
 pub fn event_default_branch() -> Option<String> {
-    let raw = std::fs::read_to_string(env::var("GITHUB_EVENT_PATH").ok()?).ok()?;
+    let raw = fs::read_to_string(env::var("GITHUB_EVENT_PATH").ok()?).ok()?;
     default_branch_of(&raw)
 }
 
@@ -513,9 +521,7 @@ async fn ensure_release_with(
     let create = releases.create(tag).name(name).body(body);
     let create = match stage {
         Stage::Stable => create,
-        Stage::Candidate => create
-            .prerelease(true)
-            .make_latest(octocrab::repos::releases::MakeLatest::False),
+        Stage::Candidate => create.prerelease(true).make_latest(MakeLatest::False),
     };
     if assets.is_empty() {
         let created = create
@@ -550,7 +556,7 @@ async fn ensure_release_with(
 async fn tag_exists(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<bool> {
     match crab
         .repos(&repo.owner, &repo.name)
-        .get_ref(&octocrab::params::repos::Reference::Tag(tag.to_owned()))
+        .get_ref(&Reference::Tag(tag.to_owned()))
         .await
     {
         Ok(_) => Ok(true),
@@ -565,7 +571,7 @@ async fn tag_exists(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<bool> {
 /// [create a reference]: https://docs.github.com/en/rest/git/refs#create-a-reference
 async fn ensure_tag(crab: &Octocrab, repo: &Repo, tag: &str, sha: &str) -> Result<()> {
     let repos = crab.repos(&repo.owner, &repo.name);
-    let reference = octocrab::params::repos::Reference::Tag(tag.to_owned());
+    let reference = Reference::Tag(tag.to_owned());
     match repos.get_ref(&reference).await {
         Ok(_) => {}
         Err(error) if is_not_found(&error) => {
@@ -617,10 +623,8 @@ async fn finalize(
         .body(release.body)
         .draft(false);
     let update = match release.stage {
-        Stage::Stable => update.make_latest(octocrab::repos::releases::MakeLatest::Legacy),
-        Stage::Candidate => update
-            .prerelease(true)
-            .make_latest(octocrab::repos::releases::MakeLatest::False),
+        Stage::Stable => update.make_latest(MakeLatest::Legacy),
+        Stage::Candidate => update.prerelease(true).make_latest(MakeLatest::False),
     };
     let published = update
         .send()
@@ -687,7 +691,7 @@ async fn ensure_vendored_release_with(
         .name(tag)
         .body(body)
         .target_commitish(sha)
-        .make_latest(octocrab::repos::releases::MakeLatest::False)
+        .make_latest(MakeLatest::False)
         .send()
         .await;
     match created {
@@ -773,8 +777,8 @@ struct ReleaseRefused {
     sha: String,
 }
 
-impl std::fmt::Display for ReleaseRefused {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for ReleaseRefused {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "GitHub refused to create {tag} at {sha}. When that commit's .github/workflows differ from the default branch, the Releases API also needs workflows: write, which GITHUB_TOKEN cannot hold; rerun verctl release at that commit with a token that has it",
@@ -807,14 +811,12 @@ async fn require_tag_at(crab: &Octocrab, repo: &Repo, tag: &str, sha: &str) -> R
 async fn tag_commit_sha(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<String> {
     let git_ref = crab
         .repos(&repo.owner, &repo.name)
-        .get_ref(&octocrab::params::repos::Reference::Tag(tag.to_owned()))
+        .get_ref(&Reference::Tag(tag.to_owned()))
         .await
         .map_err(|error| lookup_failed(error, format!("read tag {tag}")))?;
     match git_ref.object {
-        octocrab::models::repos::Object::Commit { sha, .. } => Ok(sha),
-        octocrab::models::repos::Object::Tag { sha: tag_sha, .. } => {
-            peel_tag(crab, repo, tag, &tag_sha).await
-        }
+        Object::Commit { sha, .. } => Ok(sha),
+        Object::Tag { sha: tag_sha, .. } => peel_tag(crab, repo, tag, &tag_sha).await,
         other => bail!("tag {tag} names {other:?}, not a commit"),
     }
 }
@@ -887,7 +889,7 @@ pub fn release_state(token: &str, repo: &Repo, tag: &str) -> Result<ReleaseState
 async fn release_state_with(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<ReleaseState> {
     let tag_sha = match crab
         .repos(&repo.owner, &repo.name)
-        .get_ref(&octocrab::params::repos::Reference::Tag(tag.to_owned()))
+        .get_ref(&Reference::Tag(tag.to_owned()))
         .await
     {
         Ok(_) => Some(tag_commit_sha(crab, repo, tag).await?),
@@ -906,8 +908,7 @@ async fn release_state_with(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<R
         immutable: release.as_ref().is_some_and(|release| release.immutable),
         assets: release
             .as_ref()
-            .map(|release| release.uploaded().into_iter().map(str::to_owned).collect())
-            .unwrap_or_default(),
+            .map_or_default(|release| release.uploaded().into_iter().map(str::to_owned).collect()),
     })
 }
 
@@ -941,7 +942,7 @@ fn lookup_failed(error: octocrab::Error, context: String) -> anyhow::Error {
     let error = anyhow::Error::new(error);
     let transport = service
         && error.chain().any(|cause| {
-            cause.is::<std::io::Error>()
+            cause.is::<io::Error>()
                 || matches!(
                     cause.downcast_ref::<octocrab::Error>(),
                     Some(octocrab::Error::Hyper { .. })
@@ -1088,7 +1089,7 @@ pub fn upload_release_asset(token: &str, repo: &Repo, tag: &str, tarball: &Path)
         .context("asset name")?
         .to_owned();
     let body =
-        bytes::Bytes::from(std::fs::read(tarball).with_context(|| tarball.display().to_string())?);
+        bytes::Bytes::from(fs::read(tarball).with_context(|| tarball.display().to_string())?);
     block(async {
         let crab = client(token)?;
         upload_release_asset_with(&crab, repo, tag, &name, body, &UPLOAD_SETTLE_DELAYS).await
@@ -1099,7 +1100,7 @@ pub fn upload_release_asset(token: &str, repo: &Repo, tag: &str, tarball: &Path)
 /// finish. GitHub lists an asset as soon as its upload starts, in a state
 /// other than `uploaded`. A tarball of a few megabytes uploads in seconds, so a
 /// minute covers a run that lost the race while the winner was still sending.
-const UPLOAD_SETTLE_DELAYS: [std::time::Duration; 12] = [std::time::Duration::from_secs(5); 12];
+const UPLOAD_SETTLE_DELAYS: [Duration; 12] = [Duration::from_secs(5); 12];
 
 /// The Release for `tag`, draft or published, that an upload or a checksum
 /// reads.
@@ -1115,7 +1116,7 @@ async fn upload_release_asset_with(
     tag: &str,
     name: &str,
     body: bytes::Bytes,
-    settle: &[std::time::Duration],
+    settle: &[Duration],
 ) -> Result<String> {
     let release = upload_target(crab, repo, tag).await?;
     if release.uploaded().contains(&name) {
@@ -1156,7 +1157,7 @@ async fn upload_release_asset_with(
                         asset.state
                     );
                 };
-                tokio::time::sleep(*delay).await;
+                time::sleep(*delay).await;
             }
         }
         Err(error) => Err(error).context("upload release asset"),
@@ -1259,9 +1260,9 @@ fn client(token: &str) -> Result<Octocrab> {
 /// blocking command handlers can call async clients.
 pub(crate) fn block<F, T>(fut: F) -> Result<T>
 where
-    F: std::future::Future<Output = Result<T>>,
+    F: Future<Output = Result<T>>,
 {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .context("tokio")?
@@ -1270,6 +1271,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use wiremock::matchers::{body_partial_json, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -2181,7 +2184,7 @@ mod tests {
             TAG,
             "app_1.0.0_linux_x64.tar.gz",
             bytes::Bytes::from_static(b"tarball"),
-            &[std::time::Duration::ZERO; 2],
+            &[Duration::ZERO; 2],
         )
         .await
     }

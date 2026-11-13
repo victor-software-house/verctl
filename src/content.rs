@@ -21,9 +21,9 @@
 
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{env, fmt, fs, process, str};
 
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
@@ -41,8 +41,8 @@ use crate::{detect, fragment, members, pins, release, templates};
 #[derive(Debug)]
 pub struct BaseConfigFailed;
 
-impl std::fmt::Display for BaseConfigFailed {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for BaseConfigFailed {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("the config at the merge-base does not load")
     }
 }
@@ -517,7 +517,7 @@ fn stale_locks(base: &MergeBase, moved: &[Moved]) -> Result<Vec<String>> {
 }
 
 fn parse(format: Format, bytes: &[u8]) -> Result<Lockfile> {
-    let text = std::str::from_utf8(bytes).context("not UTF-8")?;
+    let text = str::from_utf8(bytes).context("not UTF-8")?;
     Lockfile::parse(format, text)
 }
 
@@ -546,8 +546,7 @@ fn describe(path: &str, expected: Option<&[u8]>, actual: Option<&[u8]>) -> Strin
 /// The keys of a TOML or JSON file whose values differ, or the first line
 /// that differs in any other text.
 fn differences(path: &str, expected: &[u8], actual: &[u8]) -> Vec<String> {
-    let (Ok(expected), Ok(actual)) = (std::str::from_utf8(expected), std::str::from_utf8(actual))
-    else {
+    let (Ok(expected), Ok(actual)) = (str::from_utf8(expected), str::from_utf8(actual)) else {
         return Vec::new();
     };
     let extension = Path::new(path)
@@ -675,10 +674,8 @@ impl Scratch {
     pub(crate) fn new() -> Result<Self> {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_nanos())
-            .unwrap_or_default();
-        let dir =
-            std::env::temp_dir().join(format!("verctl-version-pr-{}-{stamp}", std::process::id()));
+            .map_or_default(|elapsed| elapsed.as_nanos());
+        let dir = env::temp_dir().join(format!("verctl-version-pr-{}-{stamp}", process::id()));
         fs::create_dir(&dir).with_context(|| format!("create {}", dir.display()))?;
         match dir.canonicalize() {
             Ok(canonical) => Ok(Self(canonical)),

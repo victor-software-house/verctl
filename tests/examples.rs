@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use indoc::indoc;
 use tempfile::TempDir;
 use verctl::config::Config;
-use verctl::{assets, ci, pins};
+use verctl::{assets, ci, config, pins, publish};
 
 fn example() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/ver.yaml")
@@ -15,13 +15,9 @@ fn example() -> PathBuf {
 
 /// The example declares manifests it does not ship. Give it the tree it
 /// describes so both planners can run against the file as written.
-#[expect(
-    clippy::expect_used,
-    reason = "test setup outside a #[test]: a failed step should abort the test"
-)]
 fn planted() -> TempDir {
     let root = TempDir::new().expect("tmp");
-    let config = root.path().join(verctl::config::FILE);
+    let config = root.path().join(config::FILE);
     fs::create_dir_all(config.parent().expect("parent")).expect("dir");
     fs::copy(example(), &config).expect("copy");
     fs::write(
@@ -114,8 +110,8 @@ fn the_example_declares_nothing_a_package_does_not_use() {
 #[test]
 fn the_example_resolves_every_driver_and_publisher_it_declares() {
     let root = planted();
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("parse");
-    let plan = verctl::publish::plan(&config, root.path()).expect("plan the publish");
+    let config = Config::load(&root.path().join(config::FILE)).expect("parse");
+    let plan = publish::plan(&config, root.path()).expect("plan the publish");
     let resolved: Vec<(&str, &str, &str, Vec<&str>)> = plan
         .packages
         .iter()
@@ -211,7 +207,7 @@ fn the_example_ci_table_plans_the_checks_it_documents() {
 #[test]
 fn the_example_assets_table_plans_the_targets_it_documents() {
     let root = planted();
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("parse");
+    let config = Config::load(&root.path().join(config::FILE)).expect("parse");
     let plan = assets::plan(&config, root.path()).expect("plan");
     let targets: Vec<(&str, String, &str, &str)> = plan
         .matrix
@@ -258,7 +254,7 @@ fn the_example_assets_table_plans_the_targets_it_documents() {
 #[test]
 fn the_example_vendored_set_plans_the_archives_it_documents() {
     let root = planted();
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("parse");
+    let config = Config::load(&root.path().join(config::FILE)).expect("parse");
     let plan = assets::plan_vendored(&config, "libexample").expect("plan");
     assert_eq!(plan.tag, "libexample-1.4.0");
     let targets: Vec<(&str, String, &str)> = plan
@@ -295,7 +291,7 @@ fn the_example_vendored_set_plans_the_archives_it_documents() {
 #[test]
 fn the_example_pin_rewrites_the_file_it_names() {
     let root = planted();
-    let config = Config::load(&root.path().join(verctl::config::FILE)).expect("parse");
+    let config = Config::load(&root.path().join(config::FILE)).expect("parse");
     fs::create_dir_all(root.path().join("examples")).expect("examples dir");
     fs::write(
         root.path().join("examples/mise.toml"),

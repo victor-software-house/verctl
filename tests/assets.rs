@@ -2,11 +2,6 @@
 //! tarballs, built as before, and vendored sets beside them. `--dry-run`
 //! builds and uploads nothing.
 
-#![expect(
-    clippy::expect_used,
-    reason = "the fixture helpers fail fast, as in tests/common.rs"
-)]
-
 mod common;
 
 use std::fs;

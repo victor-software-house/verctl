@@ -17,6 +17,8 @@
 //! That covers a crate with no library target and a proc-macro.
 //! The 1.0 rule is about API breaks, so it does not apply to such a crate.
 
+use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -196,7 +198,7 @@ fn checkable(manifest: &Path) -> Result<bool> {
     if !docsrs::has_library(manifest)? {
         return Ok(false);
     }
-    let raw = std::fs::read_to_string(manifest).with_context(|| manifest.display().to_string())?;
+    let raw = fs::read_to_string(manifest).with_context(|| manifest.display().to_string())?;
     let document = raw
         .parse::<DocumentMut>()
         .with_context(|| manifest.display().to_string())?;
@@ -224,9 +226,9 @@ fn pending_bump(fragments: &[Fragment], package: &str) -> Bump {
 
 /// The package CHANGELOG at `path`, or nothing when the file does not exist.
 fn read_changelog(path: &Path) -> Result<String> {
-    match std::fs::read_to_string(path) {
+    match fs::read_to_string(path) {
         Ok(body) => Ok(body),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(String::new()),
         Err(error) => Err(error).with_context(|| path.display().to_string()),
     }
 }

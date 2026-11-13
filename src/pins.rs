@@ -281,6 +281,8 @@ fn rewrite_own_refs(body: &str, tool: &str, version: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::os::unix::fs::symlink;
+
     use indoc::indoc;
     use tempfile::TempDir;
 
@@ -1236,7 +1238,7 @@ mod tests {
         let target = root.path().join("outside.txt");
         fs::write(&target, "x\n").unwrap();
         let link = root.path().join("mise.release.toml");
-        std::os::unix::fs::symlink(&target, &link).unwrap();
+        symlink(&target, &link).unwrap();
         let err = ensure_inside(root.path(), Path::new("mise.release.toml")).unwrap_err();
         assert!(format!("{err:#}").contains("symlink"), "{err:#}");
     }
