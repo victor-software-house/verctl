@@ -24,7 +24,9 @@ It SHALL read the registry token from `VERCTL_REGISTRY_TOKEN`, and publish the r
 ### Requirement: `release bootstrap` tags each standalone package
 
 Run on its own, `verctl release bootstrap` SHALL tag each published standalone package after its uploads, and then run `verctl release trust` for the same packages.
-Inside a release run, it SHALL only upload, and the publish of the run's draft Release SHALL create the tag, as release-order requires.
+
+Inside a release run, it SHALL only upload.
+The run SHALL then plan each package it bootstrapped, even at `0.0.0`, and the publish of the run's draft Release SHALL create the tag, as release-order requires.
 A member of a shared-version group SHALL get no tag of its own.
 
 #### Scenario: A new standalone package
@@ -35,7 +37,7 @@ A member of a shared-version group SHALL get no tag of its own.
 #### Scenario: Bootstrap inside a release run
 
 - **WHEN** the release job runs with `bootstrap: true`, standalone package `demo` at `0.0.0` is missing from crates.io, and the next registry upload of the run fails
-- **THEN** `demo` `0.0.0` is on crates.io, no tag `v0.0.0` exists, and the run's draft Release stays a draft until a rerun completes
+- **THEN** `demo` `0.0.0` is on crates.io and in the run's plan, no tag `v0.0.0` exists, and the run's draft Release stays a draft until a rerun publishes it with tag `v0.0.0`
 
 ### Requirement: `release bootstrap` needs the operator's token
 
