@@ -33,8 +33,8 @@ The label SHALL pass only the freeze; every other proof of the `registry` check 
 
 #### Scenario: The label does not pass a registry proof
 
-- **WHEN** a pull request labelled `verctl: unfreeze` adds crate `demo-extra`, which crates.io lacks
-- **THEN** `verctl check registry` exits non-zero naming `demo-extra`
+- **WHEN** a pull request labelled `verctl: unfreeze` runs `verctl check registry`, and crate `demo` lists only `alice` as an owner where `owners` lists `any-victor`
+- **THEN** `verctl check registry` exits non-zero naming `demo` and the missing login `any-victor`
 
 ### Requirement: `status` names the enforcement tier
 

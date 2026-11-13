@@ -139,9 +139,9 @@ A version bump reaches the default branch only with its release, and nothing lan
    3. It also proves that the replay of `version` matches, so no pull request merged since the Version PR was prepared changes what it releases.
 2. **The push that lands it publishes at once.**
    1. The release runs from HEAD, the commit the check proved.
-   2. It uploads to the registries by trusted publishing, which meets no rate limit (section 6).
-   3. It then publishes the draft Release, and that creates the tag.
-   4. The assets are already in the draft, so the release builds nothing.
+   2. It builds the assets and uploads them to a draft Release, which it can still delete.
+   3. It uploads to the registries by trusted publishing, which meets no rate limit (section 6).
+   4. It then publishes the draft Release, and that creates the tag.
 3. **The default branch freezes until the release completes.**
    1. While the default branch holds a version whose release is incomplete, `check registry` fails every other pull request and names the pending release.
    2. So HEAD never moves past an unreleased version commit, and a retry always runs at the version commit.
@@ -167,6 +167,7 @@ What it can enforce depends on the plan (section 10):
    Public repositories on every plan have them, and private ones on Pro or Team.
    1. The `release --dry-run` job is required on the Version PR, with "require branches to be up to date".
       The tested head then holds the default branch's tip, and the merge commit has the same tree.
+      The release on the landing push runs at the merge commit (`github.sha`), so its draft and its tag name that commit, never the Version PR's head.
    2. `check registry` is required on every pull request.
       The up-to-date rule makes each one run again after the Version PR lands, which enforces the freeze.
 3. **Tier 3, neither.**

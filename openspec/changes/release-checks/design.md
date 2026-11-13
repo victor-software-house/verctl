@@ -59,6 +59,22 @@ It lost because that scope can also create and delete trusted publisher entries,
 **Disable.**
 Leave out `owners`, and the owner proof is skipped with a notice.
 
+### 3.1 A crate new in the pull request
+
+**Decision.**
+The existence proof applies to the crates the default branch holds.
+A crate that only the pull request adds passes with a notice that it needs `release bootstrap` once it lands.
+After it lands, `check registry` fails every pull request until the operator runs `verctl release bootstrap` at the default branch's tip, or the `bootstrap` workflow input lets the release do it.
+The first version is then the code the default branch holds, as [`first-publish`][first-publish] requires.
+
+**Alternative.**
+Bootstrap from the pull request's head before it merges.
+It lost because it publishes code the default branch never held, which a later change to the pull request could make wrong.
+Failing the pull request until then lost too: no first publish can happen before the merge, so the pull request could never merge.
+
+**Override.**
+None: the notice names the step the operator takes after the merge.
+
 ## 4. `owners` once, with a per-package override
 
 **Decision.**

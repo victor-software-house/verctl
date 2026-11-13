@@ -48,11 +48,6 @@ Without any `owners` for a crate it SHALL skip the owner proof for that crate an
 It SHALL report, as evidence and not as proof, whether the crate's latest version came through trusted publishing from the repository.
 It SHALL exit non-zero naming each crate and each failed proof.
 
-#### Scenario: A new crate on a pull request
-
-- **WHEN** a pull request adds workspace member `demo-extra` at `0.0.0`, crates.io has no `demo-extra`, and `verctl check registry` runs in CI
-- **THEN** it exits non-zero and names `demo-extra` as missing from crates.io
-
 #### Scenario: Every crate is ready
 
 - **WHEN** `.ctl/ver.yaml` sets `owners: [any-victor]`, each crate exists and lists `any-victor` as an owner, and `verctl check registry` runs with no token
@@ -63,6 +58,21 @@ It SHALL exit non-zero naming each crate and each failed proof.
 - **WHEN** `.ctl/ver.yaml` sets `owners: [any-victor]` and crate `demo` lists only `alice` as an owner
 - **THEN** `verctl check registry` exits non-zero, names `demo`, the missing login `any-victor`, and the owners it found
 
+### Requirement: A crate new in the pull request waits for its bootstrap
+
+The `registry` check SHALL apply the existence proof to the crates the default branch holds.
+A crate that only the pull request adds SHALL pass it, with a notice that it needs `verctl release bootstrap` once it lands.
+
+#### Scenario: A new crate on a pull request
+
+- **WHEN** a pull request adds workspace member `demo-extra` at `0.0.0`, the default branch holds no `demo-extra`, crates.io has none, and `verctl check registry` runs in CI
+- **THEN** it exits zero, with a notice that `demo-extra` needs `verctl release bootstrap` once it lands
+
+#### Scenario: A crate the default branch holds and the registry lacks
+
+- **WHEN** the default branch holds `demo-extra`, crates.io has none, and `verctl check registry` runs on any pull request
+- **THEN** it exits non-zero, names `demo-extra` as missing from crates.io, and names `verctl release bootstrap demo-extra` as the fix
+
 ### Requirement: The `registry` check repeats every request on a rerun
 
 The `registry` check SHALL need the network and no token.
@@ -70,7 +80,7 @@ A rerun SHALL repeat every request whatever the state of the pull request.
 
 #### Scenario: A rerun repeats the proof
 
-- **WHEN** `verctl check registry` failed on `demo-extra`, the operator ran `verctl release bootstrap` for it, and the CI job reruns with "Re-run failed jobs"
+- **WHEN** `verctl check registry` failed on `demo-extra`, which the default branch holds, the operator ran `verctl release bootstrap demo-extra` at the default branch's tip, and the CI job reruns with "Re-run failed jobs"
 - **THEN** the rerun queries crates.io again and exits zero
 
 ### Requirement: The `trust` check proves the trusted publisher with an owner's token
