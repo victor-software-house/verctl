@@ -242,7 +242,13 @@ fn retry_decision(
     }
     let mut untrusted = Vec::new();
     for name in rejected {
-        if !owners(name)?.iter().any(|login| logins.contains(login)) {
+        // GitHub logins, which crates.io shows, ignore ASCII case.
+        let trusted = owners(name)?.iter().any(|login| {
+            logins
+                .iter()
+                .any(|wanted| wanted.eq_ignore_ascii_case(login))
+        });
+        if !trusted {
             untrusted.push(name.as_str());
         }
     }
@@ -763,7 +769,7 @@ mod tests {
     fn a_rejection_of_trusted_crates_only_allows_a_second_run() {
         let owners = owners_of(&[
             ("ctl-text", &["any-victor"]),
-            ("yamled", &["any-victor", "x"]),
+            ("yamled", &["Any-Victor", "x"]),
         ]);
         assert_eq!(
             retry_decision(
