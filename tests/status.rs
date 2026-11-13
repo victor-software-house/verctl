@@ -1136,3 +1136,67 @@ async fn head_past_the_version_commit_plans_the_version_at_head() {
         serde_json::json!([row("demo", "0.4.6", &head)])
     );
 }
+
+/// A release tag at an older commit at the same version does not move the plan.
+/// The commit `A` set `demo` to 0.4.6 and carries the tag, and no Release
+/// exists.
+/// HEAD is the commit `B` on top, so the plan holds the version at `B`.
+#[tokio::test]
+async fn a_tag_at_an_older_commit_still_plans_head() {
+    let root = TempDir::new().expect("tempdir");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publisher: none
+        "},
+    );
+    fs::write(root.path().join("Cargo.toml"), manifest("demo", "0.4.5")).expect("manifest");
+    common::init(root.path());
+    common::commit_all(root.path(), "chore: start");
+    fs::write(root.path().join("Cargo.toml"), manifest("demo", "0.4.6")).expect("manifest");
+    let set = common::commit_all(root.path(), "chore(release): demo 0.4.6");
+    fs::write(root.path().join("README"), "later\n").expect("readme");
+    let head = common::commit_all(root.path(), "docs: later");
+    on_github(root.path());
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/git/ref/tags/v0.4.6"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ref": "refs/tags/v0.4.6",
+            "node_id": "R",
+            "url": "https://api.github.com/repos/acme/demo/git/refs/tags/v0.4.6",
+            "object": {
+                "type": "commit",
+                "sha": set,
+                "url": format!("https://api.github.com/repos/acme/demo/git/commits/{set}")
+            }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/releases/tags/v0.4.6"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
+            "message": "Not Found",
+            "documentation_url": "https://docs.github.com"
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/releases"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+        .mount(&server)
+        .await;
+    let (written, report) = plan_at_head(root.path(), &server);
+    assert!(
+        written.contains(&format!(r#"commits=["{head}"]"#)),
+        "{written}"
+    );
+    assert!(written.contains("pending=true"), "{written}");
+    assert_eq!(
+        report["unreleased"],
+        serde_json::json!([row("demo", "0.4.6", &head)])
+    );
+}
