@@ -1,7 +1,13 @@
 //! Which version commits still need a release.
 //!
 //! A release is complete when the registry lists each package's version, and
-//! its tag, its Release, and every declared asset exist.
+//! its tag and its published Release exist, with every declared asset.
+//! A Release with declared assets is a draft until every asset is uploaded.
+//! A draft is incomplete, and `release` run again at its commit publishes it.
+//! A published Release that lacks an asset is incomplete too, unless GitHub
+//! holds it immutable.
+//! An immutable Release takes no asset, so it counts complete with a
+//! [`Shortfall`] to warn about.
 //!
 //! `status` lists every version commit with an incomplete release, oldest
 //! first. The workflow can then release each at its own commit. `release`
@@ -39,6 +45,38 @@ pub struct Pending {
     pub commits: Vec<PendingCommit>,
     /// Asset jobs to run: one per version commit and missing target.
     pub assets: Vec<PendingAsset>,
+    /// Published Releases that are immutable and lack declared assets. They
+    /// count complete, and no asset job is planned for them.
+    pub shortfalls: Vec<Shortfall>,
+    /// Version commits whose releases are all done, so a run there has
+    /// nothing left to do.
+    pub finished: Vec<String>,
+}
+
+/// A published, immutable Release that lacks declared assets.
+///
+/// GitHub refuses a new asset on it and never lets it be unpublished, so only
+/// a later version can ship what it lacks ([immutable releases]).
+///
+/// [immutable releases]: https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/immutable-releases
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Shortfall {
+    /// The release tag.
+    pub tag: String,
+    /// The file names of the declared assets it lacks.
+    pub assets: Vec<String>,
+}
+
+impl fmt::Display for Shortfall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "release {tag} is published and immutable without {assets}; a later version must ship them",
+            tag = self.tag,
+            assets = self.assets.join(", ")
+        )
+    }
 }
 
 impl Pending {
@@ -46,6 +84,16 @@ impl Pending {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.commits.is_empty()
+    }
+
+    /// Whether `sha` is a version commit whose releases are all done.
+    #[must_use]
+    pub fn is_finished(&self, sha: &str) -> bool {
+        self.at(sha).is_none()
+            && self
+                .finished
+                .iter()
+                .any(|finished| finished.eq_ignore_ascii_case(sha))
     }
 
     /// The pending commit at `sha`, if any.
@@ -76,6 +124,12 @@ pub struct PendingPackage {
     /// The version its version commit sets: the one at HEAD, or an earlier
     /// one that was never released.
     pub version: String,
+    /// Whether the registry already lists the version or, for an upload with
+    /// no registry check, its tag exists. Only the Release or its assets are
+    /// then left, such as a draft waiting to be published, and `release`
+    /// runs no upload for it.
+    #[serde(skip)]
+    pub listed: bool,
 }
 
 /// One asset job: a target whose tarball the Release at `commit` lacks.
@@ -101,6 +155,9 @@ struct PackageState {
     missing_assets: Vec<MatrixTarget>,
     /// The tag the missing assets upload to.
     assets_tag: String,
+    /// Set when the Release is published, immutable, and lacks declared
+    /// assets: it is complete, and an asset job could not upload them.
+    shortfall: Option<Shortfall>,
 }
 
 /// Find every version commit with an incomplete release.
@@ -232,6 +289,7 @@ pub fn pending(
                     package: PendingPackage {
                         name: entry.name.clone(),
                         version: skipped.version,
+                        listed: false,
                     },
                     commit: VersionCommit {
                         sha: skipped.sha,
@@ -239,6 +297,7 @@ pub fn pending(
                     },
                     complete: false,
                     missing_assets,
+                    shortfall: None,
                 });
             }
         }
@@ -500,6 +559,19 @@ fn version_released(
     Ok(true)
 }
 
+/// One package's state at its release commit.
+///
+/// A draft Release is incomplete even when it holds every declared asset: the
+/// next `release` run publishes it. A published Release with every declared
+/// asset is complete.
+///
+/// A published Release that lacks declared assets depends on whether GitHub
+/// holds it immutable:
+///
+/// - Immutable, it can take no asset, so it is complete and no asset job is
+///   planned. The state carries a [`Shortfall`] for `status` and `release` to
+///   warn about.
+/// - Mutable, it is incomplete, and only the missing targets are planned.
 fn state_of(
     entry: &PublishEntry,
     commit: VersionCommit,
@@ -508,20 +580,32 @@ fn state_of(
     declared: &[MatrixTarget],
     assets_tag: &str,
 ) -> PackageState {
-    let missing_assets: Vec<MatrixTarget> = declared
+    let missing: Vec<MatrixTarget> = declared
         .iter()
         .filter(|target| !release.assets.contains(&target.asset))
         .cloned()
         .collect();
+    let published = release.release && !release.draft;
+    let (missing_assets, shortfall) = if published && release.immutable && !missing.is_empty() {
+        let shortfall = Shortfall {
+            tag: assets_tag.to_owned(),
+            assets: missing.into_iter().map(|target| target.asset).collect(),
+        };
+        (Vec::new(), Some(shortfall))
+    } else {
+        (missing, None)
+    };
     PackageState {
         package: PendingPackage {
             name: entry.name.clone(),
             version: entry.version.clone(),
+            listed,
         },
         commit,
-        complete: listed && release.tag.is_some() && release.release && missing_assets.is_empty(),
+        complete: listed && release.tag.is_some() && published && missing_assets.is_empty(),
         missing_assets,
         assets_tag: assets_tag.to_owned(),
+        shortfall,
     }
 }
 
@@ -537,7 +621,16 @@ struct AtCommit {
 /// package's version at its commit.
 fn group(states: Vec<PackageState>) -> Pending {
     let mut by_commit: BTreeMap<String, AtCommit> = BTreeMap::new();
-    for state in states.into_iter().filter(|state| !state.complete) {
+    let mut shortfalls = Vec::new();
+    let mut finished = Vec::new();
+    for mut state in states {
+        shortfalls.extend(state.shortfall.take());
+        if state.complete {
+            if !finished.contains(&state.commit.sha) {
+                finished.push(state.commit.sha);
+            }
+            continue;
+        }
         let slot = by_commit
             .entry(state.commit.sha)
             .or_insert_with(|| AtCommit {
@@ -556,7 +649,11 @@ fn group(states: Vec<PackageState>) -> Pending {
     }
     let mut ordered: Vec<(String, AtCommit)> = by_commit.into_iter().collect();
     ordered.sort_by_key(|(_, at)| std::cmp::Reverse(at.depth));
-    let mut pending = Pending::default();
+    let mut pending = Pending {
+        shortfalls,
+        finished,
+        ..Pending::default()
+    };
     for (sha, at) in ordered {
         pending
             .assets
@@ -613,8 +710,9 @@ mod tests {
     use indoc::indoc;
 
     use super::{
-        DeclaredTargets, PackageState, Pending, PendingAsset, PendingPackage, checked_targets,
-        group, members_at, newest_per_tag, state_of, version_released, write_github_output,
+        DeclaredTargets, PackageState, Pending, PendingAsset, PendingPackage, Shortfall,
+        checked_targets, group, members_at, newest_per_tag, state_of, version_released,
+        write_github_output,
     };
     use crate::assets::MatrixTarget;
     use crate::config::{Assets, Config};
@@ -656,7 +754,23 @@ mod tests {
         ReleaseState {
             tag: Some("a".repeat(40)),
             release: true,
+            draft: false,
+            immutable: false,
             assets: assets.iter().map(|name| (*name).to_owned()).collect(),
+        }
+    }
+
+    fn draft(assets: &[&str]) -> ReleaseState {
+        ReleaseState {
+            draft: true,
+            ..finished(assets)
+        }
+    }
+
+    fn immutable(assets: &[&str]) -> ReleaseState {
+        ReleaseState {
+            immutable: true,
+            ..finished(assets)
         }
     }
 
@@ -695,7 +809,8 @@ mod tests {
             pending.at("ccc").unwrap().packages,
             [PendingPackage {
                 name: "app".into(),
-                version: "0.2.1".into()
+                version: "0.2.1".into(),
+                listed: false,
             }]
         );
     }
@@ -781,6 +896,134 @@ mod tests {
                 tag: "v0.4.6".into(),
             }]
         );
+    }
+
+    /// A draft waits for `release` to publish it, even with every asset.
+    #[test]
+    fn a_draft_with_every_asset_is_pending_and_builds_nothing() {
+        let declared = [target("darwin-arm64"), target("linux-x64")];
+        let state = state_of(
+            &entry("demo", "0.4.6"),
+            at("aaa", 0),
+            true,
+            &draft(&["demo-darwin-arm64.tar.gz", "demo-linux-x64.tar.gz"]),
+            &declared,
+            "v0.4.6",
+        );
+        assert!(!state.complete);
+        let pending = group(vec![state]);
+        assert_eq!(pending.commits.len(), 1);
+        assert_eq!(pending.assets, []);
+    }
+
+    #[test]
+    fn a_draft_missing_an_asset_builds_only_that_asset() {
+        let declared = [target("darwin-arm64"), target("linux-x64")];
+        let state = state_of(
+            &entry("demo", "0.4.6"),
+            at("aaa", 0),
+            true,
+            &draft(&["demo-linux-x64.tar.gz"]),
+            &declared,
+            "v0.4.6",
+        );
+        let pending = group(vec![state]);
+        assert_eq!(pending.commits.len(), 1);
+        let jobs: Vec<&str> = pending.assets.iter().map(|job| job.id.as_str()).collect();
+        assert_eq!(jobs, ["darwin-arm64"]);
+    }
+
+    /// A published Release GitHub holds immutable takes no asset, so it
+    /// counts complete, plans no asset job, and leaves a warning.
+    #[test]
+    fn an_immutable_release_missing_an_asset_is_complete_with_a_shortfall() {
+        let declared = [target("darwin-arm64"), target("linux-x64")];
+        let state = state_of(
+            &entry("demo", "0.4.6"),
+            at("aaa", 0),
+            true,
+            &immutable(&["demo-linux-x64.tar.gz"]),
+            &declared,
+            "v0.4.6",
+        );
+        assert!(state.complete);
+        let pending = group(vec![state]);
+        assert!(pending.is_empty());
+        assert_eq!(pending.assets, []);
+        assert_eq!(
+            pending.shortfalls,
+            [Shortfall {
+                tag: "v0.4.6".into(),
+                assets: vec!["demo-darwin-arm64.tar.gz".into()],
+            }]
+        );
+        assert_eq!(
+            pending.shortfalls[0].to_string(),
+            "release v0.4.6 is published and immutable without demo-darwin-arm64.tar.gz; a later version must ship them"
+        );
+    }
+
+    /// A published Release GitHub holds mutable still takes assets, so only
+    /// the missing target is planned.
+    #[test]
+    fn a_mutable_release_missing_an_asset_stays_pending_for_that_target() {
+        let declared = [target("darwin-arm64"), target("linux-x64")];
+        let state = state_of(
+            &entry("demo", "0.4.6"),
+            at("aaa", 0),
+            true,
+            &finished(&["demo-linux-x64.tar.gz"]),
+            &declared,
+            "v0.4.6",
+        );
+        assert!(!state.complete);
+        let pending = group(vec![state]);
+        assert_eq!(pending.commits.len(), 1);
+        let jobs: Vec<&str> = pending.assets.iter().map(|job| job.id.as_str()).collect();
+        assert_eq!(jobs, ["darwin-arm64"]);
+        assert_eq!(pending.shortfalls, []);
+    }
+
+    /// A commit whose release is done is told apart from one that is not a
+    /// version commit, so a `finalize` leg there has nothing to do.
+    #[test]
+    fn a_finished_commit_is_not_pending() {
+        let declared = [target("linux-x64")];
+        let done = state_of(
+            &entry("core", "0.3.1"),
+            at("aaa", 2),
+            true,
+            &finished(&["demo-linux-x64.tar.gz"]),
+            &declared,
+            "v0.3.1",
+        );
+        let waiting = state_of(
+            &entry("app", "0.2.1"),
+            at("ccc", 0),
+            true,
+            &draft(&["demo-linux-x64.tar.gz"]),
+            &declared,
+            "v0.2.1",
+        );
+        let pending = group(vec![done, waiting]);
+        assert!(pending.is_finished("aaa"));
+        assert!(!pending.is_finished("ccc"));
+        assert!(!pending.is_finished("bbb"));
+    }
+
+    /// An immutable Release that holds every asset warns of nothing.
+    #[test]
+    fn an_immutable_release_with_every_asset_has_no_shortfall() {
+        let declared = [target("linux-x64")];
+        let state = state_of(
+            &entry("demo", "0.4.6"),
+            at("aaa", 0),
+            true,
+            &immutable(&["demo-linux-x64.tar.gz"]),
+            &declared,
+            "v0.4.6",
+        );
+        assert_eq!(group(vec![state]).shortfalls, []);
     }
 
     fn ids(targets: &[MatrixTarget]) -> Vec<&str> {

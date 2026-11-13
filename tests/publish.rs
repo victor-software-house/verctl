@@ -828,7 +828,13 @@ async fn the_completeness_lookup_asks_the_registry_with_the_token() {
         .await;
     Mock::given(method("GET"))
         .and(path("/repos/acme/demo/releases/tags/v0.0.1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"assets": []})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": 1,
+            "html_url": "https://github.com/acme/demo/releases/tag/v0.0.1",
+            "tag_name": "v0.0.1",
+            "draft": false,
+            "assets": []
+        })))
         .mount(&server)
         .await;
     let output = common::verctl()

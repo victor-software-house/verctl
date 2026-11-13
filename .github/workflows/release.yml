@@ -22,9 +22,16 @@ name: Release
 # action, which downloads tools through the release mirror. A job without
 # the grant downloads from GitHub and logs a notice.
 #
+# Every caller also grants contents: write, which plan, publish, assets,
+# finalize, and propose request. plan needs it to list draft Releases, which
+# GitHub shows only to a token with push access.
+#
 # One flow: plan every incomplete version commit, publish each in history
-# order, build the assets its Release lacks, check docs.rs, then open or
-# update the Version PR. Every job is safe to rerun, and every step sets its
+# order, build the assets its Release lacks, publish each draft Release once
+# its assets are uploaded, check docs.rs, then open or update the Version PR.
+# A Release with declared assets stays a draft until finalize, because an
+# immutable Release takes no asset once published. Every job is safe to
+# rerun, and every step sets its
 # settings in env. plan and propose run `mise run ver <verb>` at HEAD, where
 # the served task execs the verctl the caller pins; the jobs at a version
 # commit run that same version. verctl's own release passes verctl-artifact
@@ -32,10 +39,10 @@ name: Release
 #
 # Every other job needs plan, so plan alone checks what they share: the
 # pinned verctl is 0.8.0 or later, and each mise-ignored-config-paths entry
-# is a plain relative path. publish, assets, and docs take the checked paths
-# from plan's outputs.
+# is a plain relative path. publish, assets, finalize, and docs take the
+# checked paths from plan's outputs.
 #
-# publish, assets, and docs check out the version commit, but they run the
+# publish, assets, finalize, and docs check out the version commit, but they run the
 # verctl plan checked at HEAD, not the one that commit's served task pins. A
 # released commit cannot move its pin, and an older pin has no release verb.
 # Each installs that version with `mise install --locked` from a second
@@ -183,12 +190,18 @@ jobs:
     # minutes.
     timeout-minutes: 10
     permissions:
-      contents: read # reads history; tags and Releases are read through the API
+      # Reads history, tags, and Releases. GitHub lists a draft Release only to
+      # a token with push access, and without it the plan would not see a
+      # draft and would rebuild every asset the draft already holds.
+      contents: write
       id-token: write # downloads tools through the release mirror
     outputs:
       commits: ${{ steps.plan.outputs.commits }}
       pending: ${{ steps.plan.outputs.pending }}
       assets: ${{ steps.plan.outputs.assets }}
+      # Whether .ctl/ver.yaml declares an asset target, so a Release is a draft
+      # and finalize has something to publish.
+      has-assets: ${{ steps.plan.outputs.has_assets }}
       # The verctl every later job runs, whatever its checked-out commit pins.
       # Empty with verctl-artifact: that build is already on each job's PATH.
       verctl-version: ${{ steps.minimum.outputs.version }}
@@ -512,6 +525,116 @@ jobs:
           VERCTL_TAG: ${{ matrix.tag }}
         # The plan's verctl, as in publish.
         run: mise exec -- "${VERCTL_BIN:-verctl}" release asset
+
+  # Publishes each draft Release once its assets are uploaded. publish creates
+  # a Release with declared assets as a draft, because an immutable Release
+  # takes no asset once published. A leg runs no upload, since every package
+  # at its commit is already listed. When an asset job failed, the draft
+  # stays, and the next run's plan lists its commit again.
+  finalize:
+    name: Finalize ${{ matrix.commit }}
+    needs: [plan, publish, assets]
+    # !cancelled() keeps a skipped assets job from skipping this one too.
+    if: >-
+      !cancelled() &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      needs.plan.result == 'success' &&
+      inputs.publish && inputs.assets &&
+      needs.plan.outputs.pending == 'true' && needs.plan.outputs.has-assets == 'true' &&
+      needs.publish.result == 'success' &&
+      (needs.assets.result == 'success' || needs.assets.result == 'skipped')
+    runs-on: ${{ fromJson(inputs.runner) }}
+    timeout-minutes: 10
+    permissions:
+      contents: write # publishes the draft GitHub Release
+      id-token: write # downloads tools through the release mirror
+    # One run finalizes every pending version commit, oldest first, and stops
+    # at the first that fails, under the group publish uses, so two runs never
+    # publish a Release at once.
+    strategy:
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        commit: ${{ fromJson(needs.plan.outputs.commits) }}
+    concurrency:
+      group: verctl-publish-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out the version commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ matrix.commit }}
+          fetch-depth: 0
+      - name: Ignore mise config paths
+        # plan checked the paths. The variable stays unset when there are
+        # none, so .miserc.toml still applies.
+        if: needs.plan.outputs.mise-ignored-config-paths != ''
+        env:
+          IGNORED: ${{ needs.plan.outputs.mise-ignored-config-paths }}
+        run: echo "MISE_IGNORED_CONFIG_PATHS=${IGNORED}" >> "${GITHUB_ENV}"
+      - name: Set up mise
+        uses: victor-software-house/actions/mise@bead5c01b61e14ecf1e923a5bcff97e8c421f151 # main, 2026-11-11
+        with:
+          mirror-url: ${{ secrets.release-mirror-url }}
+          mirror-key: ${{ secrets.release-mirror-ci-key }}
+          version: ${{ inputs.mise-version }}
+          cache: true
+          # These jobs install fewer tools than propose, so they keep their
+          # own cache rather than share propose's key.
+          cache_key_prefix: ${{ inputs.mise-ignored-config-paths != '' && 'mise-v1-trimmed' || 'mise-v1' }}
+      - run: mise install --locked
+      - name: Download this run's verctl build
+        if: inputs.verctl-artifact != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.verctl-artifact }}-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/verctl-build
+      - name: Put this run's verctl build first on PATH
+        if: inputs.verctl-artifact != ''
+        env:
+          BUILD_DIR: ${{ runner.temp }}/verctl-build
+        run: |
+          chmod +x "${BUILD_DIR}/verctl"
+          echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
+      - name: Check out HEAD's mise lock
+        # The version commit's mise.lock lacks the plan's verctl, which HEAD's
+        # lists. The files mise reads sit in a second checkout of the commit
+        # this run started from. actions/checkout takes no path outside the
+        # workspace, so it sits inside it, after the checkout above, whose
+        # clean would remove it.
+        if: inputs.verctl-artifact == '' && needs.plan.outputs.verctl-version != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: .verctl-head
+          ref: ${{ github.sha }}
+          sparse-checkout: |
+            /mise.toml
+            /mise.*.toml
+            /mise.lock
+            /mise.*.lock
+            /.miserc.toml
+          sparse-checkout-cone-mode: false
+      - name: Install the plan's verctl from HEAD's lock
+        if: inputs.verctl-artifact == '' && needs.plan.outputs.verctl-version != ''
+        env:
+          VERCTL_TOOL: github:victor-software-house/verctl@${{ needs.plan.outputs.verctl-version }}
+        # --locked installs only what HEAD's lock lists, and leaves the
+        # version commit's mise.lock alone.
+        run: |
+          echo "/.verctl-head/" >> "$(git rev-parse --git-path info/exclude)"
+          mise -C .verctl-head install --locked "${VERCTL_TOOL}"
+          echo "VERCTL_BIN=$(mise -C .verctl-head which verctl --tool="${VERCTL_TOOL}")" >> "${GITHUB_ENV}"
+      - name: Publish the draft Release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERCTL_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          VERCTL_SKIP_ASSETS: ${{ !inputs.assets }}
+          VERCTL_ALLOW_WORKFLOW_CHANGE: ${{ inputs.allow-workflow-change }}
+          VERCTL_ALLOW_OFF_DEFAULT_BRANCH: ${{ inputs.allow-off-default-branch }}
+        # The plan's verctl, as in publish.
+        run: mise exec -- "${VERCTL_BIN:-verctl}" release
 
   docs:
     name: docs.rs at ${{ matrix.commit }}

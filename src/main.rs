@@ -414,6 +414,7 @@ fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
         waiting: run.waiting.iter().map(ReleaseRow::from).collect(),
         allowed: run.allowed,
         dry_run: args.dry_run(),
+        notices: run.shortfalls.iter().map(ToString::to_string).collect(),
     })
 }
 
@@ -535,8 +536,12 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
             .has_assets
             .then_some(StatusAssets::Packages(planned))
     };
-    let (unreleased, unreleased_unchecked) = if args.vendored.is_some() {
-        (None, Some(Unchecked::vendored()))
+    let Unreleased {
+        rows: unreleased,
+        unchecked: unreleased_unchecked,
+        notices,
+    } = if args.vendored.is_some() {
+        Unreleased::unchecked(Unchecked::vendored())
     } else {
         unreleased_state(args, &config, root)?
     };
@@ -571,15 +576,34 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
         assets,
         unreleased,
         unreleased_unchecked,
+        notices,
     })
 }
 
+/// What `status` found about the version commits that still need a release.
+struct Unreleased {
+    /// Every package at an incomplete version commit, or `None` when not
+    /// checked.
+    rows: Option<Vec<ReleaseRow>>,
+    /// Why `rows` was not checked.
+    unchecked: Option<Unchecked>,
+    /// One warning per published, immutable Release that lacks declared
+    /// assets.
+    notices: Vec<String>,
+}
+
+impl Unreleased {
+    fn unchecked(reason: Unchecked) -> Self {
+        Self {
+            rows: None,
+            unchecked: Some(reason),
+            notices: Vec::new(),
+        }
+    }
+}
+
 /// The incomplete version commits, or why they were not checked.
-fn unreleased_state(
-    args: &StatusArgs,
-    config: &Config,
-    root: &Path,
-) -> Result<(Option<Vec<ReleaseRow>>, Option<Unchecked>)> {
+fn unreleased_state(args: &StatusArgs, config: &Config, root: &Path) -> Result<Unreleased> {
     let token = match &args.github_output {
         Some(_) => {
             publish::full_history(root)?;
@@ -594,15 +618,19 @@ fn unreleased_state(
                     if let Some(path) = &args.github_output {
                         pending::write_github_output(&planned, path)?;
                     }
-                    (Some(unreleased_rows(&planned)), None)
+                    Unreleased {
+                        rows: Some(unreleased_rows(&planned)),
+                        unchecked: None,
+                        notices: planned.shortfalls.iter().map(ToString::to_string).collect(),
+                    }
                 }
                 Err(error) if args.github_output.is_none() && lookup::is_unavailable(&error) => {
-                    (None, Some(Unchecked::failed(&error)))
+                    Unreleased::unchecked(Unchecked::failed(&error))
                 }
                 Err(error) => return Err(error),
             }
         }
-        None => (None, Some(Unchecked::missing_token())),
+        None => Unreleased::unchecked(Unchecked::missing_token()),
     })
 }
 

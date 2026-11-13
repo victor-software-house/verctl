@@ -1,0 +1,73 @@
+## ADDED Requirements
+
+### Requirement: A Release with declared assets is a draft until every asset is uploaded
+
+When a tag's Release declares an asset target, `verctl release` SHALL create the tag at the version commit through the git refs API, then the GitHub Release with `draft: true`.
+A `verctl release` that finds the draft SHALL publish it when every declared asset is `uploaded`, keeping the prerelease and latest settings of its stage.
+Otherwise it SHALL leave the draft, report `draft <url> lacks <names>`, and succeed.
+
+#### Scenario: Two declared targets
+
+- **WHEN** `.ctl/ver.yaml` declares targets `darwin-arm64` and `linux-x64` and the Version PR for `demo` `1.2.0` has merged
+- **THEN** `verctl release` creates tag `v1.2.0` and a draft Release, and reports `draft <url> lacks demo_1.2.0_darwin_arm64.tar.gz, demo_1.2.0_linux_x64.tar.gz`
+- **AND** after `verctl release asset darwin-arm64` and `verctl release asset linux-x64`, `verctl release` publishes the Release
+
+#### Scenario: No declared asset
+
+- **WHEN** `.ctl/ver.yaml` declares no asset target
+- **THEN** `verctl release` creates the Release published at once, and creates no tag through the git refs API
+
+#### Scenario: Assets skipped
+
+- **WHEN** `verctl release` runs with `VERCTL_SKIP_ASSETS=true`
+- **THEN** it creates the Release published at once
+
+### Requirement: Release lookups see drafts
+
+verctl SHALL find a Release for a tag whether it is a draft or published, and SHALL count an asset only when its state is `uploaded`.
+A draft Release SHALL count as an incomplete release, even when it holds every declared asset.
+
+#### Scenario: A draft with every asset
+
+- **WHEN** the Release for `v1.2.0` is a draft that holds every declared asset
+- **THEN** `verctl status --github-output` lists its version commit and no asset job
+
+#### Scenario: A draft hidden from the tag endpoint
+
+- **WHEN** `GET /releases/tags/v1.2.0` answers 404 and `GET /releases` lists a draft with that `tag_name`
+- **THEN** the lookup finds the draft
+
+### Requirement: A published Release that lacks an asset depends on immutability
+
+A published Release that lacks a declared asset SHALL stay incomplete with only the missing targets planned, when GitHub reports it `immutable: false`.
+When GitHub reports it `immutable: true`, the Release SHALL count complete with no asset job planned, and `status` and `release` SHALL warn once, naming the tag, the missing assets, and that a later version must ship them.
+
+#### Scenario: A mutable Release
+
+- **WHEN** the published Release for `v1.2.0` is mutable and lacks `demo_1.2.0_darwin_arm64.tar.gz`
+- **THEN** `verctl status --github-output` plans one asset job, for `darwin-arm64`
+
+#### Scenario: An immutable Release
+
+- **WHEN** the published Release for `v1.2.0` is immutable and lacks `demo_1.2.0_darwin_arm64.tar.gz`
+- **THEN** `verctl status --github-output` plans no asset job and `verctl status` prints a warning naming `v1.2.0` and that asset
+
+### Requirement: A run at a finished version commit does nothing
+
+`verctl release` at a version commit whose releases are all complete SHALL report `nothing to release` and exit zero, even while another version commit is pending.
+At a commit that is not a version commit it SHALL still fail before any side effect.
+
+#### Scenario: A finalize leg after its Release finished
+
+- **WHEN** `finalize` runs at version commit `bbb`, whose Release is published, while the draft at version commit `aaa` still lacks an asset
+- **THEN** `verctl release` at `bbb` reports `nothing to release` and exits zero
+
+### Requirement: The reusable workflow finalizes after the assets
+
+`release.yml` SHALL run a `finalize` job after `assets` that runs `verctl release` at each pending version commit in order.
+Its `plan` job SHALL request `contents: write`, so it lists draft Releases.
+
+#### Scenario: The plan job reads a draft
+
+- **WHEN** a draft Release holds every declared asset and the `plan` job runs with `contents: write`
+- **THEN** the plan lists the draft's version commit with no asset job, and `finalize` publishes it

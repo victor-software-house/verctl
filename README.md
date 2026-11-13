@@ -348,8 +348,9 @@ It triggers on push to the default branch and on `workflow_dispatch`, and runs o
 1. `plan` runs `verctl status --github-output`, which lists every version commit whose release is incomplete.
 2. `publish` runs `verctl release` at each, oldest first.
 3. `assets` runs `verctl release asset` for the tarballs each Release lacks.
-4. `docs` waits for docs.rs to build each released crate.
-5. `propose` opens or updates the Version PR.
+4. `finalize` runs `verctl release` again at each, which publishes a draft Release once every asset is uploaded.
+5. `docs` waits for docs.rs to build each released crate.
+6. `propose` opens or updates the Version PR.
 
 Every job is safe to rerun.  
 A run with nothing pending reports `nothing to release`.  
@@ -361,6 +362,15 @@ Every job requests `id-token: write`, so the caller grants it.
 The publish job uses it for crates.io trusted publishing.  
 Every job uses it to download tools through the release mirror of `victor-software-house/actions/mise`.  
 A job without the grant downloads from GitHub and logs a notice.
+
+The `plan` job needs `contents: write`, as `publish`, `assets`, and `finalize` do.  
+GitHub lists a draft Release only to a token with push access, and without it `plan` cannot see a draft.  
+A caller grants `contents: write` to the whole called workflow.
+
+A Release with declared asset targets is a draft until every asset is uploaded, so it works with GitHub immutable Releases, which take no asset once published.  
+`publish` creates the tag, then the draft.  
+`assets` uploads to it, and `finalize` publishes it.  
+`--skip-assets` publishes the Release at once.
 
 A registry token stored in a GitHub environment that admits only the default branch is out of reach of every other branch.  
 Pass `environment: <name>`, and map the token by its stored name: `registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}`.  

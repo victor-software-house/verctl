@@ -202,7 +202,7 @@ The rest are `pull_request`, `commit`, `summary_has_terminal`, `dependencies`, a
 Releases run through verctl's reusable workflow, `victor-software-house/verctl/.github/workflows/release.yml`.  
 A thin caller (`examples/workflows/release.yml`) calls it on push to the default branch and on `workflow_dispatch`.  
 It plans every incomplete version commit and publishes each in history order.  
-Then it builds the assets each Release lacks, waits for docs.rs, and opens or updates the Version PR.
+Then it builds the assets each Release lacks, publishes each draft Release whose assets are all uploaded, waits for docs.rs, and opens or updates the Version PR.
 
 ### Inputs and secrets
 
@@ -249,6 +249,10 @@ Every job requests `id-token: write`, so every caller grants it.
 The publish job needs it for trusted publishing.  
 Every job needs it for `victor-software-house/actions/mise`, which downloads tools through the organization's release mirror.  
 A job without the grant downloads from GitHub and logs a notice.
+
+The plan job needs `contents: write`, beside the publish, assets, and finalize jobs.  
+GitHub lists a draft Release only to a token with push access, and without it the plan cannot see a draft.  
+A caller grants `contents: write` to the whole called workflow.
 
 Steps set `env:` and run `mise run ver <verb>`, so a caller serves the `ver` task.  
 Without the App secrets the Version PR is opened with `GITHUB_TOKEN`.  
@@ -430,10 +434,21 @@ An example is a forkctl append publish on a merge's second parent.
 That passes when the package's version there equals its version at HEAD.  
 A tag on a commit HEAD does not contain, or at another version, fails.
 
-A release is complete when the registry lists the version and its tag, its Release, and every declared asset exist.  
+A release is complete when the registry lists the version, its tag and published Release exist, and the Release holds every declared asset.  
 verctl checks a release for an asset target only when `.ctl/ver.yaml` declares it both at HEAD and at the release's version commit.  
 A target added later never reopens a release.  
 `--skip-assets` (`VERCTL_SKIP_ASSETS`) leaves assets out.
+
+A Release with a declared asset target is a draft until every asset is uploaded, because an immutable Release takes no asset once published.  
+`release` creates the tag, then the draft, and `release asset` uploads to it.  
+`release` run again at that commit publishes the draft once every asset is uploaded.  
+While one is missing it reports `draft <url> lacks <names>` and exits zero.  
+The workflow's `finalize` job does that after the asset jobs.  
+A draft is incomplete even when it holds every asset.
+
+A published Release that lacks a declared asset stays incomplete, and only the missing targets are planned, unless GitHub holds it immutable.  
+An immutable Release can take no asset, so it counts complete and plans no asset job.  
+`status` and `release` then warn, naming the tag and the missing assets, that a later version must ship them.
 
 ### Status
 
@@ -457,7 +472,7 @@ Any other error, such as a release tag on the wrong commit or a 401 from a bad t
 
 `release --plan` fails and names `status --github-output`.  
 `release` releases only the packages whose version commit is HEAD, and names the others.  
-It fails before any side effect on a commit that releases nothing.  
+It fails before any side effect on a commit that releases nothing, unless that commit is a version commit whose releases are all complete, where it reports `nothing to release`.  
 When every release is complete, `release` reports `nothing to release` and exits zero.  
 Its JSON report's `outcome` is `nothing-to-release` or `released`.
 
@@ -609,6 +624,11 @@ Each Release is created at HEAD (`target_commitish` is that SHA).
 After create, and when a Release already exists, the tag is re-read, and the run fails if it names another commit.  
 A retry at the same commit is a no-op.
 
+A Release with declared assets is created differently.  
+The tag is created first at that SHA through the git refs API, then the Release with `draft: true`, which creates no tag of its own.  
+Every lookup of a Release also reads drafts, which GitHub lists only to a token with push access.  
+`release` publishes the draft with `draft: false`, keeping the prerelease and latest settings above.
+
 ## Assets
 
 ### Package tarballs
@@ -618,7 +638,7 @@ A hand-written workflow uses `victor-software-house/verctl/actions/publish` inst
 Native tarballs are the `assets` matrix, only when an `assets` target is declared.  
 `verctl status` shows the matrix.
 
-`verctl release asset <target>` (`VERCTL_TARGET`) builds the tarball and uploads it, as `actions/asset` does.  
+`verctl release asset <target>` (`VERCTL_TARGET`) builds the tarball and uploads it to the Release for the tag, a draft or a published one, as `actions/asset` does.  
 `--dry-run` builds it and uploads nothing.  
 A tarball holds the one `binary` (default `target/{triple}/release/{bin}`), packed as `bin`.
 
