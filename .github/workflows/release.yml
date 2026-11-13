@@ -40,7 +40,7 @@ name: Release
 # instead, so each job runs the verctl that run built once for its platform.
 #
 # Every other job needs plan, so plan alone checks what they share: the
-# pinned verctl is 0.8.4 or later, and each mise-ignored-config-paths entry
+# pinned verctl is 0.8.6-rc.2 or later, and each mise-ignored-config-paths entry
 # is a plain relative path. publish, assets, finalize, and docs take the
 # checked paths from plan's outputs.
 #
@@ -261,19 +261,23 @@ jobs:
         run: |
           chmod +x "${BUILD_DIR}/verctl"
           echo "${BUILD_DIR}" >> "${GITHUB_PATH}"
-      - name: Require verctl 0.8.4 or later
+      - name: Require verctl 0.8.6-rc.2 or later
         id: minimum
         # The caller's pin at HEAD chooses verctl, apart from this workflow's
         # ref. A build from this run already matches the workflow, so it skips.
         # Every later job runs the version this step checked, so it checks once.
+        # 0.8.6-rc.2 is the first to write the plan's `declared` as a comma
+        # list, which publish reads. sort -V sorts `~` before the end of a
+        # version, so each `-` becomes `~` and a candidate sorts below its
+        # stable release, as in semver.
         if: inputs.verctl-artifact == ''
         env:
-          MINIMUM: 0.8.4
+          MINIMUM: 0.8.6-rc.2
         run: |
           installed="$(mise run --quiet ver --version)"
           installed="${installed##* }"
-          lowest="$(printf '%s\n' "${MINIMUM}" "${installed}" | sort -V | head -n 1)"
-          if [ "${lowest}" != "${MINIMUM}" ]; then
+          lowest="$(printf '%s\n' "${MINIMUM//-/\~}" "${installed//-/\~}" | sort -V | head -n 1)"
+          if [ "${lowest}" != "${MINIMUM//-/\~}" ]; then
             echo "::error::verctl ${installed} is older than ${MINIMUM}, the minimum this release workflow needs. Move the verctl pin and the workflow ref together."
             exit 1
           fi

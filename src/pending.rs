@@ -236,20 +236,22 @@ pub fn pending(
                 slot.insert(state)
             }
         };
-        if let Some(named) = &release.tag
-            && !named.eq_ignore_ascii_case(&head)
-        {
-            git::tagged_commit(root, &root.join(&spec.path), named, &|raw: &str| {
-                version_in(&driver, raw)
-            })?
-            .with_context(|| {
-                format!(
-                    "tag {tag} names {named}: not HEAD {head} and not a first-parent commit at \
-                     {}@{}",
-                    entry.name, entry.version
-                )
-            })?;
-        }
+        let release_commit = match &release.tag {
+            Some(named) if !named.eq_ignore_ascii_case(&head) => {
+                git::tagged_commit(root, &root.join(&spec.path), named, &|raw: &str| {
+                    version_in(&driver, raw)
+                })?
+                .with_context(|| {
+                    format!(
+                        "tag {tag} names {named}: not HEAD {head} and not a first-parent commit \
+                         at {}@{}",
+                        entry.name, entry.version
+                    )
+                })?
+                .sha
+            }
+            Some(_) | None => head.clone(),
+        };
         let commit = VersionCommit {
             sha: head.clone(),
             depth: 0,
@@ -257,7 +259,7 @@ pub fn pending(
         let listed = registry_lists(config, root, spec, entry, release, env)?;
         let head_targets: &[MatrixTarget] = if index == 0 { &targets } else { &[] };
         let declared = checked_targets(head_targets, &release.assets, || {
-            declared_at(root, config_path, &commit.sha)
+            declared_at(root, config_path, &release_commit)
         })?;
         states.push(state_of(
             entry,

@@ -362,7 +362,7 @@ Every job is safe to rerun.
 A run with nothing pending reports `nothing to release`.  
 Every input is optional and defaults to verctl's, so a caller passes only what differs.  
 Steps set `env:` and run `mise run ver <verb>`, so the caller serves the `ver` task and pins verctl in its mise config.  
-`plan` alone checks that the pinned verctl is 0.8.4 or later, and checks each `mise-ignored-config-paths` entry.
+`plan` alone checks that the pinned verctl is 0.8.6-rc.2 or later, and checks each `mise-ignored-config-paths` entry.
 
 Every job requests `id-token: write`, so the caller grants it.  
 The publish job uses it for crates.io trusted publishing.  

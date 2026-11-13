@@ -215,7 +215,7 @@ Every input is optional and defaults to verctl's:
 
 The secrets are `app-client-id`, `app-private-key`, and `registry-token`.
 
-The plan job first requires verctl 0.8.4 or later, unless `verctl-artifact` is set.  
+The plan job first requires verctl 0.8.6-rc.2 or later, unless `verctl-artifact` is set.  
 The caller's pin chooses verctl apart from the workflow ref, so move both together.
 
 Every job checks out the commit that started the run.  
@@ -432,7 +432,7 @@ That passes when the package's version there equals its version at HEAD.
 A tag on a commit HEAD does not contain, or at another version, fails.
 
 A release is complete when the registry lists the version, its tag and published Release exist, and the Release holds every declared asset.  
-verctl checks a release for an asset target only when `.ctl/ver.yaml` at HEAD declares it.  
+verctl checks a release for an asset target only when `.ctl/ver.yaml` declares it both at HEAD and at the release's commit: the commit its tag names, or HEAD.  
 A target added later never reopens a release.  
 `--skip-assets` (`VERCTL_SKIP_ASSETS`) leaves assets out.
 

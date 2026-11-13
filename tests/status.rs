@@ -1185,3 +1185,64 @@ async fn a_tag_at_an_older_commit_still_plans_head() {
         serde_json::json!([row("demo", "0.4.6", &head)])
     );
 }
+
+/// A target added after a release never reopens it: the commit `A` set
+/// `demo` to 0.4.6 with no asset target, and its tag and published Release
+/// exist there. HEAD `B` declares `linux-x64`, so the release is checked
+/// against the config at `A`, which declares none, and nothing is pending.
+#[tokio::test]
+async fn a_target_added_after_the_release_does_not_reopen_it() {
+    let root = TempDir::new().expect("tempdir");
+    let config = indoc! {"
+        packages:
+          - name: demo
+            path: Cargo.toml
+            publisher: none
+    "};
+    common::write_config(root.path(), config);
+    fs::write(root.path().join("Cargo.toml"), manifest("demo", "0.4.6")).expect("manifest");
+    common::init(root.path());
+    let set = common::commit_all(root.path(), "chore(release): demo 0.4.6");
+    common::write_config(
+        root.path(),
+        &formatdoc! {r#"
+            {config}assets:
+              build: ["true"]
+              binary: out/{{bin}}
+              linux-x64: {{}}
+        "#},
+    );
+    common::commit_all(root.path(), "ci: build a linux-x64 tarball");
+    on_github(root.path());
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/git/ref/tags/v0.4.6"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ref": "refs/tags/v0.4.6",
+            "node_id": "R",
+            "url": "https://api.github.com/repos/acme/demo/git/refs/tags/v0.4.6",
+            "object": {
+                "type": "commit",
+                "sha": set,
+                "url": format!("https://api.github.com/repos/acme/demo/git/commits/{set}")
+            }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/releases/tags/v0.4.6"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": 1,
+            "html_url": "https://github.com/acme/demo/releases/tag/v0.4.6",
+            "tag_name": "v0.4.6",
+            "draft": false,
+            "immutable": false,
+            "assets": []
+        })))
+        .mount(&server)
+        .await;
+    let (written, report) = plan_at_head(root.path(), &server);
+    assert!(written.contains("commits=[]"), "{written}");
+    assert!(written.contains("pending=false"), "{written}");
+    assert_eq!(report["unreleased"], serde_json::json!([]));
+}
