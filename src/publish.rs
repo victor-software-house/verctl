@@ -146,11 +146,6 @@ pub fn run(
 }
 
 /// The proofs a run may go past, each refused unless the operator allows it.
-///
-/// The one-version-commit proof has none.
-/// Publishing past a skipped version leaves a gap in the registry that no
-/// later run fills.
-/// The fix is to release the older commit first.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Allow {
     /// Publish when `.github/workflows/` at HEAD differs from the default
@@ -160,17 +155,17 @@ pub struct Allow {
     pub off_default_branch: bool,
 }
 
-/// What a `release` run covers, beyond the packages whose version commit is
-/// HEAD.
+/// What a `release` run leaves out, declares, or starts, beyond the packages
+/// HEAD holds.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Scope {
     /// Leave declared assets out of the completeness check and out of the
     /// Release's draft, so a Release is published at once, and a draft found is
     /// published without them.
     pub skip_assets: bool,
-    /// The asset file names the release workflow's plan expects at this version
-    /// commit. The run declares exactly these.
-    /// Empty declares the targets this commit's own config names.
+    /// The asset file names the release workflow's plan expects at HEAD. The
+    /// run declares exactly these.
+    /// Empty declares the targets HEAD's own config names.
     pub declared_assets: Vec<String>,
     /// Create and publish tags and Releases only. The run starts no publisher
     /// and refuses a package the registry does not list.
@@ -250,11 +245,11 @@ pub enum Outcome {
     /// Every package's registry entry, tag, Release, and counted assets
     /// already exist, so the run did nothing.
     NothingToRelease,
-    /// The run released the packages whose version commit is HEAD.
+    /// The run released the incomplete packages HEAD holds.
     Released,
 }
 
-/// What a publish run did, and what it left for another version commit.
+/// What a publish run did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct PublishRun {
@@ -262,8 +257,6 @@ pub struct PublishRun {
     pub outcome: Outcome,
     /// The packages and Releases this run handled.
     pub published: PublishOutcome,
-    /// Incomplete packages whose version commit is not HEAD.
-    pub waiting: Vec<Waiting>,
     /// The proofs the operator allowed this run to go past.
     pub allowed: Vec<Allowed>,
     /// Published, immutable Releases that lack declared assets and can take
@@ -273,32 +266,14 @@ pub struct PublishRun {
     pub drafts: Vec<Draft>,
 }
 
-/// An incomplete package left for the run at its own version commit.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[non_exhaustive]
-pub struct Waiting {
-    /// Package name.
-    pub name: String,
-    /// Version at HEAD.
-    pub version: String,
-    /// The version commit that releases it.
-    pub commit: String,
-    /// Whether the registry already lists the version, so only its Release or
-    /// assets wait, and releasing a later version skips nothing.
-    #[serde(skip)]
-    pub listed: bool,
-}
-
-/// Release the packages whose version commit is HEAD and whose release is
-/// incomplete, and report nothing to release when every release is complete.
+/// Release, from HEAD, every package version HEAD holds whose release is
+/// incomplete, whichever commit set it, and report nothing to release when
+/// every release is complete.
+/// A version HEAD's manifests do not hold is never released.
 ///
 /// A tag whose packages all have a registry check, or no upload, gets its tag
 /// and Release before any upload.
 /// Any other tag gets them after its uploads (see `tags_before_upload`).
-///
-/// A run on any other commit with an incomplete release fails before any side
-/// effect and names the version commits.
-/// A later commit can therefore never tag a version that was never published.
 ///
 /// With `scope.skip_assets`, declared assets do not count toward completeness.
 /// `scope.declared_assets` names the assets the run declares, and
@@ -306,14 +281,13 @@ pub struct Waiting {
 /// A package at `0.0.0` is never released and needs no changelog section.
 /// A dry run plans every other package and queries no registry.
 ///
-/// Before any publisher, tag, or Release call, the run proves the release
-/// commit in three ways:
+/// Before any publisher, tag, or Release call, the run proves HEAD in two
+/// ways:
 ///
 /// - The default branch contains it.
 /// - Its `.github/workflows/` matches the tip of the default branch.
-/// - Each package it releases has one version commit since its last release.
 ///
-/// `allow` lets the run go past the first two.
+/// `allow` lets the run go past either.
 /// [`PublishRun::allowed`] lists each one the run goes past.
 ///
 /// # Errors
@@ -325,7 +299,7 @@ pub struct Waiting {
 /// - A proof refuses or cannot run.
 /// - No token is set.
 /// - A registry or GitHub lookup fails.
-/// - HEAD is not the version commit of an incomplete release.
+/// - The release plan names a commit other than HEAD.
 /// - A publisher, tag, or Release step fails.
 pub fn run_pending(
     config: &Config,
@@ -354,14 +328,10 @@ pub fn run_pending(
         registry_token,
     )?;
     if pending.is_empty() {
-        return Ok(nothing_to_release(Vec::new(), allowed, pending.shortfalls));
+        return Ok(nothing_to_release(allowed, pending.shortfalls));
     }
     let head = git::head_sha(root)?;
-    let (here, waiting) = at_head(&pending, &head)?;
-    let Some(here) = here else {
-        return Ok(nothing_to_release(waiting, allowed, pending.shortfalls));
-    };
-    refuse_skipped_versions(here, &waiting, &head)?;
+    let here = at_head(&pending, &head)?;
     let selected: Vec<(&PackageSpec, &PublishEntry)> = config
         .packages
         .iter()
@@ -420,7 +390,6 @@ pub fn run_pending(
     Ok(PublishRun {
         outcome: Outcome::Released,
         published: PublishOutcome { packages, releases },
-        waiting,
         allowed,
         shortfalls: pending.shortfalls,
         drafts,
@@ -470,18 +439,13 @@ fn gather_uploads<'a>(
 }
 
 /// A run that found nothing to release.
-fn nothing_to_release(
-    waiting: Vec<Waiting>,
-    allowed: Vec<Allowed>,
-    shortfalls: Vec<pending::Shortfall>,
-) -> PublishRun {
+fn nothing_to_release(allowed: Vec<Allowed>, shortfalls: Vec<pending::Shortfall>) -> PublishRun {
     PublishRun {
         outcome: Outcome::NothingToRelease,
         published: PublishOutcome {
             packages: Vec::new(),
             releases: Vec::new(),
         },
-        waiting,
         allowed,
         shortfalls,
         drafts: Vec::new(),
@@ -715,49 +679,29 @@ fn dry_run_plan(
     Ok(PublishRun {
         outcome,
         published: PublishOutcome { packages, releases },
-        waiting: Vec::new(),
         allowed: Vec::new(),
         shortfalls: Vec::new(),
         drafts: Vec::new(),
     })
 }
 
-/// The pending commit at `head`, and every incomplete package left for another
-/// version commit. The commit is `None` when `head` is a version commit whose
-/// releases are all done, as when a `finalize` leg runs after another leg
-/// finished its Release. Any other `head` that releases nothing fails, naming
-/// the commits that do, before anything is published.
-fn at_head<'a>(
-    pending: &'a pending::Pending,
-    head: &str,
-) -> Result<(Option<&'a pending::PendingCommit>, Vec<Waiting>)> {
-    let waiting: Vec<Waiting> = pending
-        .commits
-        .iter()
-        .filter(|commit| !commit.sha.eq_ignore_ascii_case(head))
-        .flat_map(|commit| {
-            commit.packages.iter().map(|package| Waiting {
-                name: package.name.clone(),
-                version: package.version.clone(),
-                commit: commit.sha.clone(),
-                listed: package.listed,
-            })
-        })
-        .collect();
-    if pending.is_finished(head) {
-        return Ok((None, waiting));
-    }
+/// The pending commit at `head`.
+///
+/// The plan holds HEAD only, so a plan that names another commit is a bug in
+/// the plan, and fails before anything is published.
+fn at_head<'a>(pending: &'a pending::Pending, head: &str) -> Result<&'a pending::PendingCommit> {
     let Some(here) = pending.at(head) else {
-        let named: Vec<String> = waiting
+        let named: Vec<&str> = pending
+            .commits
             .iter()
-            .map(|left| format!("{}@{} at {}", left.name, left.version, left.commit))
+            .map(|commit| commit.sha.as_str())
             .collect();
         bail!(
-            "HEAD {head} is not the version commit of an incomplete release; publish at the version commit of {}",
+            "the release plan names {}, not HEAD {head}",
             named.join(", ")
         );
     };
-    Ok((Some(here), waiting))
+    Ok(here)
 }
 
 /// Run one upload under its registry check, and return `already` when the
@@ -915,36 +859,6 @@ fn prove_version_commit(
     Ok(allowed)
 }
 
-/// Refuse a package HEAD releases while an earlier commit's version of it is
-/// still unreleased.
-/// Publishing this one would skip that version, and nothing would publish it
-/// later.
-/// `waiting` holds those versions, oldest first, because the plan lists each
-/// one at the commit that set it.
-/// A version the registry already lists is not skipped: only its draft Release
-/// waits for assets, and the `finalize` job publishes it after every leg.
-fn refuse_skipped_versions(
-    here: &pending::PendingCommit,
-    waiting: &[Waiting],
-    head: &str,
-) -> Result<()> {
-    for package in &here.packages {
-        if let Some(skipped) = waiting
-            .iter()
-            .find(|left| left.name == package.name && !left.listed)
-        {
-            bail!(
-                "{name} {version} was never released: {sha} set it, and releasing {name} {current} at {head} would skip it; run `verctl status --github-output`, which lists {sha} first, and release that commit before this one",
-                name = package.name,
-                version = skipped.version,
-                sha = skipped.commit,
-                current = package.version,
-            );
-        }
-    }
-    Ok(())
-}
-
 fn already_published(message: &str) -> bool {
     let lower = message.to_ascii_lowercase();
     lower.contains("already uploaded")
@@ -1041,141 +955,44 @@ mod tests {
     use crate::config::Config;
 
     mod head {
-        use super::super::{at_head, refuse_skipped_versions};
+        use super::super::at_head;
         use crate::pending::{Pending, PendingCommit, PendingPackage};
 
-        fn pending() -> Pending {
-            let package = |name: &str, version: &str| PendingPackage {
-                name: name.into(),
-                version: version.into(),
-                listed: false,
-            };
-            Pending {
-                commits: vec![
-                    PendingCommit {
-                        sha: "aaa".into(),
-                        packages: vec![package("core", "0.3.1")],
-                        declared: Vec::new(),
-                    },
-                    PendingCommit {
-                        sha: "ccc".into(),
-                        packages: vec![package("app", "0.2.1")],
-                        declared: Vec::new(),
-                    },
-                ],
-                assets: Vec::new(),
-                shortfalls: Vec::new(),
-                finished: vec!["ddd".into()],
+        fn commit(sha: &str, name: &str, version: &str) -> PendingCommit {
+            PendingCommit {
+                sha: sha.into(),
+                packages: vec![PendingPackage {
+                    name: name.into(),
+                    version: version.into(),
+                    listed: false,
+                }],
+                declared: Vec::new(),
             }
         }
 
+        /// A run at HEAD releases the plan's commit, whichever earlier commit
+        /// set the versions in it.
         #[test]
-        fn head_moved_past_the_release_names_the_version_commit() {
-            let error = at_head(&pending(), "bbb").unwrap_err();
-            let message = format!("{error:#}");
-            assert!(message.contains("core@0.3.1 at aaa"), "{message}");
-            assert!(message.contains("app@0.2.1 at ccc"), "{message}");
-        }
-
-        #[test]
-        fn another_package_pending_at_an_older_commit_waits() {
-            let pending = pending();
-            let (here, waiting) = at_head(&pending, "ccc").unwrap();
-            assert_eq!(here.unwrap().packages[0].name, "app");
-            assert_eq!(waiting.len(), 1);
-            assert_eq!(waiting[0].name, "core");
-            assert_eq!(waiting[0].commit, "aaa");
-        }
-
-        /// A finalize leg at a commit whose release another leg finished does
-        /// nothing, while an older release still waits.
-        #[test]
-        fn a_finished_version_commit_has_nothing_to_release() {
-            let pending = pending();
-            let (here, waiting) = at_head(&pending, "ddd").unwrap();
-            assert!(here.is_none());
-            assert_eq!(waiting.len(), 2);
-        }
-
-        /// An older version the registry lists waits only for its draft Release
-        /// to be published, so releasing a newer one skips nothing.
-        #[test]
-        fn an_older_draft_is_not_a_skipped_version() {
-            let listed = |version: &str| PendingPackage {
-                name: "demo".into(),
-                version: version.into(),
-                listed: true,
-            };
+        fn the_plan_at_head_is_released() {
             let pending = Pending {
-                commits: vec![
-                    PendingCommit {
-                        sha: "aaa1111".into(),
-                        packages: vec![listed("0.7.5")],
-                        declared: Vec::new(),
-                    },
-                    PendingCommit {
-                        sha: "bbb2222".into(),
-                        packages: vec![PendingPackage {
-                            name: "demo".into(),
-                            version: "0.7.6".into(),
-                            listed: false,
-                        }],
-                        declared: Vec::new(),
-                    },
-                ],
-                assets: Vec::new(),
-                shortfalls: Vec::new(),
-                finished: Vec::new(),
+                commits: vec![commit("ccc", "app", "0.2.1")],
+                ..Pending::default()
             };
-            let (here, waiting) = at_head(&pending, "bbb2222").unwrap();
-            refuse_skipped_versions(here.unwrap(), &waiting, "bbb2222").unwrap();
+            let here = at_head(&pending, "ccc").unwrap();
+            assert_eq!(here.packages[0].name, "app");
         }
 
-        /// Another package waiting is not a skip; the same package waiting
-        /// at an older commit is, and the refusal names the way out.
+        /// A plan that names a commit other than HEAD is a bug, and the error
+        /// names both.
         #[test]
-        fn a_skipped_version_of_the_same_package_refuses() {
-            let pending = pending();
-            let (here, waiting) = at_head(&pending, "ccc").unwrap();
-            refuse_skipped_versions(here.unwrap(), &waiting, "ccc").unwrap();
-
-            let skipped = Pending {
-                commits: vec![
-                    PendingCommit {
-                        sha: "aaa1111".into(),
-                        packages: vec![PendingPackage {
-                            name: "demo".into(),
-                            version: "0.7.5".into(),
-                            listed: false,
-                        }],
-                        declared: Vec::new(),
-                    },
-                    PendingCommit {
-                        sha: "bbb2222".into(),
-                        packages: vec![PendingPackage {
-                            name: "demo".into(),
-                            version: "0.7.6".into(),
-                            listed: false,
-                        }],
-                        declared: Vec::new(),
-                    },
-                ],
-                assets: Vec::new(),
-                shortfalls: Vec::new(),
-                finished: Vec::new(),
+        fn a_plan_that_names_another_commit_fails_loudly() {
+            let pending = Pending {
+                commits: vec![commit("aaa", "core", "0.3.1")],
+                ..Pending::default()
             };
-            let (here, waiting) = at_head(&skipped, "bbb2222").unwrap();
-            let error = refuse_skipped_versions(here.unwrap(), &waiting, "bbb2222").unwrap_err();
+            let error = at_head(&pending, "bbb").unwrap_err();
             let message = format!("{error:#}");
-            assert!(
-                message.contains("demo 0.7.5 was never released"),
-                "{message}"
-            );
-            assert!(message.contains("aaa1111 set it"), "{message}");
-            assert!(
-                message.contains("verctl status --github-output"),
-                "{message}"
-            );
+            assert!(message.contains("names aaa, not HEAD bbb"), "{message}");
         }
     }
 

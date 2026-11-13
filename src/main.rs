@@ -425,7 +425,6 @@ fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
         outcome: run.outcome,
         packages: run.published.packages,
         releases: run.published.releases,
-        waiting: run.waiting.iter().map(ReleaseRow::from).collect(),
         allowed: run.allowed,
         dry_run: args.dry_run(),
         notices,
@@ -512,7 +511,7 @@ fn ci_report(args: &CiArgs) -> Result<CiReport> {
     Ok(CiReport { plan: planned })
 }
 
-/// The fragments, the asset plan, and the incomplete version commits.
+/// The fragments, the asset plan, and the incomplete releases at HEAD.
 ///
 /// With `--github-output`, `status` fetches the full history and needs a
 /// token, so the workflow's plan is never partial. It writes the asset
@@ -527,7 +526,7 @@ fn ci_report(args: &CiArgs) -> Result<CiReport> {
 ///
 /// Without it, `status` changes nothing in the clone and reads the history
 /// already there. With no token, or when a lookup cannot run
-/// ([`lookup::Unavailable`]), it lists the version commits as not checked,
+/// ([`lookup::Unavailable`]), it lists the incomplete releases as not checked,
 /// with the reason. It never lists them as none.
 ///
 /// Any other error, such as a release tag on the wrong commit, fails
@@ -598,9 +597,9 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
     })
 }
 
-/// What `status` found about the version commits that still need a release.
+/// What `status` found about the releases HEAD still has to make.
 struct Unreleased {
-    /// Every package at an incomplete version commit, or `None` when not
+    /// Every package whose release at HEAD is incomplete, or `None` when not
     /// checked.
     rows: Option<Vec<ReleaseRow>>,
     /// Why `rows` was not checked.
@@ -620,7 +619,7 @@ impl Unreleased {
     }
 }
 
-/// The incomplete version commits, or why they were not checked.
+/// The incomplete releases at HEAD, or why they were not checked.
 fn unreleased_state(args: &StatusArgs, config: &Config, root: &Path) -> Result<Unreleased> {
     let token = match &args.github_output {
         Some(_) => {
@@ -660,7 +659,7 @@ fn unreleased_state(args: &StatusArgs, config: &Config, root: &Path) -> Result<U
     })
 }
 
-/// Every package at an incomplete version commit, oldest commit first.
+/// Every package whose release at HEAD is incomplete.
 fn unreleased_rows(planned: &pending::Pending) -> Vec<ReleaseRow> {
     planned
         .commits

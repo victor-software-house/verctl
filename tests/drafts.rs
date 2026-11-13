@@ -149,18 +149,38 @@ fn run(root: &Path, server: &MockServer, args: &[&str]) -> Output {
         .unwrap()
 }
 
-/// A draft at an older version is planned again after a newer version commit
-/// landed and its own Release is complete: the plan lists the older commit,
-/// the asset job it lacks, and the assets it expects there.
-#[tokio::test]
-async fn a_draft_at_an_older_version_is_planned_again() {
-    let root = TempDir::new().unwrap();
-    let (first, second) = two_versions(root.path());
-    let server = github_with_an_old_draft(&first, &second).await;
-    let out = root.path().join("github-output");
+/// GitHub as HEAD's version leaves it: 1.1.0 a draft with no tarball, which
+/// only the list shows. The tag exists.
+async fn github_with_a_draft_at_head(second: &str) -> MockServer {
+    let server = MockServer::start().await;
+    tag_at(&server, "v1.1.0", second).await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/releases/tags/v1.1.0"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
+            "message": "Not Found",
+            "documentation_url": "https://docs.github.com"
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/releases"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!([release_json(
+                "v1.1.0",
+                true,
+                &[]
+            )])),
+        )
+        .mount(&server)
+        .await;
+    server
+}
+
+fn plan(root: &Path, server: &MockServer) -> String {
+    let out = root.join("github-output");
     let output = run(
-        root.path(),
-        &server,
+        root,
+        server,
         &["status", "--github-output", out.to_str().unwrap()],
     );
     assert!(
@@ -168,29 +188,55 @@ async fn a_draft_at_an_older_version_is_planned_again() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let written = fs::read_to_string(&out).unwrap();
+    fs::read_to_string(&out).unwrap()
+}
+
+/// A draft at a version HEAD does not hold stays unreleased.
+/// HEAD's own Release is complete, so the plan is empty and names nothing of
+/// the older commit.
+#[tokio::test]
+async fn a_draft_at_a_version_head_no_longer_holds_is_not_planned() {
+    let root = TempDir::new().unwrap();
+    let (first, second) = two_versions(root.path());
+    let server = github_with_an_old_draft(&first, &second).await;
+    let written = plan(root.path(), &server);
+    assert!(written.contains("commits=[]"), "{written}");
+    assert!(written.contains("pending=false"), "{written}");
+    assert!(written.contains(r#"assets={"include":[]}"#), "{written}");
+    assert!(written.lines().any(|line| line == "declared="), "{written}");
+}
+
+/// A draft at HEAD's version is planned at HEAD: the plan lists HEAD, the
+/// asset job the draft lacks, and the assets it expects as comma-separated
+/// file names.
+#[tokio::test]
+async fn a_draft_at_head_is_planned_at_head_with_its_assets() {
+    let root = TempDir::new().unwrap();
+    let (_, second) = two_versions(root.path());
+    let server = github_with_a_draft_at_head(&second).await;
+    let written = plan(root.path(), &server);
     assert!(
-        written.contains(&format!(r#"commits=["{first}"]"#)),
+        written.contains(&format!(r#"commits=["{second}"]"#)),
         "{written}"
     );
     assert!(written.contains("pending=true"), "{written}");
     assert!(
         written.contains(&format!(
-            r#"assets={{"include":[{{"commit":"{first}","id":"linux-x64","labels":["ubuntu-26.04"],"tag":"v1.0.0"}}]}}"#
+            r#"assets={{"include":[{{"commit":"{second}","id":"linux-x64","labels":["ubuntu-26.04"],"tag":"v1.1.0"}}]}}"#
         )),
         "{written}"
     );
     assert!(
-        written.contains(&format!(
-            r#"declared={{"{first}":"demo_1.0.0_linux_x64.tar.gz"}}"#
-        )),
+        written
+            .lines()
+            .any(|line| line == "declared=demo_1.1.0_linux_x64.tar.gz"),
         "{written}"
     );
 }
 
-/// `release` at a version commit whose Release is finished does nothing, while
-/// an older draft still waits. A finalize leg runs there after another leg
-/// finished its Release.
+/// `release` at a commit whose Release is finished does nothing, even though
+/// an older version's draft is still open. A finalize leg runs there after
+/// another leg finished its Release.
 #[tokio::test]
 async fn release_at_a_finished_commit_reports_nothing_to_release() {
     let root = TempDir::new().unwrap();
