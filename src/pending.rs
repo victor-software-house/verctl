@@ -346,7 +346,8 @@ impl Count {
     /// Until an upload is unlisted, a failed lookup fails the plan, as the
     /// lookup of a release that has not started does. After it, the release
     /// is known to be incomplete, so a failed lookup only leaves the count
-    /// unknown, and the tag's later uploads are not asked.
+    /// unknown and that upload unlisted. The tag's later uploads are still
+    /// asked, so a package that shares the tag and is live reads as listed.
     fn ask(
         &mut self,
         check: &RegistryCheck,
@@ -357,9 +358,6 @@ impl Count {
         self.total += 1;
         if !self.nouns.iter().any(|known| known == noun) {
             self.nouns.push(noun.to_owned());
-        }
-        if self.uncounted {
-            return Ok(false);
         }
         let live = match check.lists(version, env) {
             Ok(live) => live,
@@ -377,15 +375,16 @@ impl Count {
         Ok(live)
     }
 
-    /// The partial release of `tag`: some but not all uploads live, or a
-    /// count left unknown.
+    /// The partial release of `tag`: at least one upload live, and either
+    /// some not live or a count left unknown. With no upload known to be
+    /// live, nothing shows the release is partial.
     fn partial(self, tag: String, stop: stop::Record) -> Option<Partial> {
         let noun = match self.nouns.as_slice() {
             [one] => format!("{one}s"),
             _ => "packages".to_owned(),
         };
         let live = (!self.uncounted).then_some(self.live);
-        (self.uncounted || (self.live > 0 && self.live < self.total)).then_some(Partial {
+        (self.live > 0 && (self.uncounted || self.live < self.total)).then_some(Partial {
             tag,
             live,
             total: self.total,
@@ -908,6 +907,44 @@ mod tests {
         assert!(!listed);
         let partial = count.partial("v0.4.0".into(), Record::Absent).unwrap();
         assert_eq!((partial.live, partial.total), (None, 3));
+    }
+
+    /// A failed lookup does not stop the tag's later lookups, so a package
+    /// sharing the tag that is live still reads as listed.
+    #[test]
+    fn a_failed_lookup_leaves_later_packages_asked() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let release = draft(&[]);
+        let mut count = Count::default();
+        let first = [
+            upload(dir.path(), "a", Answer::Unlisted),
+            upload(dir.path(), "b", Answer::Fails),
+        ];
+        assert!(!uploads_listed(&first, "crate", &release, &[], Some(&mut count)).unwrap());
+        let second = [upload(dir.path(), "c", Answer::Listed)];
+        assert!(uploads_listed(&second, "crate", &release, &[], Some(&mut count)).unwrap());
+        assert_eq!(
+            calls(dir.path()),
+            indoc! {"
+                a
+                c
+            "}
+        );
+        let partial = count.partial("v0.4.0".into(), Record::Absent).unwrap();
+        assert_eq!((partial.live, partial.total), (None, 3));
+    }
+
+    /// An unknown count with no upload known to be live is not partial.
+    #[test]
+    fn an_unknown_count_with_nothing_live_is_not_partial() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let uploads = [
+            upload(dir.path(), "a", Answer::Unlisted),
+            upload(dir.path(), "b", Answer::Fails),
+        ];
+        let mut count = Count::default();
+        uploads_listed(&uploads, "crate", &draft(&[]), &[], Some(&mut count)).unwrap();
+        assert!(count.partial("v0.4.0".into(), Record::Absent).is_none());
     }
 
     /// Before any upload is unlisted, a failed lookup still fails the plan.
