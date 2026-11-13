@@ -445,8 +445,10 @@ pub struct EnsuredRelease {
 /// A draft found is published when every declared asset is `uploaded` on it.
 /// Otherwise it stays a draft, and [`EnsuredRelease::lacks`] names what it
 /// lacks.
-/// A draft that already exists gets its tag created at `release.sha` when
-/// the tag is missing, and a tag that names another commit fails.
+/// verctl creates the tag before the draft, so a tag that does not exist has
+/// no draft of verctl's: the lookup skips the Releases list and the Release is
+/// created.
+/// A draft whose tag names another commit fails.
 /// Publishing sends the Release's title and notes again, so a draft someone
 /// created by hand reads as this run would have written it.
 ///
@@ -485,7 +487,12 @@ async fn ensure_release_with(
         stage,
         assets,
     } = *release;
-    match find_release(crab, repo, tag).await? {
+    let existing = if tag_exists(crab, repo, tag).await? {
+        find_release(crab, repo, tag).await?
+    } else {
+        None
+    };
+    match existing {
         Some(found) if !found.draft => {
             if shipped {
                 require_tag_at(crab, repo, tag, sha).await?;
@@ -496,7 +503,7 @@ async fn ensure_release_with(
             });
         }
         Some(draft) => {
-            ensure_tag(crab, repo, tag, sha).await?;
+            require_tag_at(crab, repo, tag, sha).await?;
             return finalize(crab, repo, release, &draft).await;
         }
         None => {}
@@ -537,6 +544,19 @@ async fn ensure_release_with(
         assets: Vec::new(),
     };
     finalize(crab, repo, release, &draft).await
+}
+
+/// Whether the tag `tag` exists.
+async fn tag_exists(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<bool> {
+    match crab
+        .repos(&repo.owner, &repo.name)
+        .get_ref(&octocrab::params::repos::Reference::Tag(tag.to_owned()))
+        .await
+    {
+        Ok(_) => Ok(true),
+        Err(error) if is_not_found(&error) => Ok(false),
+        Err(error) => Err(lookup_failed(error, format!("read tag {tag}"))),
+    }
 }
 
 /// Create the lightweight tag `tag` at `sha` through the git refs API
@@ -874,7 +894,11 @@ async fn release_state_with(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<R
         Err(error) if is_not_found(&error) => None,
         Err(error) => return Err(lookup_failed(error, format!("read tag {tag}"))),
     };
-    let release = find_release(crab, repo, tag).await?;
+    let release = if tag_sha.is_some() {
+        find_release(crab, repo, tag).await?
+    } else {
+        None
+    };
     Ok(ReleaseState {
         tag: tag_sha,
         release: release.is_some(),
@@ -975,8 +999,8 @@ struct ForgeAsset {
 /// Releases read per page; GitHub's maximum.
 const RELEASES_PER_PAGE: usize = 100;
 
-/// Pages of Releases a lookup reads before it finds none, so a repository with
-/// thousands of Releases costs ten requests for a tag with no Release yet.
+/// Pages of Releases a lookup reads before it gives up, so a repository with
+/// thousands of Releases costs ten requests instead of one per page.
 /// A draft verctl creates is the newest Release, so it is on the first page.
 const MAX_RELEASE_PAGES: u32 = 10;
 
@@ -988,8 +1012,10 @@ const MAX_RELEASE_PAGES: u32 = 10;
 /// token with push access ([list releases]).
 /// The list is newest first, so a draft created a moment ago is on the first
 /// page.
-/// Only a tag with no Release at all reads every page, up to
-/// [`MAX_RELEASE_PAGES`], and then no Release is found.
+/// A caller looks a Release up only for a tag that exists, because verctl
+/// creates the tag before a draft.
+/// A tag with no Release at all reads every page, up to [`MAX_RELEASE_PAGES`],
+/// and then the lookup fails and names the tag.
 ///
 /// [get a release by tag name]: https://docs.github.com/en/rest/releases/releases#get-a-release-by-tag-name
 /// [list releases]: https://docs.github.com/en/rest/releases/releases#list-releases
@@ -1029,9 +1055,11 @@ async fn find_release(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<Option<
         if last {
             return Ok(None);
         }
-        if page >= MAX_RELEASE_PAGES {
-            return Ok(None);
-        }
+        ensure!(
+            page < MAX_RELEASE_PAGES,
+            "tag {tag} exists but no Release for it was found in the newest {newest} Releases",
+            newest = usize::try_from(MAX_RELEASE_PAGES).unwrap_or(usize::MAX) * RELEASES_PER_PAGE
+        );
         page += 1;
     }
 }
@@ -1583,8 +1611,8 @@ mod tests {
     async fn a_release_never_made_has_no_tag_and_no_release() {
         let server = MockServer::start().await;
         missing_tag().mount(&server).await;
-        missing_release().mount(&server).await;
-        no_releases_listed().mount(&server).await;
+        missing_release().expect(0).mount(&server).await;
+        no_releases_listed().expect(0).mount(&server).await;
         let state = super::release_state_with(&crab(&server.uri()), &repo(), TAG)
             .await
             .unwrap();
@@ -1667,7 +1695,7 @@ mod tests {
         let server = MockServer::start().await;
         missing_release().mount(&server).await;
         no_releases_listed().mount(&server).await;
-        missing_tag().up_to_n_times(1).mount(&server).await;
+        missing_tag().up_to_n_times(2).mount(&server).await;
         lightweight_tag(PUBLISHED).mount(&server).await;
         create_tag_ref().expect(1).mount(&server).await;
         create_draft().expect(1).mount(&server).await;
@@ -1814,14 +1842,12 @@ mod tests {
         assert_eq!(reported.lacks, ["app_1.0.0_linux_x64.tar.gz"]);
     }
 
-    /// A draft created by hand has no tag yet, and GitHub makes none until it
-    /// is published. The run creates the tag at the version commit, and the
-    /// update sends this run's title and notes.
+    /// The update sends this run's title and notes, so a draft someone edited
+    /// reads as this run would have written it.
     #[tokio::test]
-    async fn a_draft_made_by_hand_gets_its_tag_and_this_runs_title_and_notes() {
+    async fn a_found_draft_is_published_with_this_runs_title_and_notes() {
         let server = MockServer::start().await;
         missing_release().mount(&server).await;
-        missing_tag().up_to_n_times(1).mount(&server).await;
         lightweight_tag(PUBLISHED).mount(&server).await;
         listed_releases(serde_json::json!([draft_json(&[
             ("app.pkg", "uploaded"),
@@ -1829,7 +1855,6 @@ mod tests {
         ])]))
         .mount(&server)
         .await;
-        create_tag_ref().expect(1).mount(&server).await;
         publish_draft()
             .and(body_partial_json(serde_json::json!({
                 "name": TAG,
@@ -1921,8 +1946,32 @@ mod tests {
         assert!(found.draft);
     }
 
-    /// A tag with no Release in a repository with many reads ten pages, then
-    /// finds none, instead of one request per page forever.
+    /// verctl creates the tag before a draft, so a tag that does not exist has
+    /// no draft of verctl's: neither the tag endpoint nor the list is read.
+    #[tokio::test]
+    async fn a_missing_tag_skips_every_release_lookup() {
+        let server = MockServer::start().await;
+        missing_release().expect(0).mount(&server).await;
+        no_releases_listed().expect(0).mount(&server).await;
+        missing_tag().up_to_n_times(2).mount(&server).await;
+        lightweight_tag(PUBLISHED).mount(&server).await;
+        create_tag_ref().expect(1).mount(&server).await;
+        create_draft().expect(1).mount(&server).await;
+        let declared = declared();
+        let created = super::ensure_release_with(
+            &crab(&server.uri()),
+            &repo(),
+            &with_assets(&declared),
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(created.lacks, declared);
+    }
+
+    /// A tag that exists with no Release in a repository with many reads ten
+    /// pages, then fails and names the tag, instead of one request per page
+    /// forever.
     #[tokio::test]
     async fn the_release_list_is_read_for_ten_pages_at_most() {
         let server = MockServer::start().await;
@@ -1933,10 +1982,12 @@ mod tests {
             .expect(10)
             .mount(&server)
             .await;
-        let found = super::find_release(&crab(&server.uri()), &repo(), TAG)
+        let error = super::find_release(&crab(&server.uri()), &repo(), TAG)
             .await
-            .unwrap();
-        assert!(found.is_none());
+            .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains(&format!("tag {TAG} exists")), "{message}");
+        assert!(message.contains("newest 1000"), "{message}");
     }
 
     #[tokio::test]

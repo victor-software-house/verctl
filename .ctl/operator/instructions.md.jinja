@@ -213,12 +213,13 @@ The plan job checks the paths once.
 `crates-io-trusted-publishing: true` replaces the `registry-token` secret with a trusted-publishing token for crates.io.  
 Each crate lists the caller's repository and workflow file as its trusted publisher.
 
-`environment` names a GitHub environment for the publish job, the only job that reads a registry token.  
+`environment` names a GitHub environment for the publish and finalize jobs, the only jobs that read a registry token.  
 So the token can live only in an environment that admits the default branch.  
-Empty runs publish in no environment.
+Empty runs both in no environment.
 
 The caller maps the token's stored name, such as `CARGO_REGISTRY_TOKEN`, to the `registry-token` secret.  
-Only the publish job receives the environment's value.  
+Only the publish and finalize jobs receive the environment's value.  
+The finalize job uses it only for the registry query that lists versions, and never uploads.  
 The workflow reads no secret by a computed name, so a caller never passes `secrets: inherit`.  
 `registry-token-env` names only the variable the publisher reads the token from.
 
@@ -618,7 +619,7 @@ A retry at the same commit is a no-op.
 
 A Release with declared assets is created differently.  
 The tag is created first at that SHA through the git refs API, then the Release with `draft: true`, which creates no tag of its own.  
-Every lookup of a Release also reads drafts, which GitHub lists only to a token with push access.  
+Every lookup of a Release for a tag that exists also reads drafts, which GitHub lists only to a token with push access.  
 `release` publishes the draft with `draft: false`, keeping the prerelease and latest settings above.
 
 ## Assets

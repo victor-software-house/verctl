@@ -375,7 +375,7 @@ A hand-written workflow that runs `actions/publish` and then `actions/asset` run
 
 A registry token stored in a GitHub environment that admits only the default branch is out of reach of every other branch.  
 Pass `environment: <name>`, and map the token by its stored name: `registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}`.  
-Only the `publish` job runs in the environment, and it receives the environment's value.
+Only the `publish` and `finalize` jobs run in the environment, and they receive the environment's value.
 
 The workflow reads no secret by a computed name, so a caller never passes `secrets: inherit`.  
 The App secrets stay in the same `secrets:` map.  
@@ -385,7 +385,8 @@ A crate's first publish maps the token and turns `crates-io-trusted-publishing` 
 The publish step sets `VERCTL_REGISTRY_TOKEN` from the secret and `VERCTL_TRUSTED_PUBLISHING_TOKEN` from trusted publishing.  
 `verctl release` fails when both are set.  
 It gives the token to each publisher and its registry `query` under `--registry-token-env` (`VERCTL_REGISTRY_TOKEN_ENV`).  
-No other command it starts gets either variable.
+No other command it starts gets either variable.  
+The finalize step sets only `VERCTL_REGISTRY_TOKEN`, which `release --releases-only` uses for the registry query and never to upload.
 
 To migrate from `version-pr.yml` and `publish.yml`, do it in one pull request:
 

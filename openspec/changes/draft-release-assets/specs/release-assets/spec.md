@@ -23,11 +23,16 @@ The `releases` of the report SHALL list URLs only.
 - **WHEN** `verctl release` runs with `VERCTL_SKIP_ASSETS=true`
 - **THEN** it creates the Release published at once, and publishes an existing draft without its assets
 
-#### Scenario: A draft made by hand
+#### Scenario: A draft found
 
-- **WHEN** a draft for `v1.2.0` exists with every declared asset and no tag
-- **THEN** `verctl release` creates the tag at the version commit, and publishes the draft with the title and notes of this run
+- **WHEN** a draft for `v1.2.0` exists with every declared asset and its tag names the version commit
+- **THEN** `verctl release` publishes the draft with the title and notes of this run
 - **AND** a tag that names another commit fails the run
+
+#### Scenario: No tag
+
+- **WHEN** tag `v1.2.0` does not exist
+- **THEN** `verctl release` reads no Release, creates the tag, and creates the draft
 
 ### Requirement: Release lookups see drafts
 
