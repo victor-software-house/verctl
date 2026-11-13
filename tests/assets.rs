@@ -98,8 +98,8 @@ fn a_package_target_plans_and_packs_as_before() {
             "matrix": {
                 "include": [{
                     "id": "linux-x64",
-                    "machine": "ubuntu-latest",
-                    "labels": ["ubuntu-latest"],
+                    "machine": "ubuntu-26.04",
+                    "labels": ["ubuntu-26.04"],
                     "os": "linux",
                     "arch": "x64",
                     "triple": "x86_64-unknown-linux-gnu",
@@ -368,7 +368,7 @@ fn a_target_file_missing_after_the_build_names_its_list() {
 const VENDORED: &str = indoc! {r"
     runners:
       linux:
-        labels: [ubuntu-24.04]
+        labels: [ubuntu-26.04]
       macos:
         labels: [macos-15]
     vendored:
@@ -488,7 +488,7 @@ fn a_vendored_set_writes_the_same_step_outputs() {
         indoc! {r#"
             has_assets=true
             tag=libexample-1.4.0
-            matrix={"include":[{"id":"linux-x64","labels":["ubuntu-24.04"]},{"id":"macos-arm64","labels":["macos-15"]}]}
+            matrix={"include":[{"id":"linux-x64","labels":["ubuntu-26.04"]},{"id":"macos-arm64","labels":["macos-15"]}]}
         "#}
     );
 }

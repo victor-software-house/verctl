@@ -446,7 +446,7 @@ pub struct Runner {
 #[serde(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct Job {
-    /// Names from `runners` this job runs on. Omit for one `ubuntu-latest`
+    /// Names from `runners` this job runs on. Omit for one `ubuntu-26.04`
     /// machine.
     pub runners: Option<Vec<String>>,
 }
@@ -828,7 +828,7 @@ pub struct Config {
     #[serde(default)]
     #[garde(custom(every_key_is_one_plain_name), dive)]
     pub vendored: BTreeMap<String, Vendored>,
-    /// PR and push validation. Empty means one `verify` on `ubuntu-latest`.
+    /// PR and push validation. Empty means one `verify` on `ubuntu-26.04`.
     #[serde(default)]
     pub ci: BTreeMap<String, Job>,
     /// Work done after the version bumps.
@@ -2340,7 +2340,7 @@ mod tests {
         formatdoc! {"
             runners:
               linux:
-                labels: [ubuntu-24.04]
+                labels: [ubuntu-26.04]
             vendored:
               lib:
                 version: 1.4.0

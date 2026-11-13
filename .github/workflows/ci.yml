@@ -69,7 +69,7 @@ jobs:
   plan:
     if: ${{ !github.event.pull_request.draft && github.event_name != 'schedule' }}
     name: Plan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Recent runs take under 2 minutes.
     timeout-minutes: 10
     permissions:

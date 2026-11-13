@@ -462,7 +462,7 @@ fn asset_report(args: &AssetArgs, release: &ReleaseArgs) -> Result<AssetsReport>
     let config = Config::load(path)?;
     let root = &config::root_of(path);
     let planned = assets::plan(&config, root)?;
-    let tarball = assets::build(&planned, &args.target, root)?;
+    let tarball = assets::build(&planned, &args.target, root, args.prebuilt.as_deref())?;
     let uploaded = if args.dry_run_under(release) {
         None
     } else {
@@ -472,6 +472,10 @@ fn asset_report(args: &AssetArgs, release: &ReleaseArgs) -> Result<AssetsReport>
     Ok(AssetsReport {
         plan: planned,
         tarball: Some(tarball.display().to_string()),
+        prebuilt: args
+            .prebuilt
+            .as_ref()
+            .map(|path| path.display().to_string()),
         uploaded,
     })
 }

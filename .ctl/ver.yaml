@@ -27,7 +27,7 @@ packages:
 # and cross-building it from x64 would need a cross C toolchain.
 runners:
   arm64:
-    labels: [ubuntu-24.04-arm]
+    labels: [ubuntu-26.04-arm]
 
 # One key per host binary; the name is the job, the tarball, and the platform.
 # Omit for a library. darwin-arm64 and linux-x64 are built-in records, so
@@ -38,7 +38,7 @@ runners:
 # would need a musl C compiler the runner does not have.
 #
 # `ci` is deliberately absent. This repo is public, so the default, one
-# `verify` job on ubuntu-latest, is exactly what it wants.
+# `verify` job on ubuntu-26.04, is exactly what it wants.
 assets:
   darwin-arm64: {}
   linux-x64: {}

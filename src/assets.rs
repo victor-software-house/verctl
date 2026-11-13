@@ -12,6 +12,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -109,7 +110,7 @@ const KNOWN: &[Known] = &[
     },
     Known {
         id: "linux-x64",
-        labels: &["ubuntu-latest"],
+        labels: &["ubuntu-26.04"],
         os: "linux",
         arch: "x64",
         triple: "x86_64-unknown-linux-gnu",
@@ -270,6 +271,12 @@ fn write_matrix_output(
 /// Builds the target `id` and writes a tarball to `root`. The tarball holds
 /// its binary, or the target's `files` under `dir`, or the shared ones.
 ///
+/// With `prebuilt`, nothing is built: neither `prepare` nor `build` runs, and
+/// the tarball holds that file as `bin`. The file is staged in
+/// `.verctl-prebuilt-{id}` under `root`, which is removed after `tar` runs.
+/// `tempfile` is a development dependency, so a system temporary directory is
+/// not available here.
+///
 /// # Errors
 ///
 /// Returns an error when:
@@ -279,8 +286,11 @@ fn write_matrix_output(
 ///   unsuccessfully;
 /// - the release binary, or a path the target's `files` list holds, is missing
 ///   after the build;
-/// - a path is not valid UTF-8.
-pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
+/// - a path is not valid UTF-8;
+/// - `prebuilt` is given and the target packs `files` under `dir`, because a
+///   prebuilt binary replaces only the one-binary pack;
+/// - `prebuilt` is given and is not a file, or cannot be staged.
+pub fn build(plan: &AssetsPlan, id: &str, root: &Path, prebuilt: Option<&Path>) -> Result<PathBuf> {
     let target = plan
         .matrix
         .include
@@ -291,6 +301,38 @@ pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
         .packs
         .get(id)
         .with_context(|| format!("target {id:?} is not in assets"))?;
+    let (dir, files) = match prebuilt {
+        Some(binary) => (
+            stage_prebuilt(plan, id, pack, binary, root)?,
+            vec![plan.bin.clone()],
+        ),
+        None => compile(plan, target, pack, root)?,
+    };
+    let tarball = root.join(&target.asset);
+    let mut tar = process::argv(&[
+        "tar",
+        "czf",
+        tarball.to_str().context("tarball path")?,
+        "-C",
+        dir.to_str().context("dir")?,
+    ]);
+    tar.extend(files);
+    let packed = process::run_inherit(&tar, Duration::from_mins(2)).context("tar");
+    if prebuilt.is_some() {
+        fs::remove_dir_all(&dir).with_context(|| format!("remove {}", dir.display()))?;
+    }
+    packed?;
+    Ok(tarball)
+}
+
+/// Runs the target's `prepare` and `build`, then returns the directory its
+/// tarball is cut from and the entries it holds.
+fn compile(
+    plan: &AssetsPlan,
+    target: &MatrixTarget,
+    pack: &Pack,
+    root: &Path,
+) -> Result<(PathBuf, Vec<String>)> {
     let ctx = target_ctx(plan, target);
     if !plan.prepare.is_empty() {
         let prepare = expand(&plan.prepare, &ctx);
@@ -298,7 +340,7 @@ pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
     }
     let build = expand(&plan.build, &ctx);
     process::run_inherit(&build, BUILD_TIMEOUT).context("assets.build")?;
-    let (dir, files) = match pack {
+    match pack {
         Pack::Binary(binary) => {
             let binary = root.join(expand_one(binary, &ctx));
             anyhow::ensure!(
@@ -307,7 +349,7 @@ pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
                 binary.display()
             );
             let dir = binary.parent().context("binary parent")?.to_path_buf();
-            (dir, vec![plan.bin.clone()])
+            Ok((dir, vec![plan.bin.clone()]))
         }
         Pack::Files { dir, files, list } => {
             let dir = root.join(expand_one(dir, &ctx));
@@ -320,20 +362,39 @@ pub fn build(plan: &AssetsPlan, id: &str, root: &Path) -> Result<PathBuf> {
                     packed.display()
                 );
             }
-            (dir, files)
+            Ok((dir, files))
         }
-    };
-    let tarball = root.join(&target.asset);
-    let mut tar = process::argv(&[
-        "tar",
-        "czf",
-        tarball.to_str().context("tarball path")?,
-        "-C",
-        dir.to_str().context("dir")?,
-    ]);
-    tar.extend(files);
-    process::run_inherit(&tar, Duration::from_mins(2)).context("tar")?;
-    Ok(tarball)
+    }
+}
+
+/// Copies `binary` as `bin`, mode `0755`, into a fresh directory under `root`
+/// and returns that directory.
+fn stage_prebuilt(
+    plan: &AssetsPlan,
+    id: &str,
+    pack: &Pack,
+    binary: &Path,
+    root: &Path,
+) -> Result<PathBuf> {
+    anyhow::ensure!(
+        matches!(pack, Pack::Binary(_)),
+        "target {id:?} packs files under dir, and --prebuilt replaces only the one-binary pack"
+    );
+    anyhow::ensure!(
+        binary.is_file(),
+        "--prebuilt {} is not a file",
+        binary.display()
+    );
+    let dir = root.join(format!(".verctl-prebuilt-{id}"));
+    if dir.exists() {
+        fs::remove_dir_all(&dir).with_context(|| format!("remove {}", dir.display()))?;
+    }
+    fs::create_dir(&dir).with_context(|| format!("create {}", dir.display()))?;
+    let staged = dir.join(&plan.bin);
+    fs::copy(binary, &staged).with_context(|| format!("stage {}", binary.display()))?;
+    fs::set_permissions(&staged, fs::Permissions::from_mode(0o755))
+        .with_context(|| format!("chmod {}", staged.display()))?;
+    Ok(dir)
 }
 
 /// Uploads `tarball` to the release `tag` and returns the asset's download URL.
@@ -677,7 +738,7 @@ mod tests {
           macos15:
             labels: [macos-15]
           arm:
-            labels: [ubuntu-24.04-arm]
+            labels: [ubuntu-26.04-arm]
     "};
 
     fn with(extra: &str) -> Result<Config> {
@@ -747,7 +808,7 @@ mod tests {
         assert!(plan.has_assets);
         assert_eq!(plan.matrix.include.len(), 1);
         assert_eq!(plan.matrix.include[0].id, "linux-x64");
-        assert_eq!(plan.matrix.include[0].labels, ["ubuntu-latest"]);
+        assert_eq!(plan.matrix.include[0].labels, ["ubuntu-26.04"]);
         assert_eq!(
             plan.matrix.include[0].asset,
             "verctl_1.2.3_linux_x64.tar.gz"
@@ -796,7 +857,7 @@ mod tests {
         .unwrap();
         let plan = planned(&config, "0.0.2").unwrap();
         assert_eq!(plan.matrix.include[0].triple, "aarch64-unknown-linux-gnu");
-        assert_eq!(plan.matrix.include[0].labels, ["ubuntu-24.04-arm"]);
+        assert_eq!(plan.matrix.include[0].labels, ["ubuntu-26.04-arm"]);
         assert_eq!(
             plan.matrix.include[0].asset,
             "verctl_0.0.2_linux_arm64.tar.gz"
@@ -960,5 +1021,76 @@ mod tests {
         assert!(text.contains("tag=v0.0.1\n"), "{text}");
         assert!(text.contains("matrix={\"include\":[]}"), "{text}");
         assert!(!text.contains("triple"), "{text}");
+    }
+
+    /// A root holding `config`'s plan and a prebuilt file that is not
+    /// executable, so a mode of `0755` in the tarball comes from `build`.
+    fn prebuilt_root(extra: &str) -> (tempfile::TempDir, super::AssetsPlan, std::path::PathBuf) {
+        let config = with(extra).unwrap();
+        let root = tempfile::TempDir::new().unwrap();
+        write_cargo(root.path(), "1.2.3");
+        let planned = plan(&config, root.path()).unwrap();
+        let prebuilt = root.path().join("input-verctl");
+        std::fs::write(&prebuilt, "binary").unwrap();
+        (root, planned, prebuilt)
+    }
+
+    fn listing(tarball: &std::path::Path) -> String {
+        let output = std::process::Command::new("tar")
+            .arg("tvzf")
+            .arg(tarball)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "tar tvzf {}", tarball.display());
+        String::from_utf8(output.stdout).unwrap()
+    }
+
+    /// A build recipe that fails proves `prepare` and `build` never ran.
+    #[test]
+    fn a_prebuilt_binary_is_packed_without_a_build() {
+        let (root, planned, prebuilt) = prebuilt_root(indoc::indoc! {r#"
+            assets:
+              build: ["false"]
+              binary: out/{bin}
+              linux-x64: {}
+        "#});
+        let tarball = super::build(&planned, "linux-x64", root.path(), Some(&prebuilt)).unwrap();
+        assert_eq!(tarball, root.path().join("verctl_1.2.3_linux_x64.tar.gz"));
+        let listed = listing(&tarball);
+        assert_eq!(listed.lines().count(), 1, "{listed}");
+        assert!(listed.starts_with("-rwxr-xr-x"), "{listed}");
+        assert!(listed.trim_end().ends_with(" verctl"), "{listed}");
+        assert!(!root.path().join(".verctl-prebuilt-linux-x64").exists());
+    }
+
+    #[test]
+    fn a_prebuilt_binary_replaces_only_the_one_binary_pack() {
+        let (root, planned, prebuilt) = prebuilt_root(indoc::indoc! {r#"
+            assets:
+              build: ["false"]
+              dir: out/{triple}
+              files: [verctl, LICENSE]
+              linux-x64: {}
+        "#});
+        let err = super::build(&planned, "linux-x64", root.path(), Some(&prebuilt)).unwrap_err();
+        let text = format!("{err:#}");
+        assert!(text.contains("\"linux-x64\""), "{text}");
+        assert!(text.contains("--prebuilt"), "{text}");
+        assert!(!root.path().join("verctl_1.2.3_linux_x64.tar.gz").exists());
+    }
+
+    #[test]
+    fn a_missing_prebuilt_path_is_rejected() {
+        let (root, planned, _) = prebuilt_root(indoc::indoc! {r#"
+            assets:
+              build: ["false"]
+              binary: out/{bin}
+              linux-x64: {}
+        "#});
+        let missing = root.path().join("absent");
+        let err = super::build(&planned, "linux-x64", root.path(), Some(&missing)).unwrap_err();
+        let text = format!("{err:#}");
+        assert!(text.contains("is not a file"), "{text}");
+        assert!(text.contains("absent"), "{text}");
     }
 }

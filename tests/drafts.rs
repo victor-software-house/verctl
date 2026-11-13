@@ -177,7 +177,7 @@ async fn a_draft_at_an_older_version_is_planned_again() {
     assert!(written.contains("pending=true"), "{written}");
     assert!(
         written.contains(&format!(
-            r#"assets={{"include":[{{"commit":"{first}","id":"linux-x64","labels":["ubuntu-latest"],"tag":"v1.0.0"}}]}}"#
+            r#"assets={{"include":[{{"commit":"{first}","id":"linux-x64","labels":["ubuntu-26.04"],"tag":"v1.0.0"}}]}}"#
         )),
         "{written}"
     );

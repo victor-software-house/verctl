@@ -144,7 +144,7 @@ vendored:
       macos-arm64:
         runner: macos
 
-# PR and push validation. Omit `ci` for one `verify` job on ubuntu-latest.
+# PR and push validation. Omit `ci` for one `verify` job on ubuntu-26.04.
 # A job may name several machines: one check each, `verify (ns)` and
 # `verify (big)`. No os/arch/triple — validation does not cross-compile. A
 # second job is a second key, and stays a separate check.

@@ -192,7 +192,7 @@ Every input is optional and defaults to verctl's:
 - `version-pr`, `publish`, `assets`, `docs`, `config`, and `runner`;
 - `mise-version`, `mise-env`, and `mise-ignored-config-paths`;
 - `registry-token-env`, `crates-io-trusted-publishing`, and `environment`;
-- `verctl-artifact`, for verctl's own release only: each job runs a verctl build from the calling run.
+- `verctl-artifact`, for verctl's own release only: each job runs a verctl build from the calling run, and an asset job whose version commit is the run's commit packs that build with `--prebuilt`.
 
 The secrets are `app-client-id`, `app-private-key`, and `registry-token`.
 
@@ -634,6 +634,9 @@ Native tarballs are the `assets` matrix, only when an `assets` target is declare
 `verctl release asset <target>` (`VERCTL_TARGET`) builds the tarball and uploads it to the Release for the tag, a draft or a published one, as `actions/asset` does.  
 `--dry-run` builds it and uploads nothing.  
 A tarball holds the one `binary` (default `target/{triple}/release/{bin}`), packed as `bin`.
+`--prebuilt <path>` (`VERCTL_PREBUILT`) packs a binary built earlier as `bin`, and runs neither `prepare` nor `build`.
+Only a target that packs the one binary takes it; a target that packs `files` fails, and so does a path that is not a file.
+An empty `VERCTL_PREBUILT` is unset, and `--prebuilt` does not combine with `--vendored`.
 
 When a release holds more, such as a second executable, a service unit, or a licence, set `assets.dir` and `assets.files` instead of `binary`.  
 `release asset` checks that each listed path exists, then packs `tar czf <asset> -C <dir> <files>`.  
@@ -762,13 +765,13 @@ GitHub reads the list as AND: one machine, however many labels.
 Jobs name machines: a `ci` job takes `runners`, one check each, and an `assets` target takes a single `runner`, because one tarball is one machine.
 
 A name resolves against `runners` or fails; only labels reach `runs-on`.  
-Omit `ci` for one `verify` on `ubuntu-latest`.  
+Omit `ci` for one `verify` on `ubuntu-26.04`.  
 PR CI stays unary by default: compiling a PR on two hosts wastes time.
 
 A built-in target (`darwin-arm64`, `linux-x64`) fills in `runner`, `os`, `arch`, and `triple`; any other name must state all four.  
 `verctl ci` writes the matrix for a `plan` job, since `runs-on` exists before the job does.
 
-The release workflow's `plan`, `publish`, `docs`, and `propose` jobs run on its `runner` input, a JSON label list that defaults to `["ubuntu-latest"]`.  
+The release workflow's `plan`, `publish`, `docs`, and `propose` jobs run on its `runner` input, a JSON label list that defaults to `["ubuntu-26.04"]`.  
 It is never a `.ctl/ver.yaml` key, and there is no `release` runner section.
 
 ## Docs and semver
