@@ -1,6 +1,6 @@
 //! The `release asset` command, run through the binary. It covers package
-//! tarballs, built as before, and vendored sets beside them. `--dry-run`
-//! builds and uploads nothing.
+//! tarballs, which it builds and never uploads, and vendored sets beside
+//! them, whose archives it uploads unless `--dry-run`.
 
 mod common;
 
@@ -101,8 +101,7 @@ fn a_package_target_plans_and_packs_as_before() {
                     "asset": "demo_1.2.3_linux_x64.tar.gz"
                 }]
             },
-            "tarball": "./demo_1.2.3_linux_x64.tar.gz",
-            "uploaded": null
+            "tarball": "./demo_1.2.3_linux_x64.tar.gz"
         })
     );
     assert_eq!(
@@ -219,16 +218,48 @@ fn a_package_target_packs_the_listed_files() {
     );
 }
 
-/// A `--dry-run` written before `asset` takes effect for the step. The root is
-/// no repository and holds no token, so an upload would fail the run.
+/// A package tarball is built and never uploaded, so the step needs no token.
+/// `release --assets-dir` uploads it. The root is no repository, no token is
+/// set, and the GitHub API address is closed, so any request would fail the
+/// run.
 #[test]
-fn a_dry_run_before_asset_uploads_nothing() {
+fn a_package_tarball_is_built_and_never_uploaded() {
     let root = files_root();
+    let output = common::verctl()
+        .current_dir(root.path())
+        .env("GITHUB_API_URL", "http://127.0.0.1:9")
+        .args(["release", "asset", "linux-x64", "--format", "json"])
+        .output()
+        .expect("spawn");
+    let report = json(&output);
+    assert_eq!(report["tarball"], "./demo_1.2.3_linux_x64.tar.gz");
+    assert!(report.get("uploaded").is_none(), "{report}");
+    assert_eq!(
+        entries(&root.path().join("demo_1.2.3_linux_x64.tar.gz")),
+        ["demo", "demod", "demod@.service", "LICENSE"]
+    );
+}
+
+/// A `--dry-run` written before `asset` takes effect for the step. The root is
+/// no repository and holds no token, so uploading the vendored archive would
+/// fail the run.
+#[test]
+fn a_dry_run_before_asset_uploads_no_vendored_archive() {
+    let root = vendored_root();
     let report = json(&run(
         root.path(),
-        &["release", "-n", "asset", "linux-x64", "--format", "json"],
+        &[
+            "release",
+            "-n",
+            "asset",
+            "linux-x64",
+            "--vendored",
+            "libexample",
+            "--format",
+            "json",
+        ],
     ));
-    assert_eq!(report["tarball"], "./demo_1.2.3_linux_x64.tar.gz");
+    assert_eq!(report["archive"], "./libexample-1.4.0-linux-x64.tar.gz");
     assert!(report["uploaded"].is_null(), "{report}");
 }
 
@@ -488,22 +519,16 @@ fn a_vendored_set_writes_the_same_step_outputs() {
     );
 }
 
+/// `release asset` uploads no package tarball, so it takes no tag, and a
+/// vendored set declares its own.
 #[test]
-fn a_vendored_set_declares_its_own_tag() {
-    let root = vendored_root();
+fn release_asset_takes_no_tag() {
+    let root = files_root();
     let output = run(
         root.path(),
-        &[
-            "release",
-            "asset",
-            "linux-x64",
-            "--vendored",
-            "libexample",
-            "--tag",
-            "v1.0.0",
-        ],
+        &["release", "asset", "linux-x64", "--tag", "v1.0.0"],
     );
-    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("--tag"), "{stderr}");
 }

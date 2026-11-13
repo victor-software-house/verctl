@@ -51,7 +51,8 @@ pub struct Matrix {
     pub include: Vec<MatrixTarget>,
 }
 
-/// What the assets job builds and uploads, resolved from the config.
+/// What the asset legs build, and the tag `release` uploads the tarballs to,
+/// resolved from the config.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AssetsPlan {
     /// Name of the binary: the start of each tarball name, and what the
@@ -405,19 +406,6 @@ fn stage_prebuilt(
     fs::set_permissions(&staged, fs::Permissions::from_mode(0o755))
         .with_context(|| format!("chmod {}", staged.display()))?;
     Ok(dir)
-}
-
-/// Uploads `tarball` to the release `tag` and returns the asset's download URL.
-///
-/// # Errors
-///
-/// Returns an error when neither `GITHUB_TOKEN` nor `GH_TOKEN` is set, when
-/// the GitHub repository cannot be determined, or when the upload fails, as
-/// described for [`crate::github::upload_release_asset`].
-pub fn upload(root: &Path, tag: &str, tarball: &Path) -> Result<String> {
-    let token = release::resolve_token()?;
-    let repo = github::repo(root)?;
-    github::upload_release_asset(&token, &repo, tag, tarball)
 }
 
 /// One target of a vendored set: its platform name, the machine that builds

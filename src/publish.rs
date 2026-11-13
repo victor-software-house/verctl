@@ -5,8 +5,7 @@
 //! How tags are named comes from `[tags].template`; see [`tags_for`].
 
 use std::collections::BTreeMap;
-use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail, ensure};
@@ -119,10 +118,12 @@ pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
     Ok(PublishPlan { packages, tags })
 }
 
-/// Publish each package, then open a Release per tag. A dry run only plans.
+/// Open a draft Release per tag, publish each package, then publish the
+/// drafts. A dry run only plans.
 ///
-/// This is [`run_pending`] with assets counted toward completeness and no
-/// registry token, so each publisher finds its own credential.
+/// This is [`run_pending`] with assets counted toward completeness, no
+/// assets directory, and no registry token, so each publisher finds its own
+/// credential.
 ///
 /// # Errors
 ///
@@ -160,8 +161,7 @@ pub struct Allow {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Scope {
     /// Leave declared assets out of the completeness check and out of the
-    /// Release's draft, so a Release is published at once, and a draft found is
-    /// published without them.
+    /// draft, so the draft is published without them.
     pub skip_assets: bool,
     /// The asset file names the release workflow's plan expects at HEAD. The
     /// run declares exactly these.
@@ -170,27 +170,11 @@ pub struct Scope {
     /// Create and publish tags and Releases only. The run starts no publisher
     /// and refuses a package the registry does not list.
     pub releases_only: bool,
-}
-
-/// A Release left a draft because it lacks declared assets.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub struct Draft {
-    /// The draft's URL.
-    pub url: String,
-    /// The file names of the declared assets it lacks.
-    pub lacks: Vec<String>,
-}
-
-impl fmt::Display for Draft {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "draft {url} lacks {lacks}",
-            url = self.url,
-            lacks = self.lacks.join(", ")
-        )
-    }
+    /// The directory holding the tarballs `release asset` built. The run
+    /// uploads from it each declared tarball the draft lacks.
+    /// `None` uploads nothing, and the run then fails when the draft lacks a
+    /// declared tarball.
+    pub assets_dir: Option<PathBuf>,
 }
 
 /// A proof that would have refused the run, which the operator allowed.
@@ -262,8 +246,6 @@ pub struct PublishRun {
     /// Published, immutable Releases that lack declared assets and can take
     /// none.
     pub shortfalls: Vec<pending::Shortfall>,
-    /// The Releases left a draft, each with the assets it lacks.
-    pub drafts: Vec<Draft>,
 }
 
 /// Release, from HEAD, every package version HEAD holds whose release is
@@ -271,9 +253,22 @@ pub struct PublishRun {
 /// every release is complete.
 /// A version HEAD's manifests do not hold is never released.
 ///
-/// A tag whose packages all have a registry check, or no upload, gets its tag
-/// and Release before any upload.
-/// Any other tag gets them after its uploads (see `tags_before_upload`).
+/// Every reversible step comes first, so a failed upload leaves no tag:
+///
+/// 1. Each tag gets a draft Release at HEAD, with no tag. A draft found at
+///    another commit is deleted and created again; a draft at HEAD is used. A
+///    tag that exists must name HEAD.
+/// 2. Each declared tarball the draft lacks is uploaded to it from
+///    `scope.assets_dir`.
+/// 3. Each package is published to its registry, in config order, and a version
+///    the registry lists is skipped.
+/// 4. Each draft is published, which creates its tag at HEAD.
+/// 5. Each tag is read until it names HEAD.
+///
+/// GitHub is read for every tag, and every declared tarball is found, before
+/// the run writes anything.
+/// A Release already published at HEAD gets none of steps 1, 2 and 4, only
+/// the proof of its tag.
 ///
 /// With `scope.skip_assets`, declared assets do not count toward completeness.
 /// `scope.declared_assets` names the assets the run declares, and
@@ -300,7 +295,9 @@ pub struct PublishRun {
 /// - No token is set.
 /// - A registry or GitHub lookup fails.
 /// - The release plan names a commit other than HEAD.
-/// - A publisher, tag, or Release step fails.
+/// - A tag, or a published Release, is at a commit other than HEAD.
+/// - A declared tarball is neither on the draft nor in `scope.assets_dir`.
+/// - A draft, asset, publisher, or tag step fails.
 pub fn run_pending(
     config: &Config,
     config_path: &Path,
@@ -342,7 +339,10 @@ pub fn run_pending(
                 .any(|package| package.name == entry.name)
         })
         .collect();
-    let tags: Vec<&TagPlan> = planned
+    let (uploads, already) =
+        gather_uploads(config, root, here, &selected, scope.releases_only, &head)?;
+    let repo = github::repo(root)?;
+    let tags = planned
         .tags
         .iter()
         .filter(|tag| {
@@ -352,47 +352,40 @@ pub fn run_pending(
                     .any(|package| package.name == named.name)
             })
         })
-        .collect();
-    let (uploads, already) =
-        gather_uploads(config, root, here, &selected, scope.releases_only, &head)?;
-    let (before, after): (Vec<&TagPlan>, Vec<&TagPlan>) = tags
-        .into_iter()
-        .partition(|tag| tags_before_upload(tag, &uploads));
-    let repo = github::repo(root)?;
-    let (mut ensured, refused) =
-        open_early(config, root, &token, &repo, &before, &head, &declared)?;
-    let rest = run_uploads(uploads, registry_token).and_then(|(packages, shipped_packages)| {
-        for tag in after {
-            let shipped = tag
-                .packages
-                .iter()
-                .any(|entry| shipped_packages.contains(&entry.name));
-            ensured.push(open_release(
-                config, root, &token, &repo, tag, &head, shipped, &declared,
-            )?);
-        }
-        Ok(packages)
-    });
-    let packages = match (rest, refused) {
-        (Ok(packages), None) => already.into_iter().chain(packages).collect(),
-        (Ok(_), Some(early)) => return Err(early),
-        (Err(later), early) => return Err(after_refusal(later, early)),
-    };
-    let drafts = ensured
+        .map(|tag| TagRelease::read(config, root, &token, &repo, tag, &head))
+        .collect::<Result<Vec<_>>>()?;
+    let files = asset_files(&tags, &declared, scope.assets_dir.as_deref())?;
+    let drafts = tags
         .iter()
-        .filter(|release| !release.lacks.is_empty())
-        .map(|release| Draft {
-            url: release.url.clone(),
-            lacks: release.lacks.clone(),
-        })
+        .map(|tag| tag.open(&token, &repo, &head, &declared))
+        .collect::<Result<Vec<_>>>()?;
+    if let Some((carrier, _)) = &declared {
+        for file in &files {
+            github::upload_release_asset(&token, &repo, carrier, file)?;
+        }
+    }
+    let packages = already
+        .into_iter()
+        .chain(run_uploads(uploads, registry_token)?)
         .collect();
-    let releases = ensured.into_iter().map(|release| release.url).collect();
+    let mut releases = Vec::with_capacity(tags.len());
+    for (tag, opened) in tags.iter().zip(drafts) {
+        releases.push(tag.publish(&token, &repo, &head, &declared, opened)?);
+    }
+    for tag in &tags {
+        github::prove_tag(
+            &token,
+            &repo,
+            &tag.plan.tag,
+            &head,
+            &github::TAG_PROOF_DELAYS,
+        )?;
+    }
     Ok(PublishRun {
         outcome: Outcome::Released,
         published: PublishOutcome { packages, releases },
         allowed,
         shortfalls: pending.shortfalls,
-        drafts,
     })
 }
 
@@ -448,7 +441,6 @@ fn nothing_to_release(allowed: Vec<Allowed>, shortfalls: Vec<pending::Shortfall>
         },
         allowed,
         shortfalls,
-        drafts: Vec::new(),
     }
 }
 
@@ -461,56 +453,12 @@ fn listed(here: &pending::PendingCommit, name: &str) -> bool {
         .any(|package| package.name == name && package.listed)
 }
 
-/// Open, at `head`, the Releases of the tags that exist before the uploads.
-/// An existing tag must point at `head`.
-///
-/// When GitHub refuses a Release for a missing permission, the refusal is
-/// returned beside the URLs and the run goes on.
-/// The uploads still run, and a rerun with a token that has the permission
-/// has only the Release left to do.
-///
-/// Any other failure, such as a tag that points at another commit, stops the
-/// run here.
-fn open_early(
-    config: &Config,
-    root: &Path,
-    token: &str,
-    repo: &github::Repo,
-    tags: &[&TagPlan],
-    head: &str,
-    declared: &DeclaredAssets,
-) -> Result<(Vec<github::EnsuredRelease>, Option<anyhow::Error>)> {
-    let mut releases = Vec::new();
-    let mut refused = None;
-    for tag in tags {
-        match open_release(config, root, token, repo, tag, head, true, declared) {
-            Ok(ensured) => releases.push(ensured),
-            Err(error) if github::is_release_refused(&error) => {
-                refused.get_or_insert(error);
-            }
-            Err(error) => return Err(after_refusal(error, refused)),
-        }
-    }
-    Ok((releases, refused))
-}
-
-/// `error`, carrying a deferred Release refusal when there is one, so the
-/// refusal is not lost behind a later failure.
-fn after_refusal(error: anyhow::Error, refused: Option<anyhow::Error>) -> anyhow::Error {
-    match refused {
-        Some(early) => error.context(format!("{early:#}; then the run failed")),
-        None => error,
-    }
-}
-
-/// Run every upload, and return each package's line with the names of the
-/// packages that shipped in this run.
+/// Run every upload, and return each package's line.
 fn run_uploads(
     uploads: Vec<(&PublishEntry, Vec<Upload>)>,
     registry_token: Option<&RegistryToken>,
-) -> Result<(Vec<PublishLine>, Vec<String>)> {
+) -> Result<Vec<PublishLine>> {
     let mut packages = Vec::new();
-    let mut shipped = Vec::new();
     for (entry, uploads) in uploads {
         if entry.argv.is_empty() {
             packages.push(PublishLine::from(entry));
@@ -518,9 +466,6 @@ fn run_uploads(
         }
         for upload in uploads {
             let note = publish_checked(&upload, registry_token, &registry::LISTING_DELAYS)?;
-            if note.is_none() {
-                shipped.push(entry.name.clone());
-            }
             packages.push(PublishLine {
                 name: upload.name,
                 version: upload.version,
@@ -529,29 +474,7 @@ fn run_uploads(
             });
         }
     }
-    Ok((packages, shipped))
-}
-
-/// Whether `tag` is created before the uploads: when no package under it
-/// uploads without a registry check.
-/// Completion then comes from the registry, so a tag created first claims
-/// nothing.
-/// The run that merged the Version PR creates it while HEAD is still the
-/// default branch tip.
-///
-/// A rerun at that commit after a later merge changed `.github/workflows`
-/// would otherwise need `workflows: write` to create the Release, which
-/// `GITHUB_TOKEN` cannot hold.
-///
-/// An unchecked upload has only its tag as the record that it ran, so its tag
-/// still follows the upload.
-fn tags_before_upload(tag: &TagPlan, uploads: &[(&PublishEntry, Vec<Upload>)]) -> bool {
-    !uploads.iter().any(|(entry, uploads)| {
-        tag.packages.iter().any(|named| named.name == entry.name)
-            && uploads
-                .iter()
-                .any(|upload| matches!(upload.check, RegistryCheck::Unchecked))
-    })
+    Ok(packages)
 }
 
 /// The tag that carries the declared assets, and their file names.
@@ -560,7 +483,7 @@ type DeclaredAssets = Option<(String, Vec<String>)>;
 
 /// The declared assets, which belong to the first package's tag, as
 /// [`assets::plan`] resolves it.
-/// The names are `scope.declared_assets` when the plan gave any, so a leg
+/// The names are `scope.declared_assets` when the plan gave any, so a run
 /// declares what the plan scheduled, and otherwise every target this
 /// commit's config names.
 fn declared_assets(config: &Config, root: &Path, scope: &Scope) -> Result<DeclaredAssets> {
@@ -589,50 +512,167 @@ fn assets_of<'a>(declared: &'a DeclaredAssets, tag: &str) -> &'a [String] {
     }
 }
 
-/// Create the GitHub Release for `tag` at `sha`, or confirm it exists, with
-/// the CHANGELOG sections of its packages as the body.
-/// With declared assets it is a draft until they are all uploaded, and a draft
-/// found is published once they are (see [`github::ensure_release_as`]).
-/// Returns the Release URL and the assets a draft still lacks.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each argument is one fact of the release; a struct would be built once per call"
-)]
-fn open_release(
-    config: &Config,
-    root: &Path,
-    token: &str,
-    repo: &github::Repo,
-    tag: &TagPlan,
-    sha: &str,
-    shipped: bool,
+/// The tarballs a run uploads: each declared asset that the carrier tag's
+/// draft lacks, as a file in `dir`.
+/// A Release published at HEAD takes none, and a stale draft is deleted, so
+/// all its assets come from `dir`.
+/// It is checked before the run writes anything, so a tarball that is missing
+/// fails the run before the draft exists.
+fn asset_files(
+    tags: &[TagRelease<'_>],
     declared: &DeclaredAssets,
-) -> Result<github::EnsuredRelease> {
-    let notes = release::notes_for(
-        config,
-        root,
-        tag.packages
-            .iter()
-            .map(|entry| (entry.name.as_str(), entry.version.as_str())),
-    );
-    let stage = if tag
-        .packages
+    dir: Option<&Path>,
+) -> Result<Vec<PathBuf>> {
+    let Some((carrier, names)) = declared else {
+        return Ok(Vec::new());
+    };
+    let Some(github::Found::Unpublished(draft)) = tags
         .iter()
-        .any(|entry| publisher::prerelease_tag(&entry.version).is_some())
-    {
-        github::Stage::Candidate
-    } else {
-        github::Stage::Stable
+        .find(|tag| tag.plan.tag == *carrier)
+        .map(|tag| &tag.found)
+    else {
+        return Ok(Vec::new());
     };
-    let release = github::NewRelease {
-        tag: &tag.tag,
-        name: &tag.title,
-        body: &notes,
-        sha,
-        stage,
-        assets: assets_of(declared, &tag.tag),
+    lacking(names, &draft.uploaded(), dir)
+}
+
+/// The files in `dir` for each of `names` that `uploaded` lacks.
+///
+/// With none lacking, `dir` is not needed. Otherwise every lacking name must
+/// be a file in `dir`, and the error names each one that is not.
+fn lacking(names: &[String], uploaded: &[&str], dir: Option<&Path>) -> Result<Vec<PathBuf>> {
+    let wanted: Vec<&str> = names
+        .iter()
+        .map(String::as_str)
+        .filter(|name| !uploaded.contains(name))
+        .collect();
+    if wanted.is_empty() {
+        return Ok(Vec::new());
+    }
+    let Some(dir) = dir else {
+        bail!(
+            "the release declares {wanted}, which its draft does not hold; pass --assets-dir with the tarballs release asset built, or --skip-assets to release without them",
+            wanted = wanted.join(", ")
+        );
     };
-    github::ensure_release_as(token, repo, &release, shipped)
+    let missing: Vec<&str> = wanted
+        .iter()
+        .copied()
+        .filter(|name| !dir.join(name).is_file())
+        .collect();
+    ensure!(
+        missing.is_empty(),
+        "--assets-dir {dir} lacks {missing}, which the release declares; build them with release asset, or pass --skip-assets to release without them",
+        dir = dir.display(),
+        missing = missing.join(", ")
+    );
+    Ok(wanted.into_iter().map(|name| dir.join(name)).collect())
+}
+
+/// One tag of a run: its plan, the notes and stage its Release carries, and
+/// what GitHub held for it before the run wrote anything.
+struct TagRelease<'a> {
+    plan: &'a TagPlan,
+    notes: String,
+    stage: github::Stage,
+    found: github::Found,
+}
+
+/// A tag's Release once the run opened its draft.
+enum Held {
+    /// Published at HEAD before the run: its URL.
+    Published(String),
+    /// The id of the draft the run publishes.
+    Draft(u64),
+}
+
+impl<'a> TagRelease<'a> {
+    /// Read GitHub for `plan`'s tag at `head`, with the CHANGELOG sections of
+    /// its packages as the notes.
+    /// A candidate's Release is a prerelease that never becomes the latest.
+    fn read(
+        config: &Config,
+        root: &Path,
+        token: &str,
+        repo: &github::Repo,
+        plan: &'a TagPlan,
+        head: &str,
+    ) -> Result<Self> {
+        let notes = release::notes_for(
+            config,
+            root,
+            plan.packages
+                .iter()
+                .map(|entry| (entry.name.as_str(), entry.version.as_str())),
+        );
+        let stage = if plan
+            .packages
+            .iter()
+            .any(|entry| publisher::prerelease_tag(&entry.version).is_some())
+        {
+            github::Stage::Candidate
+        } else {
+            github::Stage::Stable
+        };
+        let found = github::read_release(token, repo, &plan.tag, head)?;
+        Ok(Self {
+            plan,
+            notes,
+            stage,
+            found,
+        })
+    }
+
+    /// The Release this tag's draft becomes, at `head`, holding the assets
+    /// `declared` gives this tag.
+    fn release<'b>(
+        &'b self,
+        head: &'b str,
+        declared: &'b DeclaredAssets,
+    ) -> github::NewRelease<'b> {
+        github::NewRelease {
+            tag: &self.plan.tag,
+            name: &self.plan.title,
+            body: &self.notes,
+            sha: head,
+            stage: self.stage,
+            assets: assets_of(declared, &self.plan.tag),
+        }
+    }
+
+    /// Open the draft, or keep a Release published at HEAD as it is.
+    fn open(
+        &self,
+        token: &str,
+        repo: &github::Repo,
+        head: &str,
+        declared: &DeclaredAssets,
+    ) -> Result<Held> {
+        match &self.found {
+            github::Found::Published { url } => Ok(Held::Published(url.clone())),
+            github::Found::Unpublished(draft) => {
+                github::open_draft(token, repo, &self.release(head, declared), draft)
+                    .map(Held::Draft)
+            }
+        }
+    }
+
+    /// Publish the draft, which creates the tag, and return the Release URL.
+    fn publish(
+        &self,
+        token: &str,
+        repo: &github::Repo,
+        head: &str,
+        declared: &DeclaredAssets,
+        opened: Held,
+    ) -> Result<String> {
+        match opened {
+            Held::Published(url) => Ok(url),
+            Held::Draft(id) => {
+                github::publish_draft(token, repo, &self.release(head, declared), id)
+            }
+        }
+    }
 }
 
 /// What a dry run would publish: every package not at `0.0.0`, a workspace
@@ -681,7 +721,6 @@ fn dry_run_plan(
         published: PublishOutcome { packages, releases },
         allowed: Vec::new(),
         shortfalls: Vec::new(),
-        drafts: Vec::new(),
     })
 }
 
@@ -754,7 +793,7 @@ fn publish_checked(
     }
     if let Some(limit) = rate_limited(&message) {
         bail!(
-            "{coord}: the registry's rate limit stopped the upload ({limit}). A package whose uploads all have a registry check is tagged before its upload, so its tag may exist. Rerun release then: it skips every crate the registry already lists."
+            "{coord}: the registry's rate limit stopped the upload ({limit}). No tag exists until the draft Release is published, after the last upload. Rerun release then: it skips every crate the registry already lists."
         );
     }
     Err(error).context(coord)
@@ -996,20 +1035,6 @@ mod tests {
         }
     }
 
-    /// A draft that waits for assets is reported as a warning in this form,
-    /// and the report's `releases` keep only its URL.
-    #[test]
-    fn a_draft_names_its_url_and_what_it_lacks() {
-        let draft = super::Draft {
-            url: "https://example.test/releases/tag/v1.2.0".into(),
-            lacks: vec!["a.tar.gz".into(), "b.tar.gz".into()],
-        };
-        assert_eq!(
-            draft.to_string(),
-            "draft https://example.test/releases/tag/v1.2.0 lacks a.tar.gz, b.tar.gz"
-        );
-    }
-
     /// Which tag a run drafts, and which assets it declares for it.
     mod declared {
         use std::fs;
@@ -1096,72 +1121,49 @@ mod tests {
         }
     }
 
-    mod tag_order {
-        use std::path::PathBuf;
+    /// Which declared tarballs a run uploads, and from where.
+    mod lacking {
+        use std::fs;
 
-        use super::super::{PublishEntry, TagPlan, tags_before_upload};
-        use super::entry;
-        use crate::publisher::Upload;
-        use crate::registry::RegistryCheck;
+        use super::super::lacking;
 
-        fn upload(name: &str, check: RegistryCheck) -> Upload {
-            Upload {
-                name: name.into(),
-                version: "0.4.0".into(),
-                manifest: PathBuf::from("Cargo.toml"),
-                argv: vec!["true".into()],
-                check,
-            }
+        fn names() -> Vec<String> {
+            vec!["a.tar.gz".to_owned(), "b.tar.gz".to_owned()]
         }
 
-        fn tag(packages: &[&PublishEntry]) -> TagPlan {
-            TagPlan {
-                tag: "v0.4.0".into(),
-                title: "v0.4.0".into(),
-                packages: packages.iter().map(|&entry| entry.clone()).collect(),
-            }
+        /// A draft that holds every declared tarball needs no directory.
+        #[test]
+        fn a_draft_with_every_asset_needs_no_directory() {
+            let files = lacking(&names(), &["a.tar.gz", "b.tar.gz"], None).unwrap();
+            assert!(files.is_empty(), "{files:?}");
+        }
+
+        /// Only the tarballs the draft lacks come from the directory.
+        #[test]
+        fn only_what_the_draft_lacks_is_uploaded() {
+            let dir = tempfile::TempDir::new().unwrap();
+            fs::write(dir.path().join("b.tar.gz"), "b").unwrap();
+            let files = lacking(&names(), &["a.tar.gz"], Some(dir.path())).unwrap();
+            assert_eq!(files, [dir.path().join("b.tar.gz")]);
         }
 
         #[test]
-        fn a_crates_io_package_is_tagged_before_its_upload() {
-            let demo = entry("demo", "0.4.0");
-            let uploads = vec![(
-                &demo,
-                vec![upload(
-                    "demo",
-                    RegistryCheck::CratesIo {
-                        name: "demo".into(),
-                    },
-                )],
-            )];
-            assert!(tags_before_upload(&tag(&[&demo]), &uploads));
+        fn no_directory_names_the_flags() {
+            let error = lacking(&names(), &[], None).unwrap_err();
+            let message = format!("{error:#}");
+            assert!(message.contains("a.tar.gz, b.tar.gz"), "{message}");
+            assert!(message.contains("--assets-dir"), "{message}");
+            assert!(message.contains("--skip-assets"), "{message}");
         }
 
         #[test]
-        fn a_release_only_package_is_tagged_first() {
-            let mut app = entry("app", "0.4.0");
-            app.argv.clear();
-            assert!(tags_before_upload(&tag(&[&app]), &[(&app, Vec::new())]));
-        }
-
-        #[test]
-        fn an_unchecked_upload_keeps_its_shared_tag_after_the_uploads() {
-            let demo = entry("demo", "0.4.0");
-            let tool = entry("tool", "0.4.0");
-            let uploads = vec![
-                (
-                    &demo,
-                    vec![upload(
-                        "demo",
-                        RegistryCheck::CratesIo {
-                            name: "demo".into(),
-                        },
-                    )],
-                ),
-                (&tool, vec![upload("tool", RegistryCheck::Unchecked)]),
-            ];
-            assert!(!tags_before_upload(&tag(&[&demo, &tool]), &uploads));
-            assert!(tags_before_upload(&tag(&[&demo]), &uploads));
+        fn a_missing_tarball_is_named_with_the_flag() {
+            let dir = tempfile::TempDir::new().unwrap();
+            fs::write(dir.path().join("a.tar.gz"), "a").unwrap();
+            let error = lacking(&names(), &[], Some(dir.path())).unwrap_err();
+            let message = format!("{error:#}");
+            assert!(message.contains("--assets-dir"), "{message}");
+            assert!(message.contains("lacks b.tar.gz,"), "{message}");
         }
     }
 
@@ -1356,8 +1358,11 @@ mod tests {
                 message.contains("try again after Sat, 19 Oct 2026 01:23:45 GMT)"),
                 "{message}"
             );
-            assert!(message.contains("its tag may exist"), "{message}");
-            assert!(!message.contains("Nothing was tagged"), "{message}");
+            assert!(message.contains("No tag exists"), "{message}");
+            assert!(
+                message.contains("skips every crate the registry already lists"),
+                "{message}"
+            );
         }
 
         #[test]

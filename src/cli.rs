@@ -43,7 +43,7 @@ pub enum Command {
     Version(VersionArgs),
     /// Release the versions on HEAD: publish with cargo or bun, and create the
     /// GitHub Release.
-    /// `release asset <target>` builds and uploads one asset.
+    /// `release asset <target>` builds one asset.
     Release(ReleaseArgs),
     /// Rewrite pins and render served templates at the versions on HEAD.
     Render(RenderArgs),
@@ -196,6 +196,12 @@ pub struct ReleaseArgs {
     /// job that holds no registry credential cannot upload.
     #[arg(long)]
     pub releases_only: bool,
+    /// The directory holding the tarballs `release asset` built. `release`
+    /// uploads each declared one its draft Release lacks before any registry
+    /// upload, and fails before it writes anything when one is missing.
+    /// Without it, the draft must already hold every declared asset.
+    #[arg(long, value_name = "DIR", value_hint = clap::ValueHint::DirPath)]
+    pub assets_dir: Option<PathBuf>,
     /// The proofs `release` may go past.
     #[command(flatten)]
     pub allow: AllowArgs,
@@ -251,9 +257,9 @@ fn variable_name(value: &str) -> Result<String, String> {
 /// A new step then fails its build until it is run.
 #[derive(Debug, Subcommand)]
 pub enum ReleaseStep {
-    /// Build one native tarball that `assets` declares for the GitHub Release,
-    /// and upload it. `--dry-run` builds the tarball and uploads nothing, as
-    /// `release --dry-run asset` does too.
+    /// Build one native tarball that `assets` declares for the GitHub Release.
+    /// `release --assets-dir` uploads it. A vendored set's archive is built
+    /// and uploaded here, unless `--dry-run`.
     Asset(AssetArgs),
 }
 
@@ -284,13 +290,14 @@ pub struct AssetArgs {
     /// to .ctl/ver.yaml in the current directory.
     #[arg(short = 'c', long, value_hint = clap::ValueHint::FilePath)]
     pub config: Option<PathBuf>,
-    /// The shared `--dry-run` flag: build the tarball and upload nothing.
+    /// The shared `--dry-run` flag: build and upload nothing for a vendored
+    /// set. A package tarball is built either way and never uploaded here.
     #[command(flatten)]
     pub dry: DryRunArgs,
     /// Build and upload this set under `vendored` instead of `assets`. With
     /// it, the upload creates the set's Release when it is missing and adds a
     /// `.sha256` beside the archive.
-    #[arg(long, conflicts_with = "tag")]
+    #[arg(long)]
     pub vendored: Option<String>,
     /// The already-built release binary for this target. With it, `release
     /// asset` runs neither `prepare` nor `build` and packs this file as the
@@ -298,10 +305,6 @@ pub struct AssetArgs {
     /// `VERCTL_PREBUILT`; an empty variable is unset.
     #[arg(long, value_name = "PATH", value_hint = clap::ValueHint::FilePath, conflicts_with = "vendored")]
     pub prebuilt: Option<PathBuf>,
-    /// Release tag (`v0.0.1`). Defaults to the first package's tag. A vendored
-    /// set declares its own.
-    #[arg(long)]
-    pub tag: Option<String>,
 }
 
 impl ReleaseArgs {

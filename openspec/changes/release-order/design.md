@@ -36,7 +36,7 @@ None: the state is read from the registry, so it needs no setting.
 Each asset leg runs `release asset`, which builds its tarball and uploads nothing.
 The workflow hands the tarballs to the publish job as run artifacts.
 There `verctl release --assets-dir <dir>` creates the draft at HEAD, uploads every declared tarball from the directory, publishes to the registries, and then publishes the draft.
-One process owns the whole order, and the `finalize` job goes.
+One process runs the whole order, and the `finalize` job goes.
 A run whose declared tarballs are not all in the directory fails before the draft and before any upload.
 
 The draft is created with no tag and with `target_commitish` set to HEAD.
