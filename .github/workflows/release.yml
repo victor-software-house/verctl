@@ -202,6 +202,10 @@ jobs:
       # Whether .ctl/ver.yaml declares an asset target, so a Release is a draft
       # and finalize has something to publish.
       has-assets: ${{ steps.plan.outputs.has_assets }}
+      # The asset file names each pending commit's Release is expected to hold,
+      # as a JSON map from commit to comma-separated names. A leg at a commit
+      # declares exactly these, so it agrees with the plan that scheduled it.
+      declared: ${{ steps.plan.outputs.declared }}
       # The verctl every later job runs, whatever its checked-out commit pins.
       # Empty with verctl-artifact: that build is already on each job's PATH.
       verctl-version: ${{ steps.minimum.outputs.version }}
@@ -394,7 +398,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           VERCTL_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          VERCTL_SKIP_ASSETS: ${{ !inputs.assets }}
+          # The plan's assets for this commit. None means the plan expects no
+          # asset here, so the leg declares none whatever the commit's config
+          # names.
+          VERCTL_SKIP_ASSETS: ${{ !inputs.assets || fromJson(needs.plan.outputs.declared || '{}')[matrix.commit] == '' }}
+          VERCTL_DECLARED_ASSETS: ${{ fromJson(needs.plan.outputs.declared || '{}')[matrix.commit] }}
           VERCTL_ALLOW_WORKFLOW_CHANGE: ${{ inputs.allow-workflow-change }}
           VERCTL_ALLOW_OFF_DEFAULT_BRANCH: ${{ inputs.allow-off-default-branch }}
           # The token is read only under its declared name. A caller whose
@@ -528,9 +536,10 @@ jobs:
 
   # Publishes each draft Release once its assets are uploaded. publish creates
   # a Release with declared assets as a draft, because an immutable Release
-  # takes no asset once published. A leg runs no upload, since every package
-  # at its commit is already listed. When an asset job failed, the draft
-  # stays, and the next run's plan lists its commit again.
+  # takes no asset once published. A leg runs release --releases-only, which
+  # starts no publisher and refuses a package the registry does not list.
+  # When an asset job failed, the draft stays, and the next run's plan lists
+  # its commit again.
   finalize:
     name: Finalize ${{ matrix.commit }}
     needs: [plan, publish, assets]
@@ -630,7 +639,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           VERCTL_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          VERCTL_SKIP_ASSETS: ${{ !inputs.assets }}
+          # The same assets as publish declared for this commit.
+          VERCTL_SKIP_ASSETS: ${{ !inputs.assets || fromJson(needs.plan.outputs.declared || '{}')[matrix.commit] == '' }}
+          VERCTL_DECLARED_ASSETS: ${{ fromJson(needs.plan.outputs.declared || '{}')[matrix.commit] }}
+          # Creates and publishes Releases only. This job holds no registry
+          # credential and never uploads a package.
+          VERCTL_RELEASES_ONLY: true
           VERCTL_ALLOW_WORKFLOW_CHANGE: ${{ inputs.allow-workflow-change }}
           VERCTL_ALLOW_OFF_DEFAULT_BRANCH: ${{ inputs.allow-off-default-branch }}
         # The plan's verctl, as in publish.

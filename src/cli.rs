@@ -184,6 +184,17 @@ pub struct ReleaseArgs {
     /// that builds none.
     #[arg(long)]
     pub skip_assets: bool,
+    /// The file names of the assets the release workflow's plan expects at
+    /// this version commit, comma separated. `release` then declares exactly
+    /// these, so a leg declares what the plan scheduled. Without it,
+    /// `release` declares the targets this commit's own config names.
+    #[arg(long, value_delimiter = ',')]
+    pub declared_assets: Vec<String>,
+    /// Create and publish tags and Releases only. `release` runs no publisher,
+    /// and refuses a package whose version the registry does not list, so a
+    /// job that holds no registry credential cannot upload.
+    #[arg(long)]
+    pub releases_only: bool,
     /// The proofs `release` may go past.
     #[command(flatten)]
     pub allow: AllowArgs,
@@ -626,6 +637,8 @@ mod tests {
         let release = command.find_subcommand("release").expect("release");
         for (id, variable) in [
             ("skip_assets", "VERCTL_SKIP_ASSETS"),
+            ("declared_assets", "VERCTL_DECLARED_ASSETS"),
+            ("releases_only", "VERCTL_RELEASES_ONLY"),
             ("allow_workflow_change", "VERCTL_ALLOW_WORKFLOW_CHANGE"),
             (
                 "allow_off_default_branch",

@@ -172,6 +172,10 @@ name = "content"
 path = "tests/content.rs"
 
 [[test]]
+name = "drafts"
+path = "tests/drafts.rs"
+
+[[test]]
 name = "examples"
 path = "tests/examples.rs"
 

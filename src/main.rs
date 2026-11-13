@@ -398,15 +398,26 @@ fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
         workflow_change: args.allow.allow_workflow_change,
         off_default_branch: args.allow.allow_off_default_branch,
     };
+    let scope = publish::Scope {
+        skip_assets: args.skip_assets,
+        declared_assets: args.declared_assets.clone(),
+        releases_only: args.releases_only,
+    };
     let run = publish::run_pending(
         &config,
         &args.config,
         root,
         args.dry_run(),
-        args.skip_assets,
+        &scope,
         allow,
         registry_token.as_ref(),
     )?;
+    let notices: Vec<String> = run
+        .shortfalls
+        .iter()
+        .map(ToString::to_string)
+        .chain(run.drafts.iter().map(ToString::to_string))
+        .collect();
     Ok(ReleaseReport {
         outcome: run.outcome,
         packages: run.published.packages,
@@ -414,7 +425,7 @@ fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
         waiting: run.waiting.iter().map(ReleaseRow::from).collect(),
         allowed: run.allowed,
         dry_run: args.dry_run(),
-        notices: run.shortfalls.iter().map(ToString::to_string).collect(),
+        notices,
     })
 }
 
@@ -613,7 +624,15 @@ fn unreleased_state(args: &StatusArgs, config: &Config, root: &Path) -> Result<U
     };
     Ok(match token {
         Some(token) => {
-            match pending::pending(config, &args.config, root, &token, args.skip_assets, None) {
+            match pending::pending(
+                config,
+                &args.config,
+                root,
+                &token,
+                args.skip_assets,
+                &[],
+                None,
+            ) {
                 Ok(planned) => {
                     if let Some(path) = &args.github_output {
                         pending::write_github_output(&planned, path)?;

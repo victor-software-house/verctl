@@ -237,6 +237,11 @@ async fn status_with_tag_lookup(answer: ResponseTemplate) -> std::process::Outpu
         .respond_with(answer)
         .mount(&server)
         .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/releases"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+        .mount(&server)
+        .await;
     common::verctl()
         .current_dir(root.path())
         .env("GITHUB_REPOSITORY", "acme/demo")
@@ -923,6 +928,7 @@ fn a_config_with_no_packages_has_no_package_assets_to_plan() {
             commits=[]
             pending=false
             assets={"include":[]}
+            declared={}
         "#}
     );
 }

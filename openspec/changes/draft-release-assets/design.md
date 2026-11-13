@@ -27,8 +27,12 @@ A tag with no declared asset keeps today's single step to `released`.
    So `release` creates the tag first through the git refs API ([create a reference][ref]), then the Release with `draft: true`.
    An existing tag must name the version commit.
 3. **Finalize.** `release` on a drafted tag publishes the draft with `draft: false` when every declared asset is `uploaded`.
-   The update repeats `prerelease` and `make_latest: false` for a candidate, which the draft already carries.
-   Otherwise it reports `draft <url> lacks <names>` and succeeds, so a run before the uploads is not a failure.
+   A draft found with no tag, such as one made by hand, gets its tag at the version commit first, and a tag that names another commit fails.
+   The update sends this run's title and notes, and the settings of its stage.
+   A candidate repeats `prerelease` and `make_latest: false`.
+   A stable Release sends `make_latest: legacy`, so an older version published late does not take the latest from a newer one.
+   While an asset is missing it reports the draft as a warning, `draft <url> lacks <names>`, and succeeds, so a run before the uploads is not a failure.
+   The report's `releases` stay URLs.
 4. **Completeness.** A draft is incomplete, even with every asset, so the next run publishes it.
    A published Release with every declared asset is complete.
 
@@ -51,11 +55,14 @@ The alternative, to keep an immutable Release pending, loses: no run could finis
 
 Drafts are listed only by `GET /repos/{owner}/{repo}/releases`, and only to a token with push access ([list releases][list]).
 The lookup reads the tag endpoint first, and on a 404 pages the list, 100 per page, newest first, for the Release whose `tag_name` is the tag.
-A new draft is on the first page, and only a tag with no Release at all reads every page.
+A new draft is on the first page, and only a tag with no Release at all reads every page, up to ten.
+After ten pages the lookup fails and names the tag.
 `release_state`, `ensure_release_as`, and the upload and checksum lookups all use it.
 
 A draft's assets carry a `state`, and an upload that broke off is in another state than `uploaded`.
 Only `uploaded` counts toward the declared assets.
+
+`release asset` reads the Release first and sends nothing for an asset already `uploaded`.
 
 A rerun at a version commit does not repeat an upload for a package the registry already lists.
 `pending` marks it listed, and `release` reports it as `already`.
@@ -67,7 +74,36 @@ A `finalize` leg can run at a version commit whose Release another leg already f
 `release` there reports `nothing to release` and exits zero, instead of failing because HEAD is not an incomplete commit.
 A commit that is not a version commit still fails before any side effect.
 
-### 5. The reusable workflow
+### 5. Earlier versions
+
+The walk below HEAD for versions nobody released treated a version as released once its registry listed it or its tag existed.
+A draft at an older version was therefore never planned again after a newer version commit landed.
+An earlier version now counts as released only when its Release is not a draft, and a repository that declares assets walks even when HEAD is complete.
+A draft at an earlier version becomes a pending commit with its missing targets, named by that version, and gets publish, assets, and finalize legs.
+A listed older version is not a skipped one, so `release` at a newer commit does not refuse because of it.
+
+### 6. One set of assets for the plan and the legs
+
+The plan schedules only the targets that HEAD and the version commit both declare, while a leg at the commit used every target its config names.
+`status --github-output` now writes `declared`, a map from each pending commit to its expected asset names.
+The `publish` and `finalize` legs pass the entry for their commit as `VERCTL_DECLARED_ASSETS`, and `release` declares exactly those names.
+A commit the plan expects no asset at runs with `VERCTL_SKIP_ASSETS`.
+A hand-run `release` has no such variable and declares the commit's own targets.
+
+### 7. A job without registry credentials
+
+`finalize` holds no registry token, and a run there must never upload.
+`release --releases-only` (`VERCTL_RELEASES_ONLY`) creates and publishes tags and Releases and starts no publisher.
+It refuses a package whose version the registry does not list, so a publish that failed stops the leg.
+
+### 8. Hand-written workflows
+
+A workflow that runs `actions/publish` and then `actions/asset` has no `finalize` job.
+It must run `verctl release` again at the version commit after its uploads, which publishes the draft.
+The Breaking text and the operator instructions state it.
+Draft publishing covers asset targets only: a vendored set's Release is still created published, so immutable Releases are not yet safe for a repository with vendored sets.
+
+### 9. The reusable workflow
 
 `finalize` runs after `assets`, one leg per pending commit in order, under the group `publish` uses.
 Each leg installs the plan's verctl from HEAD's lock, as the other jobs do, and runs `verctl release` at its commit.

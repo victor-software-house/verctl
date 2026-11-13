@@ -620,7 +620,10 @@ fn resolve_target(
 }
 
 /// `os = "darwin"` renders as `macos` in the filename. The one rename.
-fn asset_name(bin: &str, version: &str, os: &str, arch: &str) -> String {
+/// The file name of the tarball for a target at `version`, as the plan names
+/// it: `{bin}_{version}_{os}_{arch}.tar.gz`, with `macos` for `darwin`.
+/// A release at an earlier version names its own tarballs, not HEAD's.
+pub(crate) fn asset_name(bin: &str, version: &str, os: &str, arch: &str) -> String {
     let os = if os == "darwin" { "macos" } else { os };
     format!("{bin}_{version}_{os}_{arch}.tar.gz")
 }

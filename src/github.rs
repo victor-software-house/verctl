@@ -419,7 +419,18 @@ pub fn ensure_release(
         stage: Stage::Stable,
         assets: &[],
     };
-    ensure_release_as(token, repo, &release, shipped)
+    ensure_release_as(token, repo, &release, shipped).map(|ensured| ensured.url)
+}
+
+/// What [`ensure_release_as`] left on GitHub for a tag.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct EnsuredRelease {
+    /// The Release's HTML URL.
+    pub url: String,
+    /// The declared assets the Release still lacks. Empty when the Release is
+    /// published. Otherwise it is a draft that waits for these.
+    pub lacks: Vec<String>,
 }
 
 /// [`ensure_release`] for a Release at the given `release.stage`: a candidate
@@ -432,8 +443,12 @@ pub fn ensure_release(
 /// A draft does not create its tag until it is published, and an immutable
 /// Release takes no asset once published.
 /// A draft found is published when every declared asset is `uploaded` on it.
-/// Otherwise it stays a draft, and the returned text is
-/// `draft <url> lacks <names>`.
+/// Otherwise it stays a draft, and [`EnsuredRelease::lacks`] names what it
+/// lacks.
+/// A draft that already exists gets its tag created at `release.sha` when
+/// the tag is missing, and a tag that names another commit fails.
+/// Publishing sends the Release's title and notes again, so a draft someone
+/// created by hand reads as this run would have written it.
 ///
 /// # Errors
 ///
@@ -445,7 +460,7 @@ pub fn ensure_release_as(
     repo: &Repo,
     release: &NewRelease<'_>,
     shipped: bool,
-) -> Result<String> {
+) -> Result<EnsuredRelease> {
     block(async {
         let crab = client(token)?;
         ensure_release_with(&crab, repo, release, shipped).await
@@ -461,7 +476,7 @@ async fn ensure_release_with(
     repo: &Repo,
     release: &NewRelease<'_>,
     shipped: bool,
-) -> Result<String> {
+) -> Result<EnsuredRelease> {
     let NewRelease {
         tag,
         name,
@@ -475,10 +490,13 @@ async fn ensure_release_with(
             if shipped {
                 require_tag_at(crab, repo, tag, sha).await?;
             }
-            return Ok(found.html_url);
+            return Ok(EnsuredRelease {
+                url: found.html_url,
+                lacks: Vec::new(),
+            });
         }
         Some(draft) => {
-            require_tag_at(crab, repo, tag, sha).await?;
+            ensure_tag(crab, repo, tag, sha).await?;
             return finalize(crab, repo, release, &draft).await;
         }
         None => {}
@@ -499,7 +517,10 @@ async fn ensure_release_with(
             .await
             .map_err(|error| release_error(error, tag, sha))?;
         require_tag_at(crab, repo, tag, sha).await?;
-        return Ok(created.html_url.to_string());
+        return Ok(EnsuredRelease {
+            url: created.html_url.to_string(),
+            lacks: Vec::new(),
+        });
     }
     ensure_tag(crab, repo, tag, sha).await?;
     let created = create
@@ -539,14 +560,22 @@ async fn ensure_tag(crab: &Octocrab, repo: &Repo, tag: &str, sha: &str) -> Resul
 }
 
 /// Publish `draft` when every asset `release` declares is `uploaded` on it,
-/// keeping the prerelease and latest settings its stage sets, and otherwise
-/// report what it lacks as `draft <url> lacks <names>`.
+/// and otherwise report what it lacks.
+///
+/// The update sends the title and notes this run holds, and the settings its
+/// stage sets.
+/// A candidate stays a prerelease and never becomes the latest.
+/// A stable one sends `make_latest: legacy`, so GitHub decides by date and
+/// version, and an older version published late does not take the latest from
+/// a newer one ([update a release]).
+///
+/// [update a release]: https://docs.github.com/en/rest/releases/releases#update-a-release
 async fn finalize(
     crab: &Octocrab,
     repo: &Repo,
     release: &NewRelease<'_>,
     draft: &ForgeRelease,
-) -> Result<String> {
+) -> Result<EnsuredRelease> {
     let uploaded = draft.uploaded();
     let missing: Vec<&str> = release
         .assets
@@ -555,17 +584,20 @@ async fn finalize(
         .filter(|name| !uploaded.contains(name))
         .collect();
     if !missing.is_empty() {
-        return Ok(format!(
-            "draft {url} lacks {missing}",
-            url = draft.html_url,
-            missing = missing.join(", ")
-        ));
+        return Ok(EnsuredRelease {
+            url: draft.html_url.clone(),
+            lacks: missing.into_iter().map(str::to_owned).collect(),
+        });
     }
     let repos = crab.repos(&repo.owner, &repo.name);
     let releases = repos.releases();
-    let update = releases.update(draft.id).draft(false);
+    let update = releases
+        .update(draft.id)
+        .name(release.name)
+        .body(release.body)
+        .draft(false);
     let update = match release.stage {
-        Stage::Stable => update,
+        Stage::Stable => update.make_latest(octocrab::repos::releases::MakeLatest::Legacy),
         Stage::Candidate => update
             .prerelease(true)
             .make_latest(octocrab::repos::releases::MakeLatest::False),
@@ -574,7 +606,10 @@ async fn finalize(
         .send()
         .await
         .with_context(|| format!("publish the draft release {}", draft.tag_name))?;
-    Ok(published.html_url.to_string())
+    Ok(EnsuredRelease {
+        url: published.html_url.to_string(),
+        lacks: Vec::new(),
+    })
 }
 
 /// The Release for a vendored set's `tag`, created at `sha` when the tag has
@@ -940,6 +975,11 @@ struct ForgeAsset {
 /// Releases read per page; GitHub's maximum.
 const RELEASES_PER_PAGE: usize = 100;
 
+/// Pages of Releases a lookup reads before it gives up, so a repository with
+/// thousands of Releases costs ten requests and an error instead of one request
+/// per page.
+const MAX_RELEASE_PAGES: u32 = 10;
+
 /// The Release for `tag`, draft or published, or `None`.
 ///
 /// `GET /releases/tags/{tag}` answers for a published Release in one request.
@@ -948,7 +988,8 @@ const RELEASES_PER_PAGE: usize = 100;
 /// token with push access ([list releases]).
 /// The list is newest first, so a draft created a moment ago is on the first
 /// page.
-/// Only a tag with no Release at all reads every page.
+/// Only a tag with no Release at all reads every page, up to
+/// [`MAX_RELEASE_PAGES`], and then the lookup fails and names the tag.
 ///
 /// [get a release by tag name]: https://docs.github.com/en/rest/releases/releases#get-a-release-by-tag-name
 /// [list releases]: https://docs.github.com/en/rest/releases/releases#list-releases
@@ -988,6 +1029,11 @@ async fn find_release(crab: &Octocrab, repo: &Repo, tag: &str) -> Result<Option<
         if last {
             return Ok(None);
         }
+        ensure!(
+            page < MAX_RELEASE_PAGES,
+            "release {tag} is not among the newest {newest} Releases, and verctl reads no further to find a draft",
+            newest = usize::try_from(MAX_RELEASE_PAGES).unwrap_or(usize::MAX) * RELEASES_PER_PAGE
+        );
         page += 1;
     }
 }
@@ -1046,6 +1092,9 @@ async fn upload_release_asset_with(
     settle: &[std::time::Duration],
 ) -> Result<String> {
     let release = upload_target(crab, repo, tag).await?;
+    if release.uploaded().contains(&name) {
+        return Ok(format!("already {name}"));
+    }
     let uploaded = crab
         .repos(&repo.owner, &repo.name)
         .releases()
@@ -1195,7 +1244,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use wiremock::matchers::{body_partial_json, method, path};
+    use wiremock::matchers::{body_partial_json, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{Octocrab, parse_remote, parse_slug};
@@ -1638,11 +1687,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(
-            reported.starts_with("draft ")
-                && reported.ends_with("lacks app.pkg, app_1.0.0_linux_x64.tar.gz"),
-            "{reported}"
-        );
+        assert_eq!(reported.lacks, declared);
     }
 
     #[tokio::test]
@@ -1668,7 +1713,8 @@ mod tests {
         create_tag_ref().expect(0).mount(&server).await;
         let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), true)
             .await
-            .unwrap();
+            .unwrap()
+            .url;
         assert!(!url.starts_with("draft "), "{url}");
     }
 
@@ -1684,6 +1730,11 @@ mod tests {
         .mount(&server)
         .await;
         publish_draft()
+            .and(body_partial_json(serde_json::json!({
+                "name": TAG,
+                "body": "notes",
+                "make_latest": "legacy"
+            })))
             .respond_with(ResponseTemplate::new(200).set_body_json(release_json(PUBLISHED)))
             .expect(1)
             .mount(&server)
@@ -1696,7 +1747,8 @@ mod tests {
             false,
         )
         .await
-        .unwrap();
+        .unwrap()
+        .url;
         assert_eq!(
             url,
             format!("https://github.com/{OWNER}/{NAME}/releases/tag/{TAG}")
@@ -1758,11 +1810,137 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(
-            reported,
-            format!(
-                "draft https://github.com/{OWNER}/{NAME}/releases/tag/untagged-1 lacks app_1.0.0_linux_x64.tar.gz"
-            )
+            reported.url,
+            format!("https://github.com/{OWNER}/{NAME}/releases/tag/untagged-1")
         );
+        assert_eq!(reported.lacks, ["app_1.0.0_linux_x64.tar.gz"]);
+    }
+
+    /// A draft created by hand has no tag yet, and GitHub makes none until it
+    /// is published. The run creates the tag at the version commit, and the
+    /// update sends this run's title and notes.
+    #[tokio::test]
+    async fn a_draft_made_by_hand_gets_its_tag_and_this_runs_title_and_notes() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        missing_tag().up_to_n_times(1).mount(&server).await;
+        lightweight_tag(PUBLISHED).mount(&server).await;
+        listed_releases(serde_json::json!([draft_json(&[
+            ("app.pkg", "uploaded"),
+            ("app_1.0.0_linux_x64.tar.gz", "uploaded")
+        ])]))
+        .mount(&server)
+        .await;
+        create_tag_ref().expect(1).mount(&server).await;
+        publish_draft()
+            .and(body_partial_json(serde_json::json!({
+                "name": TAG,
+                "body": "notes"
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(release_json(PUBLISHED)))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let declared = declared();
+        super::ensure_release_with(
+            &crab(&server.uri()),
+            &repo(),
+            &with_assets(&declared),
+            false,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_draft_whose_tag_names_another_commit_is_not_published() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        lightweight_tag(OTHER).mount(&server).await;
+        listed_releases(serde_json::json!([draft_json(&[
+            ("app.pkg", "uploaded"),
+            ("app_1.0.0_linux_x64.tar.gz", "uploaded")
+        ])]))
+        .mount(&server)
+        .await;
+        publish_draft()
+            .respond_with(ResponseTemplate::new(500))
+            .expect(0)
+            .mount(&server)
+            .await;
+        let declared = declared();
+        let error = super::ensure_release_with(
+            &crab(&server.uri()),
+            &repo(),
+            &with_assets(&declared),
+            false,
+        )
+        .await
+        .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains(OTHER), "{message}");
+        assert!(message.contains(PUBLISHED), "{message}");
+    }
+
+    fn other_releases(count: usize) -> Vec<serde_json::Value> {
+        (0..count)
+            .map(|n| {
+                let mut json = release_json("main");
+                json["tag_name"] = format!("v0.0.{n}").into();
+                json
+            })
+            .collect()
+    }
+
+    /// The list is read a page at a time, 100 to a page, until a Release has
+    /// the tag. Each mock answers only its own page.
+    #[tokio::test]
+    async fn the_release_list_is_read_page_by_page_until_the_tag_is_found() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases")))
+            .and(query_param("per_page", "100"))
+            .and(query_param("page", "1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(other_releases(100)))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases")))
+            .and(query_param("per_page", "100"))
+            .and(query_param("page", "2"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!([draft_json(&[])])),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let found = super::find_release(&crab(&server.uri()), &repo(), TAG)
+            .await
+            .unwrap()
+            .expect("the draft on page 2");
+        assert!(found.draft);
+    }
+
+    /// A tag with no Release in a repository with many reads ten pages, then
+    /// fails and names the tag, instead of one request per page forever.
+    #[tokio::test]
+    async fn the_release_list_is_read_for_ten_pages_at_most() {
+        let server = MockServer::start().await;
+        missing_release().mount(&server).await;
+        Mock::given(method("GET"))
+            .and(path(format!("/repos/{OWNER}/{NAME}/releases")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(other_releases(100)))
+            .expect(10)
+            .mount(&server)
+            .await;
+        let error = super::find_release(&crab(&server.uri()), &repo(), TAG)
+            .await
+            .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains(TAG), "{message}");
+        assert!(message.contains("1000"), "{message}");
     }
 
     #[tokio::test]
@@ -1774,7 +1952,8 @@ mod tests {
         lightweight_tag(PUBLISHED).mount(&server).await;
         let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), true)
             .await
-            .unwrap();
+            .unwrap()
+            .url;
         assert!(url.contains(TAG), "{url}");
     }
 
@@ -1800,7 +1979,8 @@ mod tests {
         };
         let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &candidate, true)
             .await
-            .unwrap();
+            .unwrap()
+            .url;
         assert!(url.contains(TAG), "{url}");
     }
 
@@ -1821,7 +2001,8 @@ mod tests {
         lightweight_tag(PUBLISHED).mount(&server).await;
         let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), true)
             .await
-            .unwrap();
+            .unwrap()
+            .url;
         assert!(url.contains(TAG), "{url}");
     }
 
@@ -1869,7 +2050,8 @@ mod tests {
         lightweight_tag(PUBLISHED).mount(&server).await;
         let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), true)
             .await
-            .unwrap();
+            .unwrap()
+            .url;
         assert!(url.contains(TAG), "{url}");
     }
 
@@ -1893,7 +2075,8 @@ mod tests {
         lightweight_tag(OTHER).mount(&server).await;
         let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), false)
             .await
-            .unwrap();
+            .unwrap()
+            .url;
         assert!(url.contains(TAG), "{url}");
     }
 
@@ -1905,7 +2088,8 @@ mod tests {
         peeled_tag_object(PUBLISHED).mount(&server).await;
         let url = super::ensure_release_with(&crab(&server.uri()), &repo(), &stable(), true)
             .await
-            .unwrap();
+            .unwrap()
+            .url;
         assert!(url.contains(TAG), "{url}");
     }
 
@@ -1964,7 +2148,10 @@ mod tests {
         .mount(&server)
         .await;
         release_by_id(&server.uri()).mount(&server).await;
-        upload_refused(422, already_exists()).mount(&server).await;
+        upload_refused(422, already_exists())
+            .expect(0)
+            .mount(&server)
+            .await;
         assert_eq!(
             upload(&server).await.unwrap(),
             "already app_1.0.0_linux_x64.tar.gz"

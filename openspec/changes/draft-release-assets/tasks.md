@@ -16,7 +16,13 @@ The pull request's CI verifies every compile, format, lint, and test task.
 - [ ] 2.1 A draft is incomplete, a mutable published Release plans only its missing targets, and an immutable one counts complete with a warning.
   Verify: the `pending` draft, mutable, and immutable tests pass in CI.
 - [ ] 2.2 A run at a finished version commit reports `nothing to release`.
-  Verify: the `publish` finished-commit test passes in CI.
+  Verify: the `drafts` finished-commit test passes in CI.
+- [ ] 2.3 A draft at an older version is planned again after a newer version commit lands.
+  Verify: the `drafts` older-draft test passes in CI.
+- [ ] 2.4 The plan hands each commit its expected assets, and a leg declares exactly them.
+  Verify: the `pending` declared-output test and the `publish` declared tests pass in CI.
+- [ ] 2.5 `release --releases-only` starts no publisher.
+  Verify: the `drafts` releases-only test passes in CI.
 
 ## 3. Workflow and docs
 

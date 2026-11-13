@@ -218,9 +218,9 @@ The secrets are `app-client-id`, `app-private-key`, and `registry-token`.
 The plan job first requires verctl 0.8.0 or later, unless `verctl-artifact` is set.  
 The caller's pin chooses verctl apart from the workflow ref, so move both together.
 
-The later jobs check out each version commit and run the verctl it pins.  
-So a pending version commit that pins verctl older than 0.8.0 fails on the `release` verb.  
-Finish every pending release before moving the workflow ref to 0.8.0.
+The later jobs check out each version commit, but they run the verctl the plan job checked at HEAD.  
+Each installs that version with `mise install --locked` from a second checkout of HEAD's mise files, so no lock is switched off.  
+A pending version commit that pins an older verctl, even one with no `release` verb, still releases.
 
 `mise-ignored-config-paths` takes colon-separated config paths relative to the repository root, such as `mise.toml`.  
 Every job but propose ignores them, so they install only the release tools.  
@@ -442,9 +442,20 @@ A target added later never reopens a release.
 A Release with a declared asset target is a draft until every asset is uploaded, because an immutable Release takes no asset once published.  
 `release` creates the tag, then the draft, and `release asset` uploads to it.  
 `release` run again at that commit publishes the draft once every asset is uploaded.  
-While one is missing it reports `draft <url> lacks <names>` and exits zero.  
+While one is missing it prints the warning `draft <url> lacks <names>` and exits zero.  
 The workflow's `finalize` job does that after the asset jobs.  
 A draft is incomplete even when it holds every asset.
+
+`--skip-assets` also publishes an existing draft, without waiting for its assets.  
+`--declared-assets` (`VERCTL_DECLARED_ASSETS`) names the asset files a run declares, comma separated.  
+The workflow sets it from the plan, so a leg declares what the plan scheduled.  
+Without it, `release` declares the targets the version commit's own config names.  
+`--releases-only` (`VERCTL_RELEASES_ONLY`) creates and publishes tags and Releases and starts no publisher.  
+It refuses a package whose version the registry does not list, and the `finalize` job runs with it.
+
+A hand-written workflow that runs `actions/publish` and then `actions/asset` must run `verctl release` again at the version commit after its uploads.  
+That run publishes the draft, and without it the Release stays a draft.  
+A vendored set's Release is still created published, so immutable Releases are not yet safe for a repository with vendored sets.
 
 A published Release that lacks a declared asset stays incomplete, and only the missing targets are planned, unless GitHub holds it immutable.  
 An immutable Release can take no asset, so it counts complete and plans no asset job.  
