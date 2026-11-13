@@ -574,6 +574,12 @@ pub enum TrustedPublishers {
     },
 }
 
+/// The most pages of trusted publisher entries one crate is read for.
+/// crates.io pages them by the default page size, and a crate has a handful,
+/// so more pages than this means its paging is broken and the run stops
+/// instead of reading on.
+const MAX_TRUSTED_PUBLISHER_PAGES: usize = 100;
+
 /// The GitHub trusted publisher entries of `name`, from the crates.io API
 /// under `base`.
 ///
@@ -583,9 +589,10 @@ pub enum TrustedPublishers {
 ///
 /// Each page's `meta.next_page` is a query string for the same path
 /// (`query_with_params` in crates.io's `src/util/request_helpers.rs`). It is
-/// followed until it is null or a page holds no entries. A `next_page` that
-/// leads to a page already read is an error, because following it would never
-/// end.
+/// followed until it is null, a page holds no entries, or the entries reach
+/// `meta.total`. A `next_page` that leads to a page already read, and more
+/// than 100 pages, are errors, because following
+/// them may never end.
 ///
 /// # Errors
 ///
@@ -597,9 +604,13 @@ pub enum TrustedPublishers {
 /// - the API answers with a status other than 200 or 400, such as 403 for a
 ///   token it does not accept, or with 404;
 /// - a body is not the entries JSON;
-/// - a page's `next_page` leads to a page already read.
+/// - a page's `next_page` leads to a page already read, or past the page cap;
+/// - a page after the first answers 400, which is a broken read and not the
+///   token's refusal.
 ///
-/// A 400 is not an error but [`TrustedPublishers::Refused`].
+/// A 400 on the first page is not an error but
+/// [`TrustedPublishers::Refused`]: crates.io refuses a token whose user owns
+/// no such crate there.
 ///
 /// Only an API that gave no answer is a [`lookup::Unavailable`], under the
 /// conditions of [`RegistryCheck::lists`].
@@ -619,10 +630,13 @@ pub fn crates_io_github_configs(base: &str, name: &str, token: &str) -> Result<T
         let body = match github::block(answer(&url, Some(token)))? {
             Answer::Body(body) => body,
             Answer::NotFound => bail!("GET {url}: {}", StatusCode::NOT_FOUND),
-            Answer::BadRequest(body) => {
+            Answer::BadRequest(body) if read.len() == 1 => {
                 return Ok(TrustedPublishers::Refused {
                     detail: refusal(&body),
                 });
+            }
+            Answer::BadRequest(body) => {
+                bail!("GET {url}: {}: {}", StatusCode::BAD_REQUEST, refusal(&body))
             }
         };
         let page: GithubConfigs = serde_json::from_str(&body)
@@ -631,7 +645,11 @@ pub fn crates_io_github_configs(base: &str, name: &str, token: &str) -> Result<T
             return Ok(TrustedPublishers::Listed(entries));
         }
         entries.extend(page.github_configs);
-        let Some(next) = page.meta.next_page else {
+        let Some(next) = page
+            .meta
+            .next_page
+            .filter(|_| entries.len() < page.meta.total)
+        else {
             return Ok(TrustedPublishers::Listed(entries));
         };
         url = format!("{path}{next}");
@@ -639,31 +657,35 @@ pub fn crates_io_github_configs(base: &str, name: &str, token: &str) -> Result<T
             read.insert(url.clone()),
             "crates.io repeated page {url} of the trusted publishers of {name}"
         );
+        ensure!(
+            read.len() <= MAX_TRUSTED_PUBLISHER_PAGES,
+            "crates.io offered more than {MAX_TRUSTED_PUBLISHER_PAGES} pages of the trusted publishers of {name}, the last at {url}"
+        );
     }
 }
 
 /// The reason in a crates.io error response, `{"errors":[{"detail":"..."}]}`:
-/// each `detail` joined by `; `. A body of another shape is its own reason,
-/// trimmed, and an empty one reads as the status, so the message never
-/// names an empty reason.
+/// each non-blank `detail`, trimmed, joined by `; `. A body of another shape is
+/// its own reason, trimmed, and an empty one reads as the status, so the
+/// message never names an empty reason.
 fn refusal(body: &str) -> String {
-    serde_json::from_str::<ApiErrors>(body)
-        .ok()
-        .filter(|parsed| !parsed.errors.is_empty())
-        .map_or_else(
-            || match body.trim() {
-                "" => StatusCode::BAD_REQUEST.to_string(),
-                text => text.to_owned(),
-            },
-            |parsed| {
-                parsed
-                    .errors
-                    .iter()
-                    .map(|error| error.detail.as_str())
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            },
-        )
+    let reason = serde_json::from_str::<ApiErrors>(body).map_or_else(
+        |_| body.trim().to_owned(),
+        |parsed| {
+            parsed
+                .errors
+                .iter()
+                .map(|error| error.detail.trim())
+                .filter(|detail| !detail.is_empty())
+                .collect::<Vec<_>>()
+                .join("; ")
+        },
+    );
+    if reason.is_empty() {
+        StatusCode::BAD_REQUEST.to_string()
+    } else {
+        reason
+    }
 }
 
 /// The crates.io owners response.
@@ -714,6 +736,8 @@ struct GithubConfigs {
 struct GithubConfigsMeta {
     /// The query string of the next page, or `None` on the last.
     next_page: Option<String>,
+    /// How many entries the crate has over every page.
+    total: usize,
 }
 
 /// A crates.io error response.
@@ -889,18 +913,20 @@ pub fn wait_listed(
 mod tests {
     use std::fs;
     use std::path::Path;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
-    use indoc::indoc;
+    use indoc::{formatdoc, indoc};
     use tempfile::TempDir;
     use tokio::task;
     use wiremock::matchers::{header, method, path, query_param, query_param_is_missing};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
     use super::{
-        CRATES_IO_INDEX, CargoEnv, CargoTarget, RegistryCheck, TrustedPublishers, TrustedUpload,
-        cargo_target, crates_io_baseline, crates_io_github_configs, crates_io_lists,
-        crates_io_newest_trust, crates_io_user_owners, index_path, wait_listed,
+        CRATES_IO_INDEX, CargoEnv, CargoTarget, MAX_TRUSTED_PUBLISHER_PAGES, RegistryCheck,
+        TrustedPublishers, TrustedUpload, cargo_target, crates_io_baseline,
+        crates_io_github_configs, crates_io_lists, crates_io_newest_trust, crates_io_user_owners,
+        index_path, refusal, wait_listed,
     };
     use crate::lookup;
 
@@ -1200,7 +1226,7 @@ mod tests {
             .and(path("/trusted_publishing/github_configs"))
             .and(query_param_is_missing("seek"))
             .respond_with(ResponseTemplate::new(200).set_body_string(indoc! {r#"
-                {"github_configs":[{"id":1,"crate":"demo","repository_owner":"acme","repository_name":"demo","repository_owner_id":9,"workflow_filename":"release.yml","environment":null,"created_at":"2026-11-13T00:00:00Z"}],"meta":{"total":1,"next_page":"?crate=demo&seek=abc"}}
+                {"github_configs":[{"id":1,"crate":"demo","repository_owner":"acme","repository_name":"demo","repository_owner_id":9,"workflow_filename":"release.yml","environment":null,"created_at":"2026-11-13T00:00:00Z"}],"meta":{"total":2,"next_page":"?crate=demo&seek=abc"}}
             "#}))
             .mount(&server)
             .await;
@@ -1221,7 +1247,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/trusted_publishing/github_configs"))
             .respond_with(ResponseTemplate::new(200).set_body_string(indoc! {r#"
-                {"github_configs":[{"id":1,"crate":"demo","repository_owner":"acme","repository_name":"demo","repository_owner_id":9,"workflow_filename":"release.yml","environment":null,"created_at":"2026-11-13T00:00:00Z"}],"meta":{"total":1,"next_page":"?crate=demo"}}
+                {"github_configs":[{"id":1,"crate":"demo","repository_owner":"acme","repository_name":"demo","repository_owner_id":9,"workflow_filename":"release.yml","environment":null,"created_at":"2026-11-13T00:00:00Z"}],"meta":{"total":5,"next_page":"?crate=demo"}}
             "#}))
             .mount(&server)
             .await;
@@ -1232,6 +1258,98 @@ mod tests {
             format!(
                 "crates.io repeated page {base}/trusted_publishing/github_configs?crate=demo of the trusted publishers of demo"
             )
+        );
+    }
+
+    /// Once the entries reach `meta.total`, the paging ends, whatever
+    /// `next_page` says.
+    #[tokio::test]
+    async fn the_paging_ends_at_the_total() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/trusted_publishing/github_configs"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(indoc! {r#"
+                {"github_configs":[{"id":1,"crate":"demo","repository_owner":"acme","repository_name":"demo","repository_owner_id":9,"workflow_filename":"release.yml","environment":null,"created_at":"2026-11-13T00:00:00Z"}],"meta":{"total":1,"next_page":"?crate=demo&seek=abc"}}
+            "#}))
+            .mount(&server)
+            .await;
+        let TrustedPublishers::Listed(entries) = publishers_of_demo(server.uri()).await.unwrap()
+        else {
+            panic!("crates.io refused the token");
+        };
+        assert_eq!(entries.len(), 1);
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+
+    /// A server that keeps offering new pages stops the read after
+    /// [`MAX_TRUSTED_PUBLISHER_PAGES`], naming the crate and the last URL.
+    #[tokio::test]
+    async fn endless_new_pages_stop_at_the_cap() {
+        struct NextSeek(AtomicUsize);
+        impl Respond for NextSeek {
+            fn respond(&self, _: &Request) -> ResponseTemplate {
+                let seek = self.0.fetch_add(1, Ordering::SeqCst);
+                ResponseTemplate::new(200).set_body_string(formatdoc! {r#"
+                    {{"github_configs":[{{"id":1,"crate":"demo","repository_owner":"acme","repository_name":"demo","repository_owner_id":9,"workflow_filename":"ci.yml","environment":null,"created_at":"2026-11-13T00:00:00Z"}}],"meta":{{"total":100000,"next_page":"?crate=demo&seek={seek}"}}}}
+                "#})
+            }
+        }
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/trusted_publishing/github_configs"))
+            .respond_with(NextSeek(AtomicUsize::new(0)))
+            .mount(&server)
+            .await;
+        let error = publishers_of_demo(server.uri()).await.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .starts_with("crates.io offered more than 100 pages of the trusted publishers of demo, the last at "),
+            "{error}"
+        );
+        assert_eq!(
+            server.received_requests().await.unwrap().len(),
+            MAX_TRUSTED_PUBLISHER_PAGES
+        );
+    }
+
+    /// A 400 on a later page is not the token's refusal but a failed read:
+    /// it fails naming the URL, and drops no entry silently.
+    #[tokio::test]
+    async fn a_400_on_a_later_page_fails_naming_it() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/trusted_publishing/github_configs"))
+            .and(query_param("seek", "abc"))
+            .respond_with(ResponseTemplate::new(400).set_body_string(indoc! {r#"
+                {"errors":[{"detail":"invalid seek"}]}
+            "#}))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/trusted_publishing/github_configs"))
+            .and(query_param_is_missing("seek"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(indoc! {r#"
+                {"github_configs":[{"id":1,"crate":"demo","repository_owner":"acme","repository_name":"demo","repository_owner_id":9,"workflow_filename":"release.yml","environment":null,"created_at":"2026-11-13T00:00:00Z"}],"meta":{"total":2,"next_page":"?crate=demo&seek=abc"}}
+            "#}))
+            .mount(&server)
+            .await;
+        let base = server.uri();
+        let error = publishers_of_demo(base.clone()).await.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "GET {base}/trusted_publishing/github_configs?crate=demo&seek=abc: 400 Bad Request: invalid seek"
+            )
+        );
+    }
+
+    /// Error details that are all blank read as the status.
+    #[test]
+    fn blank_details_read_as_the_status() {
+        assert_eq!(
+            refusal(r#"{"errors":[{"detail":""},{"detail":"  "}]}"#),
+            "400 Bad Request"
         );
     }
 

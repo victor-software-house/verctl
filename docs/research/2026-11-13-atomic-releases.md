@@ -170,7 +170,7 @@ What it can enforce depends on the plan (section 10):
    2. The up-to-date rule makes each pull request run it again after the Version PR lands, which enforces the freeze.
 3. **Tier 3, neither.**
    Private repositories on Free.
-   1. The operator runs `release --dry-run` by dispatch before merging the Version PR (section 5.2).
+   1. The operator updates the Version PR to the default branch's tip and runs `check versions registry` on it before merging, and again if the default branch moves first (section 5.2).
    2. The freeze is not enforced; `status` and the job summary report the pending release.
 
 `verctl status` names the tier it finds, from the default branch's rules.
@@ -186,7 +186,7 @@ The design adds no git hook (operator, 2026-11-13).
 A hook runs only in the clone that pushes, `--no-verify` skips it, and a merge through GitHub's button or API runs none.
 A repository may also use another hook manager, or none, and may never push to its default branch.
 
-So in tier 3 the operator dispatches `release --dry-run` before merging the Version PR.
+So in tier 3 the operator runs `check versions registry` on the Version PR, updated to the tip, before merging it.
 
 ## 6. Rate limits and resuming a partial release
 
