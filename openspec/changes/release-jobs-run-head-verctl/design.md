@@ -34,7 +34,7 @@ A run with `verctl-artifact` leaves it empty, because that build is already the 
 
 Each of the publish, asset, and docs jobs adds two steps after the version commit's checkout, only when `verctl-artifact` is empty and `verctl-version` is not:
 
-1. `actions/checkout` of `${{ github.sha }}` into `.verctl-head`, a sparse, non-cone checkout of the places mise reads its config and locks (`mise.toml`, `.mise.toml`, `.config/mise.toml`, `.config/mise/`, `mise/`, their `*.toml` and `*.lock` variants, and `.miserc.toml`), with `persist-credentials: false`.
+1. `actions/checkout` of `${{ github.sha }}` into `.verctl-head`, a sparse, non-cone checkout of the places mise reads its config and locks (`mise.toml`, `.mise.toml`, `.config/mise.toml`, `.config/mise/`, `.mise/`, `mise/`, their `*.toml` and `*.lock` variants, and `.miserc.toml`), with `persist-credentials: false`.
 2. A step that runs, under the workflow's `MISE_ENV`:
 
    ```sh

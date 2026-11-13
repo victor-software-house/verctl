@@ -380,6 +380,7 @@ jobs:
             /.config/mise.toml
             /.config/mise.*.toml
             /.config/mise/
+            /.mise/
             /mise/
             /.miserc.toml
           sparse-checkout-cone-mode: false
@@ -520,6 +521,7 @@ jobs:
             /.config/mise.toml
             /.config/mise.*.toml
             /.config/mise/
+            /.mise/
             /mise/
             /.miserc.toml
           sparse-checkout-cone-mode: false
@@ -655,6 +657,7 @@ jobs:
             /.config/mise.toml
             /.config/mise.*.toml
             /.config/mise/
+            /.mise/
             /mise/
             /.miserc.toml
           sparse-checkout-cone-mode: false
@@ -772,6 +775,7 @@ jobs:
             /.config/mise.toml
             /.config/mise.*.toml
             /.config/mise/
+            /.mise/
             /mise/
             /.miserc.toml
           sparse-checkout-cone-mode: false
