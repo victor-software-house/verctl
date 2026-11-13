@@ -1,5 +1,32 @@
 # Changelog
 
+## verctl 0.8.6-rc.3
+
+### Breaking
+
+- `verctl check trust` reads the owner's token from `VERCTL_OWNER_TOKEN` in place of `VERCTL_REGISTRY_TOKEN`.
+  The publish token and the owner's token then never share a variable: set the new one where `check trust` runs.
+  No command verctl starts inherits it ([#391](https://github.com/victor-software-house/verctl/pull/391)).
+
+  `verctl release` runs the registry checks before its first upload: once something is left to release, and before the draft, it runs each check the new `release_checks` key names, `[registry, trust]` when omitted.
+  `trust` runs only when `VERCTL_OWNER_TOKEN` is set, and the report lists it as skipped otherwise.
+
+  A failed check stops the run naming each failure, with nothing published, and `release_checks: []` turns the proof off.
+  `release --dry-run` prints the plan and runs the same checks, and fails when one does.
+
+  `--crates-io-api` (`VERCTL_CRATES_IO_API`) points `check` and `release` at another crates.io API, such as its staging instance.
+  `--crates-io-index` (`VERCTL_CRATES_IO_INDEX`) does the same for the sparse index `release` and `status` read.
+
+### Changed
+
+- `verctl check registry` proves, with no token, that each crates.io crate the default branch holds exists and lists every login the new `owners` key names.
+  It also reports whether the crate's newest version came through trusted publishing from the repository.
+  A crate only the pull request adds passes with a notice that it needs `verctl release bootstrap` once it lands ([#385](https://github.com/victor-software-house/verctl/pull/385)).
+
+  `verctl check trust` reads an owner's token from `VERCTL_REGISTRY_TOKEN`.
+  It proves that a trusted publisher entry names the repository and the workflow file the new `release_workflow` key names, `release.yml` when omitted.
+  `owners` sits at the top level of `.ctl/ver.yaml`, and a package's own `owners` replaces it for that package.
+
 ## verctl 0.8.6-rc.2
 
 ### Breaking
