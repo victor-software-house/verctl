@@ -234,7 +234,7 @@ async fn trust(server: &MockServer, crates: Vec<Crate>, workflow: &str) -> Trust
     let api = server.uri();
     let workflow = workflow.to_owned();
     task::spawn_blocking(move || {
-        registry_check::prove_trust(&crates, &api, "t0ken", &acme_demo(), &workflow)
+        registry_check::prove_trust(&crates, &api, "t0ken", &acme_demo(), &workflow, false)
     })
     .await
     .unwrap()

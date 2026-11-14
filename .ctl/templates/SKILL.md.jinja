@@ -126,7 +126,8 @@ It tags each published standalone package, gives a workspace member no tag, adds
 No command takes a version to publish.  
 Inside a release run, `release --bootstrap` (the workflow input `bootstrap`) creates each crate crates.io lacks with `VERCTL_REGISTRY_TOKEN`, which it requires, and uploads every other crate with the trusted-publishing token when both are set.  
 It only uploads: no `release trust`, and no tag outside the draft's publish.  
-`status --bootstrap` plans a standalone `0.0.0` package that crates.io lacks, for the workflow's plan job.
+`status --bootstrap` plans a standalone `0.0.0` package that crates.io lacks, for the workflow's plan job.  
+`release --dry-run --bootstrap` plans the same and needs no token: a notice names `VERCTL_REGISTRY_TOKEN` when it is unset, and only a real run fails without it.
 
 ## Release
 

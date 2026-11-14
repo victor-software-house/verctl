@@ -457,6 +457,7 @@ A manifest that opts out of publishing needs no `publisher: none`: a `Cargo.toml
 It needs `VERCTL_OWNER_TOKEN` too, checked before any request, tags each published standalone package, and adds each published crate's trusted publisher entry.  
 It waits out crates.io's new-crate rate limit, and `--dry-run` lists what it would publish and tag with no token.  
 Inside a release run, `release --bootstrap` (`VERCTL_BOOTSTRAP`) creates each crate crates.io lacks with `VERCTL_REGISTRY_TOKEN`, which it requires, and only uploads: it runs no `release trust` and tags nothing outside the draft's publish.  
+`release --dry-run --bootstrap` plans the same and needs no token, and a notice names `VERCTL_REGISTRY_TOKEN` when it is unset.  
 `verctl release trust [CRATE]...` adds this repository's entry to each crate that has none, never edits another, and with `--dry-run` sends no `POST`.
 
 Before its draft, `release` runs the checks `release_checks` names, `[registry, trust]` when omitted, and stops with nothing published when one fails.  

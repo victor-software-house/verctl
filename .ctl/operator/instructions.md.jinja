@@ -614,9 +614,12 @@ Inside a release run, `release --bootstrap` (`VERCTL_BOOTSTRAP`) only uploads: i
 It needs `VERCTL_REGISTRY_TOKEN`, checked before any write, and fails naming it and the `registry-token` secret otherwise.  
 Both tokens may be set: an upload of a crate crates.io lacks uses the registry token, and every other upload uses `VERCTL_TRUSTED_PUBLISHING_TOKEN` when it is set.  
 The release proof passes a crate crates.io lacks with a notice, and the release report notes the crate the run created.  
+Its `trust` check passes such a crate with a notice to add its entry with `release trust` once the run creates it.  
 The `0.0.0` rule still fails a standalone package off `0.0.0`.  
 A standalone package at `0.0.0` that crates.io lacks, or that it lists with no tag, is planned like any other incomplete version, so the draft Release publishes last and creates its tag.  
-`status --bootstrap` (`VERCTL_BOOTSTRAP`) plans the same, for the workflow's plan job.
+`status --bootstrap` (`VERCTL_BOOTSTRAP`) plans the same, for the workflow's plan job.  
+`release --dry-run --bootstrap` plans what the run plans, reading the crates.io listing of each standalone package at `0.0.0`, and needs no token.  
+A notice names `VERCTL_REGISTRY_TOKEN` when it is unset, and only a real run fails without it.
 
 Both steps print a table of crates with `name`, `version` (bootstrap only), and `state`: `added`, `already set`, `would add`, `published`, `would publish`, `already published`, `tagged <tag>`, `would tag <tag>`, or `failed`.
 

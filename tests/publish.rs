@@ -15,9 +15,16 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn publish_stdout(root: &Path) -> String {
+    publish_stdout_at(root, verctl::registry::CRATES_IO_INDEX)
+}
+
+/// The dry run's stdout, reading the crates.io index at `index`, which a
+/// package at `0.0.0` makes the run read.
+fn publish_stdout_at(root: &Path, index: &str) -> String {
     let output = common::verctl()
         .current_dir(root)
         .args(["release", "--dry-run", "--color", "never"])
+        .args(["--crates-io-index", index])
         .output()
         .unwrap_or_else(|error| panic!("spawn verctl: {error}"));
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -300,8 +307,9 @@ fn dry_run_lists_many_packages() {
 
 /// A new package at `0.0.0` beside a released one is left out, so the shared
 /// `v{version}` tag still names one version.
-#[test]
-fn dry_run_leaves_out_a_package_at_0_0_0() {
+#[tokio::test]
+async fn dry_run_leaves_out_a_package_at_0_0_0() {
+    let index = MockServer::start().await;
     let root = TempDir::new().unwrap();
     common::write_config(
         root.path(),
@@ -343,13 +351,15 @@ fn dry_run_leaves_out_a_package_at_0_0_0() {
         release  would create v1.0.0
         dry-run  nothing published
     "};
-    assert_eq!(publish_stdout(root.path()), expected);
+    assert_eq!(publish_stdout_at(root.path(), &index.uri()), expected);
 }
 
 /// A dry run matches `publish`: a repository whose only package is at
-/// `0.0.0` has nothing to release.
-#[test]
-fn dry_run_of_a_package_at_0_0_0_has_nothing_to_release() {
+/// `0.0.0`, and that crates.io lacks, has nothing to release. The index it
+/// reads is a recorded one, with no crate.
+#[tokio::test]
+async fn dry_run_of_a_package_at_0_0_0_has_nothing_to_release() {
+    let index = MockServer::start().await;
     let root = TempDir::new().unwrap();
     common::write_config(
         root.path(),
@@ -369,7 +379,7 @@ fn dry_run_of_a_package_at_0_0_0_has_nothing_to_release() {
         "#},
     )
     .unwrap();
-    let stdout = publish_stdout(root.path());
+    let stdout = publish_stdout_at(root.path(), &index.uri());
     assert!(stdout.contains("nothing to release"), "{stdout}");
 }
 
@@ -605,10 +615,12 @@ fn a_registry_token_variable_that_is_no_name_is_a_usage_error() {
 }
 
 /// A crate that adopts the release workflow at `0.0.0` has nothing to
-/// release. The GitHub API address is closed, so any lookup for the package
-/// would fail the plan.
-#[test]
-fn a_package_at_0_0_0_plans_nothing() {
+/// release. The GitHub API address is closed, so any lookup there for the
+/// package would fail the plan. Only the crates.io index is read, from a
+/// recorded one with no crate.
+#[tokio::test]
+async fn a_package_at_0_0_0_plans_nothing() {
+    let index = MockServer::start().await;
     let root = TempDir::new().unwrap();
     common::write_config(
         root.path(),
@@ -638,6 +650,7 @@ fn a_package_at_0_0_0_plans_nothing() {
         .arg("status")
         .arg("--github-output")
         .arg(&github_output)
+        .args(["--crates-io-index", &index.uri()])
         .args(["--format", "json"])
         .output()
         .unwrap();

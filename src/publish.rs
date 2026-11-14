@@ -915,8 +915,14 @@ impl<'a> TagRelease<'a> {
 
 /// What a dry run would publish: every package not at `0.0.0`, a workspace
 /// package as its members in publish order, and every tag.
-/// It reads no registry listing.
-/// With every package at `0.0.0`, there is nothing to release.
+/// It reads no registry listing for those.
+/// A standalone package at `0.0.0` joins the plan as [`pending::pending`]
+/// plans it: crates.io lists that version, or `bootstrap` is set and crates.io
+/// lacks the crate. Only those packages are read from the crates.io index at
+/// `crates_io`, and the dry run cannot tell whether such a package's tag
+/// exists, which needs a GitHub token.
+/// With every package at `0.0.0` that is left out, there is nothing to
+/// release.
 ///
 /// With something to release, it then runs the release proof as `release`
 /// does, and its rows carry every failure beside the plan, so the run fails
@@ -929,21 +935,14 @@ fn dry_run_plan(
     crates_io: CratesIo<'_>,
     bootstrap: bool,
 ) -> Result<PublishRun> {
-    let releases = planned
-        .tags
-        .iter()
-        .map(|tag| {
-            if assets_of(declared, &tag.tag).is_empty() {
-                formatdoc!("would create {tag}", tag = tag.tag)
-            } else {
-                formatdoc!("would create draft {tag}", tag = tag.tag)
-            }
-        })
-        .collect();
     let mut packages = Vec::new();
+    let mut zero = Vec::new();
     for (spec, entry) in config.packages.iter().zip(&planned.packages) {
         if bump::unreleased(&entry.version) {
-            continue;
+            if !pending::zero_planned(config, root, spec, entry, crates_io.index, bootstrap)? {
+                continue;
+            }
+            zero.push(entry);
         }
         match publisher::workspace_members(config, spec, root)? {
             Some(members) => packages.extend(members.into_iter().map(|member| PublishLine {
@@ -955,6 +954,18 @@ fn dry_run_plan(
             None => packages.push(PublishLine::from(entry)),
         }
     }
+    let releases = planned
+        .tags
+        .iter()
+        .chain(&zero_tags(config, &zero)?)
+        .map(|tag| {
+            if assets_of(declared, &tag.tag).is_empty() {
+                formatdoc!("would create {tag}", tag = tag.tag)
+            } else {
+                formatdoc!("would create draft {tag}", tag = tag.tag)
+            }
+        })
+        .collect();
     let (outcome, proof) = if packages.is_empty() {
         (Outcome::NothingToRelease, Vec::new())
     } else {

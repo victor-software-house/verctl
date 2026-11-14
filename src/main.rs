@@ -406,12 +406,24 @@ fn preview_pr(root: &Path) -> String {
     }
 }
 
+/// The registry token of a `release` run, and the notice a dry run
+/// `--bootstrap` gives when `VERCTL_REGISTRY_TOKEN` is unset. A dry run uploads
+/// nothing, so it needs no token, and only a real run fails without one.
+fn release_token(args: &ReleaseArgs) -> Result<(Option<RegistryToken>, Option<String>)> {
+    if !args.bootstrap {
+        return Ok((RegistryToken::from_env(&args.registry_token_env)?, None));
+    }
+    match RegistryToken::from_env_bootstrap(&args.registry_token_env) {
+        Ok(token) => Ok((Some(token), None)),
+        Err(error) if args.dry_run() => {
+            Ok((None, Some(format!("a real run would fail: {error:#}"))))
+        }
+        Err(error) => Err(error),
+    }
+}
+
 fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
-    let registry_token = if args.bootstrap {
-        Some(RegistryToken::from_env_bootstrap(&args.registry_token_env)?)
-    } else {
-        RegistryToken::from_env(&args.registry_token_env)?
-    };
+    let (registry_token, token_notice) = release_token(args)?;
     let config = Config::load(&args.config)?;
     let root = &config::root_of(&args.config);
     let allow = publish::Allow {
@@ -441,7 +453,10 @@ fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
         registry_token.as_ref(),
         crates_io,
     )?;
-    let notices: Vec<String> = run.shortfalls.iter().map(ToString::to_string).collect();
+    let notices: Vec<String> = token_notice
+        .into_iter()
+        .chain(run.shortfalls.iter().map(ToString::to_string))
+        .collect();
     Ok(ReleaseReport {
         outcome: run.outcome,
         packages: run.published.packages,

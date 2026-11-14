@@ -281,7 +281,14 @@ pub fn trust(config: &Config, root: &Path, api: &str, token: Option<&str>) -> Re
             crates: Vec::new(),
         });
     };
-    prove_trust(&crates, api, token, &repository, &config.release_workflow)
+    prove_trust(
+        &crates,
+        api,
+        token,
+        &repository,
+        &config.release_workflow,
+        false,
+    )
 }
 
 /// The release proof: each of `checks` against the crates.io API at `api`,
@@ -329,6 +336,7 @@ pub fn prove(
             token,
             repository,
             &config.release_workflow,
+            bootstrap,
         )?),
         (None, Some(_)) => Some(TrustReport::Set {
             repository: None,
@@ -448,6 +456,9 @@ pub enum ProofRow {
 /// it, and its entries are not read. A crate whose entries crates.io refuses
 /// to the token fails alone, and the other crates are still checked.
 ///
+/// With `bootstrap`, a run that creates each crate crates.io lacks, such a
+/// crate passes with a notice to add its entry once the run creates it.
+///
 /// # Errors
 ///
 /// Returns an error when an owners request fails, as described for
@@ -459,10 +470,12 @@ pub fn prove_trust(
     token: &str,
     repository: &Repo,
     workflow: &str,
+    bootstrap: bool,
 ) -> Result<TrustReport> {
     let mut rows = Vec::with_capacity(crates.len());
     for listed in crates {
         let state = match registry::crates_io_user_owners(api, &listed.name)? {
+            None if bootstrap => TrustState::Creates,
             None if listed.held => TrustState::Missing,
             None => TrustState::New,
             Some(_) => match registry::crates_io_github_configs(api, &listed.name, token)? {
@@ -750,21 +763,31 @@ impl TrustReport {
                         "{name}: crates.io refused to list its trusted publishers ({detail}); the token's user must be an owner of the crate",
                         name = row.name,
                     )),
-                    TrustState::New | TrustState::Trusted => None,
+                    TrustState::New | TrustState::Creates | TrustState::Trusted => None,
                 })
                 .collect(),
         }
     }
 
-    /// One notice per crate that needs its bootstrap.
+    /// One notice per crate that needs its bootstrap, and one per crate the
+    /// run creates, which then needs its entry.
     #[must_use]
     pub fn notices(&self) -> Vec<String> {
         match self {
             Self::Unset { .. } => Vec::new(),
             Self::Set { crates, .. } => crates
                 .iter()
-                .filter(|row| row.state == TrustState::New)
-                .map(|row| bootstrap_notice(&row.name))
+                .filter_map(|row| match row.state {
+                    TrustState::New => Some(bootstrap_notice(&row.name)),
+                    TrustState::Creates => Some(format!(
+                        "{name}: crates.io lacks it; add its entry with `verctl release trust {name}` after this run creates it",
+                        name = row.name
+                    )),
+                    TrustState::Trusted
+                    | TrustState::Untrusted { .. }
+                    | TrustState::Missing
+                    | TrustState::Refused { .. } => None,
+                })
                 .collect(),
         }
     }
@@ -802,6 +825,10 @@ pub enum TrustState {
     /// crates.io lacks a crate only the checked commit adds: the check
     /// passes, and the crate needs its bootstrap once it lands.
     New,
+    /// crates.io lacks a crate the run, started with `--bootstrap`, creates:
+    /// the check passes, and the crate needs its entry once the run creates
+    /// it.
+    Creates,
     /// crates.io refused to list the entries to the token, because its user
     /// does not own the crate: the check fails for this crate alone.
     Refused {

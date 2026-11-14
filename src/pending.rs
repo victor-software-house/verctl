@@ -518,7 +518,7 @@ fn version_in(driver: &Driver, raw: &str) -> Option<String> {
 /// Whether a package at `0.0.0` joins the plan: it is a standalone crates.io
 /// crate, and either the index at `index` lists that version or `bootstrap` is
 /// set and the index has no file for the crate.
-fn zero_planned(
+pub(crate) fn zero_planned(
     config: &Config,
     root: &Path,
     spec: &PackageSpec,

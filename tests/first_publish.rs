@@ -1103,3 +1103,100 @@ async fn bootstrap_needs_the_registry_token() {
     assert_eq!(received(&world.api).await, no_requests());
     assert_eq!(received(&world.github).await, no_requests());
 }
+
+/// With `--bootstrap`, the `trust` proof passes a crate crates.io lacks with a
+/// notice to add its entry once the run creates it, where it fails a missing
+/// crate as `Missing` otherwise.
+#[tokio::test]
+async fn bootstrap_run_passes_the_trust_proof_for_a_crate_it_creates() {
+    let world = World::new().await;
+    world.fake_cargo(false);
+    standalone(world.repo(), &[("demo", "0.0.0")]);
+    let head = common::git(world.repo(), &["rev-parse", "HEAD"]);
+    on_crates_io(&world, "demo", "0.0.0", false).await;
+    new_release(&world, "v0.0.0", &head).await;
+    let output = release(
+        &world,
+        &[
+            ("VERCTL_REGISTRY_TOKEN", "r3gistry"),
+            ("VERCTL_OWNER_TOKEN", OWNER_TOKEN),
+            ("GITHUB_TOKEN", "gh-token"),
+        ],
+        &["--bootstrap"],
+    );
+    let report = report(&output);
+    let notice = json!({
+        "row": "notice",
+        "check": "trust",
+        "message": "demo: crates.io lacks it; add its entry with `verctl release trust demo` after this run creates it",
+    });
+    assert!(
+        report["proof"].as_array().unwrap().contains(&notice),
+        "{}",
+        report["proof"]
+    );
+    assert_eq!(world.token_calls(), ["demo r3gistry"]);
+}
+
+/// `release --dry-run --bootstrap` plans what `release --bootstrap` plans: a
+/// standalone `0.0.0` package crates.io lacks, read from the index, with its
+/// tag. Without the flag the same dry run plans nothing.
+#[tokio::test]
+async fn dry_run_bootstrap_plans_what_the_run_plans() {
+    let world = World::new().await;
+    standalone(world.repo(), &[("demo", "0.0.0")]);
+    on_crates_io(&world, "demo", "0.0.0", false).await;
+    let output = release(
+        &world,
+        &[("VERCTL_REGISTRY_TOKEN", "r3gistry")],
+        &["--dry-run", "--bootstrap"],
+    );
+    let planned = report(&output);
+    assert_eq!(planned["outcome"], "released");
+    assert_eq!(planned["packages"][0]["name"], "demo");
+    assert_eq!(planned["releases"], json!(["would create v0.0.0"]));
+    let notice = json!({
+        "row": "notice",
+        "check": "registry",
+        "message": "demo: crates.io lacks it; this run creates it with the registry token",
+    });
+    assert!(
+        planned["proof"].as_array().unwrap().contains(&notice),
+        "{}",
+        planned["proof"]
+    );
+    assert!(
+        received(&world.index)
+            .await
+            .contains(&("GET".to_owned(), "/de/mo/demo".to_owned()))
+    );
+    let plain = report(&release(&world, &[], &["--dry-run"]));
+    assert_eq!(plain["outcome"], "nothing-to-release");
+    assert_eq!(world.cargo_calls(), Vec::<String>::new());
+    assert_eq!(received(&world.github).await, no_requests());
+}
+
+/// Under `--dry-run`, `--bootstrap` needs no token: the dry run plans as the
+/// real run would, and a notice names `VERCTL_REGISTRY_TOKEN` when it is
+/// unset. Only a real run fails without it.
+#[tokio::test]
+async fn dry_run_bootstrap_needs_no_token() {
+    let world = World::new().await;
+    standalone(world.repo(), &[("demo", "0.0.0")]);
+    on_crates_io(&world, "demo", "0.0.0", false).await;
+    let output = release(&world, &[], &["--dry-run", "--bootstrap"]);
+    let planned = report(&output);
+    assert_eq!(planned["packages"][0]["name"], "demo");
+    let notices = planned["notices"].as_array().unwrap();
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert!(
+        notices[0]
+            .as_str()
+            .unwrap()
+            .contains("VERCTL_REGISTRY_TOKEN"),
+        "{notices:?}"
+    );
+    let real = release(&world, &[], &["--bootstrap"]);
+    assert!(!real.status.success(), "{}", printed(&real));
+    assert!(printed(&real).contains("VERCTL_REGISTRY_TOKEN"));
+}
