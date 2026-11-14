@@ -1309,8 +1309,9 @@ fn assert_only_reads(seen: &[(String, String)]) {
     assert!(!sent(seen, "GET", "/__upload/"), "{seen:?}");
 }
 
-/// `release --dry-run` with a missing owner prints the plan, fails the same
-/// `registry` check naming the crate, and writes nothing.
+/// `release --dry-run` with a missing owner lists the package still to
+/// release, fails the same `registry` check naming the crate, and writes
+/// nothing.
 #[tokio::test]
 async fn a_dry_run_runs_the_proof() {
     let root = TempDir::new().unwrap();
@@ -1321,7 +1322,7 @@ async fn a_dry_run_runs_the_proof() {
     let output = release_against(root.path(), &github, &registry, &["--dry-run"]);
     assert!(!output.status.success(), "{output:?}");
     let said = printed(&output);
-    assert!(said.contains("release would create v0.4.0"), "{said}");
+    assert!(said.contains("demo 0.4.0 cargo"), "{said}");
     assert!(
         said.contains("demo: lacks owner any-victor on crates.io, which lists alice"),
         "{said}"
@@ -1329,6 +1330,43 @@ async fn a_dry_run_runs_the_proof() {
     assert_only_reads(&requests(&github).await);
     assert_only_reads(&requests(&registry.0).await);
     assert_only_reads(&requests(&registry.1).await);
+}
+
+/// A failed release proof stops the dry run as it stops the release: the
+/// report shows the proof's rows and no later read refuses first, so a tag at
+/// another commit is not reached.
+#[tokio::test]
+async fn a_failed_proof_stops_a_dry_run_before_the_tag_read() {
+    let root = TempDir::new().unwrap();
+    let older = proof_crate(root.path(), "owners: [any-victor]\n");
+    fs::write(root.path().join("README"), "later\n").unwrap();
+    let head = common::commit_all(root.path(), "docs: later");
+    common::git(
+        root.path(),
+        &["update-ref", "refs/remotes/origin/main", &head],
+    );
+    let github = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/git/ref/tags/v0.4.0"))
+        .respond_with(tag_ref("v0.4.0", &older))
+        .mount(&github)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/releases/tags/v0.4.0"))
+        .respond_with(not_found())
+        .mount(&github)
+        .await;
+    listed(&github, serde_json::json!([])).await;
+    let registry = crates_io(&["alice"]).await;
+    let output = release_against(root.path(), &github, &registry, &["--dry-run"]);
+    assert!(!output.status.success(), "{output:?}");
+    let said = printed(&output);
+    assert!(
+        said.contains("demo: lacks owner any-victor on crates.io, which lists alice"),
+        "{said}"
+    );
+    assert!(!said.contains("not HEAD"), "{said}");
+    assert_only_reads(&requests(&github).await);
 }
 
 /// A tag at another commit fails the dry run as it fails the run, with the

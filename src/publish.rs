@@ -305,7 +305,8 @@ pub struct PublishRun {
 /// write: no draft, asset upload, registry upload or tag step.
 /// It needs a GitHub token for those reads and no registry or owner token,
 /// and it fails where the run would, with the same message, except that a
-/// failed release proof is listed in [`PublishRun::proof`] beside the plan.
+/// failed release proof is listed in [`PublishRun::proof`] beside the
+/// packages still to release, and no later read runs.
 /// It does not look for the declared tarballs, which only an upload needs.
 ///
 /// Before any publisher, tag, or Release call, the run proves HEAD in two
@@ -377,11 +378,14 @@ pub fn run_pending(
     }
     let proof = release_proof(config, root, crates_io, &scope.new_crates)?;
     let failures = proof.failures();
-    ensure!(
-        dry_run || failures.is_empty(),
-        "the release proof failed, and nothing was published:\n{}",
-        failures.join("\n")
-    );
+    if !failures.is_empty() {
+        ensure!(
+            dry_run,
+            "the release proof failed, and nothing was published:\n{}",
+            failures.join("\n")
+        );
+        return Ok(proof_failed(&planned, pending, allowed, &proof));
+    }
     let head = git::head_sha(root)?;
     let here = at_head(&pending, &head)?;
     let selected = selected_packages(config, &planned, here);
@@ -934,11 +938,45 @@ impl<'a> TagRelease<'a> {
     }
 }
 
+/// What a dry run reports when the release proof failed: the packages still
+/// to release and the proof's rows, with no later read, since the release
+/// stops at the proof too.
+fn proof_failed(
+    planned: &PublishPlan,
+    pending: pending::Pending,
+    allowed: Vec<Allowed>,
+    proof: &Proof,
+) -> PublishRun {
+    let packages = planned
+        .packages
+        .iter()
+        .filter(|entry| {
+            pending.commits.iter().any(|commit| {
+                commit
+                    .packages
+                    .iter()
+                    .any(|package| package.name == entry.name)
+            })
+        })
+        .map(PublishLine::from)
+        .collect();
+    PublishRun {
+        outcome: Outcome::Released,
+        published: PublishOutcome {
+            packages,
+            releases: Vec::new(),
+        },
+        allowed,
+        shortfalls: pending.shortfalls,
+        proof: proof.rows(),
+        created: proof.created(),
+    }
+}
+
 /// What a dry run reports from the plan [`run_pending`] built, once every
 /// read has passed: the registry's versions as present, each upload it would
 /// start, and for each tag the Release it would create or complete.
-/// The proof's failures stay in its rows, beside the plan, so the run fails
-/// having written nothing.
+/// The proof's notices stay in its rows, beside the plan.
 fn dry_run_of(
     tags: &[TagRelease<'_>],
     declared: &DeclaredAssets,
