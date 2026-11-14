@@ -1322,7 +1322,7 @@ async fn a_dry_run_runs_the_proof() {
     let output = release_against(root.path(), &github, &registry, &["--dry-run"]);
     assert!(!output.status.success(), "{output:?}");
     let said = printed(&output);
-    assert!(said.contains("demo 0.4.0 cargo"), "{said}");
+    assert!(said.contains("│ demo ┆ 0.4.0 ┆ cargo │"), "{said}");
     assert!(
         said.contains("demo: lacks owner any-victor on crates.io, which lists alice"),
         "{said}"
