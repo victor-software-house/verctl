@@ -1418,6 +1418,25 @@ async fn status_names_the_neither_tier() {
     );
 }
 
+/// Rules that hold no `required_status_checks` rule, only `deletion` and
+/// `pull_request`, make nothing require `check registry`: the tier is
+/// `neither`, and `status` says the freeze is reported and not enforced.
+#[tokio::test]
+async fn status_names_the_neither_tier_without_required_checks() {
+    let printed =
+        status_for_rules(true, rules(include_str!("testdata/rules/no-checks.json"))).await;
+    assert_eq!(
+        printed,
+        indoc! {"
+               pending  0
+                assets  none
+            unreleased  0
+                  tier  neither
+                freeze  reported, not enforced
+        "}
+    );
+}
+
 /// Without a token no request reads the rules: the tier is unknown, with the
 /// reason, and `status` still succeeds.
 #[tokio::test]

@@ -11,11 +11,12 @@ use std::path::Path;
 
 use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
+use verctl::registry::CRATES_IO_INDEX;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn publish_stdout(root: &Path) -> String {
-    publish_stdout_at(root, verctl::registry::CRATES_IO_INDEX)
+    publish_stdout_at(root, CRATES_IO_INDEX)
 }
 
 /// The dry run's stdout, reading the crates.io index at `index`, which a

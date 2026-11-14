@@ -539,10 +539,13 @@ pub(crate) fn zero_planned(
     else {
         return Ok(false);
     };
-    if registry::crates_io_lists(index, name, &entry.version)? {
-        return Ok(true);
-    }
-    Ok(bootstrap && !registry::crates_io_has_crate(index, name)?)
+    Ok(
+        match registry::crates_io_listing(index, name, &entry.version)? {
+            registry::Listing::Listed => true,
+            registry::Listing::NoCrate => bootstrap,
+            registry::Listing::Unlisted => false,
+        },
+    )
 }
 
 /// The tag `release` creates for `entry`, a package at `0.0.0` that the plan

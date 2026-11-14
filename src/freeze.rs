@@ -300,7 +300,7 @@ impl<'a> Settings<'a> {
 /// # Errors
 ///
 /// Returns an error when a freezing event holds no `GITHUB_TOKEN`, when the
-/// event payload cannot be read, when the wait runs out ([`wait_for_release`]),
+/// event payload cannot be read, when the wait runs out (`wait_for_release`),
 /// or when the search or the label read fails. On any other event a lookup
 /// GitHub or a registry gave no answer to is a [`Freeze::NotChecked`]
 /// instead.
@@ -443,13 +443,15 @@ fn held_releases(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "state", rename_all = "kebab-case")]
 pub enum Tier {
-    /// A merge queue applies: the job that runs `check registry` is required
-    /// on the merge-group commit.
+    /// A `required_status_checks` rule and a merge queue apply: the job that
+    /// runs `check registry` is required on the merge-group commit.
     MergeQueue,
-    /// Rulesets apply and no merge queue does: the job is required on every
-    /// pull request, up to date with the default branch.
+    /// A `required_status_checks` rule applies and no merge queue does: the
+    /// job is required on every pull request, up to date with the default
+    /// branch.
     RulesetsWithoutQueue,
-    /// No rule applies: the operator runs `check versions registry` on the
+    /// No `required_status_checks` rule applies, so nothing makes `check
+    /// registry` required: the operator runs `check versions registry` on the
     /// Version PR before merging, and the freeze is reported, not enforced.
     Neither,
     /// The rules could not be read.
@@ -493,13 +495,17 @@ impl Tier {
     }
 
     /// The tier of a branch whose rules have these `types`.
+    ///
+    /// Only a `required_status_checks` rule can make the job that runs
+    /// `check registry` required, so a branch without one is
+    /// [`Tier::Neither`], whatever other rules it holds. With that rule, a
+    /// `merge_queue` rule makes the tier [`Tier::MergeQueue`].
     fn of_rules(types: &[String]) -> Self {
-        if types.iter().any(|kind| kind == "merge_queue") {
-            Self::MergeQueue
-        } else if types.is_empty() {
-            Self::Neither
-        } else {
-            Self::RulesetsWithoutQueue
+        let has = |wanted: &str| types.iter().any(|kind| kind == wanted);
+        match (has("required_status_checks"), has("merge_queue")) {
+            (true, true) => Self::MergeQueue,
+            (true, false) => Self::RulesetsWithoutQueue,
+            (false, _) => Self::Neither,
         }
     }
 

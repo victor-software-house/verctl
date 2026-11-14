@@ -464,6 +464,7 @@ A pull request labelled `verctl: unfreeze` passes the freeze and no other proof,
 `release` and `release --dry-run` run `registry` without the freeze.
 
 `status` names the enforcement tier from the default branch's rules: `merge queue`, `rulesets without a queue`, or `neither`, where the freeze is reported and not enforced.  
+A branch with no `required_status_checks` rule is `neither`, whatever other rules apply, because nothing makes `check registry` required.  
 With a merge queue, require the job that runs `check registry` on the merge-group commit.  
 With rulesets and no queue, require it on every pull request, up to date with the default branch.  
 With neither, run `check versions registry` on the Version PR, updated to the default branch's tip, before merging it.

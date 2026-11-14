@@ -1611,7 +1611,7 @@ pub struct ActiveRun {
 /// The `status` of a run that has not ended ([list workflow runs]).
 ///
 /// [list workflow runs]: https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-workflow
-const ACTIVE_RUN_STATUSES: [&str; 4] = ["queued", "waiting", "pending", "in_progress"];
+const ACTIVE_RUN_STATUSES: [&str; 5] = ["requested", "queued", "waiting", "pending", "in_progress"];
 
 /// The first run of the workflow file `workflow` at commit `sha` that has not
 /// ended, from `GET /repos/{owner}/{repo}/actions/workflows/{workflow}/runs`

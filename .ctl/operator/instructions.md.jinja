@@ -212,9 +212,9 @@ The freeze only protects the default branch where a rule makes `check registry` 
 
 | Tier | Rules | What enforces the freeze |
 |:--|:--|:--|
-| `merge queue` | a `merge_queue` rule | the job that runs `check registry` is required on the merge-group commit |
-| `rulesets without a queue` | any other rule | the job is required on every pull request, with "require branches to be up to date", so it runs again after the Version PR lands |
-| `neither` | none | nothing: `status` says the freeze is reported, not enforced, so run `check versions registry` on the Version PR, updated to the default branch's tip, before merging it, and again if the default branch moves |
+| `merge queue` | a `required_status_checks` rule and a `merge_queue` rule | the job that runs `check registry` is required on the merge-group commit |
+| `rulesets without a queue` | a `required_status_checks` rule and no `merge_queue` rule | the job is required on every pull request, with "require branches to be up to date", so it runs again after the Version PR lands |
+| `neither` | no `required_status_checks` rule, whatever other rules apply | nothing makes `check registry` required: `status` says the freeze is reported, not enforced, so run `check versions registry` on the Version PR, updated to the default branch's tip, before merging it, and again if the default branch moves |
 
 Without a token, or when GitHub answers the read with a 403 or a 404, `status` shows the tier as unknown and says why.  
 That never fails `status`.  

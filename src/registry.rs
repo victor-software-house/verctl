@@ -375,7 +375,19 @@ fn index_path(name: &str) -> String {
     }
 }
 
-/// Whether the crates.io index under `base` lists `version` of `name`.
+/// What the crates.io index shows of one version of a crate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Listing {
+    /// The index has no file for the crate, so no version of it was published.
+    NoCrate,
+    /// The index has the crate and not this version.
+    Unlisted,
+    /// The index lists the version.
+    Listed,
+}
+
+/// What the crates.io index under `base` shows of `version` of `name`, from
+/// one read of the crate's file.
 ///
 /// A version matches when it has the same semver precedence, so build
 /// metadata never makes a published version look absent.
@@ -389,7 +401,7 @@ fn index_path(name: &str) -> String {
 /// - the request fails;
 /// - the index answers with a status other than 200 or 404;
 /// - a line in the crate's file is not a JSON version record.
-pub fn crates_io_lists(base: &str, name: &str, version: &str) -> Result<bool> {
+pub fn crates_io_listing(base: &str, name: &str, version: &str) -> Result<Listing> {
     ensure!(
         !name.is_empty() && name.is_ascii(),
         "{name:?} is not a crates.io crate name"
@@ -398,7 +410,7 @@ pub fn crates_io_lists(base: &str, name: &str, version: &str) -> Result<bool> {
     let url = format!("{}/{}", base.trim_end_matches('/'), index_path(name));
     let body = github::block(fetch(&url, None))?;
     let Some(body) = body else {
-        return Ok(false);
+        return Ok(Listing::NoCrate);
     };
     for line in body.lines().filter(|line| !line.trim().is_empty()) {
         let record: IndexRecord = serde_json::from_str(line)
@@ -406,26 +418,20 @@ pub fn crates_io_lists(base: &str, name: &str, version: &str) -> Result<bool> {
         if Version::parse(&record.vers)
             .is_ok_and(|vers| vers.cmp_precedence(&wanted) == Ordering::Equal)
         {
-            return Ok(true);
+            return Ok(Listing::Listed);
         }
     }
-    Ok(false)
+    Ok(Listing::Unlisted)
 }
 
-/// Whether the crates.io index under `base` has a file for `name`, which it
-/// has once any version of the crate was published.
+/// Whether the crates.io index under `base` lists `version` of `name`, as
+/// [`crates_io_listing`] reads it.
 ///
 /// # Errors
 ///
-/// Returns an error when `name` is not ASCII, the request fails, or the index
-/// answers with a status other than 200 or 404.
-pub fn crates_io_has_crate(base: &str, name: &str) -> Result<bool> {
-    ensure!(
-        !name.is_empty() && name.is_ascii(),
-        "{name:?} is not a crates.io crate name"
-    );
-    let url = format!("{}/{}", base.trim_end_matches('/'), index_path(name));
-    Ok(github::block(fetch(&url, None))?.is_some())
+/// Returns an error under the conditions of [`crates_io_listing`].
+pub fn crates_io_lists(base: &str, name: &str, version: &str) -> Result<bool> {
+    Ok(crates_io_listing(base, name, version)? == Listing::Listed)
 }
 
 /// The release cargo-semver-checks compares `current` of `name` against.
