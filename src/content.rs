@@ -22,8 +22,8 @@
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::{env, fmt, fs, process, str};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::{env, fmt, fs, io, process, str};
 
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
@@ -670,13 +670,35 @@ pub(crate) fn inside(workdir: &Path, path: &Path) -> Result<PathBuf> {
 /// A directory under the system temporary directory, removed on drop.
 pub(crate) struct Scratch(PathBuf);
 
+/// The number the next [`Scratch`] of this process tries first.
+static NEXT_SCRATCH: AtomicU64 = AtomicU64::new(0);
+
+/// How many names [`Scratch::new`] tries before it fails, so a run of
+/// names another user created in the shared temporary directory ends it
+/// instead of holding it.
+const SCRATCH_ATTEMPTS: u32 = 1000;
+
 impl Scratch {
+    /// Each directory takes the process id and a number no other `Scratch`
+    /// of this process took, so two made in the same instant never share a
+    /// name. A name a dead process with the same id left behind is skipped,
+    /// within [`SCRATCH_ATTEMPTS`] tries.
     pub(crate) fn new() -> Result<Self> {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or_default(|elapsed| elapsed.as_nanos());
-        let dir = env::temp_dir().join(format!("verctl-version-pr-{}-{stamp}", process::id()));
-        fs::create_dir(&dir).with_context(|| format!("create {}", dir.display()))?;
+        let mut attempts = 0;
+        let dir = loop {
+            attempts += 1;
+            let number = NEXT_SCRATCH.fetch_add(1, Ordering::Relaxed);
+            let dir = env::temp_dir().join(format!("verctl-version-pr-{}-{number}", process::id()));
+            match fs::create_dir(&dir) {
+                Ok(()) => break dir,
+                Err(error)
+                    if error.kind() == io::ErrorKind::AlreadyExists
+                        && attempts < SCRATCH_ATTEMPTS => {}
+                Err(error) => {
+                    return Err(error).with_context(|| format!("create {}", dir.display()));
+                }
+            }
+        };
         match dir.canonicalize() {
             Ok(canonical) => Ok(Self(canonical)),
             Err(error) => {
