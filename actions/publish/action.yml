@@ -26,7 +26,7 @@ inputs:
     required: false
     default: ""
   dry-run:
-    description: Preview only. Set to `true` to skip cargo/bun/GitHub.
+    description: Preview only. Set to `true` to read as a release does and write nothing to cargo, bun or GitHub.
     required: false
     default: "false"
 

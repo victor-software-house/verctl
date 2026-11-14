@@ -49,7 +49,7 @@ The Version PR's `check versions`, CI's `cargo package` and the release workflow
 
 ### Requirement: `release --dry-run` prints the plan and runs the same checks
 
-`verctl release --dry-run` (`-n`) SHALL print the plan and run the checks `release` would run, and SHALL upload nothing and change no registry and no Release.
+`verctl release --dry-run` (`-n`) SHALL make every read `release` makes and run the checks `release` would run, SHALL fail with the message `release` would, and SHALL create no draft, upload nothing, tag nothing and change no registry.
 
 #### Scenario: A dry run with a missing owner
 

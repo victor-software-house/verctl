@@ -147,7 +147,7 @@ It is the release: its proofs, its draft Release, and the tag the draft's publis
 `release bootstrap [CRATE]...` runs `release --new`, then `release trust` for each crate that run created.  
 It takes every option `release` takes, with the options after `bootstrap`, and it needs `VERCTL_REGISTRY_TOKEN` and `VERCTL_OWNER_TOKEN`, both checked before any write.  
 With crate names, only those may be created.  
-`--dry-run` (`-n`) lists what each would do: `release --new` and `release bootstrap` need no token under it, and `release trust --dry-run` still needs the owner's.  
+`--dry-run` (`-n`) lists what each would do: `release --new` and `release bootstrap` need no registry or owner token under it, only `GITHUB_TOKEN`, and `release trust --dry-run` still needs the owner's.  
 `status --new` plans a standalone `0.0.0` package that crates.io lacks, for the workflow's plan job.  
 No command takes a version to publish.
 
@@ -183,7 +183,7 @@ Once something is left to release, and before the draft, `release` runs the chec
 `trust` runs only with `VERCTL_OWNER_TOKEN`, and is reported as `skipped` otherwise.  
 A failed check stops the run with nothing published.
 
-`release --dry-run` (`-n`) prints the plan and runs the same checks.  
+`release --dry-run` (`-n`) makes every read the release makes, so it needs `GITHUB_TOKEN`, fails where the release would, and writes nothing.  
 `--crates-io-api` (`VERCTL_CRATES_IO_API`) and `--crates-io-index` (`VERCTL_CRATES_IO_INDEX`) point the run at another crates.io, such as staging.
 
 `verctl release` fetches the default branch (that one ref, with history) only when `origin/<default>` is missing.  

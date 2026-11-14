@@ -69,7 +69,8 @@ pub struct PublishEntry {
 pub struct PublishOutcome {
     /// One line per package.
     pub packages: Vec<PublishLine>,
-    /// The Release URL for each tag, or `would create <tag>` in a dry run.
+    /// The Release URL for each tag, or in a dry run `would create <tag>`,
+    /// `would create draft <tag>`, or `would complete <tag>`.
     pub releases: Vec<String>,
 }
 
@@ -125,7 +126,7 @@ pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
 }
 
 /// Open a draft Release per tag, publish each package, then publish the
-/// drafts. A dry run only plans.
+/// drafts. A dry run makes every read and no write.
 ///
 /// This is [`run_pending`] with assets counted toward completeness, no
 /// assets directory, and no registry token, so each publisher finds its own
@@ -261,9 +262,13 @@ pub struct PublishRun {
     /// none.
     pub shortfalls: Vec<pending::Shortfall>,
     /// What the release proof found beyond a pass: its notices, the checks it
-    /// skipped, and, in a dry run only, its failures. Empty when the run
-    /// found nothing to release, which runs no proof.
+    /// skipped, and, in a dry run only, its failures. A run that created a
+    /// crate leaves out that crate's `registry` notices, which it resolved.
+    /// Empty when the run found nothing to release, which runs no proof.
     pub proof: Vec<ProofRow>,
+    /// The release proof of a real run that released, so a caller that
+    /// resolves more of its notices reports the rest. `None` otherwise.
+    pub checked: Option<Proof>,
     /// The crates the run created with the registry token, or, in a dry run,
     /// would create, by the name crates.io knows them.
     pub created: Vec<String>,
@@ -299,8 +304,14 @@ pub struct PublishRun {
 /// [`pending::pending`] describes: a standalone crate that crates.io lists
 /// without a tag, or, with `scope.new_crates`, one that crates.io lacks. Its
 /// tag renders over that package alone (`zero_tags`).
-/// A dry run plans every other package and runs the release proof. It reads
-/// no registry listing.
+/// A dry run takes this path through every read and stops before the first
+/// write: no draft, asset upload, registry upload or tag step.
+/// It needs a GitHub token for those reads and no registry or owner token.
+/// It fails where the run would, with the same message.
+/// The one difference is a failed release proof: the dry run lists it in
+/// [`PublishRun::proof`] beside the packages still to release, and runs no
+/// later read.
+/// It does not look for the declared tarballs, which only an upload needs.
 ///
 /// Before any publisher, tag, or Release call, the run proves HEAD in two
 /// ways:
@@ -350,16 +361,6 @@ pub fn run_pending(
 ) -> Result<PublishRun> {
     let planned = plan(config, root)?;
     let declared = declared_assets(config, root, scope)?;
-    if dry_run {
-        return dry_run_plan(
-            config,
-            root,
-            &planned,
-            &declared,
-            crates_io,
-            &scope.new_crates,
-        );
-    }
     full_history(root)?;
     let allowed = prove_version_commit(config, root, &planned, allow)?;
     let token = release::resolve_token()?;
@@ -376,36 +377,38 @@ pub fn run_pending(
         &scope.new_crates,
         &release_list,
     )?;
-    if pending.is_empty() {
-        return Ok(nothing_to_release(allowed, pending.shortfalls));
+    let gate = Gate {
+        allowed,
+        token,
+        release_list,
+        pending,
+    };
+    let reads = match read_release(config, root, &planned, scope, crates_io, dry_run, gate)? {
+        Read::Stopped(run) => return Ok(*run),
+        Read::Ready(reads) => *reads,
+    };
+    if dry_run {
+        return Ok(dry_run_of(
+            &reads.tags,
+            &declared,
+            reads.already,
+            &reads.uploads,
+            reads.allowed,
+            reads.shortfalls,
+            &reads.proof,
+        ));
     }
-    let proof = release_proof(config, root, crates_io, &scope.new_crates)?;
-    let failures = proof.failures();
-    ensure!(
-        failures.is_empty(),
-        "the release proof failed, and nothing was published:\n{}",
-        failures.join("\n")
-    );
-    let head = git::head_sha(root)?;
-    let here = at_head(&pending, &head)?;
-    let selected = selected_packages(config, &planned, here);
-    let (uploads, already) =
-        gather_uploads(config, root, here, &selected, scope.releases_only, &head)?;
-    let repo = github::repo(root)?;
-    let zero_plans = zero_tags(config, &selected_zero(&selected))?;
-    let tags = planned
-        .tags
-        .iter()
-        .chain(&zero_plans)
-        .filter(|tag| {
-            tag.packages.iter().any(|named| {
-                here.packages
-                    .iter()
-                    .any(|package| package.name == named.name)
-            })
-        })
-        .map(|tag| TagRelease::read(config, root, &token, &repo, tag, &head, &release_list))
-        .collect::<Result<Vec<_>>>()?;
+    let Reads {
+        token,
+        repo,
+        head,
+        uploads,
+        already,
+        tags,
+        allowed,
+        shortfalls,
+        proof,
+    } = reads;
     let files = asset_files(&tags, &declared, scope.assets_dir.as_deref())?;
     let drafts = tags
         .iter()
@@ -443,10 +446,109 @@ pub fn run_pending(
         outcome: Outcome::Released,
         published: PublishOutcome { packages, releases },
         allowed,
-        shortfalls: pending.shortfalls,
-        proof: proof.rows(),
+        shortfalls,
+        proof: proof.rows_after(&created, &[]),
+        checked: Some(proof),
         created,
     })
+}
+
+/// What a run has found before its proofs and reads: the allowed proofs, the
+/// GitHub token, the Releases list its lookups share, and the pending plan.
+struct Gate {
+    allowed: Vec<Allowed>,
+    token: String,
+    release_list: github::ReleaseList,
+    pending: pending::Pending,
+}
+
+/// Everything a run reads before its first write, once every proof passed.
+struct Reads<'a> {
+    token: String,
+    repo: github::Repo,
+    head: String,
+    uploads: Vec<(&'a PublishEntry, Vec<Upload>)>,
+    already: Vec<PublishLine>,
+    tags: Vec<TagRelease>,
+    allowed: Vec<Allowed>,
+    shortfalls: Vec<pending::Shortfall>,
+    proof: Proof,
+}
+
+/// The end of a run's reads.
+enum Read<'a> {
+    /// A run that ends here: nothing to release, or a dry run whose release
+    /// proof failed.
+    Stopped(Box<PublishRun>),
+    /// A run that goes on to its writes.
+    Ready(Box<Reads<'a>>),
+}
+
+/// The reads a run makes after its pending plan and before its first write:
+/// the release proof, the commit, the uploads and the Release of each tag.
+/// A real run stops at a failed proof with an error, and a dry run returns
+/// it as the report.
+fn read_release<'a>(
+    config: &'a Config,
+    root: &Path,
+    planned: &'a PublishPlan,
+    scope: &Scope,
+    crates_io: CratesIo<'_>,
+    dry_run: bool,
+    gate: Gate,
+) -> Result<Read<'a>> {
+    let Gate {
+        allowed,
+        token,
+        release_list,
+        pending,
+    } = gate;
+    if pending.is_empty() {
+        let run = nothing_to_release(allowed, pending.shortfalls);
+        return Ok(Read::Stopped(Box::new(run)));
+    }
+    let proof = release_proof(config, root, crates_io, &scope.new_crates)?;
+    let failures = proof.failures();
+    if !failures.is_empty() {
+        ensure!(
+            dry_run,
+            "the release proof failed, and nothing was published:\n{}",
+            failures.join("\n")
+        );
+        let run = proof_failed(planned, pending, allowed, &proof);
+        return Ok(Read::Stopped(Box::new(run)));
+    }
+    let head = git::head_sha(root)?;
+    let here = at_head(&pending, &head)?;
+    let selected = selected_packages(config, planned, here);
+    let (uploads, already) =
+        gather_uploads(config, root, here, &selected, scope.releases_only, &head)?;
+    let repo = github::repo(root)?;
+    let zero_plans = zero_tags(config, &selected_zero(&selected))?;
+    let tags = planned
+        .tags
+        .iter()
+        .chain(&zero_plans)
+        .filter(|tag| {
+            tag.packages.iter().any(|named| {
+                here.packages
+                    .iter()
+                    .any(|package| package.name == named.name)
+            })
+        })
+        .map(|tag| TagRelease::read(config, root, &token, &repo, tag, &head, &release_list))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(Read::Ready(Box::new(Reads {
+        token,
+        repo,
+        head,
+        uploads,
+        already,
+        tags,
+        allowed,
+        shortfalls: pending.shortfalls,
+        proof,
+    })))
 }
 
 /// The packages of `config` that `here` holds, with their plan entries.
@@ -547,6 +649,7 @@ fn nothing_to_release(allowed: Vec<Allowed>, shortfalls: Vec<pending::Shortfall>
         allowed,
         shortfalls,
         proof: Vec::new(),
+        checked: None,
         created: Vec::new(),
     }
 }
@@ -668,7 +771,7 @@ fn stopped(entry: &PublishEntry, upload: &Upload, error: anyhow::Error) -> Stopp
 fn record_stop(
     token: &str,
     repo: &github::Repo,
-    tags: &[TagRelease<'_>],
+    tags: &[TagRelease],
     drafts: &[Held],
     stopped: Stopped,
 ) -> anyhow::Error {
@@ -751,7 +854,7 @@ fn assets_of<'a>(declared: &'a DeclaredAssets, tag: &str) -> &'a [String] {
 /// It is checked before the run writes anything, so a tarball that is missing
 /// fails the run before the draft exists.
 fn asset_files(
-    tags: &[TagRelease<'_>],
+    tags: &[TagRelease],
     declared: &DeclaredAssets,
     dir: Option<&Path>,
 ) -> Result<Vec<PathBuf>> {
@@ -803,8 +906,8 @@ fn lacking(names: &[String], uploaded: &[&str], dir: Option<&Path>) -> Result<Ve
 
 /// One tag of a run: its plan, the notes and stage its Release carries, and
 /// what GitHub held for it before the run wrote anything.
-struct TagRelease<'a> {
-    plan: &'a TagPlan,
+struct TagRelease {
+    plan: TagPlan,
     notes: String,
     stage: github::Stage,
     found: github::Found,
@@ -832,7 +935,7 @@ impl Held {
     }
 }
 
-impl<'a> TagRelease<'a> {
+impl TagRelease {
     /// Read GitHub for `plan`'s tag at `head`, with the CHANGELOG sections of
     /// its packages as the notes.
     /// A candidate's Release is a prerelease that never becomes the latest.
@@ -843,7 +946,7 @@ impl<'a> TagRelease<'a> {
         root: &Path,
         token: &str,
         repo: &github::Repo,
-        plan: &'a TagPlan,
+        plan: &TagPlan,
         head: &str,
         release_list: &github::ReleaseList,
     ) -> Result<Self> {
@@ -865,7 +968,7 @@ impl<'a> TagRelease<'a> {
         };
         let found = github::read_release(token, repo, &plan.tag, head, release_list)?;
         Ok(Self {
-            plan,
+            plan: plan.clone(),
             notes,
             stage,
             found,
@@ -927,73 +1030,96 @@ impl<'a> TagRelease<'a> {
     }
 }
 
-/// What a dry run would publish: every package not at `0.0.0`, a workspace
-/// package as its members in publish order, and every tag.
-/// It reads no registry listing for those.
-/// A standalone package at `0.0.0` joins the plan as [`pending::pending`]
-/// plans it: crates.io lists that version, or `new_crates` allows the crate and
-/// crates.io lacks it. Only those packages are read from the crates.io index at
-/// `crates_io`, and the dry run cannot tell whether such a package's tag
-/// exists, which needs a GitHub token.
-/// With every package at `0.0.0` that is left out, there is nothing to
-/// release.
-///
-/// With something to release, it then runs the release proof as `release`
-/// does, and its rows carry every failure beside the plan, so the run fails
-/// having written nothing.
-fn dry_run_plan(
-    config: &Config,
-    root: &Path,
+/// What a dry run reports when the release proof failed: the packages still
+/// to release and the proof's rows, with no later read, since the release
+/// stops at the proof too.
+fn proof_failed(
     planned: &PublishPlan,
-    declared: &DeclaredAssets,
-    crates_io: CratesIo<'_>,
-    new_crates: &NewCrates,
-) -> Result<PublishRun> {
-    let mut packages = Vec::new();
-    let mut zero = Vec::new();
-    for (spec, entry) in config.packages.iter().zip(&planned.packages) {
-        if bump::unreleased(&entry.version) {
-            if !pending::zero_planned(config, root, spec, entry, crates_io.index, new_crates)? {
-                continue;
-            }
-            zero.push(entry);
-        }
-        match publisher::workspace_members(config, spec, root)? {
-            Some(members) => packages.extend(members.into_iter().map(|member| PublishLine {
-                name: member.name,
-                version: member.version,
-                via: entry.label.clone(),
-                note: None,
-            })),
-            None => packages.push(PublishLine::from(entry)),
-        }
-    }
-    let releases = planned
-        .tags
+    pending: pending::Pending,
+    allowed: Vec<Allowed>,
+    proof: &Proof,
+) -> PublishRun {
+    let packages = planned
+        .packages
         .iter()
-        .chain(&zero_tags(config, &zero)?)
-        .map(|tag| {
-            if assets_of(declared, &tag.tag).is_empty() {
-                formatdoc!("would create {tag}", tag = tag.tag)
-            } else {
-                formatdoc!("would create draft {tag}", tag = tag.tag)
-            }
+        .filter(|entry| {
+            pending.commits.iter().any(|commit| {
+                commit
+                    .packages
+                    .iter()
+                    .any(|package| package.name == entry.name)
+            })
         })
+        .map(PublishLine::from)
         .collect();
-    let (outcome, proof, created) = if packages.is_empty() {
-        (Outcome::NothingToRelease, Vec::new(), Vec::new())
-    } else {
-        let proof = release_proof(config, root, crates_io, new_crates)?;
-        (Outcome::Released, proof.rows(), proof.created())
-    };
-    Ok(PublishRun {
-        outcome,
-        published: PublishOutcome { packages, releases },
-        allowed: Vec::new(),
-        shortfalls: Vec::new(),
-        proof,
-        created,
-    })
+    PublishRun {
+        outcome: Outcome::Released,
+        published: PublishOutcome {
+            packages,
+            releases: Vec::new(),
+        },
+        allowed,
+        shortfalls: pending.shortfalls,
+        proof: proof.rows(),
+        checked: None,
+        created: proof.created(),
+    }
+}
+
+/// What a dry run reports from the plan [`run_pending`] built, once every
+/// read has passed: the registry's versions as present, each upload it would
+/// start, and for each tag the Release it would create or complete.
+/// The proof's notices stay in its rows, beside the plan.
+fn dry_run_of(
+    tags: &[TagRelease],
+    declared: &DeclaredAssets,
+    already: Vec<PublishLine>,
+    uploads: &[(&PublishEntry, Vec<Upload>)],
+    allowed: Vec<Allowed>,
+    shortfalls: Vec<pending::Shortfall>,
+    proof: &Proof,
+) -> PublishRun {
+    let mut lines = Vec::new();
+    for (entry, runs) in uploads {
+        if entry.argv.is_empty() {
+            lines.push(PublishLine::from(*entry));
+            continue;
+        }
+        lines.extend(runs.iter().map(|upload| PublishLine {
+            name: upload.name.clone(),
+            version: upload.version.clone(),
+            via: entry.label.clone(),
+            note: None,
+        }));
+    }
+    let releases = tags
+        .iter()
+        .map(
+            |tag| match (&tag.found, assets_of(declared, &tag.plan.tag)) {
+                (github::Found::Published(_), _) => {
+                    formatdoc!("would complete {tag}", tag = tag.plan.tag)
+                }
+                (github::Found::Unpublished(_), []) => {
+                    formatdoc!("would create {tag}", tag = tag.plan.tag)
+                }
+                (github::Found::Unpublished(_), _) => {
+                    formatdoc!("would create draft {tag}", tag = tag.plan.tag)
+                }
+            },
+        )
+        .collect();
+    PublishRun {
+        outcome: Outcome::Released,
+        published: PublishOutcome {
+            packages: already.into_iter().chain(lines).collect(),
+            releases,
+        },
+        allowed,
+        shortfalls,
+        proof: proof.rows(),
+        checked: None,
+        created: proof.created(),
+    }
 }
 
 /// The pending commit at `head`.

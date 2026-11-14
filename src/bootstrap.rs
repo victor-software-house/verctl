@@ -76,7 +76,7 @@ pub fn run(
         },
         ..request.scope.clone()
     };
-    let run = run_pending(
+    let mut run = run_pending(
         config,
         config_path,
         root,
@@ -107,6 +107,14 @@ pub fn run(
     } else {
         Vec::new()
     };
+    let trusted: Vec<String> = rows
+        .iter()
+        .filter(|row| matches!(row.state, State::Added | State::AlreadySet))
+        .map(|row| row.name.clone())
+        .collect();
+    if let Some(checked) = &run.checked {
+        run.proof = checked.rows_after(&run.created, &trusted);
+    }
     Ok((run, rows))
 }
 

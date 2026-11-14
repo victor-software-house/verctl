@@ -452,6 +452,31 @@ async fn count(server: &MockServer, method: &str) -> usize {
         .count()
 }
 
+/// The notices of `check` that a report's release proof holds for crate
+/// `name`.
+fn proof_notices<'a>(report: &'a Value, check: &str, name: &str) -> Vec<&'a Value> {
+    let prefix = format!("{name}: ");
+    report["proof"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|row| {
+            row["row"] == "notice"
+                && row["check"] == check
+                && row["message"]
+                    .as_str()
+                    .is_some_and(|message| message.starts_with(&prefix))
+        })
+        .collect()
+}
+
+/// Fail unless every request `server` got was a read, so a dry run opened no
+/// draft, uploaded nothing and made no tag.
+async fn assert_only_reads(server: &MockServer) {
+    let seen = received(server).await;
+    assert!(seen.iter().all(|(sent, _)| sent == "GET"), "{seen:?}");
+}
+
 /// A crate with no entry gets one `POST` with the exact body.
 #[tokio::test]
 async fn trust_adds_a_missing_entry() {
@@ -720,15 +745,9 @@ async fn new_run_creates_a_missing_member_with_the_registry_token() {
         .find(|package| package["name"] == "demo-cli")
         .unwrap();
     assert_eq!(created["note"], "created with the registry token");
-    let notice = json!({
-        "row": "notice",
-        "check": "registry",
-        "message": "demo-cli: crates.io lacks it; this run creates it with the registry token",
-    });
-    assert!(
-        report["proof"].as_array().unwrap().contains(&notice),
-        "{}",
-        report["proof"]
+    assert_eq!(
+        proof_notices(&report, "registry", "demo-cli"),
+        Vec::<&Value>::new()
     );
     assert_eq!(count(&world.github, "PATCH").await, 1);
 }
@@ -841,7 +860,9 @@ async fn new_needs_the_registry_token() {
 
 /// With `--new`, the `trust` proof passes a crate crates.io lacks with a
 /// notice to add its entry once the run creates it, where it fails a missing
-/// crate as `Missing` otherwise.
+/// crate as `Missing` otherwise. A plain `--new` adds no entry, so the notice
+/// stays in the report as the prompt to run `release trust`, and the
+/// `registry` notice, which the run resolved, does not.
 #[tokio::test]
 async fn new_run_passes_the_trust_proof_for_a_crate_it_creates() {
     let world = World::new().await;
@@ -860,6 +881,10 @@ async fn new_run_passes_the_trust_proof_for_a_crate_it_creates() {
         &["--new"],
     );
     let report = report(&output);
+    assert_eq!(
+        proof_notices(&report, "registry", "demo"),
+        Vec::<&Value>::new()
+    );
     let notice = json!({
         "row": "notice",
         "check": "trust",
@@ -876,14 +901,20 @@ async fn new_run_passes_the_trust_proof_for_a_crate_it_creates() {
 /// `release --dry-run --new` plans what `release --new` plans: a
 /// standalone `0.0.0` package crates.io lacks, read from the index, with its
 /// tag. Without the flag the same dry run plans nothing.
+/// It reads GitHub for the tag and the Release, and writes nothing there.
 #[tokio::test]
 async fn dry_run_new_plans_what_the_run_plans() {
     let world = World::new().await;
     standalone(world.repo(), &[("demo", "0.0.0")]);
+    let head = common::git(world.repo(), &["rev-parse", "HEAD"]);
     on_crates_io(&world, "demo", "0.0.0", false).await;
+    new_release(&world, "v0.0.0", &head).await;
     let output = release(
         &world,
-        &[("VERCTL_REGISTRY_TOKEN", "r3gistry")],
+        &[
+            ("VERCTL_REGISTRY_TOKEN", "r3gistry"),
+            ("GITHUB_TOKEN", "gh-token"),
+        ],
         &["--dry-run", "--new"],
     );
     let planned = report(&output);
@@ -905,21 +936,32 @@ async fn dry_run_new_plans_what_the_run_plans() {
             .await
             .contains(&("GET".to_owned(), "/de/mo/demo".to_owned()))
     );
-    let plain = report(&release(&world, &[], &["--dry-run"]));
+    let plain = report(&release(
+        &world,
+        &[("GITHUB_TOKEN", "gh-token")],
+        &["--dry-run"],
+    ));
     assert_eq!(plain["outcome"], "nothing-to-release");
     assert_eq!(world.cargo_calls(), Vec::<String>::new());
-    assert_eq!(received(&world.github).await, no_requests());
+    assert_only_reads(&world.github).await;
 }
 
-/// Under `--dry-run`, `--new` needs no token: the dry run plans as the
-/// real run would, and a notice names `VERCTL_REGISTRY_TOKEN` when it is
-/// unset. Only a real run fails without it.
+/// Under `--dry-run`, `--new` needs no registry token: the dry run plans as
+/// the real run would, and a notice names `VERCTL_REGISTRY_TOKEN` when it is
+/// unset. Only a real run fails without it. Both need `GITHUB_TOKEN` to read
+/// the tag and the Release.
 #[tokio::test]
-async fn dry_run_new_needs_no_token() {
+async fn dry_run_new_needs_no_registry_token() {
     let world = World::new().await;
     standalone(world.repo(), &[("demo", "0.0.0")]);
+    let head = common::git(world.repo(), &["rev-parse", "HEAD"]);
     on_crates_io(&world, "demo", "0.0.0", false).await;
-    let output = release(&world, &[], &["--dry-run", "--new"]);
+    new_release(&world, "v0.0.0", &head).await;
+    let output = release(
+        &world,
+        &[("GITHUB_TOKEN", "gh-token")],
+        &["--dry-run", "--new"],
+    );
     let planned = report(&output);
     assert_eq!(planned["packages"][0]["name"], "demo");
     let notices = planned["notices"].as_array().unwrap();
@@ -977,6 +1019,14 @@ async fn bootstrap_creates_a_crate_and_trusts_it() {
         .find(|package| package["name"] == "demo-cli")
         .unwrap();
     assert_eq!(created["note"], "created with the registry token");
+    assert_eq!(
+        proof_notices(&report, "registry", "demo-cli"),
+        Vec::<&Value>::new()
+    );
+    assert_eq!(
+        proof_notices(&report, "trust", "demo-cli"),
+        Vec::<&Value>::new()
+    );
     assert_eq!(count(&world.api, "POST").await, 1);
     assert_eq!(count(&world.github, "PATCH").await, 1);
 }
@@ -1078,16 +1128,18 @@ async fn bootstrap_needs_both_tokens() {
     assert_eq!(received(&world.api).await, no_requests());
 }
 
-/// `release bootstrap --dry-run` needs neither token. It prints what both
-/// steps would do, the release and the entry of each crate it would create,
-/// and writes nothing.
+/// `release bootstrap --dry-run` needs neither crates.io token, only
+/// `GITHUB_TOKEN` for its reads. It prints what both steps would do, the
+/// release and the entry of each crate it would create, and writes nothing.
 #[tokio::test]
-async fn bootstrap_dry_run_needs_no_token_and_lists_both_steps() {
+async fn bootstrap_dry_run_needs_no_crates_io_token_and_lists_both_steps() {
     let world = World::new().await;
     world.fake_cargo();
     standalone(world.repo(), &[("demo", "0.0.0")]);
+    let head = common::git(world.repo(), &["rev-parse", "HEAD"]);
     on_crates_io(&world, "demo", "0.0.0", false).await;
-    let output = bootstrap(&world, &[], &["--dry-run"]);
+    new_release(&world, "v0.0.0", &head).await;
+    let output = bootstrap(&world, &[("GITHUB_TOKEN", "gh-token")], &["--dry-run"]);
     let planned = report(&output);
     assert_eq!(planned["releases"], json!(["would create v0.0.0"]));
     assert_eq!(
@@ -1104,7 +1156,7 @@ async fn bootstrap_dry_run_needs_no_token_and_lists_both_steps() {
     );
     assert_eq!(world.cargo_calls(), Vec::<String>::new());
     assert_eq!(count(&world.api, "POST").await, 0);
-    assert_eq!(received(&world.github).await, no_requests());
+    assert_only_reads(&world.github).await;
 }
 
 /// `--bootstrap` is no option of `release`, and the reusable workflow takes
@@ -1132,8 +1184,10 @@ async fn the_bootstrap_flag_and_input_are_gone() {
 async fn bootstrap_uses_the_options_written_before_the_verb() {
     let world = World::new().await;
     standalone(world.repo(), &[("demo", "0.0.0")]);
+    let head = common::git(world.repo(), &["rev-parse", "HEAD"]);
     on_crates_io(&world, "demo", "0.0.0", false).await;
-    let output = base(&world, &[])
+    new_release(&world, "v0.0.0", &head).await;
+    let output = base(&world, &[("GITHUB_TOKEN", "gh-token")])
         .args(["--format", "json", "--color", "never", "release"])
         .args(["--crates-io-api", &world.api.uri()])
         .args(["--crates-io-index", &world.index.uri()])
@@ -1222,7 +1276,9 @@ async fn bootstrap_trusts_a_crate_the_index_already_lists() {
 async fn bootstrap_runs_through_the_served_ver_task_with_options_before_the_verb() {
     let world = World::new().await;
     standalone(world.repo(), &[("demo", "0.0.0")]);
+    let head = common::git(world.repo(), &["rev-parse", "HEAD"]);
     on_crates_io(&world, "demo", "0.0.0", false).await;
+    new_release(&world, "v0.0.0", &head).await;
     let task = minijinja::Environment::new()
         .render_str(
             &fs::read_to_string(
@@ -1254,6 +1310,7 @@ async fn bootstrap_runs_through_the_served_ver_task_with_options_before_the_verb
             format!("{}:{}", bin.display(), env::var("PATH").unwrap_or_default()),
         )
         .env("GITHUB_API_URL", world.github.uri())
+        .env("GITHUB_TOKEN", "gh-token")
         .env("COLUMNS", "400")
         .arg(&script);
     let output = command

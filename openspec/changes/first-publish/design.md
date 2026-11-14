@@ -58,7 +58,7 @@ With crate names, only those crates may be created, and another crate crates.io 
 Several crates may be named, and an unknown name fails before any request, listing the known ones.
 
 It needs `VERCTL_REGISTRY_TOKEN` and `VERCTL_OWNER_TOKEN`, both checked before any write, so no crate is created without its entry.
-`--dry-run` needs neither and prints what both steps would do.
+`--dry-run` needs neither, reads GitHub as the release does with `GITHUB_TOKEN`, and prints what both steps would do.
 It has no upload, tag or tip check of its own: the release's proofs apply, and the tag comes from the draft's publish.
 
 [`derived-release-state`][derived] plans `release bootstrap` as the operator-run first publication and trust setup, and [`release-completion`][completion] names the matching state `bootstrap`, so the three agree.
