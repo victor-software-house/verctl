@@ -1,10 +1,14 @@
 //! The `registry` and `trust` checks: what crates.io must hold before a
 //! release uploads anything.
 //!
-//! `registry` needs no token. For each crate the repository publishes to
-//! crates.io, it proves that the crate exists and lists every login `owners`
-//! expects. As evidence and not as proof, it reports how the newest version
-//! reached crates.io.
+//! `registry` needs no token for its crate proofs. For each crate the
+//! repository publishes to crates.io, it proves that the crate exists and
+//! lists every login `owners` expects. As evidence and not as proof, it
+//! reports how the newest version reached crates.io.
+//!
+//! The command adds the release freeze of [`crate::freeze`] to the report
+//! ([`RegistryReport::freeze`]); [`prove`], which `release` runs, leaves it
+//! out, because that run is the release the freeze waits for.
 //!
 //! `trust` needs an owner's token in `VERCTL_OWNER_TOKEN`, because crates.io
 //! serves trusted publisher entries to owners alone. It proves that an entry
@@ -31,6 +35,7 @@ use serde::Serialize;
 use toml_edit::{DocumentMut, Item};
 
 use crate::config::{Config, ReleaseCheck};
+use crate::freeze::Freeze;
 use crate::github::{self, Repo};
 use crate::publish::PublishEntry;
 use crate::publisher::Upload;
@@ -187,7 +192,8 @@ pub(crate) fn planned_from_env(
 /// `check registry`: each crate of `config` against the crates.io API at
 /// `api`, which needs no token. It fetches and resolves the default branch as
 /// `check versions` does, and reads the repository from
-/// [`github::repo`].
+/// [`github::repo`]. The report holds no freeze: the command adds it with
+/// [`crate::freeze::check`].
 ///
 /// # Errors
 ///
@@ -197,7 +203,10 @@ pub(crate) fn planned_from_env(
 pub fn registry(config: &Config, root: &Path, api: &str) -> Result<RegistryReport> {
     match crates_from_env(config, root)? {
         (crates, Some(repository)) => prove_registry(&crates, api, &repository, false),
-        (_, None) => Ok(RegistryReport { crates: Vec::new() }),
+        (_, None) => Ok(RegistryReport {
+            crates: Vec::new(),
+            freeze: None,
+        }),
     }
 }
 
@@ -257,7 +266,10 @@ pub fn prove_registry(
             state,
         });
     }
-    Ok(RegistryReport { crates: rows })
+    Ok(RegistryReport {
+        crates: rows,
+        freeze: None,
+    })
 }
 
 /// `check trust`: each crate of `config` against the trusted publisher
@@ -326,7 +338,10 @@ pub fn prove(
     let (crates, repository) = crates_from_env(config, root)?;
     let registry = match (&repository, listed(ReleaseCheck::Registry)) {
         (Some(repository), true) => Some(prove_registry(&crates, api, repository, bootstrap)?),
-        (None, true) => Some(RegistryReport { crates: Vec::new() }),
+        (None, true) => Some(RegistryReport {
+            crates: Vec::new(),
+            freeze: None,
+        }),
         (_, false) => None,
     };
     let trust = match (&repository, token) {
@@ -546,23 +561,40 @@ fn bootstrap_notice(name: &str) -> String {
 pub struct RegistryReport {
     /// One row per crate.
     pub crates: Vec<RegistryRow>,
+    /// The release freeze, or `None` when the run is the release itself or
+    /// its dry run, which skips it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub freeze: Option<Freeze>,
 }
 
 impl RegistryReport {
-    /// One message per failed proof, naming its crate and what to change.
+    /// One message per failed proof of a crate, naming it and what to
+    /// change.
     #[must_use]
-    pub fn failures(&self) -> Vec<String> {
+    pub fn crate_failures(&self) -> Vec<String> {
         self.crates
             .iter()
             .filter_map(RegistryRow::failure)
             .collect()
     }
 
+    /// [`Self::crate_failures`], then one message per pending release the
+    /// freeze fails.
+    #[must_use]
+    pub fn failures(&self) -> Vec<String> {
+        let mut failures = self.crate_failures();
+        failures.extend(self.freeze.iter().flat_map(Freeze::failures));
+        failures
+    }
+
     /// One message per proof that passed without running: a crate that
-    /// needs its bootstrap, or a crate with no owner proof.
+    /// needs its bootstrap, or a crate with no owner proof; then each notice
+    /// of the freeze.
     #[must_use]
     pub fn notices(&self) -> Vec<String> {
-        self.crates.iter().filter_map(RegistryRow::notice).collect()
+        let mut notices: Vec<String> = self.crates.iter().filter_map(RegistryRow::notice).collect();
+        notices.extend(self.freeze.iter().flat_map(Freeze::notices));
+        notices
     }
 }
 

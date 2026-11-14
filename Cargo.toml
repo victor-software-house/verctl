@@ -208,6 +208,10 @@ name = "fragment"
 path = "tests/fragment.rs"
 
 [[test]]
+name = "freeze"
+path = "tests/freeze.rs"
+
+[[test]]
 name = "lockfile"
 path = "tests/lockfile.rs"
 

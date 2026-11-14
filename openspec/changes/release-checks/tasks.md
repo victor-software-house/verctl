@@ -24,13 +24,17 @@
 
 ## 4. Freeze and tiers
 
-- [ ] 4.1 The freeze inside the `registry` check, with the wait for a running release. Proof: a CI test with a recorded runs response.
-- [ ] 4.2 The `verctl: unfreeze` label passes the freeze. Proof: a CI test with a recorded pull request payload.
-- [ ] 4.3 `status` names the enforcement tier. Proof: a snapshot test per tier from recorded rules responses.
+- [x] 4.1 The freeze inside the `registry` check, with the wait for a running release. Proof: a CI test with a recorded runs response.
+  - `tests/freeze.rs`: `a_pull_request_freezes_on_a_partial_release`, `a_running_release_is_waited_for`, `the_wait_runs_out`, `the_version_pr_does_not_freeze_on_its_own_versions` and `a_push_only_reports_the_pending_release`.
+- [x] 4.2 The `verctl: unfreeze` label passes the freeze. Proof: a CI test with a recorded pull request payload.
+  - `tests/freeze.rs`: `the_unfreeze_label_passes_only_the_freeze` and `a_merge_group_reads_the_label_of_its_pull_request`.
+- [x] 4.3 `status` names the enforcement tier. Proof: a snapshot test per tier from recorded rules responses.
+  - `tests/status.rs`: `status_names_the_merge_queue_tier`, `status_names_the_rulesets_without_a_queue_tier`, `status_names_the_neither_tier` and `status_shows_an_unknown_tier_without_a_token`, over `tests/testdata/rules/`.
 
 ## 5. Documents
 
-- [ ] 5.1 Update AGENTS.md, the instructions, the operator skill and the README for the named checks, the release proof, the freeze and the tiers. Proof: `UPDATE_OPERATOR_DOCS=1 cargo test operator_docs` leaves no diff in CI.
-- [ ] 5.2 A `patch!` fragment for verctl lists the removed flag, verbs and `--plan` under `### Breaking`. Proof: `verctl version --dry-run` shows the entry under that heading.
+- [x] 5.1 Update AGENTS.md, the instructions, the operator skill and the README for the named checks, the release proof, the freeze and the tiers. Proof: `UPDATE_OPERATOR_DOCS=1 cargo test operator_docs` leaves no diff in CI.
+- [x] 5.2 A `patch!` fragment for verctl lists the removed flag, verbs and `--plan` under `### Breaking`. Proof: `verctl version --dry-run` shows the entry under that heading.
+  - `.changeset/release-checks.md` lists the freeze and the tier. The removed flag, verbs and `--plan` shipped under `### Breaking` in 0.8.6-rc.2 ([#379](https://github.com/victor-software-house/verctl/pull/379)), so this fragment leaves them out.
 
 [queue]: ../../../tasks.yaml

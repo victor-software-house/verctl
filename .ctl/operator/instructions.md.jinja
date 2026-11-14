@@ -148,7 +148,7 @@ A file that a template renders and a `pins` entry also names has two owners.
 
 ### Registry and trust checks
 
-`check registry` needs the network and no token.  
+`check registry` needs the network, and no token for its crate proofs.  
 For each crate the repository publishes to crates.io, it proves that the crate exists and that its owners include every login `owners` lists.  
 It also reports whether the crate's newest version came through trusted publishing from this repository.  
 That report is evidence and never fails the check.  
@@ -181,6 +181,44 @@ A value that is not a plain file name ending in `.yml` or `.yaml` fails the load
 
 `--crates-io-api <URL>` (`VERCTL_CRATES_IO_API`) names the crates.io API both checks read, crates.io itself when omitted.  
 crates.io's staging instance, `https://staging.crates.io/api/v1`, is the other use.
+
+### The release freeze
+
+`check registry` also fails while the default branch holds a version whose release is incomplete, so HEAD never moves past an unreleased version.  
+It names each pending release as `<name>@<version>`.
+
+It fails only when the Actions event, `GITHUB_EVENT_NAME`, is `pull_request`, `pull_request_target`, or `merge_group`, and then it needs `GITHUB_TOKEN` or `GH_TOKEN`, naming `GITHUB_TOKEN` when none is set.  
+On any other event, and locally, the pending release is a notice and the check never fails on it.  
+`release` and `release --dry-run` run `registry` without the freeze, because that run is the pending release, or changes nothing.
+
+The pending releases are the incomplete ones at HEAD, as `status` lists them, whose version equals the one the merge-base with the default branch holds, the comparison `check versions` makes.  
+So the Version PR, or a merge group whose earlier entry is the Version PR, does not freeze itself on its own new versions.
+
+Before it decides, the check lists the runs of the `release_workflow` file at the default branch's tip that are `queued`, `waiting`, `pending`, or `in_progress`.  
+While one runs it reads again every 30 seconds, and it searches for the pending releases once none does.  
+`--release-wait <SECONDS>` (`VERCTL_RELEASE_WAIT`, 1800 when omitted) bounds the wait, and past it the check fails naming the run's URL and the limit.  
+`--crates-io-index <URL>` (`VERCTL_CRATES_IO_INDEX`) names the sparse index the search reads, crates.io itself when omitted.
+
+A pull request labelled `verctl: unfreeze` passes the freeze, for a release that can never complete.  
+The label passes the freeze alone: every other `registry` proof still applies.  
+The check then shows a notice per pending release that names the label.  
+A pull request reads its labels from the event payload at `GITHUB_EVENT_PATH`.  
+A merge group reads the pull request number from its head ref, `gh-readonly-queue/<base>/pr-<n>-<sha>`, and that pull request's labels through the API.
+
+### Enforcement tiers
+
+The freeze only protects the default branch where a rule makes `check registry` required.  
+`status` names the tier from `GET /repos/{owner}/{repo}/rules/branches/{default}`:
+
+| Tier | Rules | What enforces the freeze |
+|:--|:--|:--|
+| `merge queue` | a `merge_queue` rule | the job that runs `check registry` is required on the merge-group commit |
+| `rulesets without a queue` | any other rule | the job is required on every pull request, with "require branches to be up to date", so it runs again after the Version PR lands |
+| `neither` | none | nothing: `status` says the freeze is reported, not enforced, so run `check versions registry` on the Version PR, updated to the default branch's tip, before merging it, and again if the default branch moves |
+
+Without a token, or when GitHub answers the read with a 403 or a 404, `status` shows the tier as unknown and says why.  
+That never fails `status`.  
+JSON holds the tier as `tier`, with a `state` of `merge-queue`, `rulesets-without-a-queue`, `neither`, or `unknown`.
 
 ### Authoring rules
 
@@ -539,6 +577,8 @@ It writes them beside the asset plan's `has_assets`, `tag`, and `matrix`.
 Without `--github-output`, `status` fetches nothing.  
 With no token, or when a lookup cannot run, it reports `unreleased` as not checked.  
 JSON shows `null` there and puts the reason in `unreleased_unchecked`.
+
+`status` also names the enforcement tier of the default branch's rules, as [Enforcement tiers](#enforcement-tiers) describes.
 
 A lookup cannot run in a shallow clone, with no GitHub `origin`, or with no answer from GitHub or a registry.  
 No answer means a failed connection, a timeout, or a 5xx.  
