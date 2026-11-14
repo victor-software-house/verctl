@@ -541,8 +541,11 @@ Another name, or a name listed twice, fails the load.
 The proof replays no `version`, runs no `cargo publish --dry-run`, and builds no tarball.  
 The Version PR's `check versions`, CI's `cargo package`, and the release workflow's asset matrix prove those before the release.
 
-`release --dry-run` (`-n`) prints the plan, runs the same proof, and writes nothing.  
-A failed check fails it, with the plan and each failure in the report.
+`release --dry-run` (`-n`) takes the path of a release through every read and stops before the first write: no draft, upload or tag.  
+It runs the same proof, reads GitHub for each tag and Release, and reads each registry listing, so it fails where the release would, with the same message.  
+It needs `GITHUB_TOKEN` and no registry or owner token, and it does not look for the declared tarballs.  
+It lists each upload it would make, each version the registry already lists as `already`, and each tag as `would create <tag>`, `would create draft <tag>` or `would complete <tag>`.  
+A failed proof check fails it, with the plan and each failure in the report.
 
 `--crates-io-api <URL>` (`VERCTL_CRATES_IO_API`) names the crates.io API the proof reads.  
 `--crates-io-index <URL>` (`VERCTL_CRATES_IO_INDEX`) names the sparse index that `release` and `status` read to learn whether a version is published.  
@@ -645,7 +648,7 @@ No command takes a version to publish.
 
 A standalone package at `0.0.0` that crates.io lacks, or that it lists with no tag, is planned like any other incomplete version, so the draft Release publishes last and creates its tag.  
 `status --new` (`VERCTL_NEW`) plans the same, for the workflow's plan job.  
-`release --dry-run --new` plans what the run plans, reading the crates.io listing of each standalone package at `0.0.0`, and needs no token.  
+`release --dry-run --new` plans what the run plans, reading the crates.io listing of each standalone package at `0.0.0`, and needs `GITHUB_TOKEN` and no registry token.  
 A notice names `VERCTL_REGISTRY_TOKEN` when it is unset, and only a real run fails without it.
 
 `verctl release trust [CRATE]...` takes one or more crates, or every crate when none is named.  
@@ -663,7 +666,7 @@ It takes every option `release` takes, such as `--assets-dir` and `--allow-workf
 With crate names, only those crates may be created, and another crate crates.io lacks fails the proof as it does without `--new`.  
 An unknown name fails before any request and lists the crates that exist.  
 It needs `VERCTL_REGISTRY_TOKEN` and `VERCTL_OWNER_TOKEN`, both checked before any write, each missing one named.  
-`--dry-run` needs neither, and prints the release it would make and the entry it would add for each crate that release would create.  
+`--dry-run` needs neither, only `GITHUB_TOKEN`, and prints the release it would make and the entry it would add for each crate that release would create.  
 The report is the release's, with a `trust` table of the entries it added.
 
 A release the new-crate rate limit stops fails with the time crates.io gives and records it in its draft Release, and a rerun resumes it.  

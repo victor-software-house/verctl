@@ -25,7 +25,7 @@ It SHALL run locally or in the release job, and the release's proofs, draft Rele
 ### Requirement: `release --new` needs the registry token
 
 Without `VERCTL_REGISTRY_TOKEN`, `verctl release --new` SHALL refuse to run, SHALL name the variable and the workflow secret `registry-token`, and SHALL write nothing.
-`--dry-run` SHALL need no token, and SHALL name the variable in a notice.
+`--dry-run` SHALL need no registry token and SHALL name the variable in a notice, and it SHALL need `GITHUB_TOKEN` for the reads a release makes.
 A release without `--new` SHALL fail the release proof on a crate crates.io lacks, as it does today.
 
 #### Scenario: No token
@@ -35,7 +35,7 @@ A release without `--new` SHALL fail the release proof on a crate crates.io lack
 
 #### Scenario: A dry run
 
-- **WHEN** `VERCTL_REGISTRY_TOKEN` is unset and `verctl release --dry-run --new` runs
+- **WHEN** `VERCTL_REGISTRY_TOKEN` is unset, `GITHUB_TOKEN` is set and `verctl release --dry-run --new` runs
 - **THEN** it plans what `verctl release --new` plans, names `VERCTL_REGISTRY_TOKEN` in a notice, and exits zero
 
 ### Requirement: The release proof passes a crate that `--new` creates

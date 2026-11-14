@@ -470,14 +470,14 @@ With rulesets and no queue, require it on every pull request, up to date with th
 With neither, run `check versions registry` on the Version PR, updated to the default branch's tip, before merging it.
 
 `verctl release --new` (`VERCTL_NEW`) lets a release create each crate crates.io lacks with `VERCTL_REGISTRY_TOKEN`, which it requires, at the version the default branch holds.  
-It is the release, with its proofs, its draft Release and its tag, and `release --dry-run --new` plans the same and needs no token, with a notice naming `VERCTL_REGISTRY_TOKEN` when it is unset.  
+It is the release, with its proofs, its draft Release and its tag, and `release --dry-run --new` plans the same and needs `GITHUB_TOKEN` and no registry token, with a notice naming `VERCTL_REGISTRY_TOKEN` when it is unset.  
 `verctl release bootstrap [CRATE]...` is `release --new` then `release trust` for each crate that run created.  
 It takes every option `release` takes, needs `VERCTL_REGISTRY_TOKEN` and `VERCTL_OWNER_TOKEN` before any write, and with crate names creates only those crates.  
 `verctl release trust [CRATE]...` adds this repository's entry to each crate that has none, never edits another, and with `--dry-run` sends no `POST`.
 
 Before its draft, `release` runs the checks `release_checks` names, `[registry, trust]` when omitted, and stops with nothing published when one fails.  
 `trust` runs only with `VERCTL_OWNER_TOKEN`, and is reported as skipped otherwise.  
-`release --dry-run` prints the plan and runs the same checks.  
+`release --dry-run` makes every read the release makes and writes nothing, so it needs `GITHUB_TOKEN` and fails where the release would.  
 `--crates-io-api` and `--crates-io-index` point a run at another crates.io, such as its staging instance.
 
 ## Operator documents

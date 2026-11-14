@@ -34,7 +34,7 @@ Several crates MAY be named, and an unknown name SHALL fail before any request, 
 ### Requirement: `release bootstrap` needs both tokens
 
 A real run SHALL need `VERCTL_REGISTRY_TOKEN` and `VERCTL_OWNER_TOKEN`, both checked before any write, each missing one named, so no crate is created without its entry.
-`--dry-run` SHALL need neither, and SHALL print what both steps would do.
+`--dry-run` SHALL need neither, SHALL need `GITHUB_TOKEN` for the reads a release makes, and SHALL print what both steps would do.
 
 #### Scenario: No token
 
@@ -43,5 +43,5 @@ A real run SHALL need `VERCTL_REGISTRY_TOKEN` and `VERCTL_OWNER_TOKEN`, both che
 
 #### Scenario: A dry run
 
-- **WHEN** no token is set, crates.io lacks `demo`, and `verctl release bootstrap --dry-run` runs
+- **WHEN** neither crates.io token is set, `GITHUB_TOKEN` is set, crates.io lacks `demo`, and `verctl release bootstrap --dry-run` runs
 - **THEN** it prints the release it would make and the entry it would add for `demo`, and exits zero

@@ -124,7 +124,7 @@ Everything else is proven once, by the gate that already owns it:
 
 A repository that publishes a crate while its template answer `published` is false has no packaging gate, and setting that answer to true adds it; the release adds no packaging step.
 Run by `release` or `release --dry-run`, the `registry` check skips the freeze of decision 6 and its wait for a running release: the run is that release, or changes nothing.
-`release --dry-run` (`-n`) prints the plan and runs the same checks, and uploads nothing.
+`release --dry-run` (`-n`) takes the path of a release through every read and stops before the first write, so it runs the same checks, fails where the release would, and uploads nothing.
 A failed check stops `release` before the draft, with nothing published.
 The operator chose this on 2026-11-13: no gate repeats work another gate already proved.
 
