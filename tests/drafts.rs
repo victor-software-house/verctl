@@ -1444,7 +1444,7 @@ async fn a_dry_run_fails_on_a_workflow_change_unless_allowed() {
     let stderr = String::from_utf8_lossy(&refused.stderr);
     assert!(stderr.contains(".github/workflows/"), "{stderr}");
     assert!(stderr.contains("--allow-workflow-change"), "{stderr}");
-    assert!(requests(&server).await.is_empty());
+    assert_eq!(requests(&server).await, Vec::<(String, String)>::new());
     let allowed = release(
         root.path(),
         &server,
@@ -1567,5 +1567,5 @@ async fn a_dry_run_without_a_token_fails_naming_it() {
     assert!(!output.status.success(), "{output:?}");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("GITHUB_TOKEN"), "{stderr}");
-    assert!(requests(&server).await.is_empty());
+    assert_eq!(requests(&server).await, Vec::<(String, String)>::new());
 }
