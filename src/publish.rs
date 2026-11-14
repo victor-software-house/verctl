@@ -295,7 +295,7 @@ pub struct PublishRun {
 /// A package at `0.0.0` needs no changelog section, and is released only as
 /// [`pending::pending`] describes: a standalone crate that crates.io lists
 /// without a tag, or, with `scope.bootstrap`, one that crates.io lacks. Its
-/// tag renders over that package alone ([`zero_tags`]).
+/// tag renders over that package alone (`zero_tags`).
 /// A dry run plans every other package and runs the release proof. It reads
 /// no registry listing.
 ///

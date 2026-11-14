@@ -136,7 +136,7 @@ It proves that a trusted publisher entry names the repository and `release_workf
 It first waits for a `release_workflow` run at the default branch's tip, up to `--release-wait <SECONDS>` (`VERCTL_RELEASE_WAIT`, 1800).  
 A pull request labelled `verctl: unfreeze` passes the freeze and no other proof; a merge group reads the label of its pull request through the API.  
 Anywhere else the pending release is a notice, and `release` runs `registry` without the freeze.  
-`status` names the enforcement tier of the default branch's rules: `merge queue`, `rulesets without a queue`, or `neither`, where the freeze is reported and not enforced; without a token it shows the tier as unknown.
+`status` names the enforcement tier of the default branch's rules: `merge queue`, `rulesets without a queue`, or `neither`, which holds no `required_status_checks` rule and where the freeze is reported and not enforced; without a token it shows the tier as unknown.
 
 ## First publish
 

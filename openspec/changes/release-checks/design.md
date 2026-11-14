@@ -155,9 +155,10 @@ The label follows the `tool: state` form of release-please's `autorelease: pendi
 
 **Decision.**
 
-1. With a merge queue, the job that runs `check registry` is required on the merge-group commit, which is the commit that lands under the `MERGE` method.
-2. With rulesets and no queue, that job is required on every pull request with "require branches to be up to date", so each one runs again after the Version PR lands.
-3. With neither, the operator updates the Version PR to the default branch's tip and runs `check versions registry` on it before merging, and again if the default branch moves before the merge; the freeze is reported, not enforced.
+1. With a `required_status_checks` rule and a merge queue, the job that runs `check registry` is required on the merge-group commit, which is the commit that lands under the `MERGE` method.
+2. With a `required_status_checks` rule and no queue, that job is required on every pull request with "require branches to be up to date", so each one runs again after the Version PR lands.
+3. With no `required_status_checks` rule, whatever other rules apply, the operator updates the Version PR to the default branch's tip and runs `check versions registry` on it before merging, and again if the default branch moves before the merge.
+   The freeze is reported, not enforced.
 
 No separate `release --dry-run` job runs in CI: it would repeat the `check registry` job (decision 5).
 

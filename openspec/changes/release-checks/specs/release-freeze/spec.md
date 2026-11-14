@@ -41,13 +41,13 @@ The label SHALL pass only the freeze; every other proof of the `registry` check 
 
 `verctl status` SHALL name the enforcement tier, read from the default branch's rules, as one of these:
 
-1. `merge queue`: a merge queue applies to the default branch
-2. `rulesets without a queue`: rulesets apply and no merge queue does
-3. `neither`: no ruleset or merge queue applies, and the freeze is reported, not enforced
+1. `merge queue`: a `required_status_checks` rule and a merge queue apply to the default branch
+2. `rulesets without a queue`: a `required_status_checks` rule applies and no merge queue does
+3. `neither`: no `required_status_checks` rule applies, so nothing makes `check registry` required, and the freeze is reported, not enforced
 
 #### Scenario: A merge queue
 
-- **WHEN** the default branch's rules include a merge queue and `verctl status` runs
+- **WHEN** the default branch's rules include a `required_status_checks` rule and a merge queue, and `verctl status` runs
 - **THEN** it reports the tier `merge queue`
 
 #### Scenario: Rulesets without a queue
@@ -57,5 +57,5 @@ The label SHALL pass only the freeze; every other proof of the `registry` check 
 
 #### Scenario: Neither
 
-- **WHEN** the default branch has no ruleset and no merge queue
+- **WHEN** the default branch has no ruleset, or only rules such as `deletion` and `pull_request` and no `required_status_checks` rule
 - **THEN** `verctl status` reports `neither` and states that the freeze is not enforced
