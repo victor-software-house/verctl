@@ -7,8 +7,8 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use ctl_core::prelude::*;
 use verctl::cli::{
-    AssetArgs, BootstrapArgs, Check, CheckArgs, CiArgs, Cli, Command, ReleaseArgs, ReleaseOptions,
-    ReleaseStep, RenderArgs, SemverArgs, StatusArgs, TrustArgs, VersionArgs,
+    AfterVerb, AssetArgs, BootstrapArgs, Check, CheckArgs, CiArgs, Cli, Command, ReleaseArgs,
+    ReleaseOptions, ReleaseStep, RenderArgs, SemverArgs, StatusArgs, TrustArgs, VersionArgs,
 };
 use verctl::config::{self, Config};
 use verctl::content::Inputs;
@@ -538,7 +538,8 @@ fn release_report_of(
 /// A real run needs `VERCTL_REGISTRY_TOKEN` and `VERCTL_OWNER_TOKEN`, checked
 /// before any write. `--dry-run` needs neither.
 fn bootstrap_report(step: &BootstrapArgs, before: &ReleaseArgs) -> Result<ReleaseReport> {
-    let options = step.options.clone().under(&before.options);
+    let after = AfterVerb::read(&env::args_os().collect::<Vec<_>>())?;
+    let options = step.options.clone().under(&before.options, &after);
     let (registry_token, token_notice) = new_token(&options, true)?;
     let config = Config::load(&options.config)?;
     let root = &config::root_of(&options.config);

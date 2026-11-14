@@ -578,7 +578,9 @@ struct Stopped {
 ///
 /// An upload of a crate crates.io lacks, which `new_crates` allows, creates it
 /// with the registry token, and its line notes that. The crates created come
-/// back beside the lines, by the name crates.io knows them.
+/// back beside the lines, by the name crates.io knows them, whatever the note:
+/// an index that already lists a crate whose owners crates.io still lacks
+/// leaves it created, and in need of its entry.
 fn run_uploads(
     uploads: Vec<(&PublishEntry, Vec<Upload>)>,
     registry_token: Option<&RegistryToken>,
@@ -603,12 +605,12 @@ fn run_uploads(
                 creating,
             )
             .map_err(|error| stopped(entry, &upload, error))?;
-            let note = match (note, &upload.check) {
-                (None, RegistryCheck::CratesIo { name }) if creating => {
-                    created.push(name.clone());
-                    Some(CREATED.to_owned())
-                }
-                (note, _) => note,
+            if let (true, RegistryCheck::CratesIo { name }) = (creating, &upload.check) {
+                created.push(name.clone());
+            }
+            let note = match note {
+                None if creating => Some(CREATED.to_owned()),
+                note => note,
             };
             packages.push(PublishLine {
                 name: upload.name,

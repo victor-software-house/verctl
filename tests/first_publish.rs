@@ -1124,3 +1124,93 @@ async fn the_bootstrap_flag_and_input_are_gone() {
     assert!(!workflow.contains("\n      bootstrap:\n"));
     assert!(!workflow.contains("VERCTL_BOOTSTRAP"));
 }
+
+/// Options written before the verb reach `release bootstrap`: the crates.io
+/// API and index named after `release` are the ones the run reads, and not
+/// the production defaults the verb's own options hold.
+#[tokio::test]
+async fn bootstrap_uses_the_options_written_before_the_verb() {
+    let world = World::new().await;
+    standalone(world.repo(), &[("demo", "0.0.0")]);
+    on_crates_io(&world, "demo", "0.0.0", false).await;
+    let output = base(&world, &[])
+        .args(["--format", "json", "--color", "never", "release"])
+        .args(["--crates-io-api", &world.api.uri()])
+        .args(["--crates-io-index", &world.index.uri()])
+        .args(["bootstrap", "--dry-run"])
+        .output()
+        .unwrap();
+    let planned = report(&output);
+    assert_eq!(planned["releases"], json!(["would create v0.0.0"]));
+    assert_eq!(
+        planned["trust"],
+        json!([{ "name": "demo", "state": "would-add" }])
+    );
+    assert!(
+        received(&world.api)
+            .await
+            .contains(&("GET".to_owned(), "/crates/demo/owners".to_owned()))
+    );
+    assert!(
+        received(&world.index)
+            .await
+            .contains(&("GET".to_owned(), "/de/mo/demo".to_owned()))
+    );
+}
+
+/// A crate the run may create whose upload finds the index already listing it,
+/// while crates.io's owners still answer 404, is reported as already
+/// published, and still gets its trusted publisher entry.
+#[tokio::test]
+async fn bootstrap_trusts_a_crate_the_index_already_lists() {
+    let world = World::new().await;
+    world.fake_cargo();
+    workspace(world.repo(), &["demo-core", "demo-cli"]);
+    let head = common::git(world.repo(), &["rev-parse", "HEAD"]);
+    fs::write(world.marker("demo-core"), "").unwrap();
+    index_after_publish(&world, "demo-core", "0.7.0").await;
+    Mock::given(method("GET"))
+        .and(path("/crates/demo-core/owners"))
+        .respond_with(ResponseTemplate::new(404))
+        .up_to_n_times(3)
+        .mount(&world.api)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/crates/demo-core/owners"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "users": [{
+                "id": 1,
+                "login": "any-victor",
+                "kind": "user",
+                "url": "https://github.com/any-victor",
+                "name": null,
+            }]
+        })))
+        .mount(&world.api)
+        .await;
+    on_crates_io(&world, "demo-cli", "0.7.0", false).await;
+    for name in ["demo-core", "demo-cli"] {
+        entries(&world.api, name, Vec::new()).await;
+        accepts(&world.api, name).await;
+    }
+    new_release(&world, "v0.7.0", &head).await;
+    let output = bootstrap(
+        &world,
+        &[BOTH[0], BOTH[1], ("GITHUB_TOKEN", "gh-token")],
+        &[],
+    );
+    let report = report(&output);
+    let mut trusted: Vec<String> = report["trust"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| format!("{} {}", row["name"], row["state"]))
+        .collect();
+    trusted.sort();
+    assert_eq!(
+        trusted,
+        ["\"demo-cli\" \"added\"", "\"demo-core\" \"added\""]
+    );
+    assert_eq!(world.token_calls(), ["demo-cli r3gistry"]);
+    assert_eq!(count(&world.api, "POST").await, 2);
+}

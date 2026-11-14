@@ -1,8 +1,10 @@
+use std::ffi::OsString;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
-use ctl_core::{ColorLong, DryRunArgs, EnvPrefix, FormatArgs};
+use clap::parser::ValueSource;
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
+use ctl_core::{ColorLong, DryRunArgs, EnvPrefix, FormatArgs, flags};
 
 /// Stack-agnostic version PRs from Changesets-format fragments.
 ///
@@ -163,14 +165,98 @@ pub struct ReleaseOptions {
     pub crates_io_index: String,
 }
 
+/// A valued option of `release` that has a default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Valued {
+    /// `--config`.
+    Config,
+    /// `--registry-token-env`.
+    RegistryTokenEnv,
+    /// `--crates-io-api`.
+    CratesIoApi,
+    /// `--crates-io-index`.
+    CratesIoIndex,
+}
+
+impl Valued {
+    /// Each valued option with its argument id.
+    const ALL: [(Self, &'static str); 4] = [
+        (Self::Config, "config"),
+        (Self::RegistryTokenEnv, "registry_token_env"),
+        (Self::CratesIoApi, "crates_io_api"),
+        (Self::CratesIoIndex, "crates_io_index"),
+    ];
+}
+
+/// Which valued options of `release bootstrap` were set after the verb, by
+/// flag or by environment variable, and not left to their default.
+///
+/// clap fills a default into the options after the verb, so the value alone
+/// cannot say whether `release --crates-io-api <staging> bootstrap` named
+/// the staging API. Its [`ValueSource`] can.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AfterVerb(Vec<Valued>);
+
+impl AfterVerb {
+    /// Which options `raw`, the command line, sets after `release bootstrap`.
+    /// None are when the command line is not a `release bootstrap`.
+    ///
+    /// # Errors
+    ///
+    /// Returns clap's error when `raw` does not parse, which a command line
+    /// that already parsed never does.
+    pub fn read(raw: &[OsString]) -> Result<Self, clap::Error> {
+        let command = flags::env_under_flags(Cli::command(), raw)?;
+        let matches = command.try_get_matches_from(raw)?;
+        let Some(bootstrap) = matches
+            .subcommand_matches("release")
+            .and_then(|release| release.subcommand_matches("bootstrap"))
+        else {
+            return Ok(Self::default());
+        };
+        Ok(Self(
+            Valued::ALL
+                .into_iter()
+                .filter(|(_, id)| {
+                    matches!(
+                        bootstrap.value_source(id),
+                        Some(ValueSource::CommandLine | ValueSource::EnvVariable)
+                    )
+                })
+                .map(|(valued, _)| valued)
+                .collect(),
+        ))
+    }
+
+    /// Whether the option was set after the verb.
+    #[must_use]
+    pub fn has(&self, valued: Valued) -> bool {
+        self.0.contains(&valued)
+    }
+}
+
 impl ReleaseOptions {
     /// These options with the ones written before the verb, as `release
     /// --dry-run bootstrap` writes them: a switch counts when either sets it,
-    /// and a list or a directory when this holds none. A value with a
-    /// default, such as `--config`, keeps this one, so write it after the
-    /// verb.
+    /// and a list or a directory when this holds none. Each valued option
+    /// keeps the value after the verb only when `after` shows it was set
+    /// there, and takes the value before the verb otherwise.
     #[must_use]
-    pub fn under(mut self, before: &Self) -> Self {
+    pub fn under(mut self, before: &Self, after: &AfterVerb) -> Self {
+        if !after.has(Valued::Config) {
+            self.config.clone_from(&before.config);
+        }
+        if !after.has(Valued::RegistryTokenEnv) {
+            self.registry_token_env
+                .clone_from(&before.registry_token_env);
+        }
+        if !after.has(Valued::CratesIoApi) {
+            self.crates_io_api.clone_from(&before.crates_io_api);
+        }
+        if !after.has(Valued::CratesIoIndex) {
+            self.crates_io_index.clone_from(&before.crates_io_index);
+        }
         self.dry.dry_run |= before.dry.dry_run;
         self.skip_assets |= before.skip_assets;
         self.releases_only |= before.releases_only;
@@ -539,7 +625,7 @@ mod tests {
     use clap::{CommandFactory, FromArgMatches};
     use ctl_core::flags;
 
-    use super::{Check, Cli, Command};
+    use super::{AfterVerb, Check, Cli, Command};
     use crate::registry::CRATES_IO_API;
 
     /// Parse as `App` does: variables the command line overrules are unbound
@@ -845,7 +931,7 @@ mod tests {
     /// variable.
     #[test]
     fn release_bootstrap_and_trust_take_crates_and_flags() {
-        let cli = parse(&[
+        let words = [
             "verctl",
             "release",
             "--dry-run",
@@ -862,8 +948,8 @@ mod tests {
             "http://api.test",
             "--crates-io-index",
             "http://index.test",
-        ])
-        .expect("parse");
+        ];
+        let cli = parse(&words).expect("parse");
         let Command::Release(release) = cli.command else {
             panic!("expected release");
         };
@@ -872,7 +958,9 @@ mod tests {
         };
         assert_eq!(bootstrap.crates, ["demo-core", "demo-cli"]);
         assert!(!bootstrap.options.dry_run());
-        let options = bootstrap.options.clone().under(&release.options);
+        let raw: Vec<OsString> = words.iter().map(OsString::from).collect();
+        let after = AfterVerb::read(&raw).expect("sources");
+        let options = bootstrap.options.clone().under(&release.options, &after);
         assert!(options.dry_run());
         assert!(options.skip_assets);
         assert!(options.allow.allow_workflow_change);
@@ -968,6 +1056,61 @@ mod tests {
             let error = parse(words).expect_err("--bootstrap is gone");
             assert_eq!(error.exit_code(), 2, "{words:?}");
         }
+    }
+
+    /// The options of `release bootstrap` that `release` takes before the
+    /// verb: each valued one keeps the value written before the verb, unless
+    /// the verb's own flag sets it. `release --crates-io-api <staging>
+    /// bootstrap` therefore reads staging and not production crates.io.
+    #[test]
+    fn options_before_the_verb_reach_bootstrap() {
+        let merged = |words: &[&str]| {
+            let cli = parse(words).expect("parse");
+            let Command::Release(release) = cli.command else {
+                panic!("expected release");
+            };
+            let Some(super::ReleaseStep::Bootstrap(bootstrap)) = &release.step else {
+                panic!("expected release bootstrap");
+            };
+            let raw: Vec<OsString> = words.iter().map(OsString::from).collect();
+            let after = AfterVerb::read(&raw).expect("sources");
+            bootstrap.options.clone().under(&release.options, &after)
+        };
+        let before = merged(&[
+            "verctl",
+            "release",
+            "--crates-io-api",
+            "http://staging.test/api",
+            "--crates-io-index",
+            "http://staging.test/index",
+            "--registry-token-env",
+            "NODE_AUTH_TOKEN",
+            "-c",
+            "other.yaml",
+            "bootstrap",
+        ]);
+        assert_eq!(before.crates_io_api, "http://staging.test/api");
+        assert_eq!(before.crates_io_index, "http://staging.test/index");
+        assert_eq!(before.registry_token_env, "NODE_AUTH_TOKEN");
+        assert_eq!(before.config, Path::new("other.yaml"));
+        let both = merged(&[
+            "verctl",
+            "release",
+            "--crates-io-api",
+            "http://staging.test/api",
+            "-c",
+            "other.yaml",
+            "bootstrap",
+            "--crates-io-api",
+            "http://after.test/api",
+            "-c",
+            "after.yaml",
+        ]);
+        assert_eq!(both.crates_io_api, "http://after.test/api");
+        assert_eq!(both.config, Path::new("after.yaml"));
+        let neither = merged(&["verctl", "release", "bootstrap"]);
+        assert_eq!(neither.crates_io_api, CRATES_IO_API);
+        assert_eq!(neither.config, Path::new(".ctl/ver.yaml"));
     }
 
     /// No command takes a version to publish: `--version` on `release
