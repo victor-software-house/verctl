@@ -10,8 +10,8 @@ is `0.0.0`, with or without a pre-release or build suffix.
 A package that declares `first_minor: true` is the one exception.
 The refusal SHALL name the package and the `first_minor` key.
 
-`verctl check` SHALL fail a standalone package that was never published and whose version is not `0.0.0`.
-A member of a shared-version group, a workspace member with `version.workspace = true`, SHALL first publish at the group's current version, and `check` SHALL NOT apply the `0.0.0` rule to it.
+`verctl check registry` SHALL fail a standalone package that crates.io lacks and whose version is not `0.0.0`, because only that check reads crates.io.
+A member of a shared-version group, a workspace member with `version.workspace = true`, SHALL first publish at the group's current version, and `check registry` SHALL NOT apply the `0.0.0` rule to it.
 
 #### Scenario: A patch fragment on a new package
 
@@ -43,10 +43,10 @@ A member of a shared-version group, a workspace member with `version.workspace =
 #### Scenario: A never-published package at another version
 
 - **WHEN** standalone package `demo` is absent from crates.io and `Cargo.toml` declares version `0.2.0`
-- **THEN** `verctl check` exits non-zero and its error names `demo`, `0.2.0`, and `0.0.0`
+- **THEN** `verctl check registry` exits non-zero and its error names `demo`, `0.2.0`, and `0.0.0`
 
 #### Scenario: A member of a shared-version group
 
 - **WHEN** workspace member `demo-cli` sets `version.workspace = true`, the workspace version is `0.7.0`, and `demo-cli` is absent from crates.io
 - **THEN** `verctl release bootstrap` publishes `demo-cli` `0.7.0`
-- **AND** `verctl check` exits zero for `demo-cli`
+- **AND** `verctl check registry` does not apply the `0.0.0` rule to `demo-cli`

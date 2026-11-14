@@ -4,11 +4,11 @@
 
 - [ ] 1.1 `verctl release bootstrap [PACKAGE]...`, with the `Retry-After` wait. Proof: CI tests against recorded responses, and the shrub first publish of `shrub-process`.
 - [ ] 1.2 `verctl release trust [PACKAGE]...` and `release trust --dry-run`: list first, add only a missing entry, never edit another. Proof: CI tests against recorded `github_configs` responses for a missing, a matching and a foreign entry.
-- [ ] 1.3 `check` fails a never-published standalone package at a version other than `0.0.0`. Proof: a CI test.
+- [ ] 1.3 `check registry` fails a never-published standalone package at a version other than `0.0.0`. Proof: a CI test.
 
 ## 2. Workflow
 
-- [ ] 2.1 The `bootstrap` workflow input. Proof: the workflow's policy check and a dry run.
+- [ ] 2.1 The `bootstrap` workflow input, and a release run that plans a bootstrapped standalone package at `0.0.0` with no tag. Proof: the workflow's policy check, a dry run, and a CI test of the plan.
 
 ## 3. Documents
 

@@ -31,25 +31,21 @@ A member of a shared-version group SHALL get no tag of its own.
 - **WHEN** standalone package `demo` is at `0.0.0` on `main`, crates.io lacks it, and `verctl release bootstrap` runs
 - **THEN** it publishes `demo` `0.0.0`, creates tag `v0.0.0` at the default branch's tip, and runs `verctl release trust`
 
-### Requirement: Inside a release run, bootstrap only uploads
-
-Inside a release run, `verctl release bootstrap` SHALL only upload.
-The run SHALL plan each standalone package at `0.0.0` that the registry lists and that has no tag, whichever attempt bootstrapped it.
-The publish of the run's draft Release SHALL create that tag, as release-order requires.
-
-#### Scenario: Bootstrap inside a release run
-
-- **WHEN** the release job runs with `bootstrap: true`, standalone package `demo` at `0.0.0` is missing from crates.io, and the next registry upload of the run fails
-- **THEN** `demo` `0.0.0` is on crates.io and in the run's plan, no tag `v0.0.0` exists, and the run's draft Release stays a draft until a rerun publishes it with tag `v0.0.0`
-
 ### Requirement: `release bootstrap` needs the operator's token
 
 Without `VERCTL_REGISTRY_TOKEN`, `verctl release bootstrap` SHALL refuse to run, SHALL name the variable, and SHALL publish nothing.
+Run on its own, it SHALL also refuse without `VERCTL_OWNER_TOKEN`, which its `release trust` step needs, so no crate is created without its entry.
+It SHALL run at the default branch's tip: after fetching the default branch, HEAD SHALL be that commit, or it SHALL exit non-zero naming both commits and publish nothing.
 
 #### Scenario: No token
 
 - **WHEN** `VERCTL_REGISTRY_TOKEN` is unset and `verctl release bootstrap` runs
 - **THEN** it exits non-zero, names `VERCTL_REGISTRY_TOKEN`, and publishes nothing
+
+#### Scenario: HEAD behind the default branch
+
+- **WHEN** `origin/main` is one commit ahead of HEAD and `verctl release bootstrap` runs
+- **THEN** it exits non-zero, names both commits, and publishes nothing
 
 ### Requirement: `release trust` adds the trusted publisher entry only when it is missing
 
@@ -77,52 +73,40 @@ It SHALL report a crate whose entry matches as `already set`, and SHALL never ed
 - **WHEN** crate `shrub-process` has no entry and `verctl release trust --dry-run` runs
 - **THEN** it reports the entry it would add for `shrub-process`, and sends no `POST`
 
-### Requirement: `release trust` reads its entry from the repository
+### Requirement: `release trust` adds the entry `check trust` proves
 
 `verctl release trust` SHALL take no provider argument.
-It SHALL read the repository from the `origin` remote, and the workflow file and environment from the one workflow in `.github/workflows/` that calls the reusable `release.yml`.
-It SHALL fail and name the files when no workflow or more than one calls it.
+It SHALL read the repository from the `origin` remote and the workflow file from `release_workflow`, the file `check trust` compares, and SHALL add the entry with no environment, so a run in any environment matches it.
+#### Scenario: The default workflow
 
-#### Scenario: One caller workflow
+- **WHEN** the `origin` remote is `github.com/acme/demo` and `.ctl/ver.yaml` sets no `release_workflow`
+- **THEN** `verctl release trust` adds an entry for owner `acme`, repository `demo`, workflow `release.yml` and no environment
 
-- **WHEN** the `origin` remote is `github.com/acme/demo`, and only `.github/workflows/release.yml` calls the reusable `release.yml`, with `environment: crates-io`
-- **THEN** `verctl release trust` adds an entry for owner `acme`, repository `demo`, workflow `release.yml` and environment `crates-io`
+### Requirement: `release trust` needs an owner's token
 
-#### Scenario: Two caller workflows
+`verctl release trust` SHALL read the owner's token from `VERCTL_OWNER_TOKEN`, because crates.io adds an entry only for a token with the `trusted-publishing` scope.
+Without it, it SHALL exit non-zero naming the variable and send no request.
+A crate that already holds 5 entries, the crates.io limit, SHALL fail naming the limit, and the other crates SHALL still be handled.
 
-- **WHEN** both `.github/workflows/release.yml` and `.github/workflows/hotfix.yml` call the reusable `release.yml`
-- **THEN** `verctl release trust` exits non-zero, names both files, and sends no `POST`
+#### Scenario: A crate at the limit
+
+- **WHEN** crate `demo` holds 5 entries, none naming this repository, and `verctl release trust` runs
+- **THEN** it exits non-zero naming `demo` and the limit of 5, and sends no `POST` for `demo`
+
+#### Scenario: No owner's token
+
+- **WHEN** `VERCTL_OWNER_TOKEN` is unset and `verctl release trust` runs
+- **THEN** it exits non-zero, names `VERCTL_OWNER_TOKEN`, and sends no request
 
 ### Requirement: A first publish waits on `Retry-After`
 
-When crates.io answers a first publish or a trusted publisher registration with 429, `verctl release bootstrap` and `verctl release trust` SHALL wait until the HTTP date in the `Retry-After` header, and then try again.
+When crates.io answers a first publish or a trusted publisher registration with 429, `verctl release bootstrap` and `verctl release trust` SHALL wait until the time crates.io gives, and then try again.
+A first publish reads it from cargo's "try again after" message, and a registration from the `Retry-After` header, as seconds or as an HTTP date.
 
 #### Scenario: The new-crate limit
 
 - **WHEN** `verctl release bootstrap` publishes 6 new crates, and crates.io answers the sixth with 429 and `Retry-After: Fri, 13 Nov 2026 15:10:00 GMT`
 - **THEN** it reports the wait, tries the sixth again at that time, and publishes all 6 in one run
-
-### Requirement: A repository may opt in to a token for new crates in CI
-
-The reusable `release.yml` SHALL declare a boolean input `bootstrap` defaulting to `false`, beside `publish`, `assets` and `docs`.
-With `bootstrap: true` and the `registry-token` secret set, the release job SHALL run `verctl release bootstrap` for a package the registry lacks.
-Trusted publishing SHALL stay the default.
-With the opt-in, the `registry` check SHALL count a missing crate as one the run can create.
-
-#### Scenario: The default
-
-- **WHEN** a caller passes no `bootstrap` input and crates.io lacks `demo`
-- **THEN** the workflow publishes no token upload, and `verctl check registry` reports `demo` as missing
-
-#### Scenario: The opt-in
-
-- **WHEN** a caller passes `bootstrap: true` with the `registry-token` secret and crates.io lacks `demo`
-- **THEN** `verctl check registry` does not report `demo` as missing, and the release run publishes `demo` with that token
-
-#### Scenario: The opt-in without a secret
-
-- **WHEN** a caller passes `bootstrap: true` and no `registry-token` secret
-- **THEN** the workflow fails before any upload and names `registry-token`
 
 ### Requirement: Nothing is published only to hold a name
 
