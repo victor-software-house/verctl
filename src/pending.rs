@@ -33,7 +33,7 @@ use crate::github::{self, ReleaseList, ReleaseState};
 use crate::publish::{self, PublishEntry};
 use crate::publisher::Upload;
 use crate::registry::{self, RegistryCheck};
-use crate::registry_token::RegistryToken;
+use crate::registry_token::{NewCrates, RegistryToken};
 use crate::{bump, publisher, stop};
 
 /// The incomplete releases of the versions HEAD holds, and the assets missing
@@ -195,7 +195,8 @@ struct PackageState {
 ///
 /// - crates.io lists that version, as a first publish left it, and the tag does
 ///   not exist yet;
-/// - `bootstrap` is set, and crates.io lacks the crate, so the run creates it.
+/// - `new_crates` allows the crate and crates.io lacks it, so the run creates
+///   it (`release --new`).
 ///
 /// A workspace member releases with its group and is unaffected.
 ///
@@ -248,7 +249,7 @@ pub fn pending(
     declared_assets: &[String],
     registry_token: Option<&RegistryToken>,
     crates_io_index: &str,
-    bootstrap: bool,
+    new_crates: &NewCrates,
     list: &ReleaseList,
 ) -> Result<Pending> {
     if config.packages.is_empty() {
@@ -276,7 +277,7 @@ pub fn pending(
     let mut counts: BTreeMap<String, Count> = BTreeMap::new();
     for (index, (spec, entry)) in config.packages.iter().zip(&planned.packages).enumerate() {
         let zero = bump::unreleased(&entry.version);
-        if zero && !zero_planned(config, root, spec, entry, crates_io_index, bootstrap)? {
+        if zero && !zero_planned(config, root, spec, entry, crates_io_index, new_crates)? {
             continue;
         }
         let driver = spec.resolve(config, root)?;
@@ -516,15 +517,15 @@ fn version_in(driver: &Driver, raw: &str) -> Option<String> {
 }
 
 /// Whether a package at `0.0.0` joins the plan: it is a standalone crates.io
-/// crate, and either the index at `index` lists that version or `bootstrap` is
-/// set and the index has no file for the crate.
+/// crate, and either the index at `index` lists that version or `new_crates`
+/// allows the crate and the index has no file for it.
 pub(crate) fn zero_planned(
     config: &Config,
     root: &Path,
     spec: &PackageSpec,
     entry: &PublishEntry,
     index: &str,
-    bootstrap: bool,
+    new_crates: &NewCrates,
 ) -> Result<bool> {
     if entry.argv.is_empty() || publisher::workspace_members(config, spec, root)?.is_some() {
         return Ok(false);
@@ -542,7 +543,7 @@ pub(crate) fn zero_planned(
     Ok(
         match registry::crates_io_listing(index, name, &entry.version)? {
             registry::Listing::Listed => true,
-            registry::Listing::NoCrate => bootstrap,
+            registry::Listing::NoCrate => new_crates.allows(name),
             registry::Listing::Unlisted => false,
         },
     )

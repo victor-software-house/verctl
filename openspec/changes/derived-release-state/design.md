@@ -151,7 +151,7 @@ Rules that hold across all transitions:
 | `propose` | the version step on the release branch tip, then open, update, or close the Version PR | `prepare --pr` |
 | `release` | reconcile the oldest unreleased release commit: verify, publish, tag, release, finalize | `publish` |
 | `release asset <target>` | build and upload one asset | `assets --build --upload` |
-| `release bootstrap <package>` | the operator-run first publication and trust setup, from bun-release | bun-release's bootstrap |
+| `release bootstrap <package>` | `release --new` then `release trust`: the operator-run first publication and trust setup, from bun-release | bun-release's bootstrap |
 | `render` | re-render every served file at the versions on HEAD | `pin` |
 | `ci` | plan the validation jobs | unchanged |
 | `instructions` | print the installed contract | unchanged |

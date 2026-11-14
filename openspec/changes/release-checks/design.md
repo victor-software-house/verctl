@@ -66,7 +66,7 @@ Leave out `owners`, and the owner proof is skipped with a notice.
 The existence proof applies to the crates the default branch holds.
 A crate that only the pull request adds passes with a notice that it needs `release bootstrap` once it lands.
 
-After it lands, `check registry` fails every pull request until the operator runs `verctl release bootstrap` at the default branch's tip, or the `bootstrap` workflow input lets the release do it.
+After it lands, `check registry` fails every pull request until the operator runs `verctl release bootstrap`, or the `publish-new` workflow input lets the release do it.
 The first version is then the code the default branch holds, as [`first-publish`][first-publish] requires.
 
 **Alternative.**

@@ -540,21 +540,23 @@ queue:
       - The operator decided the design on 2026-11-13; docs/research/2026-11-13-atomic-releases.md holds it.
 
   - id: VER-136
-    title: "First publish: release bootstrap and release trust for a crate the registry lacks"
+    title: "First publish: release --new, release trust and release bootstrap for a crate the registry lacks"
     scope: release, release.yml
     outcome: >-
-      A crate crates.io lacks is published with the operator token at the version the
+      A crate crates.io lacks is created with the registry token at the version the
       default branch holds, and its trusted publisher is registered once.
     blocked_by:
       - VER-135
     acceptance:
-      - verctl release bootstrap publishes each package the registry lacks, or each named one, and runs verctl release trust.
+      - verctl release --new lets a release create each crate the registry lacks with the registry token.
       - verctl release trust adds the trusted publisher entry only when it is missing, and release trust --dry-run sends no POST.
-      - The bootstrap input lets CI run release bootstrap with the registry-token secret, and defaults to false.
+      - verctl release bootstrap is release --new then release trust for each crate that run created.
+      - The publish-new input lets CI run release --new with the registry-token secret, and defaults to false.
       - shrub-process is published through release bootstrap.
     plan: openspec/changes/first-publish/proposal.md
     notes:
       - The operator decided the design on 2026-11-13; docs/research/2026-11-13-atomic-releases.md holds it.
+      - The operator decided on 2026-11-14 that release bootstrap is the shorthand for release --new then release trust.
 
   - id: VER-137
     title: Give every hand-typed verctl flag a short form

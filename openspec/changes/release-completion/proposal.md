@@ -20,7 +20,7 @@ Queue row: [VER-011][ver-011]. This change is one part of
 3. Whether a release publishes is read from its release commit, and nowhere
    else.
 4. A first publication that the registry needs is a stop, `bootstrap`, never
-   a guess.
+   a guess. `release --new` or `release bootstrap` ends it.
 
 ## Capabilities
 

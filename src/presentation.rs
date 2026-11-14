@@ -726,6 +726,10 @@ pub(super) struct ReleaseReport {
     /// What the release proof found beyond a pass.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) proof: Vec<registry_check::ProofRow>,
+    /// The trusted publisher entries `release bootstrap` added to the crates
+    /// the release created.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) trust: Vec<first_publish::Row>,
 }
 
 impl ReleaseReport {
@@ -745,7 +749,7 @@ impl ReleaseReport {
     /// proof's, and one error per failure of the proof.
     fn with_proof(&self, document: Document) -> Document {
         let mut notices = self.notices.clone();
-        let mut failures = Vec::new();
+        let mut failures = trust_failures(&self.trust);
         for row in &self.proof {
             match row {
                 registry_check::ProofRow::Failed { check, message } => {
@@ -840,6 +844,9 @@ impl Present for ReleaseReport {
         if !self.packages.is_empty() {
             document = document.table(table);
         }
+        if !self.trust.is_empty() {
+            document = document.table(trust_table(&self.trust));
+        }
         if fields.is_empty() {
             self.with_proof(document)
         } else {
@@ -854,6 +861,7 @@ impl Present for ReleaseReport {
             .proof
             .iter()
             .any(|row| matches!(row, registry_check::ProofRow::Failed { .. }))
+            || self.trust.iter().any(|row| row.failure().is_some())
         {
             Outcome::Error
         } else {
@@ -862,50 +870,38 @@ impl Present for ReleaseReport {
     }
 }
 
-/// What `release bootstrap` and `release trust` did: one row per crate and
-/// step.
+/// What `release trust` did: one row per crate.
 #[derive(Serialize)]
 pub(super) struct CratesReport {
     pub(super) crates: Vec<first_publish::Row>,
 }
 
+/// The table of trusted publisher rows, one per crate.
+fn trust_table(rows: &[first_publish::Row]) -> Table {
+    rows.iter().fold(
+        Table::new(vec!["name", "state"]).id_column(0),
+        |table, row| table.row(vec![row.name.clone(), row.state.label().to_owned()]),
+    )
+}
+
+/// One error per failed row.
+fn trust_failures(rows: &[first_publish::Row]) -> Vec<String> {
+    rows.iter()
+        .filter_map(|row| row.failure().map(str::to_owned))
+        .collect()
+}
+
 impl Present for CratesReport {
-    /// A table of the rows, with a `version` column when any row has one and a
-    /// `note` column when any row has one, then one error per failed row.
+    /// A table of the rows, then one error per failed row.
     fn present(&self) -> Document {
         if self.crates.is_empty() {
             return Document::new().fields(Fields::new().row("no-op", "no crate to handle"));
         }
-        let versions = self.crates.iter().any(|row| row.version.is_some());
-        let notes = self.crates.iter().any(|row| row.note.is_some());
-        let mut headers = vec!["name"];
-        if versions {
-            headers.push("version");
-        }
-        headers.push("state");
-        if notes {
-            headers.push("note");
-        }
-        let table = self
-            .crates
-            .iter()
-            .fold(Table::new(headers).id_column(0), |table, row| {
-                let mut cells = vec![row.name.clone()];
-                if versions {
-                    cells.push(row.version.clone().unwrap_or_else(|| "-".to_owned()));
-                }
-                cells.push(row.state.label());
-                if notes {
-                    cells.push(row.note.clone().unwrap_or_default());
-                }
-                table.row(cells)
-            });
-        let failures: Vec<String> = self
-            .crates
-            .iter()
-            .filter_map(|row| row.failure().map(str::to_owned))
-            .collect();
-        with_findings(Document::new().table(table), &[], &failures)
+        with_findings(
+            Document::new().table(trust_table(&self.crates)),
+            &[],
+            &trust_failures(&self.crates),
+        )
     }
 
     /// An error when any row failed, after every row is shown.
@@ -1038,6 +1034,7 @@ mod tests {
             dry_run: false,
             notices: Vec::new(),
             proof: Vec::new(),
+            trust: Vec::new(),
         })
     }
 
@@ -1057,6 +1054,7 @@ mod tests {
             dry_run: false,
             notices: Vec::new(),
             proof: Vec::new(),
+            trust: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
             .width(120)
@@ -1319,6 +1317,7 @@ mod tests {
             dry_run: false,
             notices: Vec::new(),
             proof: Vec::new(),
+            trust: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
             .width(80)
@@ -1341,6 +1340,7 @@ mod tests {
             dry_run: false,
             notices: Vec::new(),
             proof: Vec::new(),
+            trust: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
             .width(80)
