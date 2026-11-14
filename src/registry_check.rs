@@ -372,9 +372,9 @@ impl Proof {
     }
 
     /// [`rows`](Self::rows) after a run that created `created`, by the name
-    /// crates.io knows them: the run resolved the notice of each such crate,
-    /// that it creates it and that its entry is still to add, so none is
-    /// left to report.
+    /// crates.io knows them.
+    /// The run resolved the notice of each such crate, that it creates it and
+    /// that its entry is still to add, so none is left to report.
     #[must_use]
     pub fn rows_after(&self, created: &[String]) -> Vec<ProofRow> {
         let mut resolved = self.clone();

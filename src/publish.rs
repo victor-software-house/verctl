@@ -303,10 +303,11 @@ pub struct PublishRun {
 /// tag renders over that package alone (`zero_tags`).
 /// A dry run takes this path through every read and stops before the first
 /// write: no draft, asset upload, registry upload or tag step.
-/// It needs a GitHub token for those reads and no registry or owner token,
-/// and it fails where the run would, with the same message, except that a
-/// failed release proof is listed in [`PublishRun::proof`] beside the
-/// packages still to release, and no later read runs.
+/// It needs a GitHub token for those reads and no registry or owner token.
+/// It fails where the run would, with the same message.
+/// The one difference is a failed release proof: the dry run lists it in
+/// [`PublishRun::proof`] beside the packages still to release, and runs no
+/// later read.
 /// It does not look for the declared tarballs, which only an upload needs.
 ///
 /// Before any publisher, tag, or Release call, the run proves HEAD in two
