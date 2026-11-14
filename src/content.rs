@@ -673,7 +673,7 @@ pub(crate) struct Scratch(PathBuf);
 /// The number the next [`Scratch`] of this process tries first.
 static NEXT_SCRATCH: AtomicU64 = AtomicU64::new(0);
 
-/// How many taken names [`Scratch::new`] skips before it fails, so a run of
+/// How many names [`Scratch::new`] tries before it fails, so a run of
 /// names another user created in the shared temporary directory ends it
 /// instead of holding it.
 const SCRATCH_ATTEMPTS: u32 = 1000;
@@ -682,7 +682,7 @@ impl Scratch {
     /// Each directory takes the process id and a number no other `Scratch`
     /// of this process took, so two made in the same instant never share a
     /// name. A name a dead process with the same id left behind is skipped,
-    /// up to [`SCRATCH_ATTEMPTS`] names.
+    /// within [`SCRATCH_ATTEMPTS`] tries.
     pub(crate) fn new() -> Result<Self> {
         let mut attempts = 0;
         let dir = loop {
