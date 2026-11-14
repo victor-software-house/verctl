@@ -626,6 +626,64 @@ async fn bootstrap_skips_a_named_listed_crate() {
     assert_eq!(world.cargo_calls(), Vec::<String>::new());
 }
 
+/// The index lists a crate that the owners API still answers 404 for, as on a
+/// rerun. It is reported as already published, and still gets its tag and its
+/// trusted publisher entry, which the run needs to count as done.
+#[tokio::test]
+async fn bootstrap_tags_and_trusts_a_crate_the_index_already_lists() {
+    let world = World::new().await;
+    world.fake_cargo(false);
+    standalone(world.repo(), &[("demo", "0.0.0")]);
+    let tip = common::git(world.repo(), &["rev-parse", "HEAD"]);
+    let owners = json!({
+        "users": [{
+            "id": 1,
+            "login": "any-victor",
+            "kind": "user",
+            "url": "https://github.com/any-victor",
+            "name": null,
+        }]
+    });
+    Mock::given(method("GET"))
+        .and(path("/crates/demo/owners"))
+        .respond_with(ResponseTemplate::new(404))
+        .up_to_n_times(1)
+        .mount(&world.api)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/crates/demo/owners"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(owners))
+        .mount(&world.api)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/de/mo/demo"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(json!({ "name": "demo", "vers": "0.0.0" }).to_string()),
+        )
+        .mount(&world.index)
+        .await;
+    entries(&world.api, "demo", Vec::new()).await;
+    accepts(&world.api, "demo").await;
+    takes_tag(&world, "v0.0.0", &tip).await;
+    let output = bootstrap(
+        &world,
+        &[BOTH[0], BOTH[1], ("GITHUB_TOKEN", "gh-token")],
+        &[],
+    );
+    assert_eq!(
+        rows(&output),
+        [
+            json!({ "name": "demo", "version": "0.0.0", "state": "already-published" }),
+            json!({ "name": "demo", "version": "0.0.0", "state": "tagged", "tag": "v0.0.0" }),
+            json!({ "name": "demo", "version": "0.0.0", "state": "added" }),
+        ]
+    );
+    assert_eq!(world.cargo_calls(), Vec::<String>::new());
+    assert_eq!(count(&world.github, "POST").await, 1);
+    assert_eq!(count(&world.api, "POST").await, 1);
+}
+
 /// Each token a real run needs is checked before any request: each missing
 /// one is named, and nothing is read or uploaded.
 #[tokio::test]
