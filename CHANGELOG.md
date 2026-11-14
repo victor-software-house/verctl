@@ -1,5 +1,38 @@
 # Changelog
 
+## verctl 0.8.6-rc.4
+
+### Breaking
+
+- `verctl check registry` fails a never-published standalone package whose version is not `0.0.0`, naming the crate, its version, and `0.0.0`, where it passed before.
+  A workspace member is exempt, since it first publishes at the group's version.
+  The release proof runs `registry`, so `release` stops on it too ([#395](https://github.com/victor-software-house/verctl/pull/395)).
+
+  `verctl release trust [CRATE]...` lists each crate's trusted publisher entries and adds this repository's entry only when none matches, with an owner's `VERCTL_OWNER_TOKEN`.
+  `--dry-run` lists what it would add and sends no write.
+- `verctl release --new` (`VERCTL_NEW`) lets a release create each crate crates.io lacks with `VERCTL_REGISTRY_TOKEN`, while trusted publishing publishes every other crate, and the reusable release workflow takes a `publish-new` input that runs it.
+  `verctl status --new` plans the same.
+  `--bootstrap` and the `bootstrap` input are gone, replaced by `--new` and `publish-new` ([#402](https://github.com/victor-software-house/verctl/pull/402)).
+
+  `verctl release bootstrap [CRATE]...` is now `release --new` followed by `release trust` for each crate that run created.
+  It takes every option `release` takes, and needs `VERCTL_REGISTRY_TOKEN` and `VERCTL_OWNER_TOKEN`.
+  It no longer has its own upload, tag or rate-limit wait: the release's proofs, draft Release and stop-and-rerun behaviour apply.
+- `verctl check registry` fails a pull request or a merge group while the default branch holds a version whose release is incomplete, naming each `<name>@<version>`, where it passed before.
+  It needs `GITHUB_TOKEN` on those events, and on any other event the pending release is a notice.
+  Before it decides, it waits for a run of the `release_workflow` file at the default branch's tip, up to the new `--release-wait <SECONDS>` (`VERCTL_RELEASE_WAIT`, 1800 when omitted), and fails naming the run and the limit when the run outlasts it.
+  `--crates-io-index` (`VERCTL_CRATES_IO_INDEX`) now sets the sparse index of that search for `check` as it does for `release` and `status` ([#398](https://github.com/victor-software-house/verctl/pull/398)).
+
+  A pull request labelled `verctl: unfreeze` passes the freeze, and no other proof of `registry`.
+  A merge group reads the label of the pull request its head ref names.
+  `release` and `release --dry-run` run `registry` without the freeze.
+
+  `verctl status` names the enforcement tier of the default branch's rules, `merge queue`, `rulesets without a queue` or `neither`, and shows it as unknown, with the reason, without a token or when GitHub refuses the read.
+  Its JSON report gains `tier`.
+
+### Changed
+
+- The release freeze waits for a release run in any status but `completed`, so a status GitHub adds later no longer lets a pull request past a running release ([#400](https://github.com/victor-software-house/verctl/pull/400)).
+
 ## verctl 0.8.6-rc.3
 
 ### Breaking
