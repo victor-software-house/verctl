@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -41,9 +42,10 @@ pub enum Command {
     Version(VersionArgs),
     /// Release the versions on HEAD: publish with cargo or bun, and create the
     /// GitHub Release.
-    /// `release asset <target>` builds one asset, `release bootstrap` publishes
-    /// the crates crates.io lacks, and `release trust` registers the trusted
-    /// publisher.
+    /// `release asset <target>` builds one asset, `release --new` may create
+    /// the crates crates.io lacks, `release trust` registers the trusted
+    /// publisher, and `release bootstrap` is `release --new` then `release
+    /// trust`.
     Release(ReleaseArgs),
     /// Rewrite pins and render served templates at the versions on HEAD.
     Render(RenderArgs),
@@ -77,10 +79,34 @@ pub struct CiArgs {
     pub github_output: Option<PathBuf>,
 }
 
-/// Arguments of `release`.
+/// Arguments of `release`: the options of a release, and the step after it.
+///
+/// It derefs to its [`ReleaseOptions`], so `args.config` reads one of them.
 #[derive(Debug, Args)]
 #[non_exhaustive]
 pub struct ReleaseArgs {
+    /// The options of a release, which `release bootstrap` takes too.
+    #[command(flatten)]
+    pub options: ReleaseOptions,
+    /// `release asset <target>`, `release bootstrap`, or `release trust`.
+    /// Without one, `release` publishes.
+    #[command(subcommand)]
+    pub step: Option<ReleaseStep>,
+}
+
+impl Deref for ReleaseArgs {
+    type Target = ReleaseOptions;
+
+    fn deref(&self) -> &ReleaseOptions {
+        &self.options
+    }
+}
+
+/// The options of a release, which `release` and `release bootstrap` both
+/// take.
+#[derive(Debug, Clone, Args)]
+#[non_exhaustive]
+pub struct ReleaseOptions {
     /// Package map. Defaults to .ctl/ver.yaml in the current directory.
     #[arg(short = 'c', long, default_value = crate::config::FILE, value_hint = clap::ValueHint::FilePath)]
     pub config: PathBuf,
@@ -115,8 +141,8 @@ pub struct ReleaseArgs {
     /// Create each crate crates.io lacks with `VERCTL_REGISTRY_TOKEN`, which
     /// is then required. Trusted publishing, `VERCTL_TRUSTED_PUBLISHING_TOKEN`,
     /// still publishes every other crate, and both may be set.
-    #[arg(long)]
-    pub bootstrap: bool,
+    #[arg(long = "new")]
+    pub new_crates: bool,
     /// The variable each publisher reads the registry token from, such as
     /// `CARGO_REGISTRY_TOKEN` for crates.io or `CARGO_REGISTRIES_<NAME>_TOKEN`
     /// for another cargo registry. The token itself comes from
@@ -135,10 +161,30 @@ pub struct ReleaseArgs {
     /// index, `https://index.staging.crates.io`, for a staging release.
     #[arg(long, value_name = "URL", default_value = crate::registry::CRATES_IO_INDEX)]
     pub crates_io_index: String,
-    /// `release asset <target>`, `release bootstrap`, or `release trust`.
-    /// Without one, `release` publishes.
-    #[command(subcommand)]
-    pub step: Option<ReleaseStep>,
+}
+
+impl ReleaseOptions {
+    /// These options with the ones written before the verb, as `release
+    /// --dry-run bootstrap` writes them: a switch counts when either sets it,
+    /// and a list or a directory when this holds none. A value with a
+    /// default, such as `--config`, keeps this one, so write it after the
+    /// verb.
+    #[must_use]
+    pub fn under(mut self, before: &Self) -> Self {
+        self.dry.dry_run |= before.dry.dry_run;
+        self.skip_assets |= before.skip_assets;
+        self.releases_only |= before.releases_only;
+        self.new_crates |= before.new_crates;
+        self.allow.allow_workflow_change |= before.allow.allow_workflow_change;
+        self.allow.allow_off_default_branch |= before.allow.allow_off_default_branch;
+        if self.declared_assets.is_empty() {
+            self.declared_assets.clone_from(&before.declared_assets);
+        }
+        if self.assets_dir.is_none() {
+            self.assets_dir.clone_from(&before.assets_dir);
+        }
+        self
+    }
 }
 
 /// The value parser of `--registry-token-env`: a variable name as POSIX
@@ -172,10 +218,10 @@ pub enum ReleaseStep {
     /// `release --assets-dir` uploads it. A vendored set's archive is built
     /// and uploaded here, unless `--dry-run`.
     Asset(AssetArgs),
-    /// Publish, with the operator's token, each crate crates.io lacks, at the
-    /// version the default branch's tip holds. Each published standalone
-    /// package is tagged, and each published crate gets its trusted publisher
-    /// entry. `--dry-run` lists what it would publish and tag.
+    /// `release --new` for the crates named, or every crate crates.io lacks,
+    /// then `release trust` for each crate that run created. It takes every
+    /// option `release` takes, and needs `VERCTL_REGISTRY_TOKEN` and
+    /// `VERCTL_OWNER_TOKEN`. `--dry-run` needs neither.
     Bootstrap(BootstrapArgs),
     /// Add this repository's trusted publisher entry to each crate that has
     /// none, and leave every other entry alone. `--dry-run` lists what it
@@ -185,7 +231,7 @@ pub enum ReleaseStep {
 
 /// The proofs `release` may go past, each an independent switch with its own
 /// variable.
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Args)]
 #[non_exhaustive]
 pub struct AllowArgs {
     /// Release even when `.github/workflows/` at HEAD differs from the
@@ -227,37 +273,19 @@ pub struct AssetArgs {
     pub prebuilt: Option<PathBuf>,
 }
 
-/// Arguments of `release bootstrap`.
+/// Arguments of `release bootstrap`: a release with `--new`, then `release
+/// trust`.
 #[derive(Debug, Args)]
 #[non_exhaustive]
 pub struct BootstrapArgs {
-    /// The crates to publish, as the crate names of the manifests. With none,
-    /// every crate crates.io lacks.
+    /// The crates the release may create, as the crate names of the
+    /// manifests. With none, every crate crates.io lacks. Another crate
+    /// crates.io lacks fails the release proof.
     #[arg(value_name = "CRATE")]
     pub crates: Vec<String>,
-    /// Package map. Defaults to the one named before `bootstrap`, which
-    /// defaults to .ctl/ver.yaml in the current directory.
-    #[arg(short = 'c', long, value_hint = clap::ValueHint::FilePath)]
-    pub config: Option<PathBuf>,
-    /// The shared `--dry-run` flag: list what would be published and tagged,
-    /// and write nothing. It needs neither token.
+    /// The options of a release.
     #[command(flatten)]
-    pub dry: DryRunArgs,
-    /// The variable the publisher reads the registry token from. The token
-    /// itself comes from `VERCTL_REGISTRY_TOKEN`, and no flag takes it, so it
-    /// never reaches an argv. Only the publisher runs with it.
-    #[arg(long, default_value = "CARGO_REGISTRY_TOKEN", value_parser = variable_name)]
-    pub registry_token_env: String,
-    /// The crates.io API root that `bootstrap` reads owners and trusted
-    /// publishers from, and adds entries to. Point it at crates.io's staging
-    /// instance, `https://staging.crates.io/api/v1`, to prove a staging run.
-    #[arg(long, value_name = "URL", default_value = crate::registry::CRATES_IO_API)]
-    pub crates_io_api: String,
-    /// The crates.io sparse index root that `bootstrap` reads to learn whether
-    /// a crate version is published. Point it at crates.io's staging index,
-    /// `https://index.staging.crates.io`, for a staging run.
-    #[arg(long, value_name = "URL", default_value = crate::registry::CRATES_IO_INDEX)]
-    pub crates_io_index: String,
+    pub options: ReleaseOptions,
 }
 
 /// Arguments of `release trust`.
@@ -283,22 +311,6 @@ pub struct TrustArgs {
     pub crates_io_api: String,
 }
 
-impl BootstrapArgs {
-    /// Whether `--dry-run` was given before or after `bootstrap`, so a flag
-    /// written at the `release` level can never turn a dry run into a
-    /// publish.
-    #[must_use]
-    pub fn dry_run_under(&self, release: &ReleaseArgs) -> bool {
-        self.dry.dry_run || release.dry_run()
-    }
-
-    /// The config named after `bootstrap`, or else the one named before it.
-    #[must_use]
-    pub fn config_under<'a>(&'a self, release: &'a ReleaseArgs) -> &'a Path {
-        self.config.as_deref().unwrap_or(&release.config)
-    }
-}
-
 impl TrustArgs {
     /// Whether `--dry-run` was given before or after `trust`, so a flag
     /// written at the `release` level can never turn a dry run into a write.
@@ -314,7 +326,7 @@ impl TrustArgs {
     }
 }
 
-impl ReleaseArgs {
+impl ReleaseOptions {
     /// Whether `--dry-run` was given.
     #[must_use]
     pub fn dry_run(&self) -> bool {
@@ -392,9 +404,9 @@ pub struct StatusArgs {
     #[arg(long, value_name = "URL", default_value = crate::registry::CRATES_IO_INDEX)]
     pub crates_io_index: String,
     /// Plan a standalone package at `0.0.0` that crates.io lacks, as
-    /// `release --bootstrap` creates it.
-    #[arg(long)]
-    pub bootstrap: bool,
+    /// `release --new` creates it.
+    #[arg(long = "new")]
+    pub new_crates: bool,
 }
 
 /// Arguments of `check`.
@@ -813,6 +825,7 @@ mod tests {
             ("registry_token_env", "VERCTL_REGISTRY_TOKEN_ENV"),
             ("crates_io_api", "VERCTL_CRATES_IO_API"),
             ("crates_io_index", "VERCTL_CRATES_IO_INDEX"),
+            ("new_crates", "VERCTL_NEW"),
         ] {
             let arg = release
                 .get_arguments()
@@ -826,9 +839,9 @@ mod tests {
         }
     }
 
-    /// `release bootstrap` takes crate names and its own flags, and
-    /// `release trust` takes crate names and the API root. A `--dry-run`
-    /// written before the step still counts, and each flag reads its
+    /// `release bootstrap` takes crate names and every option `release`
+    /// takes, and `release trust` takes crate names and the API root. A
+    /// switch written before the step still counts, and each flag reads its
     /// variable.
     #[test]
     fn release_bootstrap_and_trust_take_crates_and_flags() {
@@ -839,6 +852,10 @@ mod tests {
             "bootstrap",
             "demo-core",
             "demo-cli",
+            "--skip-assets",
+            "--assets-dir",
+            "tarballs",
+            "--allow-workflow-change",
             "--registry-token-env",
             "NODE_AUTH_TOKEN",
             "--crates-io-api",
@@ -854,12 +871,16 @@ mod tests {
             panic!("expected release bootstrap");
         };
         assert_eq!(bootstrap.crates, ["demo-core", "demo-cli"]);
-        assert!(!bootstrap.dry.dry_run);
-        assert!(bootstrap.dry_run_under(&release));
-        assert_eq!(bootstrap.registry_token_env, "NODE_AUTH_TOKEN");
-        assert_eq!(bootstrap.crates_io_api, "http://api.test");
-        assert_eq!(bootstrap.crates_io_index, "http://index.test");
-        assert_eq!(bootstrap.config_under(&release), Path::new(".ctl/ver.yaml"));
+        assert!(!bootstrap.options.dry_run());
+        let options = bootstrap.options.clone().under(&release.options);
+        assert!(options.dry_run());
+        assert!(options.skip_assets);
+        assert!(options.allow.allow_workflow_change);
+        assert_eq!(options.assets_dir.as_deref(), Some(Path::new("tarballs")));
+        assert_eq!(options.registry_token_env, "NODE_AUTH_TOKEN");
+        assert_eq!(options.crates_io_api, "http://api.test");
+        assert_eq!(options.crates_io_index, "http://index.test");
+        assert_eq!(options.config, Path::new(".ctl/ver.yaml"));
 
         let cli = parse(&["verctl", "release", "trust", "-n", "-c", "other.yaml"]).expect("parse");
         let Command::Release(release) = cli.command else {
@@ -880,6 +901,7 @@ mod tests {
                 "bootstrap",
                 [
                     ("config", "VERCTL_CONFIG"),
+                    ("skip_assets", "VERCTL_SKIP_ASSETS"),
                     ("registry_token_env", "VERCTL_REGISTRY_TOKEN_ENV"),
                     ("crates_io_api", "VERCTL_CRATES_IO_API"),
                     ("crates_io_index", "VERCTL_CRATES_IO_INDEX"),
@@ -907,6 +929,44 @@ mod tests {
                     "{step} {id}"
                 );
             }
+        }
+    }
+
+    /// `release --new` and `status --new` read `VERCTL_NEW`, and
+    /// `--bootstrap` is no option of either: the old name is not kept.
+    #[test]
+    fn new_replaces_bootstrap_as_a_flag() {
+        let cli = parse(&["verctl", "release", "--new"]).expect("parse");
+        let Command::Release(release) = cli.command else {
+            panic!("expected release");
+        };
+        assert!(release.new_crates);
+        let cli = parse(&["verctl", "status", "--new"]).expect("parse");
+        let Command::Status(status) = cli.command else {
+            panic!("expected status");
+        };
+        assert!(status.new_crates);
+        let command = Cli::command();
+        for verb in ["release", "status"] {
+            let arg = command
+                .find_subcommand(verb)
+                .and_then(|verb| {
+                    verb.get_arguments()
+                        .find(|arg| arg.get_id() == "new_crates")
+                })
+                .expect(verb);
+            assert_eq!(
+                arg.get_env(),
+                Some(OsString::from("VERCTL_NEW").as_os_str()),
+                "{verb}"
+            );
+        }
+        for words in [
+            ["verctl", "release", "--bootstrap"].as_slice(),
+            ["verctl", "status", "--bootstrap"].as_slice(),
+        ] {
+            let error = parse(words).expect_err("--bootstrap is gone");
+            assert_eq!(error.exit_code(), 2, "{words:?}");
         }
     }
 

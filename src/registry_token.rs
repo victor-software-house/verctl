@@ -13,7 +13,7 @@
 //! [`OWNER`], from every command it starts, and only the publisher and its
 //! query get the registry token back under the named variable.
 //!
-//! `release --bootstrap` may hold both tokens. A crate crates.io lacks is
+//! `release --new` may hold both tokens. A crate crates.io lacks is
 //! created with [`SECRET`], and every other upload takes [`TRUSTED`] when it
 //! is set. [`RegistryToken::env_for`] makes that choice.
 
@@ -42,6 +42,37 @@ pub const OWNER: &str = "VERCTL_OWNER_TOKEN";
 #[must_use]
 pub fn owner_token() -> Option<String> {
     env::var(OWNER).ok().filter(|token| !token.is_empty())
+}
+
+/// Which crates a `release` run may create with the registry token, when
+/// crates.io lacks them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum NewCrates {
+    /// None: a crate crates.io lacks fails the release proof.
+    #[default]
+    Off,
+    /// Every crate crates.io lacks, as `release --new` creates them.
+    Every,
+    /// Only these crates, as `release bootstrap <crate>...` names them.
+    Only(Vec<String>),
+}
+
+impl NewCrates {
+    /// Whether a run may create the crate `name`.
+    #[must_use]
+    pub fn allows(&self, name: &str) -> bool {
+        match self {
+            Self::Off => false,
+            Self::Every => true,
+            Self::Only(names) => names.iter().any(|only| only == name),
+        }
+    }
+
+    /// Whether a run may create some crate, so it needs the registry token.
+    #[must_use]
+    pub const fn is_on(&self) -> bool {
+        !matches!(self, Self::Off)
+    }
 }
 
 /// A registry token and the variable its publisher reads it from.
@@ -83,23 +114,6 @@ impl RegistryToken {
         Self::resolve(read(SECRET), read(TRUSTED), variable)
     }
 
-    /// The token in [`SECRET`] alone, for the publisher to read from
-    /// `variable`. `None` when it is unset or empty.
-    ///
-    /// `release bootstrap` takes the operator's token and never a
-    /// trusted-publishing token, because a trusted publisher cannot create a
-    /// crate.
-    #[must_use]
-    pub fn operator(variable: &str) -> Option<Self> {
-        Self::resolve(
-            env::var(SECRET).ok().filter(|value| !value.is_empty()),
-            None,
-            variable,
-        )
-        .ok()
-        .flatten()
-    }
-
     /// [`Self::from_env`] over values already read.
     ///
     /// # Errors
@@ -124,7 +138,7 @@ impl RegistryToken {
         }))
     }
 
-    /// The tokens of a run under `--bootstrap`, for the publisher to read
+    /// The tokens of a run under `--new`, for the publisher to read
     /// from `variable`: the one in [`SECRET`], which creates a crate, and the
     /// one in [`TRUSTED`] when it is set, which every other upload uses.
     ///
@@ -132,28 +146,28 @@ impl RegistryToken {
     ///
     /// Returns an error when [`SECRET`] is unset or empty, naming it and the
     /// workflow secret `registry-token` that sets it.
-    pub fn from_env_bootstrap(variable: &str) -> Result<Self> {
+    pub fn from_env_new(variable: &str) -> Result<Self> {
         let read = |key| {
             env::var(key)
                 .ok()
                 .filter(|value: &String| !value.is_empty())
         };
-        Self::resolve_bootstrap(read(SECRET), read(TRUSTED), variable)
+        Self::resolve_new(read(SECRET), read(TRUSTED), variable)
     }
 
-    /// [`Self::from_env_bootstrap`] over values already read.
+    /// [`Self::from_env_new`] over values already read.
     ///
     /// # Errors
     ///
     /// Returns an error when `secret` holds no token.
-    pub(crate) fn resolve_bootstrap(
+    pub(crate) fn resolve_new(
         secret: Option<String>,
         trusted: Option<String>,
         variable: &str,
     ) -> Result<Self> {
         let Some(secret) = secret else {
             bail!(
-                "--bootstrap needs {SECRET}, which the release workflow sets from its `registry-token` secret: set it to the crates.io token that creates new crates"
+                "--new needs {SECRET}, which the release workflow sets from its `registry-token` secret: set it to the crates.io token that creates new crates"
             );
         };
         Ok(match trusted {
@@ -224,11 +238,11 @@ mod tests {
         );
     }
 
-    /// Under bootstrap both tokens resolve: a crate that is created gets the
+    /// Under `--new` both tokens resolve: a crate that is created gets the
     /// registry token, and every other upload the trusted one.
     #[test]
-    fn bootstrap_gives_each_upload_its_token() {
-        let token = RegistryToken::resolve_bootstrap(
+    fn new_gives_each_upload_its_token() {
+        let token = RegistryToken::resolve_new(
             Some("secr3t".into()),
             Some("trust3d".into()),
             "CARGO_REGISTRY_TOKEN",
@@ -237,28 +251,27 @@ mod tests {
         assert_eq!(token.env_for(true), ("CARGO_REGISTRY_TOKEN", "secr3t"));
         assert_eq!(token.env_for(false), ("CARGO_REGISTRY_TOKEN", "trust3d"));
         assert_eq!(token.env(), ("CARGO_REGISTRY_TOKEN", "trust3d"));
-        let alone =
-            RegistryToken::resolve_bootstrap(Some("secr3t".into()), None, "NODE_AUTH_TOKEN")
-                .expect("registry token alone");
+        let alone = RegistryToken::resolve_new(Some("secr3t".into()), None, "NODE_AUTH_TOKEN")
+            .expect("registry token alone");
         assert_eq!(alone.env_for(true), ("NODE_AUTH_TOKEN", "secr3t"));
         assert_eq!(alone.env_for(false), ("NODE_AUTH_TOKEN", "secr3t"));
     }
 
-    /// Without bootstrap, both tokens still fail.
+    /// Without `--new`, both tokens still fail.
     #[test]
-    fn both_tokens_still_fail_without_bootstrap() {
+    fn both_tokens_still_fail_without_new() {
         assert!(
             RegistryToken::resolve(Some("secr3t".into()), Some("trust3d".into()), "X").is_err()
         );
     }
 
-    /// Bootstrap without the registry token fails naming the variable and the
+    /// `--new` without the registry token fails naming the variable and the
     /// workflow secret, whether or not a trusted token is set, and never
     /// names a token's value.
     #[test]
-    fn bootstrap_needs_the_registry_token() {
+    fn new_needs_the_registry_token() {
         for trusted in [None, Some("trust3d".to_owned())] {
-            let error = RegistryToken::resolve_bootstrap(None, trusted, "CARGO_REGISTRY_TOKEN")
+            let error = RegistryToken::resolve_new(None, trusted, "CARGO_REGISTRY_TOKEN")
                 .expect_err("no registry token");
             let message = format!("{error:#}");
             assert!(message.contains(SECRET), "{message}");
@@ -268,8 +281,8 @@ mod tests {
     }
 
     #[test]
-    fn bootstrap_debug_hides_both_tokens() {
-        let token = RegistryToken::resolve_bootstrap(
+    fn new_debug_hides_both_tokens() {
+        let token = RegistryToken::resolve_new(
             Some("secr3t".into()),
             Some("trust3d".into()),
             "CARGO_REGISTRY_TOKEN",

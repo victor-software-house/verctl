@@ -21,7 +21,7 @@ use verctl::github::{self, Repo};
 use verctl::registry_check::{
     self, Crate, Evidence, RegistryReport, RegistryState, TrustReport, TrustState,
 };
-use verctl::registry_token::OWNER;
+use verctl::registry_token::{NewCrates, OWNER};
 use verctl::versions;
 use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -222,10 +222,12 @@ async fn refused(server: &MockServer, name: &str) {
 /// command runs it.
 async fn registry(server: &MockServer, crates: Vec<Crate>) -> RegistryReport {
     let api = server.uri();
-    task::spawn_blocking(move || registry_check::prove_registry(&crates, &api, &acme_demo(), false))
-        .await
-        .unwrap()
-        .unwrap()
+    task::spawn_blocking(move || {
+        registry_check::prove_registry(&crates, &api, &acme_demo(), &NewCrates::Off)
+    })
+    .await
+    .unwrap()
+    .unwrap()
 }
 
 /// `trust` with the token `t0ken` over `crates` against `server`, naming
@@ -234,7 +236,14 @@ async fn trust(server: &MockServer, crates: Vec<Crate>, workflow: &str) -> Trust
     let api = server.uri();
     let workflow = workflow.to_owned();
     task::spawn_blocking(move || {
-        registry_check::prove_trust(&crates, &api, "t0ken", &acme_demo(), &workflow, false)
+        registry_check::prove_trust(
+            &crates,
+            &api,
+            "t0ken",
+            &acme_demo(),
+            &workflow,
+            &NewCrates::Off,
+        )
     })
     .await
     .unwrap()

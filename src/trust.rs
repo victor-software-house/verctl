@@ -15,7 +15,7 @@ use crate::config::Config;
 use crate::first_publish::{Row, State, select};
 use crate::github::Repo;
 use crate::registry::{self, Added, CratesIo, TrustedPublishers};
-use crate::registry_check::{names, planned_from_env, slug};
+use crate::registry_check::{crates_from_env, names, slug};
 use crate::registry_token::OWNER;
 
 /// How many trusted publisher entries crates.io allows one crate.
@@ -64,15 +64,12 @@ pub fn run(config: &Config, root: &Path, request: &Request<'_>) -> Result<Vec<Ro
             "release trust needs an owner's crates.io token with the trusted-publishing scope: set {OWNER}"
         )
     })?;
-    let (planned, repository) = planned_from_env(config, root)?;
-    let selected = select(&planned, request.names)?;
+    let (crates, repository) = crates_from_env(config, root)?;
+    let selected = select(&crates, request.names)?;
     let Some(repository) = repository else {
         return Ok(Vec::new());
     };
-    let names: Vec<&str> = selected
-        .iter()
-        .map(|planned| planned.listed.name.as_str())
-        .collect();
+    let names: Vec<&str> = selected.iter().map(|listed| listed.name.as_str()).collect();
     Ok(add(
         &names,
         request.crates_io.api,

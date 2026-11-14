@@ -69,7 +69,7 @@ pub mod content;
 pub mod detect;
 /// Reading and writing a version in a manifest.
 pub mod driver;
-/// What `release bootstrap` and `release trust` report.
+/// What `release trust` and the trust half of `release bootstrap` report.
 pub mod first_publish;
 /// Changeset fragments.
 pub mod fragment;

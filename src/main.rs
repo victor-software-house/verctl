@@ -7,16 +7,17 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use ctl_core::prelude::*;
 use verctl::cli::{
-    AssetArgs, BootstrapArgs, Check, CheckArgs, CiArgs, Cli, Command, ReleaseArgs, ReleaseStep,
-    RenderArgs, SemverArgs, StatusArgs, TrustArgs, VersionArgs,
+    AssetArgs, BootstrapArgs, Check, CheckArgs, CiArgs, Cli, Command, ReleaseArgs, ReleaseOptions,
+    ReleaseStep, RenderArgs, SemverArgs, StatusArgs, TrustArgs, VersionArgs,
 };
 use verctl::config::{self, Config};
 use verctl::content::Inputs;
 use verctl::fragment::{self, Bump};
-use verctl::registry_token::RegistryToken;
+use verctl::registry_token::{NewCrates, RegistryToken};
 use verctl::{
-    assets, bootstrap, ci, freeze, git, github, lookup, pending, pins, prepare, publish, registry,
-    registry_check, registry_token, release, semver_check, templates, trust, versions,
+    assets, bootstrap, ci, first_publish, freeze, git, github, lookup, pending, pins, prepare,
+    publish, registry, registry_check, registry_token, release, semver_check, templates, trust,
+    versions,
 };
 
 mod presentation;
@@ -48,7 +49,9 @@ fn execute(cli: Cli) -> Result<Report> {
                 Some(name) => vendored_report(asset, &args, name).map(Report::Vendored),
                 None => asset_report(asset, &args).map(Report::Assets),
             },
-            Some(ReleaseStep::Bootstrap(step)) => bootstrap_report(step, &args).map(Report::Crates),
+            Some(ReleaseStep::Bootstrap(step)) => {
+                bootstrap_report(step, &args).map(Report::Release)
+            }
             Some(ReleaseStep::Trust(step)) => trust_report(step, &args).map(Report::Crates),
             None => release_report(&args).map(Report::Release),
         },
@@ -425,93 +428,136 @@ fn preview_pr(root: &Path) -> String {
     }
 }
 
-/// The registry token of a `release` run, and the notice a dry run
-/// `--bootstrap` gives when `VERCTL_REGISTRY_TOKEN` is unset. A dry run uploads
-/// nothing, so it needs no token, and only a real run fails without one.
-fn release_token(args: &ReleaseArgs) -> Result<(Option<RegistryToken>, Option<String>)> {
-    if !args.bootstrap {
-        return Ok((RegistryToken::from_env(&args.registry_token_env)?, None));
-    }
-    match RegistryToken::from_env_bootstrap(&args.registry_token_env) {
+/// The registry token of a run that may create crates, and the notice a dry
+/// run gives when `VERCTL_REGISTRY_TOKEN` is unset. A dry run uploads nothing,
+/// so it needs no token. A real run fails without it, unless `defer` leaves
+/// the failure to the caller, which names every token it lacks.
+fn new_token(
+    options: &ReleaseOptions,
+    defer: bool,
+) -> Result<(Option<RegistryToken>, Option<String>)> {
+    match RegistryToken::from_env_new(&options.registry_token_env) {
         Ok(token) => Ok((Some(token), None)),
-        Err(error) if args.dry_run() => {
+        Err(error) if options.dry_run() => {
             Ok((None, Some(format!("a real run would fail: {error:#}"))))
         }
+        Err(_) if defer => Ok((None, None)),
         Err(error) => Err(error),
     }
 }
 
+/// What a release leaves out, declares and starts, from its options.
+fn scope_of(options: &ReleaseOptions, new_crates: NewCrates) -> publish::Scope {
+    publish::Scope {
+        skip_assets: options.skip_assets,
+        declared_assets: options.declared_assets.clone(),
+        releases_only: options.releases_only,
+        assets_dir: options.assets_dir.clone(),
+        new_crates,
+    }
+}
+
+/// The proofs a release may go past, from its options.
+const fn allow_of(options: &ReleaseOptions) -> publish::Allow {
+    publish::Allow {
+        workflow_change: options.allow.allow_workflow_change,
+        off_default_branch: options.allow.allow_off_default_branch,
+    }
+}
+
+/// The crates.io the release reads, and the owner's token for its entries.
+fn crates_io_of<'a>(
+    options: &'a ReleaseOptions,
+    owner_token: Option<&'a str>,
+) -> registry::CratesIo<'a> {
+    registry::CratesIo {
+        index: &options.crates_io_index,
+        api: &options.crates_io_api,
+        owner_token,
+    }
+}
+
 fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
-    let (registry_token, token_notice) = release_token(args)?;
+    let (registry_token, token_notice) = if args.new_crates {
+        new_token(args, false)?
+    } else {
+        (RegistryToken::from_env(&args.registry_token_env)?, None)
+    };
     let config = Config::load(&args.config)?;
     let root = &config::root_of(&args.config);
-    let allow = publish::Allow {
-        workflow_change: args.allow.allow_workflow_change,
-        off_default_branch: args.allow.allow_off_default_branch,
-    };
-    let scope = publish::Scope {
-        skip_assets: args.skip_assets,
-        declared_assets: args.declared_assets.clone(),
-        releases_only: args.releases_only,
-        assets_dir: args.assets_dir.clone(),
-        bootstrap: args.bootstrap,
+    let new_crates = if args.new_crates {
+        NewCrates::Every
+    } else {
+        NewCrates::Off
     };
     let owner_token = registry_token::owner_token();
-    let crates_io = registry::CratesIo {
-        index: &args.crates_io_index,
-        api: &args.crates_io_api,
-        owner_token: owner_token.as_deref(),
-    };
     let run = publish::run_pending(
         &config,
         &args.config,
         root,
         args.dry_run(),
-        &scope,
-        allow,
+        &scope_of(args, new_crates),
+        allow_of(args),
         registry_token.as_ref(),
-        crates_io,
+        crates_io_of(args, owner_token.as_deref()),
     )?;
+    Ok(release_report_of(
+        run,
+        args.dry_run(),
+        token_notice,
+        Vec::new(),
+    ))
+}
+
+/// The report of a release that `run` made, with the notice a dry run gave
+/// for a missing token, and the trusted publisher rows that followed it.
+fn release_report_of(
+    run: publish::PublishRun,
+    dry_run: bool,
+    token_notice: Option<String>,
+    trust: Vec<first_publish::Row>,
+) -> ReleaseReport {
     let notices: Vec<String> = token_notice
         .into_iter()
         .chain(run.shortfalls.iter().map(ToString::to_string))
         .collect();
-    Ok(ReleaseReport {
+    ReleaseReport {
         outcome: run.outcome,
         packages: run.published.packages,
         releases: run.published.releases,
         allowed: run.allowed,
-        dry_run: args.dry_run(),
+        dry_run,
         notices,
         proof: run.proof,
-    })
+        trust,
+    }
 }
 
-/// `release bootstrap`: publish the crates crates.io lacks. A real run needs
-/// `VERCTL_REGISTRY_TOKEN`, `VERCTL_OWNER_TOKEN`, and, to tag a standalone
-/// package, a GitHub token. `--dry-run` needs none.
-fn bootstrap_report(args: &BootstrapArgs, release: &ReleaseArgs) -> Result<CratesReport> {
-    let path = args.config_under(release);
-    let config = Config::load(path)?;
-    let root = &config::root_of(path);
-    let registry_token = RegistryToken::operator(&args.registry_token_env);
+/// `release bootstrap`: `release --new` for the crates named, or every crate
+/// crates.io lacks, then `release trust` for each crate that release created.
+/// A real run needs `VERCTL_REGISTRY_TOKEN` and `VERCTL_OWNER_TOKEN`, checked
+/// before any write. `--dry-run` needs neither.
+fn bootstrap_report(step: &BootstrapArgs, before: &ReleaseArgs) -> Result<ReleaseReport> {
+    let options = step.options.clone().under(&before.options);
+    let (registry_token, token_notice) = new_token(&options, true)?;
+    let config = Config::load(&options.config)?;
+    let root = &config::root_of(&options.config);
     let owner_token = registry_token::owner_token();
-    let github_token = release::env_token();
-    let crates_io = registry::CratesIo {
-        index: &args.crates_io_index,
-        api: &args.crates_io_api,
-        owner_token: owner_token.as_deref(),
+    let request = bootstrap::Request {
+        names: &step.crates,
+        dry_run: options.dry_run(),
+        scope: scope_of(&options, NewCrates::Off),
+        allow: allow_of(&options),
+        registry_token: registry_token.as_ref(),
+        crates_io: crates_io_of(&options, owner_token.as_deref()),
     };
-    let request = bootstrap::Request::new(
-        &args.crates,
-        args.dry_run_under(release),
-        crates_io,
-        registry_token.as_ref(),
-        github_token.as_deref(),
-    );
-    Ok(CratesReport {
-        crates: bootstrap::run(&config, root, &request)?,
-    })
+    let (run, trust) = bootstrap::run(&config, &options.config, root, &request)?;
+    Ok(release_report_of(
+        run,
+        options.dry_run(),
+        token_notice,
+        trust,
+    ))
 }
 
 /// `release trust`: add this repository's trusted publisher entry to each
@@ -742,6 +788,11 @@ fn unreleased_state(args: &StatusArgs, config: &Config, root: &Path) -> Result<U
         }
         None => release::env_token(),
     };
+    let new_crates = if args.new_crates {
+        NewCrates::Every
+    } else {
+        NewCrates::Off
+    };
     Ok(match token {
         Some(token) => {
             match pending::pending(
@@ -753,7 +804,7 @@ fn unreleased_state(args: &StatusArgs, config: &Config, root: &Path) -> Result<U
                 &[],
                 None,
                 &args.crates_io_index,
-                args.bootstrap,
+                &new_crates,
                 &github::ReleaseList::default(),
             ) {
                 Ok(planned) => {

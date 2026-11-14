@@ -24,6 +24,7 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
+use crate::registry_token::NewCrates;
 use crate::versions::{self, Skip};
 use crate::{git, github, lookup, pending, release};
 
@@ -414,7 +415,7 @@ fn held_releases(
         &[],
         None,
         index,
-        false,
+        &NewCrates::Off,
         &github::ReleaseList::default(),
     )?;
     let candidates = git::release_branch_candidates();

@@ -24,7 +24,7 @@
 //! bootstrap` once it does.
 //!
 //! `registry` also holds a standalone package that crates.io lacks to the
-//! version where it starts, `0.0.0`, which `verctl release bootstrap`
+//! version where it starts, `0.0.0`, which `verctl release --new`
 //! publishes. A member of a shared-version group first publishes at the
 //! group's version and is exempt.
 
@@ -37,10 +37,9 @@ use toml_edit::{DocumentMut, Item};
 use crate::config::{Config, ReleaseCheck};
 use crate::freeze::Freeze;
 use crate::github::{self, Repo};
-use crate::publish::PublishEntry;
 use crate::publisher::Upload;
 use crate::registry::{self, GithubConfig, RegistryCheck, TrustedPublishers, TrustedUpload};
-use crate::registry_token::OWNER;
+use crate::registry_token::{NewCrates, OWNER};
 use crate::{bump, git, publish, publisher};
 
 /// A crate the repository uploads to crates.io.
@@ -62,18 +61,6 @@ pub struct Crate {
     pub standalone: bool,
 }
 
-/// A [`Crate`] with the upload that sends it to crates.io and the package
-/// entry the upload belongs to.
-#[derive(Debug, Clone)]
-pub(crate) struct Planned {
-    /// The crate, placed against the default branch.
-    pub(crate) listed: Crate,
-    /// The upload `release` would run for it.
-    pub(crate) upload: Upload,
-    /// The package the upload belongs to, as `publish::plan` resolves it.
-    pub(crate) entry: PublishEntry,
-}
-
 /// Every crate an `Upload` of `config` sends to crates.io, in upload order:
 /// each member of a workspace package, and each other package whose
 /// registry check reads crates.io. A package that uploads nothing is left
@@ -88,21 +75,9 @@ pub(crate) struct Planned {
 /// when the default branch does not resolve, or when a manifest cannot be
 /// read in the working tree or parsed at the default branch's tip.
 pub fn crates(config: &Config, root: &Path, candidates: &[String]) -> Result<Vec<Crate>> {
-    Ok(planned(config, root, candidates)?
-        .into_iter()
-        .map(|planned| planned.listed)
-        .collect())
-}
-
-/// [`crates`], each with its upload and package entry.
-///
-/// # Errors
-///
-/// Returns an error under the conditions of [`crates`].
-pub(crate) fn planned(config: &Config, root: &Path, candidates: &[String]) -> Result<Vec<Planned>> {
-    let resolved = publish::plan(config, root)?;
+    let planned = publish::plan(config, root)?;
     let mut found = Vec::new();
-    for (spec, entry) in config.packages.iter().zip(&resolved.packages) {
+    for (spec, entry) in config.packages.iter().zip(&planned.packages) {
         if entry.argv.is_empty() {
             continue;
         }
@@ -118,7 +93,7 @@ pub(crate) fn planned(config: &Config, root: &Path, candidates: &[String]) -> Re
         }
         let standalone = publisher::workspace_members(config, spec, root)?.is_none();
         for (name, upload) in on_crates_io {
-            found.push((name, upload, entry, standalone, config.owners_of(spec)));
+            found.push((name, upload, standalone, config.owners_of(spec)));
         }
     }
     if found.is_empty() {
@@ -127,17 +102,13 @@ pub(crate) fn planned(config: &Config, root: &Path, candidates: &[String]) -> Re
     let tip = git::default_tip(root, candidates)?;
     found
         .into_iter()
-        .map(|(name, upload, entry, standalone, owners)| {
-            Ok(Planned {
-                listed: Crate {
-                    held: held_at(root, &tip, &upload.manifest, &name)?,
-                    name,
-                    owners: owners.map(<[String]>::to_vec),
-                    version: upload.version.clone(),
-                    standalone,
-                },
-                upload,
-                entry: entry.clone(),
+        .map(|(name, upload, standalone, owners)| {
+            Ok(Crate {
+                held: held_at(root, &tip, &upload.manifest, &name)?,
+                name,
+                owners: owners.map(<[String]>::to_vec),
+                version: upload.version,
+                standalone,
             })
         })
         .collect()
@@ -165,28 +136,21 @@ fn held_at(root: &Path, tip: &str, manifest: &Path, name: &str) -> Result<bool> 
 
 /// The crates of `config` against the default branch, fetched first as
 /// `check versions` fetches it, and the repository they release from.
-fn crates_from_env(config: &Config, root: &Path) -> Result<(Vec<Crate>, Option<Repo>)> {
-    let (planned, repository) = planned_from_env(config, root)?;
-    Ok((
-        planned.into_iter().map(|planned| planned.listed).collect(),
-        repository,
-    ))
-}
-
-/// [`crates_from_env`], each crate with its upload and package entry.
-pub(crate) fn planned_from_env(
-    config: &Config,
-    root: &Path,
-) -> Result<(Vec<Planned>, Option<Repo>)> {
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`crates`], when the default
+/// branch cannot be fetched, or when the repository does not resolve.
+pub(crate) fn crates_from_env(config: &Config, root: &Path) -> Result<(Vec<Crate>, Option<Repo>)> {
     let fetch = git::FetchDefault::from_env();
     for branch in git::comparison_branches() {
         git::ensure_comparable(root, &branch, &fetch)?;
     }
-    let planned = planned(config, root, &git::release_branch_candidates())?;
-    if planned.is_empty() {
-        return Ok((planned, None));
+    let crates = crates(config, root, &git::release_branch_candidates())?;
+    if crates.is_empty() {
+        return Ok((crates, None));
     }
-    Ok((planned, Some(github::repo(root)?)))
+    Ok((crates, Some(github::repo(root)?)))
 }
 
 /// `check registry`: each crate of `config` against the crates.io API at
@@ -202,7 +166,7 @@ pub(crate) fn planned_from_env(
 /// resolve.
 pub fn registry(config: &Config, root: &Path, api: &str) -> Result<RegistryReport> {
     match crates_from_env(config, root)? {
-        (crates, Some(repository)) => prove_registry(&crates, api, &repository, false),
+        (crates, Some(repository)) => prove_registry(&crates, api, &repository, &NewCrates::Off),
         (_, None) => Ok(RegistryReport {
             crates: Vec::new(),
             freeze: None,
@@ -213,9 +177,9 @@ pub fn registry(config: &Config, root: &Path, api: &str) -> Result<RegistryRepor
 /// The `registry` proof of each of `crates` against the crates.io API at
 /// `api`, with `repository` as the source trusted publishing should name.
 ///
-/// With `bootstrap`, a run that creates each crate crates.io lacks, such a
-/// crate passes with a notice. The `0.0.0` rule still fails a standalone
-/// package off `0.0.0`.
+/// A crate crates.io lacks that `new_crates` allows, as a run of `release
+/// --new` creates it, passes with a notice. The `0.0.0` rule still fails a
+/// standalone package off `0.0.0`.
 ///
 /// # Errors
 ///
@@ -225,7 +189,7 @@ pub fn prove_registry(
     crates: &[Crate],
     api: &str,
     repository: &Repo,
-    bootstrap: bool,
+    new_crates: &NewCrates,
 ) -> Result<RegistryReport> {
     let slug = slug(repository);
     let mut rows = Vec::with_capacity(crates.len());
@@ -236,7 +200,7 @@ pub fn prove_registry(
                     version: listed.version.clone(),
                 }
             }
-            None if bootstrap => RegistryState::Creates,
+            None if new_crates.allows(&listed.name) => RegistryState::Creates,
             None if listed.held => RegistryState::Missing,
             None => RegistryState::New,
             Some(found) => {
@@ -299,15 +263,16 @@ pub fn trust(config: &Config, root: &Path, api: &str, token: Option<&str>) -> Re
         token,
         &repository,
         &config.release_workflow,
-        false,
+        &NewCrates::Off,
     )
 }
 
 /// The release proof: each of `checks` against the crates.io API at `api`,
 /// in the order [`ReleaseCheck::ALL`] declares them.
 ///
-/// `registry` runs as `check registry` does, and with `bootstrap`, a run that
-/// creates each crate crates.io lacks, passes such a crate with a notice.
+/// `registry` runs as `check registry` does, and a crate crates.io lacks that
+/// `new_crates` allows, as a run of `release --new` creates it, passes with a
+/// notice.
 /// `trust` runs as `check trust`
 /// does when `owner_token` holds an owner's token, and is skipped otherwise,
 /// because a release under trusted publishing holds no such token. Both read
@@ -323,7 +288,7 @@ pub fn prove(
     api: &str,
     checks: &[ReleaseCheck],
     owner_token: Option<&str>,
-    bootstrap: bool,
+    new_crates: &NewCrates,
 ) -> Result<Proof> {
     let listed = |check| checks.contains(&check);
     let token = owner_token.filter(|_| listed(ReleaseCheck::Trust));
@@ -337,7 +302,7 @@ pub fn prove(
     }
     let (crates, repository) = crates_from_env(config, root)?;
     let registry = match (&repository, listed(ReleaseCheck::Registry)) {
-        (Some(repository), true) => Some(prove_registry(&crates, api, repository, bootstrap)?),
+        (Some(repository), true) => Some(prove_registry(&crates, api, repository, new_crates)?),
         (None, true) => Some(RegistryReport {
             crates: Vec::new(),
             freeze: None,
@@ -351,7 +316,7 @@ pub fn prove(
             token,
             repository,
             &config.release_workflow,
-            bootstrap,
+            new_crates,
         )?),
         (None, Some(_)) => Some(TrustReport::Set {
             repository: None,
@@ -381,6 +346,19 @@ pub struct Proof {
 }
 
 impl Proof {
+    /// The crates the `registry` check passes because the run creates them.
+    #[must_use]
+    pub fn created(&self) -> Vec<String> {
+        self.registry.as_ref().map_or_else(Vec::new, |report| {
+            report
+                .crates
+                .iter()
+                .filter(|row| row.state == RegistryState::Creates)
+                .map(|row| row.name.clone())
+                .collect()
+        })
+    }
+
     /// One message per failed proof of either check.
     #[must_use]
     pub fn failures(&self) -> Vec<String> {
@@ -471,8 +449,8 @@ pub enum ProofRow {
 /// it, and its entries are not read. A crate whose entries crates.io refuses
 /// to the token fails alone, and the other crates are still checked.
 ///
-/// With `bootstrap`, a run that creates each crate crates.io lacks, such a
-/// crate passes with a notice to add its entry once the run creates it.
+/// A crate crates.io lacks that `new_crates` allows passes with a notice to
+/// add its entry once the run creates it.
 ///
 /// # Errors
 ///
@@ -485,12 +463,12 @@ pub fn prove_trust(
     token: &str,
     repository: &Repo,
     workflow: &str,
-    bootstrap: bool,
+    new_crates: &NewCrates,
 ) -> Result<TrustReport> {
     let mut rows = Vec::with_capacity(crates.len());
     for listed in crates {
         let state = match registry::crates_io_user_owners(api, &listed.name)? {
-            None if bootstrap => TrustState::Creates,
+            None if new_crates.allows(&listed.name) => TrustState::Creates,
             None if listed.held => TrustState::Missing,
             None => TrustState::New,
             Some(_) => match registry::crates_io_github_configs(api, &listed.name, token)? {
@@ -674,7 +652,7 @@ pub enum RegistryState {
         /// The version the package holds.
         version: String,
     },
-    /// crates.io lacks the crate and the run, started with `--bootstrap`,
+    /// crates.io lacks the crate and the run, started with `--new`,
     /// creates it with the registry token: the check passes with a notice.
     Creates,
     /// crates.io holds the crate.
@@ -857,7 +835,7 @@ pub enum TrustState {
     /// crates.io lacks a crate only the checked commit adds: the check
     /// passes, and the crate needs its bootstrap once it lands.
     New,
-    /// crates.io lacks a crate the run, started with `--bootstrap`, creates:
+    /// crates.io lacks a crate the run, started with `--new`, creates:
     /// the check passes, and the crate needs its entry once the run creates
     /// it.
     Creates,

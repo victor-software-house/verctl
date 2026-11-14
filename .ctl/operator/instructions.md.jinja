@@ -87,14 +87,14 @@ It is never the first fragment's bump.
 
 `release` and `status` leave a package at `0.0.0` out before any lookup.  
 So a repo can adopt the release workflow before its first release.  
-A standalone crates.io package at `0.0.0` joins the plan in two cases ([First publish](#first-publish)): crates.io lists that version and its tag is missing, or `--bootstrap` is set and crates.io lacks the crate.  
+A standalone crates.io package at `0.0.0` joins the plan in two cases ([First publish](#first-publish)): crates.io lists that version and its tag is missing, or `--new` allows the crate and crates.io lacks it.  
 A workspace member releases with its group and is unaffected.
 
 `version` and `check` refuse a `minor` or `major` fragment on a package at `0.0.0`, including its pre-releases and builds, naming the package.  
 To open at `0.1.0` on purpose, the operator sets `first_minor: true` on that package in `.ctl/ver.yaml`.
 The key does nothing once the package has released.
 
-A crate crates.io lacks first publishes through `verctl release bootstrap` ([First publish](#first-publish)), at the version the default branch holds.  
+A crate crates.io lacks first publishes through `verctl release --new` ([First publish](#first-publish)), at the version the default branch holds.  
 For a standalone package that version is `0.0.0`, so `check registry` fails a standalone package that crates.io lacks at any other version.  
 A member of a shared-version group, such as a workspace member with `version.workspace = true`, first publishes at the group's version, and the rule leaves it out.
 
@@ -162,7 +162,7 @@ Its notice names `verctl release bootstrap` as the step once it lands.
 When crates.io holds that name, the owner proof applies to it as to any crate.
 
 A standalone package that crates.io lacks fails when its version is not `0.0.0`, whether the default branch holds it or only the checked commit adds it.  
-The failure names the crate, its version, and `0.0.0`, and says `verctl release bootstrap` publishes it there.  
+The failure names the crate, its version, and `0.0.0`, and says `verctl release --new` publishes it there.  
 A workspace member is exempt.  
 The release proof runs `registry`, so it inherits the rule.
 
@@ -278,7 +278,7 @@ Last it opens or updates the Version PR.
 
 Every input is optional and defaults to verctl's:
 
-- `version-pr`, `publish`, `assets`, `bootstrap`, `config`, and `runner`;
+- `version-pr`, `publish`, `assets`, `publish-new`, `config`, and `runner`;
 - `mise-version`, `mise-env`, and `mise-ignored-config-paths`;
 - `registry-token-env`, `crates-io-trusted-publishing`, and `environment`;
 - `verctl-artifact`, for verctl's own release only: each job runs a verctl build from the calling run, and each asset job packs that build with `--prebuilt`.
@@ -310,9 +310,9 @@ Only the publish job receives the environment's value.
 The workflow reads no secret by a computed name, so a caller never passes `secrets: inherit`.  
 `registry-token-env` names only the variable the publisher reads the token from.
 
-A crate's first publish maps the token and turns `crates-io-trusted-publishing` off for that release, because verctl refuses both tokens, unless `bootstrap` is set.
+A crate's first publish maps the token and turns `crates-io-trusted-publishing` off for that release, because verctl refuses both tokens, unless `publish-new` is set.
 
-`bootstrap: true` creates each crate crates.io lacks with the `registry-token` secret, and trusted publishing still publishes every other crate, so the two combine.  
+`publish-new: true` runs `release --new`, which creates each crate crates.io lacks with the `registry-token` secret, while trusted publishing still publishes every other crate, so the two combine.  
 It defaults to `false`, and trusted publishing stays the default.  
 A step before the upload fails naming `registry-token` when the secret is empty.  
 The plan job reads the input too, so a standalone package at `0.0.0` that crates.io lacks is planned.
@@ -614,59 +614,47 @@ The reusable `release.yml` takes the `allow-workflow-change` and `allow-off-defa
 ### First publish
 
 crates.io's trusted publishing cannot create a crate, and an entry can only be added to a crate that exists.  
-Two steps under `release` cover that, and each takes crate names (`CRATE...`) as the manifests spell them, or every crate when none is named.  
-A name that no crate of the repository has fails before any request and lists the crates that exist.
+Two operations cover that, and `release bootstrap` is their shorthand.
 
-`verctl release bootstrap [CRATE]...` publishes each crate crates.io lacks, in upload order, at the version the default branch's tip holds.  
-A named crate crates.io lists gets an `already published` row.  
-It publishes only the real code at that version, and no command takes another version.  
-It needs two tokens, both checked before any request, each missing one named:
+`verctl release --new` (`VERCTL_NEW`) lets a release create each crate crates.io lacks, with the registry token, at the version the default branch holds.  
+It runs locally and in CI, and everything else is the release: its proofs, its draft Release, and the tag the draft's publish creates, so a workspace member gets no tag of its own.  
+It needs `VERCTL_REGISTRY_TOKEN`, checked before any write, and fails naming it and the `registry-token` secret otherwise.  
+Both tokens may be set: an upload of a crate crates.io lacks uses the registry token, and every other upload uses `VERCTL_TRUSTED_PUBLISHING_TOKEN` when it is set.  
+Without `--new`, a crate crates.io lacks fails the release proof.  
+With it, `registry` and `trust` pass that crate with a notice, and the release report notes each crate the run created.  
+The `0.0.0` rule still fails a standalone package off `0.0.0`.  
+No command takes a version to publish.
 
-- `VERCTL_REGISTRY_TOKEN`, the operator's crates.io token that can publish new crates, which only the upload under `--registry-token-env` sees;
-- `VERCTL_OWNER_TOKEN`, an owner's token with the `trusted-publishing` scope, for the entries.
+A standalone package at `0.0.0` that crates.io lacks, or that it lists with no tag, is planned like any other incomplete version, so the draft Release publishes last and creates its tag.  
+`status --new` (`VERCTL_NEW`) plans the same, for the workflow's plan job.  
+`release --dry-run --new` plans what the run plans, reading the crates.io listing of each standalone package at `0.0.0`, and needs no token.  
+A notice names `VERCTL_REGISTRY_TOKEN` when it is unset, and only a real run fails without it.
 
-It fetches the default branch as `check versions` does, and HEAD must be that branch's tip.  
-Otherwise it fails naming both commits before any upload.  
-A published standalone package, one that is not a workspace package, gets a lightweight tag at the tip through the GitHub API, which needs `GITHUB_TOKEN` or `GH_TOKEN`.  
-A tag already at the tip is fine, and a tag at another commit fails naming both.  
-A workspace member gets no tag, because its tag belongs to the group's release.  
-Then it adds the trusted publisher entry of each crate it published, as `release trust` does.
-
-An upload that crates.io stops for its new-crate rate limit is run again once the time cargo prints after "try again after" has passed, at most 10 times per crate, and the row notes each wait.  
-A limit that gives no time that parses fails as `release` does.  
-An upload that fails stops the uploads, and the crates published before it still get their tags and entries.
-
-`verctl release bootstrap --dry-run` (`-n`) needs neither token, reads only crates.io and git, and lists what it would publish and tag.  
-`--registry-token-env`, `--crates-io-api`, and `--crates-io-index` (`VERCTL_REGISTRY_TOKEN_ENV`, `VERCTL_CRATES_IO_API`, `VERCTL_CRATES_IO_INDEX`) mean what they do for `release`.
-
-`verctl release trust [CRATE]...` lists each crate's trusted publisher entries and adds this repository's entry only when none names it, because crates.io accepts duplicates.  
+`verctl release trust [CRATE]...` takes one or more crates, or every crate when none is named.  
+It lists each crate's trusted publisher entries and adds this repository's entry only when none names it, because crates.io accepts duplicates.  
 The entry names the `origin` repository, the workflow file `release_workflow` names, and no environment, so it is the entry `check trust` proves.  
 It reports `already set` for a crate whose entry matches, and never edits or deletes another entry.  
 It needs `VERCTL_OWNER_TOKEN` before any request, a dry run included.  
-A crate crates.io lacks fails with the bootstrap that publishes it, a crate that holds 5 entries, the crates.io limit, fails naming the limit, and the other crates are still handled.  
+A crate crates.io lacks fails with the bootstrap that creates it, a crate that holds 5 entries, the crates.io limit, fails naming the limit, and the other crates are still handled.  
 The run exits non-zero when any row failed.  
-On a 429 it waits for the `Retry-After` header, seconds or an HTTP date, and sends the request again, at most 10 times.
+On a 429 it waits for the `Retry-After` header, seconds or an HTTP date, and sends the request again, at most 10 times.  
+`--dry-run` (`-n`) lists the entries it would add and sends no `POST`, and `--crates-io-api` (`VERCTL_CRATES_IO_API`) names the API it reads.
 
-`verctl release trust --dry-run` (`-n`) lists the entries it would add and sends no `POST`.  
-`--crates-io-api` (`VERCTL_CRATES_IO_API`) names the API both steps read.
+`verctl release bootstrap [CRATE]...` runs `release --new`, then `release trust` for each crate that run created.  
+It takes every option `release` takes, such as `--assets-dir` and `--allow-workflow-change`, which go after `bootstrap`.  
+With crate names, only those crates may be created, and another crate crates.io lacks fails the proof as it does without `--new`.  
+An unknown name fails before any request and lists the crates that exist.  
+It needs `VERCTL_REGISTRY_TOKEN` and `VERCTL_OWNER_TOKEN`, both checked before any write, each missing one named.  
+`--dry-run` needs neither, and prints the release it would make and the entry it would add for each crate that release would create.  
+The report is the release's, with a `trust` table of the entries it added.
 
-Inside a release run, `release --bootstrap` (`VERCTL_BOOTSTRAP`) only uploads: it runs no `release trust` and creates no tag outside the draft's publish.  
-It needs `VERCTL_REGISTRY_TOKEN`, checked before any write, and fails naming it and the `registry-token` secret otherwise.  
-Both tokens may be set: an upload of a crate crates.io lacks uses the registry token, and every other upload uses `VERCTL_TRUSTED_PUBLISHING_TOKEN` when it is set.  
-The release proof passes a crate crates.io lacks with a notice, and the release report notes the crate the run created.  
-Its `trust` check passes such a crate with a notice to add its entry with `release trust` once the run creates it.  
-The `0.0.0` rule still fails a standalone package off `0.0.0`.  
-A standalone package at `0.0.0` that crates.io lacks, or that it lists with no tag, is planned like any other incomplete version, so the draft Release publishes last and creates its tag.  
-`status --bootstrap` (`VERCTL_BOOTSTRAP`) plans the same, for the workflow's plan job.  
-`release --dry-run --bootstrap` plans what the run plans, reading the crates.io listing of each standalone package at `0.0.0`, and needs no token.  
-A notice names `VERCTL_REGISTRY_TOKEN` when it is unset, and only a real run fails without it.
-
-Both steps print a table of crates with `name`, `version` (bootstrap only), and `state`: `added`, `already set`, `would add`, `published`, `would publish`, `already published`, `tagged <tag>`, `would tag <tag>`, or `failed`.
+A release the new-crate rate limit stops fails with the time crates.io gives and records it in its draft Release, and a rerun resumes it.  
+A crate the stopped run created then needs `release trust`.
 
 ### Registry tokens
 
 `release` reads the registry token from `VERCTL_REGISTRY_TOKEN` or `VERCTL_TRUSTED_PUBLISHING_TOKEN`, which no flag takes.  
-It fails when both are set, unless `--bootstrap` is set.  
+It fails when both are set, unless `--new` is set.  
 It runs each publisher, and the registry `query` that checks it, with the token under `--registry-token-env`.  
 That option (`VERCTL_REGISTRY_TOKEN_ENV`) defaults to `CARGO_REGISTRY_TOKEN`, and a value that is not a variable name is a usage error.
 

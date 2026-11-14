@@ -19,7 +19,7 @@ use crate::config::{Config, NAME_PLACEHOLDER, PackageSpec};
 use crate::publisher::Upload;
 use crate::registry::{self, CratesIo, RegistryCheck};
 use crate::registry_check::{Proof, ProofRow};
-use crate::registry_token::RegistryToken;
+use crate::registry_token::{NewCrates, RegistryToken};
 use crate::{
     assets, bump, git, github, pending, process, publisher, registry_check, release, stop,
 };
@@ -184,11 +184,11 @@ pub struct Scope {
     /// `None` uploads nothing, and the run then fails when that Release lacks
     /// a declared tarball.
     pub assets_dir: Option<PathBuf>,
-    /// Create each crate crates.io lacks with the registry token, where trusted
-    /// publishing publishes the rest. The release proof then passes such a
-    /// crate with a notice, and a standalone package at `0.0.0` that crates.io
-    /// lacks joins the plan.
-    pub bootstrap: bool,
+    /// The crates the run may create with the registry token when crates.io
+    /// lacks them, where trusted publishing publishes the rest. The release
+    /// proof passes such a crate with a notice, and a standalone package at
+    /// `0.0.0` that crates.io lacks joins the plan.
+    pub new_crates: NewCrates,
 }
 
 /// A proof that would have refused the run, which the operator allowed.
@@ -264,6 +264,9 @@ pub struct PublishRun {
     /// skipped, and, in a dry run only, its failures. Empty when the run
     /// found nothing to release, which runs no proof.
     pub proof: Vec<ProofRow>,
+    /// The crates the run created with the registry token, or, in a dry run,
+    /// would create, by the name crates.io knows them.
+    pub created: Vec<String>,
 }
 
 /// Release, from HEAD, every package version HEAD holds whose release is
@@ -294,7 +297,7 @@ pub struct PublishRun {
 /// `scope.releases_only` keeps every publisher from starting.
 /// A package at `0.0.0` needs no changelog section, and is released only as
 /// [`pending::pending`] describes: a standalone crate that crates.io lists
-/// without a tag, or, with `scope.bootstrap`, one that crates.io lacks. Its
+/// without a tag, or, with `scope.new_crates`, one that crates.io lacks. Its
 /// tag renders over that package alone (`zero_tags`).
 /// A dry run plans every other package and runs the release proof. It reads
 /// no registry listing.
@@ -354,7 +357,7 @@ pub fn run_pending(
             &planned,
             &declared,
             crates_io,
-            scope.bootstrap,
+            &scope.new_crates,
         );
     }
     full_history(root)?;
@@ -370,13 +373,13 @@ pub fn run_pending(
         &scope.declared_assets,
         registry_token,
         crates_io.index,
-        scope.bootstrap,
+        &scope.new_crates,
         &release_list,
     )?;
     if pending.is_empty() {
         return Ok(nothing_to_release(allowed, pending.shortfalls));
     }
-    let proof = release_proof(config, root, crates_io, scope.bootstrap)?;
+    let proof = release_proof(config, root, crates_io, &scope.new_crates)?;
     let failures = proof.failures();
     ensure!(
         failures.is_empty(),
@@ -417,8 +420,9 @@ pub fn run_pending(
             }
         }
     }
-    let lines = match run_uploads(uploads, registry_token, crates_io, scope.bootstrap) {
-        Ok(lines) => lines,
+    let (lines, created) = match run_uploads(uploads, registry_token, crates_io, &scope.new_crates)
+    {
+        Ok(uploaded) => uploaded,
         Err(stopped) => return Err(record_stop(&token, &repo, &tags, &drafts, stopped)),
     };
     let packages = already.into_iter().chain(lines).collect();
@@ -441,6 +445,7 @@ pub fn run_pending(
         allowed,
         shortfalls: pending.shortfalls,
         proof: proof.rows(),
+        created,
     })
 }
 
@@ -477,7 +482,7 @@ fn release_proof(
     config: &Config,
     root: &Path,
     crates_io: CratesIo<'_>,
-    bootstrap: bool,
+    new_crates: &NewCrates,
 ) -> Result<Proof> {
     registry_check::prove(
         config,
@@ -485,7 +490,7 @@ fn release_proof(
         crates_io.api,
         &config.release_checks,
         crates_io.owner_token,
-        bootstrap,
+        new_crates,
     )
 }
 
@@ -542,6 +547,7 @@ fn nothing_to_release(allowed: Vec<Allowed>, shortfalls: Vec<pending::Shortfall>
         allowed,
         shortfalls,
         proof: Vec::new(),
+        created: Vec::new(),
     }
 }
 
@@ -570,24 +576,25 @@ struct Stopped {
 /// registry gave for the next attempt. Any other failure is recorded as the
 /// first line of its error.
 ///
-/// With `bootstrap`, an upload of a crate crates.io lacks creates it with the
-/// registry token, and its line notes that.
+/// An upload of a crate crates.io lacks, which `new_crates` allows, creates it
+/// with the registry token, and its line notes that. The crates created come
+/// back beside the lines, by the name crates.io knows them.
 fn run_uploads(
     uploads: Vec<(&PublishEntry, Vec<Upload>)>,
     registry_token: Option<&RegistryToken>,
     crates_io: CratesIo<'_>,
-    bootstrap: bool,
-) -> Result<Vec<PublishLine>, Stopped> {
+    new_crates: &NewCrates,
+) -> Result<(Vec<PublishLine>, Vec<String>), Stopped> {
     let mut packages = Vec::new();
+    let mut created = Vec::new();
     for (entry, uploads) in uploads {
         if entry.argv.is_empty() {
             packages.push(PublishLine::from(entry));
             continue;
         }
         for upload in uploads {
-            let creating = bootstrap
-                && creates(&upload, crates_io.api)
-                    .map_err(|error| stopped(entry, &upload, error))?;
+            let creating = creates(&upload, new_crates, crates_io.api)
+                .map_err(|error| stopped(entry, &upload, error))?;
             let note = publish_checked(
                 &upload,
                 registry_token,
@@ -596,9 +603,12 @@ fn run_uploads(
                 creating,
             )
             .map_err(|error| stopped(entry, &upload, error))?;
-            let note = match note {
-                None if creating => Some(CREATED.to_owned()),
-                note => note,
+            let note = match (note, &upload.check) {
+                (None, RegistryCheck::CratesIo { name }) if creating => {
+                    created.push(name.clone());
+                    Some(CREATED.to_owned())
+                }
+                (note, _) => note,
             };
             packages.push(PublishLine {
                 name: upload.name,
@@ -608,20 +618,22 @@ fn run_uploads(
             });
         }
     }
-    Ok(packages)
+    Ok((packages, created))
 }
 
-/// The note on a crate a `--bootstrap` run created.
+/// The note on a crate a `--new` run created.
 const CREATED: &str = "created with the registry token";
 
-/// Whether `upload` creates its crate: it goes to crates.io, which has no
-/// crate of that name.
-fn creates(upload: &Upload, api: &str) -> Result<bool> {
+/// Whether `upload` creates its crate: `new_crates` allows the crate, it goes
+/// to crates.io, and crates.io has none of that name.
+fn creates(upload: &Upload, new_crates: &NewCrates, api: &str) -> Result<bool> {
     match &upload.check {
-        RegistryCheck::CratesIo { name } => {
+        RegistryCheck::CratesIo { name } if new_crates.allows(name) => {
             Ok(registry::crates_io_user_owners(api, name)?.is_none())
         }
-        RegistryCheck::Query { .. } | RegistryCheck::Unchecked => Ok(false),
+        RegistryCheck::CratesIo { .. } | RegistryCheck::Query { .. } | RegistryCheck::Unchecked => {
+            Ok(false)
+        }
     }
 }
 
@@ -917,8 +929,8 @@ impl<'a> TagRelease<'a> {
 /// package as its members in publish order, and every tag.
 /// It reads no registry listing for those.
 /// A standalone package at `0.0.0` joins the plan as [`pending::pending`]
-/// plans it: crates.io lists that version, or `bootstrap` is set and crates.io
-/// lacks the crate. Only those packages are read from the crates.io index at
+/// plans it: crates.io lists that version, or `new_crates` allows the crate and
+/// crates.io lacks it. Only those packages are read from the crates.io index at
 /// `crates_io`, and the dry run cannot tell whether such a package's tag
 /// exists, which needs a GitHub token.
 /// With every package at `0.0.0` that is left out, there is nothing to
@@ -933,13 +945,13 @@ fn dry_run_plan(
     planned: &PublishPlan,
     declared: &DeclaredAssets,
     crates_io: CratesIo<'_>,
-    bootstrap: bool,
+    new_crates: &NewCrates,
 ) -> Result<PublishRun> {
     let mut packages = Vec::new();
     let mut zero = Vec::new();
     for (spec, entry) in config.packages.iter().zip(&planned.packages) {
         if bump::unreleased(&entry.version) {
-            if !pending::zero_planned(config, root, spec, entry, crates_io.index, bootstrap)? {
+            if !pending::zero_planned(config, root, spec, entry, crates_io.index, new_crates)? {
                 continue;
             }
             zero.push(entry);
@@ -966,13 +978,11 @@ fn dry_run_plan(
             }
         })
         .collect();
-    let (outcome, proof) = if packages.is_empty() {
-        (Outcome::NothingToRelease, Vec::new())
+    let (outcome, proof, created) = if packages.is_empty() {
+        (Outcome::NothingToRelease, Vec::new(), Vec::new())
     } else {
-        (
-            Outcome::Released,
-            release_proof(config, root, crates_io, bootstrap)?.rows(),
-        )
+        let proof = release_proof(config, root, crates_io, new_crates)?;
+        (Outcome::Released, proof.rows(), proof.created())
     };
     Ok(PublishRun {
         outcome,
@@ -980,6 +990,7 @@ fn dry_run_plan(
         allowed: Vec::new(),
         shortfalls: Vec::new(),
         proof,
+        created,
     })
 }
 
@@ -1021,7 +1032,7 @@ fn at_head<'a>(pending: &'a pending::Pending, head: &str) -> Result<&'a pending:
 /// Without a check, a zero exit or that stderr is enough.
 /// A publisher stopped by a registry rate limit fails with the time the
 /// registry gives for the next attempt (see [`rate_limited`]).
-pub(crate) fn publish_checked(
+fn publish_checked(
     upload: &Upload,
     registry_token: Option<&RegistryToken>,
     index: &str,
@@ -1088,10 +1099,10 @@ const RATE_LIMIT: &str = "429 Too Many Requests";
 
 /// What a registry reported when it refused an upload for its rate limit.
 #[derive(Debug)]
-pub(crate) struct RateLimit {
+struct RateLimit {
     /// The time it gave after "try again after", or `None` when it gave the
     /// status alone.
-    pub(crate) retry_after: Option<String>,
+    retry_after: Option<String>,
 }
 
 impl fmt::Display for RateLimit {
@@ -1105,11 +1116,11 @@ impl fmt::Display for RateLimit {
 
 /// An upload the registry's rate limit stopped.
 #[derive(Debug)]
-pub(crate) struct RateLimited {
+struct RateLimited {
     /// The package and version, as `name@version`.
     coord: String,
     /// What the registry reported.
-    pub(crate) limit: RateLimit,
+    limit: RateLimit,
 }
 
 impl fmt::Display for RateLimited {

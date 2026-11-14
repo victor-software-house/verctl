@@ -854,32 +854,6 @@ async fn prove_tag_with(
     }
 }
 
-/// Make `tag` a lightweight tag at `sha` through the GitHub API, which
-/// creates the ref and no Release. A tag already at `sha` is left as it is.
-///
-/// # Errors
-///
-/// Returns an error when the GitHub client cannot be built, when reading the
-/// tag fails with anything but 404, when the tag names a commit other than
-/// `sha`, or when creating it fails.
-pub(crate) fn ensure_tag(token: &str, repo: &Repo, tag: &str, sha: &str) -> Result<()> {
-    block(async {
-        let crab = client(token)?;
-        if let Some(named) = read_tag(&crab, repo, tag).await? {
-            ensure!(
-                named.eq_ignore_ascii_case(sha),
-                "tag {tag} names {named}, not the default branch's tip {sha}"
-            );
-            return Ok(());
-        }
-        crab.git(&repo.owner, &repo.name)
-            .create_ref(&Reference::Tag(tag.to_owned()), sha)
-            .await
-            .with_context(|| format!("create tag {tag} at {sha}"))?;
-        Ok(())
-    })
-}
-
 /// The Release for a vendored set's `tag`, created at `sha` when the tag has
 /// none. Returns its HTML URL.
 ///
