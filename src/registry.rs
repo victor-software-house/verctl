@@ -375,6 +375,22 @@ fn index_path(name: &str) -> String {
     }
 }
 
+/// The file of `name` in the crates.io index under `base`, or `None` when the
+/// index has none.
+///
+/// # Errors
+///
+/// Returns an error when `name` is not ASCII, the request fails, or the index
+/// answers with a status other than 200 or 404.
+fn index_file(base: &str, name: &str) -> Result<Option<String>> {
+    ensure!(
+        !name.is_empty() && name.is_ascii(),
+        "{name:?} is not a crates.io crate name"
+    );
+    let url = format!("{}/{}", base.trim_end_matches('/'), index_path(name));
+    github::block(fetch(&url, None))
+}
+
 /// What the crates.io index shows of one version of a crate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Listing {
@@ -402,14 +418,8 @@ pub enum Listing {
 /// - the index answers with a status other than 200 or 404;
 /// - a line in the crate's file is not a JSON version record.
 pub fn crates_io_listing(base: &str, name: &str, version: &str) -> Result<Listing> {
-    ensure!(
-        !name.is_empty() && name.is_ascii(),
-        "{name:?} is not a crates.io crate name"
-    );
     let wanted = Version::parse(version).with_context(|| format!("semver {version:?}"))?;
-    let url = format!("{}/{}", base.trim_end_matches('/'), index_path(name));
-    let body = github::block(fetch(&url, None))?;
-    let Some(body) = body else {
+    let Some(body) = index_file(base, name)? else {
         return Ok(Listing::NoCrate);
     };
     for line in body.lines().filter(|line| !line.trim().is_empty()) {
@@ -448,12 +458,7 @@ pub fn crates_io_lists(base: &str, name: &str, version: &str) -> Result<bool> {
 ///
 /// Returns an error under the conditions of [`crates_io_lists`].
 pub fn crates_io_baseline(base: &str, name: &str, current: &Version) -> Result<Option<Version>> {
-    ensure!(
-        !name.is_empty() && name.is_ascii(),
-        "{name:?} is not a crates.io crate name"
-    );
-    let url = format!("{}/{}", base.trim_end_matches('/'), index_path(name));
-    let Some(body) = github::block(fetch(&url, None))? else {
+    let Some(body) = index_file(base, name)? else {
         return Ok(None);
     };
     let mut released = Vec::new();

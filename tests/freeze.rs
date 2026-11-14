@@ -365,6 +365,32 @@ async fn a_requested_release_run_is_waited_for() {
     );
 }
 
+/// A run whose status the code has never seen counts as running, as any
+/// status but `completed` does: the check waits for it, and exits zero once
+/// it has ended and the release is complete.
+#[tokio::test]
+async fn an_unknown_status_counts_as_running() {
+    let (repo, tip) = repository("", "0.4.0");
+    let github = github_with(&Release::Published { head: tip.clone() }).await;
+    runs(&github, &tip, &["a_status_github_adds_later"], Some(1)).await;
+    runs(&github, &tip, &["completed"], None).await;
+    let registry = crates_io(&["0.4.0"], &["any-victor"]).await;
+    let output = check(
+        repo.path(),
+        &github,
+        &registry,
+        &pull_request(&[]),
+        &["--release-wait", "2"],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let seen = paths(&github).await;
+    assert_eq!(
+        seen.iter().filter(|seen| *seen == RUNS).count(),
+        2,
+        "{seen:?}"
+    );
+}
+
 /// The release run is still in progress when the limit ends: the check fails
 /// naming the run and the limit.
 #[tokio::test]

@@ -1437,6 +1437,24 @@ async fn status_names_the_neither_tier_without_required_checks() {
     );
 }
 
+/// A merge queue with no `required_status_checks` rule makes nothing require
+/// `check registry`: the tier is `neither`, whatever the queue holds.
+#[tokio::test]
+async fn status_names_the_neither_tier_for_a_queue_without_checks() {
+    let printed =
+        status_for_rules(true, rules(include_str!("testdata/rules/queue-only.json"))).await;
+    assert_eq!(
+        printed,
+        indoc! {"
+               pending  0
+                assets  none
+            unreleased  0
+                  tier  neither
+                freeze  reported, not enforced
+        "}
+    );
+}
+
 /// Without a token no request reads the rules: the tier is unknown, with the
 /// reason, and `status` still succeeds.
 #[tokio::test]
