@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use clap::parser::ValueSource;
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
-use ctl_core::{ColorLong, DryRunArgs, EnvPrefix, FormatArgs, flags};
+use ctl_core::{ColorLong, DryRunArgs, EnvPrefix, FormatArgs, flags, parser};
 
 /// Stack-agnostic version PRs from Changesets-format fragments.
 ///
@@ -202,12 +202,18 @@ impl AfterVerb {
     /// Which options `raw`, the command line, sets after `release bootstrap`.
     /// None are when the command line is not a `release bootstrap`.
     ///
+    /// It parses as ctl-core's `App` does: the same command with
+    /// [`parser::apply_defaults`], so a repeated flag parses as it does there,
+    /// then [`flags::env_under_flags`], on the argv `App` reads. `App` rewrites
+    /// no argv before that, and `mounted_as` only answers `--usage-spec`, so
+    /// both parses see the same words and the same value sources.
+    ///
     /// # Errors
     ///
     /// Returns clap's error when `raw` does not parse, which a command line
     /// that already parsed never does.
     pub fn read(raw: &[OsString]) -> Result<Self, clap::Error> {
-        let command = flags::env_under_flags(Cli::command(), raw)?;
+        let command = flags::env_under_flags(parser::apply_defaults(Cli::command()), raw)?;
         let matches = command.try_get_matches_from(raw)?;
         let Some(bootstrap) = matches
             .subcommand_matches("release")
@@ -625,7 +631,7 @@ mod tests {
     use clap::{CommandFactory, FromArgMatches};
     use ctl_core::flags;
 
-    use super::{AfterVerb, Check, Cli, Command};
+    use super::{AfterVerb, Check, Cli, Command, Valued};
     use crate::registry::CRATES_IO_API;
 
     /// Parse as `App` does: variables the command line overrules are unbound
@@ -1111,6 +1117,30 @@ mod tests {
         let neither = merged(&["verctl", "release", "bootstrap"]);
         assert_eq!(neither.crates_io_api, CRATES_IO_API);
         assert_eq!(neither.config, Path::new(".ctl/ver.yaml"));
+    }
+
+    /// `App` parses a repeated flag, as the last one wins, and `AfterVerb`
+    /// parses the same command line the same way instead of failing on it.
+    #[test]
+    fn after_verb_parses_what_the_app_parses() {
+        let raw: Vec<OsString> = [
+            "verctl",
+            "release",
+            "bootstrap",
+            "--crates-io-api",
+            "http://first.test/api",
+            "--crates-io-api",
+            "http://second.test/api",
+        ]
+        .iter()
+        .map(OsString::from)
+        .collect();
+        let after = AfterVerb::read(&raw).expect("sources");
+        assert!(after.has(Valued::CratesIoApi));
+        assert!(!after.has(Valued::Config));
+        let cli =
+            parse(&["verctl", "release", "bootstrap", "--crates-io-api", "a"]).expect("parse");
+        assert!(matches!(cli.command, Command::Release(_)));
     }
 
     /// No command takes a version to publish: `--version` on `release

@@ -9,7 +9,7 @@
 
 mod common;
 
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::{env, fs};
@@ -1213,4 +1213,61 @@ async fn bootstrap_trusts_a_crate_the_index_already_lists() {
     );
     assert_eq!(world.token_calls(), ["demo-cli r3gistry"]);
     assert_eq!(count(&world.api, "POST").await, 2);
+}
+
+/// `release bootstrap` run the way the mounted `ver` task runs it: the served
+/// script execs `verctl "$@"`, so the argument words reach the binary
+/// unchanged, with the options written before the verb.
+#[tokio::test]
+async fn bootstrap_runs_through_the_served_ver_task_with_options_before_the_verb() {
+    let world = World::new().await;
+    standalone(world.repo(), &[("demo", "0.0.0")]);
+    on_crates_io(&world, "demo", "0.0.0", false).await;
+    let task = minijinja::Environment::new()
+        .render_str(
+            &fs::read_to_string(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join(".ctl/templates/ver.jinja"),
+            )
+            .unwrap(),
+            minijinja::context! { versions => minijinja::context! { verctl => "0.0.0" } },
+        )
+        .unwrap();
+    let bin = world.tools.path().join("served-bin");
+    fs::create_dir_all(&bin).unwrap();
+    symlink(env!("CARGO_BIN_EXE_verctl"), bin.join("verctl")).unwrap();
+    let script = world.tools.path().join("ver");
+    fs::write(&script, task).unwrap();
+    let mut command = Command::new("bash");
+    for (key, _) in env::vars_os() {
+        if common::is_cleared(&key)
+            || key
+                .to_str()
+                .is_some_and(|key| key == "CI" || key.starts_with("GITHUB_"))
+        {
+            command.env_remove(key);
+        }
+    }
+    command
+        .current_dir(world.repo())
+        .env(
+            "PATH",
+            format!("{}:{}", bin.display(), env::var("PATH").unwrap_or_default()),
+        )
+        .env("GITHUB_API_URL", world.github.uri())
+        .env("COLUMNS", "400")
+        .arg(&script);
+    let output = command
+        .args(["--format", "json", "--color", "never", "release"])
+        .args(["--crates-io-api", &world.api.uri()])
+        .args(["--crates-io-index", &world.index.uri()])
+        .args(["bootstrap", "--dry-run"])
+        .output()
+        .unwrap();
+    let planned = report(&output);
+    assert_eq!(planned["releases"], json!(["would create v0.0.0"]));
+    assert!(
+        received(&world.api)
+            .await
+            .contains(&("GET".to_owned(), "/crates/demo/owners".to_owned()))
+    );
 }
