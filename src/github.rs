@@ -1608,16 +1608,14 @@ pub struct ActiveRun {
     pub url: String,
 }
 
-/// The `status` of a run that has not ended ([list workflow runs]).
-///
-/// [list workflow runs]: https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-workflow
-const ACTIVE_RUN_STATUSES: [&str; 5] = ["requested", "queued", "waiting", "pending", "in_progress"];
-
 /// The first run of the workflow file `workflow` at commit `sha` that has not
 /// ended, from `GET /repos/{owner}/{repo}/actions/workflows/{workflow}/runs`
 /// with `head_sha` ([list workflow runs]). The first 100 runs of that commit
 /// are read, and the commit is checked again on each, so a server that
 /// ignores the filter finds no run for another commit.
+///
+/// A run has not ended unless its `status` is `completed`, so a status GitHub
+/// adds later, or none at all, counts as running.
 ///
 /// # Errors
 ///
@@ -1659,11 +1657,7 @@ pub fn active_run(
             .workflow_runs
             .into_iter()
             .find(|run| {
-                run.head_sha.eq_ignore_ascii_case(sha)
-                    && run
-                        .status
-                        .as_deref()
-                        .is_some_and(|status| ACTIVE_RUN_STATUSES.contains(&status))
+                run.head_sha.eq_ignore_ascii_case(sha) && run.status.as_deref() != Some("completed")
             })
             .map(|run| ActiveRun { url: run.html_url }))
     })
