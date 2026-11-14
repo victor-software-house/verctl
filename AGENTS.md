@@ -226,6 +226,23 @@ That way `next` drops the consumed fragments and builds on the released version.
 
 The version check accepts the versions that PR brings, because `main` carries them at its merge-base with HEAD.
 
+### The release freeze
+
+`check registry` also fails while the default branch holds a version whose release is incomplete, and names each pending `<name>@<version>`.  
+It fails only when the Actions event is `pull_request`, `pull_request_target`, or `merge_group`, and then needs `GITHUB_TOKEN`.  
+On any other event, and locally, the pending release is a notice.  
+`release` and `release --dry-run` run `registry` without the freeze.
+
+The pending releases are the incomplete ones at HEAD whose version equals the one the merge-base with the default branch holds.  
+So a Version PR does not freeze itself on its own new versions.  
+Before it decides, the check waits for a run of the `release_workflow` file at the default branch's tip, up to `--release-wait` seconds (`VERCTL_RELEASE_WAIT`, 1800 when omitted).
+
+A pull request labelled `verctl: unfreeze` passes the freeze, and no other `registry` proof.  
+A pull request reads the label from the event payload, and a merge group reads it through the API from the pull request its head ref names.
+
+`status` names the enforcement tier from the default branch's rules (`freeze::Tier`): `merge queue`, `rulesets without a queue`, or `neither`, where the freeze is reported and not enforced.  
+It shows the tier as unknown, with the reason, without a token or when GitHub refuses the read, and never fails on it.
+
 ## Git
 
 Conventional commits.  

@@ -73,6 +73,7 @@ pub mod driver;
 pub mod first_publish;
 /// Changeset fragments.
 pub mod fragment;
+pub mod freeze;
 /// Git history the release reads.
 pub mod git;
 /// GitHub outputs, repositories, and pull requests.

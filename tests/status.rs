@@ -1311,3 +1311,129 @@ async fn a_target_added_after_the_release_does_not_reopen_it() {
     assert!(written.contains("pending=false"), "{written}");
     assert_eq!(report["unreleased"], serde_json::json!([]));
 }
+
+/// What `status` prints in a repository with no release to look up, whose
+/// default branch `main` has `rules` for GitHub's answer to the rules read.
+/// `demo` sits at `0.0.0`, which `status` leaves out before any lookup, so
+/// only the rules and the token decide the output. With `token` false, no
+/// request reaches GitHub.
+async fn status_for_rules(token: bool, rules: ResponseTemplate) -> String {
+    let root = TempDir::new().expect("tempdir");
+    common::write_config(
+        root.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+                publisher: none
+        "},
+    );
+    fs::write(
+        root.path().join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "demo"
+            version = "0.0.0"
+        "#},
+    )
+    .expect("cargo");
+    common::on_default_branch(root.path());
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/rules/branches/main"))
+        .respond_with(rules)
+        .mount(&server)
+        .await;
+    let mut command = common::verctl();
+    command
+        .current_dir(root.path())
+        .env("GITHUB_REPOSITORY", "acme/demo")
+        .env("GITHUB_API_URL", server.uri())
+        .env("VERCTL_DEFAULT_BRANCH", "main")
+        .env("COLUMNS", "400")
+        .args(["status", "--color", "never"]);
+    if token {
+        command.env("GITHUB_TOKEN", "test");
+    }
+    let output = command.output().expect("spawn");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).expect("utf-8")
+}
+
+/// GitHub's answer to the rules read, from a recorded file.
+fn rules(recorded: &str) -> ResponseTemplate {
+    ResponseTemplate::new(200).set_body_raw(recorded.to_owned(), "application/json")
+}
+
+/// A merge queue among the rules of the default branch is the tier `merge
+/// queue`.
+#[tokio::test]
+async fn status_names_the_merge_queue_tier() {
+    let printed =
+        status_for_rules(true, rules(include_str!("testdata/rules/merge-queue.json"))).await;
+    assert_eq!(
+        printed,
+        indoc! {"
+               pending  0
+                assets  none
+            unreleased  0
+                  tier  merge queue
+        "}
+    );
+}
+
+/// Rules with no merge queue are the tier `rulesets without a queue`.
+#[tokio::test]
+async fn status_names_the_rulesets_without_a_queue_tier() {
+    let printed = status_for_rules(true, rules(include_str!("testdata/rules/rulesets.json"))).await;
+    assert_eq!(
+        printed,
+        indoc! {"
+               pending  0
+                assets  none
+            unreleased  0
+                  tier  rulesets without a queue
+        "}
+    );
+}
+
+/// No rule at all is the tier `neither`, and `status` says the freeze is
+/// reported and not enforced.
+#[tokio::test]
+async fn status_names_the_neither_tier() {
+    let printed = status_for_rules(true, rules(include_str!("testdata/rules/none.json"))).await;
+    assert_eq!(
+        printed,
+        indoc! {"
+               pending  0
+                assets  none
+            unreleased  0
+                  tier  neither
+                freeze  reported, not enforced
+        "}
+    );
+}
+
+/// Without a token no request reads the rules: the tier is unknown, with the
+/// reason, and `status` still succeeds.
+#[tokio::test]
+async fn status_shows_an_unknown_tier_without_a_token() {
+    let printed = status_for_rules(
+        false,
+        rules(include_str!("testdata/rules/merge-queue.json")),
+    )
+    .await;
+    assert_eq!(
+        printed,
+        indoc! {"
+               pending  0
+                assets  none
+            unreleased  not checked (no GITHUB_TOKEN or GH_TOKEN)
+                  tier  unknown (no GITHUB_TOKEN or GH_TOKEN)
+        "}
+    );
+}

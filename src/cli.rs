@@ -419,6 +419,18 @@ pub struct CheckArgs {
     /// `https://staging.crates.io/api/v1`, to prove a staging release.
     #[arg(long, value_name = "URL", default_value = crate::registry::CRATES_IO_API)]
     pub crates_io_api: String,
+    /// The crates.io sparse index root that the release freeze of `registry`
+    /// reads to learn whether a crate version is already published. Point it
+    /// at crates.io's staging index, `https://index.staging.crates.io`, for a
+    /// staging release.
+    #[arg(long, value_name = "URL", default_value = crate::registry::CRATES_IO_INDEX)]
+    pub crates_io_index: String,
+    /// How many seconds `registry` waits for a running release workflow run
+    /// at the default branch's tip to end, before it decides the freeze. Past
+    /// it the check fails, naming the run and this limit. It counts only on a
+    /// `pull_request`, `pull_request_target` or `merge_group` event.
+    #[arg(long, value_name = "SECONDS", default_value_t = 1800)]
+    pub release_wait: u64,
 }
 
 impl CheckArgs {
@@ -455,7 +467,9 @@ pub enum Check {
     Versions,
     /// Each crates.io crate the default branch holds exists and lists every
     /// login `owners` names; reports whether its newest version came through
-    /// trusted publishing. Needs the network and no token.
+    /// trusted publishing. On a pull request or a merge group it also fails
+    /// while a version the default branch holds is not fully released, and
+    /// then needs `GITHUB_TOKEN`; elsewhere that is a notice.
     Registry,
     /// Each crates.io crate has a trusted publisher naming this repository and
     /// `release_workflow`. Needs an owner's token in `VERCTL_OWNER_TOKEN`.

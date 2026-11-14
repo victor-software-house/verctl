@@ -450,8 +450,23 @@ A manifest that opts out of publishing needs no `publisher: none`: a `Cargo.toml
 `publish` on a package holds options of its publisher.  
 `publish: {verify: false}` makes cargo upload with `--no-verify`, for a crate CI already packs on every commit to the default branch, and keeps the crates.io check.
 
+`check [CHECK]...` runs each check it names once, from `fragments`, `served`, `versions`, `registry` and `trust`.  
+Bare `check` runs `fragments` and `served`, which need only the checkout, and `--all` (`-a`) runs every check.
+
 `check registry` proves, with no token, that each crates.io crate the default branch holds exists and lists every login the top-level or per-package `owners` names.  
 `check trust` reads an owner's token from `VERCTL_OWNER_TOKEN` and proves that a trusted publisher entry names this repository and `release_workflow`, which is `release.yml` when omitted.
+
+`check registry` also freezes the default branch while it holds a version whose release is incomplete.  
+On a `pull_request`, `pull_request_target`, or `merge_group` event it fails, naming each pending `<name>@<version>`, and needs `GITHUB_TOKEN`.  
+Elsewhere the pending release is a notice.  
+Before it decides, it waits for a running `release_workflow` run at the default branch's tip, up to `--release-wait` seconds (`VERCTL_RELEASE_WAIT`, 1800 when omitted).  
+A pull request labelled `verctl: unfreeze` passes the freeze and no other proof, for a release that can never complete.  
+`release` and `release --dry-run` run `registry` without the freeze.
+
+`status` names the enforcement tier from the default branch's rules: `merge queue`, `rulesets without a queue`, or `neither`, where the freeze is reported and not enforced.  
+With a merge queue, require the job that runs `check registry` on the merge-group commit.  
+With rulesets and no queue, require it on every pull request, up to date with the default branch.  
+With neither, run `check versions registry` on the Version PR, updated to the default branch's tip, before merging it.
 
 `verctl release bootstrap [CRATE]...` publishes each crate crates.io lacks, from the default branch's tip, with the operator's token in `VERCTL_REGISTRY_TOKEN`.  
 It needs `VERCTL_OWNER_TOKEN` too, checked before any request, tags each published standalone package, and adds each published crate's trusted publisher entry.  

@@ -109,11 +109,17 @@ The replay runs no lockfile owner and no `prepare.after` command.
 Any other pull request fails when it adds a CHANGELOG section for a version.  
 It also fails when it changes whether a package publishes without a fragment that bumps it above `none`.
 
-`check registry` needs no token: each crates.io crate the default branch holds exists and lists every login `owners` names.  
+`check registry` needs no token for its crate proofs: each crates.io crate the default branch holds exists and lists every login `owners` names.  
 It reports the newest version's trusted publishing as evidence.  
 A crate only the pull request adds passes with a notice to run `verctl release bootstrap` once it lands, unless it is a standalone package at a version other than `0.0.0`, which fails.  
 `check trust` needs an owner's token in `VERCTL_OWNER_TOKEN`.  
 It proves that a trusted publisher entry names the repository and `release_workflow` (`release.yml` when omitted).
+
+`check registry` also freezes the default branch: on a `pull_request`, `pull_request_target`, or `merge_group` event it fails, naming each `<name>@<version>`, while a version the default branch holds is not fully released, and it then needs `GITHUB_TOKEN`.  
+It first waits for a `release_workflow` run at the default branch's tip, up to `--release-wait <SECONDS>` (`VERCTL_RELEASE_WAIT`, 1800).  
+A pull request labelled `verctl: unfreeze` passes the freeze and no other proof; a merge group reads the label of its pull request through the API.  
+Anywhere else the pending release is a notice, and `release` runs `registry` without the freeze.  
+`status` names the enforcement tier of the default branch's rules: `merge queue`, `rulesets without a queue`, or `neither`, where the freeze is reported and not enforced; without a token it shows the tier as unknown.
 
 ## First publish
 

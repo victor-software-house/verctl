@@ -1600,6 +1600,144 @@ async fn pull_author_with(crab: &Octocrab, repo: &Repo, number: u64) -> Result<P
     })
 }
 
+/// A workflow run that has not ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ActiveRun {
+    /// The run's page on GitHub.
+    pub url: String,
+}
+
+/// The `status` of a run that has not ended ([list workflow runs]).
+///
+/// [list workflow runs]: https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-workflow
+const ACTIVE_RUN_STATUSES: [&str; 4] = ["queued", "waiting", "pending", "in_progress"];
+
+/// The first run of the workflow file `workflow` at commit `sha` that has not
+/// ended, from `GET /repos/{owner}/{repo}/actions/workflows/{workflow}/runs`
+/// with `head_sha` ([list workflow runs]). The first 100 runs of that commit
+/// are read, and the commit is checked again on each, so a server that
+/// ignores the filter finds no run for another commit.
+///
+/// # Errors
+///
+/// Returns an error when the GitHub client cannot be built or the request or
+/// its decoding fails, for example when no workflow file has that name. Only
+/// a lookup that GitHub gave no answer to is a [`lookup::Unavailable`].
+///
+/// [list workflow runs]: https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-workflow
+pub fn active_run(
+    token: &str,
+    repo: &Repo,
+    workflow: &str,
+    sha: &str,
+) -> Result<Option<ActiveRun>> {
+    #[derive(serde::Deserialize)]
+    struct Run {
+        html_url: String,
+        head_sha: String,
+        status: Option<String>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Runs {
+        workflow_runs: Vec<Run>,
+    }
+    block(async {
+        let crab = client(token)?;
+        let runs: Runs = crab
+            .get(
+                format!(
+                    "/repos/{owner}/{name}/actions/workflows/{workflow}/runs?head_sha={sha}&per_page=100",
+                    owner = repo.owner,
+                    name = repo.name
+                ),
+                None::<&()>,
+            )
+            .await
+            .map_err(|error| lookup_failed(error, format!("list the runs of {workflow}")))?;
+        Ok(runs
+            .workflow_runs
+            .into_iter()
+            .find(|run| {
+                run.head_sha.eq_ignore_ascii_case(sha)
+                    && run
+                        .status
+                        .as_deref()
+                        .is_some_and(|status| ACTIVE_RUN_STATUSES.contains(&status))
+            })
+            .map(|run| ActiveRun { url: run.html_url }))
+    })
+}
+
+/// The labels of pull request `number`, from
+/// `GET /repos/{owner}/{repo}/pulls/{number}` ([get a pull request]).
+///
+/// # Errors
+///
+/// Returns an error when the GitHub client cannot be built or the request or
+/// its decoding fails, for example when pull request `number` does not exist.
+///
+/// [get a pull request]: https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request
+pub fn pull_labels(token: &str, repo: &Repo, number: u64) -> Result<Vec<String>> {
+    #[derive(serde::Deserialize)]
+    struct Label {
+        name: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct Pull {
+        labels: Vec<Label>,
+    }
+    block(async {
+        let crab = client(token)?;
+        let pull: Pull = crab
+            .get(
+                format!(
+                    "/repos/{owner}/{name}/pulls/{number}",
+                    owner = repo.owner,
+                    name = repo.name
+                ),
+                None::<&()>,
+            )
+            .await
+            .with_context(|| format!("read pull request #{number}"))?;
+        Ok(pull.labels.into_iter().map(|label| label.name).collect())
+    })
+}
+
+/// The `type` of each rule that applies to `branch`, from
+/// `GET /repos/{owner}/{repo}/rules/branches/{branch}` ([get rules for a
+/// branch]). The list is empty when no rule applies.
+///
+/// # Errors
+///
+/// Returns an error when the GitHub client cannot be built or the request or
+/// its decoding fails, including the 403 and 404 answers of a token that
+/// cannot read the rules.
+///
+/// [get rules for a branch]: https://docs.github.com/en/rest/repos/rules#get-rules-for-a-branch
+pub fn branch_rule_types(token: &str, repo: &Repo, branch: &str) -> Result<Vec<String>> {
+    #[derive(serde::Deserialize)]
+    struct Rule {
+        #[serde(rename = "type")]
+        kind: String,
+    }
+    block(async {
+        let crab = client(token)?;
+        let rules: Vec<Rule> = crab
+            .get(
+                format!(
+                    "/repos/{owner}/{name}/rules/branches/{branch}",
+                    owner = repo.owner,
+                    name = repo.name
+                ),
+                None::<&()>,
+            )
+            .await
+            .with_context(|| format!("read the rules of {branch}"))?;
+        Ok(rules.into_iter().map(|rule| rule.kind).collect())
+    })
+}
+
 /// A GitHub client for `token`.
 /// It uses the API from `GITHUB_API_URL` when that is set, as on a GitHub
 /// Enterprise Server or a test's mock server.

@@ -2,6 +2,7 @@
 
 use std::env;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use ctl_core::prelude::*;
@@ -14,7 +15,7 @@ use verctl::content::Inputs;
 use verctl::fragment::{self, Bump};
 use verctl::registry_token::RegistryToken;
 use verctl::{
-    assets, bootstrap, ci, git, github, lookup, pending, pins, prepare, publish, registry,
+    assets, bootstrap, ci, freeze, git, github, lookup, pending, pins, prepare, publish, registry,
     registry_check, registry_token, release, semver_check, templates, trust, versions,
 };
 
@@ -78,8 +79,7 @@ fn check_report(args: &CheckArgs) -> Result<CheckReport> {
             Check::Fragments => check_fragments(args, &config, root),
             Check::Served => check_served(root, &config).map(|()| CheckResult::Served),
             Check::Versions => check_versions(args, &config, root).map(CheckResult::Versions),
-            Check::Registry => registry_check::registry(&config, root, &args.crates_io_api)
-                .map(CheckResult::Registry),
+            Check::Registry => check_registry(args, &config, root).map(CheckResult::Registry),
             Check::Trust => registry_check::trust(
                 &config,
                 root,
@@ -90,6 +90,25 @@ fn check_report(args: &CheckArgs) -> Result<CheckReport> {
         })
         .collect::<Result<_>>()?;
     Ok(CheckReport { checks })
+}
+
+/// The `registry` proofs and, after them, the release freeze. The freeze
+/// follows the proofs because they fetch the default branch it reads.
+fn check_registry(
+    args: &CheckArgs,
+    config: &Config,
+    root: &Path,
+) -> Result<registry_check::RegistryReport> {
+    let report = registry_check::registry(config, root, &args.crates_io_api)?;
+    let settings = freeze::Settings::new(
+        &args.crates_io_index,
+        Duration::from_secs(args.release_wait),
+    );
+    let freeze = freeze::check(config, &args.config, root, &settings)?;
+    Ok(registry_check::RegistryReport {
+        freeze: Some(freeze),
+        ..report
+    })
 }
 
 /// Fragments that parse and that `version` would accept. Every package they
@@ -606,6 +625,10 @@ fn ci_report(args: &CiArgs) -> Result<CiReport> {
 /// ([`lookup::Unavailable`]), it lists the incomplete releases as not checked,
 /// with the reason. It never lists them as none.
 ///
+/// `status` also names the enforcement tier of the default branch's rules
+/// ([`freeze::Tier`]). Reading it never fails `status`: a missing token or a
+/// refused read shows the tier as unknown, with the reason.
+///
 /// Any other error, such as a release tag on the wrong commit, fails
 /// `status` in both modes. Under `--github-output`, a lookup that cannot run
 /// fails it too, since the workflow must not plan from a guess.
@@ -640,6 +663,13 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
     } else {
         unreleased_state(args, &config, root)?
     };
+    let tier = if args.vendored.is_some() {
+        freeze::Tier::Unknown {
+            reason: "a vendored plan reads no rules".to_owned(),
+        }
+    } else {
+        freeze::Tier::read(root)
+    };
     let overall = fragments
         .iter()
         .map(fragment::Fragment::max_bump)
@@ -672,6 +702,7 @@ fn status_report(args: &StatusArgs) -> Result<StatusReport> {
         unreleased,
         unreleased_unchecked,
         partial,
+        tier,
         notices,
     })
 }

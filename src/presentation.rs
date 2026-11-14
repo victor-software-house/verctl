@@ -1,6 +1,8 @@
 use ctl_core::prelude::{Document, Fields, Notice, NoticeLevel, Outcome, Present, Table};
 use serde::Serialize;
-use verctl::{assets, ci, first_publish, publish, registry_check, semver_check, stop, versions};
+use verctl::{
+    assets, ci, first_publish, freeze, publish, registry_check, semver_check, stop, versions,
+};
 
 #[derive(Serialize)]
 #[serde(untagged)]
@@ -145,10 +147,7 @@ impl Present for CheckReport {
                 }
                 CheckResult::Served => fields.row("served", "ok"),
                 CheckResult::Versions(report) => fields.row("versions", report.summary()),
-                CheckResult::Registry(report) => fields.row(
-                    "registry",
-                    crate_summary(report.crates.len(), report.failures().len()),
-                ),
+                CheckResult::Registry(report) => fields.row("registry", registry_summary(report)),
                 CheckResult::Trust(report) => fields.row("trust", trust_summary(report)),
             };
         }
@@ -189,6 +188,21 @@ fn crate_summary(total: usize, failed: usize) -> String {
     }
 }
 
+/// The one-line result of `registry`: its crates, and the pending releases
+/// the freeze fails.
+fn registry_summary(report: &registry_check::RegistryReport) -> String {
+    let crates = crate_summary(report.crates.len(), report.crate_failures().len());
+    let frozen = report
+        .freeze
+        .as_ref()
+        .map_or(0, |freeze| freeze.failures().len());
+    match (frozen, report.crate_failures().is_empty()) {
+        (0, _) => crates,
+        (_, true) => format!("failed, frozen by {frozen} incomplete release(s)"),
+        (_, false) => format!("{crates}, frozen by {frozen} incomplete release(s)"),
+    }
+}
+
 /// The one-line result of `trust`, which fails without a token.
 fn trust_summary(report: &registry_check::TrustReport) -> String {
     match report {
@@ -213,7 +227,7 @@ fn with_findings(document: Document, notices: &[String], failures: &[String]) ->
 /// `document` with the `registry` table, its notices, and its failures.
 fn registry_details(report: &registry_check::RegistryReport, document: Document) -> Document {
     if report.crates.is_empty() {
-        return document;
+        return with_findings(document, &report.notices(), &report.failures());
     }
     let table = report.crates.iter().fold(
         Table::new(["crate", "state", "owners", "trusted"]).id_column(0),
@@ -388,6 +402,8 @@ pub(super) struct StatusReport {
     /// Every release whose registries list some, but not all, of its
     /// uploads. `null` when `unreleased` was not checked.
     pub(super) partial: Option<Vec<PartialRow>>,
+    /// How far the default branch's rules enforce the release freeze.
+    pub(super) tier: freeze::Tier,
     /// One warning per published, immutable Release that lacks declared
     /// assets.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -610,6 +626,10 @@ impl Present for StatusReport {
         };
         for partial in self.partial.iter().flatten() {
             fields = partial.rows(fields);
+        }
+        fields = fields.row("tier", self.tier.label());
+        if let Some(gap) = self.tier.gap() {
+            fields = fields.row("freeze", gap);
         }
         with_warnings(document.fields(fields), &self.notices)
     }
@@ -1002,7 +1022,7 @@ impl Present for CiReport {
 mod tests {
     use ctl_core::prelude::{ColorMode, Destination, Outcome, OutputFormat, Present, View};
     use indoc::{formatdoc, indoc};
-    use verctl::{publish, registry_check, stop, versions};
+    use verctl::{freeze, publish, registry_check, stop, versions};
 
     use super::{
         CheckReport, CheckResult, PartialRow, ReleaseReport, ReleaseRow, Report, StatusFragment,
@@ -1190,6 +1210,7 @@ mod tests {
                         },
                     },
                 ],
+                freeze: None,
             })],
         });
         assert_eq!(report.outcome(), Outcome::Error);
@@ -1354,6 +1375,7 @@ mod tests {
             }]),
             unreleased_unchecked: None,
             partial: None,
+            tier: freeze::Tier::MergeQueue,
             notices: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
@@ -1379,6 +1401,7 @@ mod tests {
                        max  minor
                     assets  none
                 unreleased  1
+                      tier  merge queue
             "},
         );
         let json = View::new(OutputFormat::Json, ColorMode::Never)
@@ -1398,6 +1421,7 @@ mod tests {
                 "unreleased": [{ "name": "demo", "version": "0.3.1", "commit": "aaa" }],
                 "unreleased_unchecked": null,
                 "partial": null,
+                "tier": { "state": "merge-queue" },
             })
         );
     }
@@ -1430,6 +1454,7 @@ mod tests {
                     Some("Fri, 13 Nov 2026 19:00:00 GMT".into()),
                 )),
             }]),
+            tier: freeze::Tier::MergeQueue,
             notices: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
@@ -1452,6 +1477,7 @@ mod tests {
                 unreleased  3
                    partial  v0.4.0: partially published: 1 of 3 crates live
                    stopped  util 0.4.0: 429 Too Many Requests, resume after Fri, 13 Nov 2026 19:00:00 GMT (as the last run reported)
+                      tier  merge queue
             "},
         );
         let json = View::new(OutputFormat::Json, ColorMode::Never)
@@ -1493,6 +1519,7 @@ mod tests {
                 noun: "packages".into(),
                 stop: stop::Record::Unreadable,
             }]),
+            tier: freeze::Tier::MergeQueue,
             notices: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
@@ -1507,6 +1534,7 @@ mod tests {
                 unreleased  0
                    partial  v0.4.0: partially published: 2 of 3 packages live
                    stopped  stop record unreadable
+                      tier  merge queue
             "},
         );
     }
@@ -1523,6 +1551,7 @@ mod tests {
             unreleased: None,
             unreleased_unchecked: Some(Unchecked::missing_token()),
             partial: None,
+            tier: freeze::Tier::MergeQueue,
             notices: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
@@ -1535,6 +1564,7 @@ mod tests {
                    pending  0
                     assets  none
                 unreleased  not checked (no GITHUB_TOKEN or GH_TOKEN)
+                      tier  merge queue
             "},
         );
         let json = View::new(OutputFormat::Json, ColorMode::Never)
@@ -1559,6 +1589,7 @@ mod tests {
             unreleased: None,
             unreleased_unchecked: Some(Unchecked::failed(&error)),
             partial: None,
+            tier: freeze::Tier::MergeQueue,
             notices: Vec::new(),
         });
         let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
@@ -1571,6 +1602,7 @@ mod tests {
                    pending  0
                     assets  none
                 unreleased  not checked (cannot find the version commit)
+                      tier  merge queue
             "},
         );
         let json = View::new(OutputFormat::Json, ColorMode::Never)
