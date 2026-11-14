@@ -1,29 +1,102 @@
 //! `publish --dry-run` prints the stock plan and writes nothing.
 //!
-//! Each `dry_run_*` fixture sets `release_checks: []`, because it runs in a
-//! directory with no git repository and no network, where the release proof
-//! a dry run runs could not resolve the default branch or reach crates.io.
+//! Each `dry_run_*` fixture is a repository at the tip of `main`, read
+//! against a GitHub with no tag and no Release and a crates.io index that
+//! lists nothing, as a dry run reads what a release reads.
+//! It sets `release_checks: []`, because the release proof would reach
+//! crates.io.
 
 mod common;
 
-use std::fs;
 use std::path::Path;
+use std::process::Command;
+use std::{env, fs};
 
 use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
-use verctl::registry::CRATES_IO_INDEX;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{method, path, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-fn publish_stdout(root: &Path) -> String {
-    publish_stdout_at(root, CRATES_IO_INDEX)
+/// verctl with no host `CI` or `GITHUB_*` variable, so each run sees only
+/// the GitHub the test sets.
+fn off_actions() -> Command {
+    let mut command = common::verctl();
+    for (key, _) in env::vars_os() {
+        if key
+            .to_str()
+            .is_some_and(|key| key == "CI" || key.starts_with("GITHUB_"))
+        {
+            command.env_remove(key);
+        }
+    }
+    command
 }
 
-/// The dry run's stdout, reading the crates.io index at `index`, which a
-/// package at `0.0.0` makes the run read.
-fn publish_stdout_at(root: &Path, index: &str) -> String {
-    let output = common::verctl()
+/// A GitHub with no tag and no Release: each tag and Release lookup is a
+/// 404 that GitHub words, and the list of Releases is empty.
+async fn empty_github() -> MockServer {
+    let server = MockServer::start().await;
+    for lookup in [
+        "^/repos/acme/demo/git/ref/tags/.+",
+        "^/repos/acme/demo/releases/tags/.+",
+    ] {
+        Mock::given(method("GET"))
+            .and(path_regex(lookup))
+            .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
+                "message": "Not Found",
+                "documentation_url": "https://docs.github.com"
+            })))
+            .mount(&server)
+            .await;
+    }
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/releases"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+        .mount(&server)
+        .await;
+    server
+}
+
+/// A `CHANGELOG.md` at `root` with a section for each of `releases`, as
+/// `(name, version)`.
+fn write_changelog(root: &Path, releases: &[(&str, &str)]) {
+    let sections: String = releases
+        .iter()
+        .map(|(name, version)| {
+            formatdoc! {"
+                ## {name} {version}
+
+                - First.
+
+            "}
+        })
+        .collect();
+    fs::write(
+        root.join("CHANGELOG.md"),
+        formatdoc! {"
+            # Changelog
+
+            {sections}"},
+    )
+    .unwrap();
+}
+
+/// The dry run's stdout, reading a crates.io index that lists nothing.
+async fn publish_stdout(root: &Path) -> String {
+    let index = MockServer::start().await;
+    publish_stdout_at(root, &index.uri()).await
+}
+
+/// The dry run's stdout in `root`, committed as the tip of `main`, reading
+/// the crates.io index at `index`.
+async fn publish_stdout_at(root: &Path, index: &str) -> String {
+    common::on_default_branch(root);
+    let github = empty_github().await;
+    let output = off_actions()
         .current_dir(root)
+        .env("GITHUB_REPOSITORY", "acme/demo")
+        .env("GITHUB_TOKEN", "test")
+        .env("GITHUB_API_URL", github.uri())
         .args(["release", "--dry-run", "--color", "never"])
         .args(["--crates-io-index", index])
         .output()
@@ -33,8 +106,8 @@ fn publish_stdout_at(root: &Path, index: &str) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
-#[test]
-fn dry_run_lists_one_cargo_crate() {
+#[tokio::test]
+async fn dry_run_lists_one_cargo_crate() {
     let root = TempDir::new().unwrap();
     common::write_config(
         root.path(),
@@ -54,6 +127,7 @@ fn dry_run_lists_one_cargo_crate() {
         "#},
     )
     .unwrap();
+    write_changelog(root.path(), &[("demo", "0.0.1")]);
     let expected = formatdoc! {"
         ┌──────┬─────────┬───────┐
         │ name ┆ version ┆ via   │
@@ -64,13 +138,13 @@ fn dry_run_lists_one_cargo_crate() {
         release  would create v0.0.1
         dry-run  nothing published
     "};
-    assert_eq!(publish_stdout(root.path()), expected);
+    assert_eq!(publish_stdout(root.path()).await, expected);
 }
 
 /// A package at a virtual workspace manifest publishes each member that
 /// publishes, dependencies first, and leaves out `publish = false`.
-#[test]
-fn dry_run_lists_workspace_members_in_publish_order() {
+#[tokio::test]
+async fn dry_run_lists_workspace_members_in_publish_order() {
     let root = TempDir::new().unwrap();
     common::write_config(
         root.path(),
@@ -132,6 +206,7 @@ fn dry_run_lists_workspace_members_in_publish_order() {
         "#},
     );
     write("xtask/src/main.rs", "fn main() {}");
+    write_changelog(root.path(), &[("demo", "0.0.2")]);
     let expected = formatdoc! {"
         ┌───────────┬─────────┬───────┐
         │ name      ┆ version ┆ via   │
@@ -143,12 +218,12 @@ fn dry_run_lists_workspace_members_in_publish_order() {
         release  would create v0.0.2
         dry-run  nothing published
     "};
-    assert_eq!(publish_stdout(root.path()), expected);
+    assert_eq!(publish_stdout(root.path()).await, expected);
 }
 
 /// A private binary with `publish = false` releases on GitHub only.
-#[test]
-fn dry_run_lists_a_release_only_package() {
+#[tokio::test]
+async fn dry_run_lists_a_release_only_package() {
     let root = TempDir::new().unwrap();
     common::write_config(
         root.path(),
@@ -170,6 +245,7 @@ fn dry_run_lists_a_release_only_package() {
         "#},
     )
     .unwrap();
+    write_changelog(root.path(), &[("demo", "0.0.1")]);
     let expected = formatdoc! {"
         ┌──────┬─────────┬──────────────┐
         │ name ┆ version ┆ via          │
@@ -180,12 +256,12 @@ fn dry_run_lists_a_release_only_package() {
         release  would create v0.0.1
         dry-run  nothing published
     "};
-    assert_eq!(publish_stdout(root.path()), expected);
+    assert_eq!(publish_stdout(root.path()).await, expected);
 }
 
 /// A cargo option that differs from its default shows beside the publisher.
-#[test]
-fn dry_run_lists_a_crate_that_skips_the_verify_build() {
+#[tokio::test]
+async fn dry_run_lists_a_crate_that_skips_the_verify_build() {
     let root = TempDir::new().unwrap();
     common::write_config(
         root.path(),
@@ -207,6 +283,7 @@ fn dry_run_lists_a_crate_that_skips_the_verify_build() {
         "#},
     )
     .unwrap();
+    write_changelog(root.path(), &[("demo", "0.0.1")]);
     let expected = formatdoc! {"
         ┌──────┬─────────┬──────────────────┐
         │ name ┆ version ┆ via              │
@@ -217,13 +294,13 @@ fn dry_run_lists_a_crate_that_skips_the_verify_build() {
         release  would create v0.0.1
         dry-run  nothing published
     "};
-    assert_eq!(publish_stdout(root.path()), expected);
+    assert_eq!(publish_stdout(root.path()).await, expected);
 }
 
 /// A manifest that opts out of publishing releases on GitHub only, with no
 /// `publisher: none` in `.ctl/ver.yaml`.
-#[test]
-fn dry_run_releases_a_private_crate_on_github_only() {
+#[tokio::test]
+async fn dry_run_releases_a_private_crate_on_github_only() {
     let root = TempDir::new().unwrap();
     common::write_config(
         root.path(),
@@ -244,6 +321,7 @@ fn dry_run_releases_a_private_crate_on_github_only() {
         "#},
     )
     .unwrap();
+    write_changelog(root.path(), &[("demo", "0.0.1")]);
     let expected = formatdoc! {"
         ┌──────┬─────────┬──────────────┐
         │ name ┆ version ┆ via          │
@@ -254,11 +332,11 @@ fn dry_run_releases_a_private_crate_on_github_only() {
         release  would create v0.0.1
         dry-run  nothing published
     "};
-    assert_eq!(publish_stdout(root.path()), expected);
+    assert_eq!(publish_stdout(root.path()).await, expected);
 }
 
-#[test]
-fn dry_run_lists_many_packages() {
+#[tokio::test]
+async fn dry_run_lists_many_packages() {
     let root = TempDir::new().unwrap();
     common::write_config(
         root.path(),
@@ -270,6 +348,7 @@ fn dry_run_lists_many_packages() {
               - name: "@org/pkg"
                 path: package.json
                 registry: github
+                query: []
 
             tags:
               template: "{name}@{version}"
@@ -291,6 +370,7 @@ fn dry_run_lists_many_packages() {
         "#},
     )
     .unwrap();
+    write_changelog(root.path(), &[("demo", "0.0.1"), ("@org/pkg", "0.0.2")]);
     let expected = formatdoc! {"
         ┌──────────┬─────────┬────────────┐
         │ name     ┆ version ┆ via        │
@@ -303,7 +383,7 @@ fn dry_run_lists_many_packages() {
         release  would create @org/pkg@0.0.2
         dry-run  nothing published
     "};
-    assert_eq!(publish_stdout(root.path()), expected);
+    assert_eq!(publish_stdout(root.path()).await, expected);
 }
 
 /// A new package at `0.0.0` beside a released one is left out, so the shared
@@ -342,6 +422,7 @@ async fn dry_run_leaves_out_a_package_at_0_0_0() {
         "#},
     )
     .unwrap();
+    write_changelog(root.path(), &[("demo", "1.0.0")]);
     let expected = formatdoc! {"
         ┌──────┬─────────┬───────┐
         │ name ┆ version ┆ via   │
@@ -352,7 +433,7 @@ async fn dry_run_leaves_out_a_package_at_0_0_0() {
         release  would create v1.0.0
         dry-run  nothing published
     "};
-    assert_eq!(publish_stdout_at(root.path(), &index.uri()), expected);
+    assert_eq!(publish_stdout_at(root.path(), &index.uri()).await, expected);
 }
 
 /// A dry run matches `publish`: a repository whose only package is at
@@ -380,15 +461,15 @@ async fn dry_run_of_a_package_at_0_0_0_has_nothing_to_release() {
         "#},
     )
     .unwrap();
-    let stdout = publish_stdout_at(root.path(), &index.uri());
+    let stdout = publish_stdout_at(root.path(), &index.uri()).await;
     assert!(stdout.contains("nothing to release"), "{stdout}");
 }
 
 /// A `VERSION` package before its first release has no file yet. The missing
 /// file reads as `0.0.0`, so there is nothing to release and no missing-file
 /// error.
-#[test]
-fn dry_run_of_a_missing_version_file_has_nothing_to_release() {
+#[tokio::test]
+async fn dry_run_of_a_missing_version_file_has_nothing_to_release() {
     let root = TempDir::new().unwrap();
     common::write_config(
         root.path(),
@@ -399,7 +480,7 @@ fn dry_run_of_a_missing_version_file_has_nothing_to_release() {
                 path: VERSION
         "},
     );
-    let stdout = publish_stdout(root.path());
+    let stdout = publish_stdout(root.path()).await;
     assert!(stdout.contains("nothing to release"), "{stdout}");
 }
 

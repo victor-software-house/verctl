@@ -1302,13 +1302,21 @@ async fn an_empty_release_checks_runs_no_proof() {
     assert!(sent(&seen, "POST", "/repos/acme/demo/releases"), "{seen:?}");
 }
 
+/// Fail unless every request in `seen` read, so a dry run made no write: no
+/// draft, no upload, no tag, no update.
+fn assert_only_reads(seen: &[(String, String)]) {
+    assert!(seen.iter().all(|(by, _)| by == "GET"), "{seen:?}");
+    assert!(!sent(seen, "GET", "/__upload/"), "{seen:?}");
+}
+
 /// `release --dry-run` with a missing owner prints the plan, fails the same
 /// `registry` check naming the crate, and writes nothing.
 #[tokio::test]
 async fn a_dry_run_runs_the_proof() {
     let root = TempDir::new().unwrap();
-    proof_crate(root.path(), "owners: [any-victor]\n");
+    let head = proof_crate(root.path(), "owners: [any-victor]\n");
     let github = MockServer::start().await;
+    new_release(&github, &head, &[]).await;
     let registry = crates_io(&["alice"]).await;
     let output = release_against(root.path(), &github, &registry, &["--dry-run"]);
     assert!(!output.status.success(), "{output:?}");
@@ -1318,8 +1326,208 @@ async fn a_dry_run_runs_the_proof() {
         said.contains("demo: lacks owner any-victor on crates.io, which lists alice"),
         "{said}"
     );
-    let seen = requests(&github).await;
-    for write in ["POST", "PATCH", "DELETE"] {
-        assert!(!sent(&seen, write, "/"), "{write}: {seen:?}");
-    }
+    assert_only_reads(&requests(&github).await);
+    assert_only_reads(&requests(&registry.0).await);
+    assert_only_reads(&requests(&registry.1).await);
+}
+
+/// A tag at another commit fails the dry run as it fails the run, with the
+/// same message, before any upload or write.
+#[tokio::test]
+async fn a_dry_run_fails_on_a_tag_at_another_commit() {
+    let root = TempDir::new().unwrap();
+    let server = MockServer::start().await;
+    let older = crates(
+        root.path(),
+        &server.uri(),
+        &[("core", Upload::Succeeds), ("app", Upload::Succeeds)],
+        false,
+    );
+    fs::write(root.path().join("README"), "later\n").unwrap();
+    let head = common::commit_all(root.path(), "docs: later");
+    common::git(
+        root.path(),
+        &["update-ref", "refs/remotes/origin/main", &head],
+    );
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/git/ref/tags/{TAG}")))
+        .respond_with(tag_ref(TAG, &older))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/releases/tags/{TAG}")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(full_release(
+            &server.uri(),
+            1,
+            TAG,
+            &older,
+            false,
+            &[],
+        )))
+        .mount(&server)
+        .await;
+    let output = release(root.path(), &server, &["--dry-run"]);
+    assert!(!output.status.success(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!("tag {TAG} names {older}, not HEAD {head}")),
+        "{stderr}"
+    );
+    assert_only_reads(&requests(&server).await);
+}
+
+/// A workflow change at the default branch fails the dry run with the
+/// workflow message, before any token or read, and `--allow-workflow-change`
+/// lets it plan the release and list the proof it went past.
+#[tokio::test]
+async fn a_dry_run_fails_on_a_workflow_change_unless_allowed() {
+    let root = TempDir::new().unwrap();
+    let server = MockServer::start().await;
+    crates(
+        root.path(),
+        &server.uri(),
+        &[("core", Upload::Succeeds)],
+        false,
+    );
+    let workflow = root.path().join(".github/workflows/ci.yml");
+    fs::create_dir_all(workflow.parent().unwrap()).unwrap();
+    fs::write(&workflow, "on: push\n").unwrap();
+    let at_release = common::commit_all(root.path(), "ci: push");
+    fs::write(&workflow, "on: [push, pull_request]\n").unwrap();
+    let tip = common::commit_all(root.path(), "ci: run on pull requests");
+    common::git(
+        root.path(),
+        &["update-ref", "refs/remotes/origin/main", &tip],
+    );
+    common::git(root.path(), &["checkout", "-q", "--detach", &at_release]);
+    new_release(&server, &at_release, &[]).await;
+    let refused = release(root.path(), &server, &["--dry-run"]);
+    assert!(!refused.status.success(), "{refused:?}");
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(stderr.contains(".github/workflows/"), "{stderr}");
+    assert!(stderr.contains("--allow-workflow-change"), "{stderr}");
+    assert!(requests(&server).await.is_empty());
+    let allowed = release(
+        root.path(),
+        &server,
+        &["--dry-run", "--allow-workflow-change"],
+    );
+    assert!(allowed.status.success(), "{allowed:?}");
+    let said = printed(&allowed);
+    assert!(said.contains("allowed workflow-change"), "{said}");
+    assert!(said.contains("release would create v0.4.0"), "{said}");
+    assert_only_reads(&requests(&server).await);
+}
+
+/// The dry run's report as JSON, in `root` against `server`.
+fn dry_run_json(root: &Path, server: &MockServer) -> serde_json::Value {
+    let output = run(
+        root,
+        server,
+        &[
+            "--format",
+            "json",
+            "--color",
+            "never",
+            "release",
+            "--dry-run",
+        ],
+    );
+    assert!(output.status.success(), "{output:?}");
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+/// A version the registry lists is reported as present and plans no upload,
+/// and the crate it still lacks is planned.
+#[tokio::test]
+async fn a_dry_run_reports_a_listed_version_as_present() {
+    let root = TempDir::new().unwrap();
+    let server = MockServer::start().await;
+    let head = crates(
+        root.path(),
+        &server.uri(),
+        &[("core", Upload::Listed), ("app", Upload::Succeeds)],
+        false,
+    );
+    new_release(&server, &head, &[]).await;
+    let report = dry_run_json(root.path(), &server);
+    assert_eq!(report["outcome"], "released");
+    let packages = report["packages"].as_array().unwrap();
+    let rows: Vec<(&str, &serde_json::Value)> = packages
+        .iter()
+        .map(|row| (row["name"].as_str().unwrap(), &row["note"]))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("core", &serde_json::json!("already")),
+            ("app", &serde_json::Value::Null)
+        ]
+    );
+    assert_eq!(
+        report["releases"],
+        serde_json::json!(["would create v0.4.0"])
+    );
+    assert_only_reads(&requests(&server).await);
+}
+
+/// A Release published at HEAD that lacks a declared tarball is reported as
+/// completed, not created, and the run needs no `--assets-dir` to say so.
+#[tokio::test]
+async fn a_dry_run_reports_a_published_release_as_completed() {
+    let root = TempDir::new().unwrap();
+    let server = MockServer::start().await;
+    let head = crates(
+        root.path(),
+        &server.uri(),
+        &[("core", Upload::Listed)],
+        true,
+    );
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/git/ref/tags/{TAG}")))
+        .respond_with(tag_ref(TAG, &head))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/releases/tags/{TAG}")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(full_release(
+            &server.uri(),
+            1,
+            TAG,
+            &head,
+            false,
+            &[],
+        )))
+        .mount(&server)
+        .await;
+    let report = dry_run_json(root.path(), &server);
+    assert_eq!(
+        report["releases"],
+        serde_json::json!(["would complete v0.4.0"])
+    );
+    assert_only_reads(&requests(&server).await);
+}
+
+/// The dry run reads GitHub as the run does, so it fails without a token and
+/// names the variable, before any request.
+#[tokio::test]
+async fn a_dry_run_without_a_token_fails_naming_it() {
+    let root = TempDir::new().unwrap();
+    let server = MockServer::start().await;
+    crates(
+        root.path(),
+        &server.uri(),
+        &[("core", Upload::Succeeds)],
+        false,
+    );
+    let output = off_actions()
+        .current_dir(root.path())
+        .env("GITHUB_API_URL", server.uri())
+        .args(["release", "--color", "never", "--dry-run"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("GITHUB_TOKEN"), "{stderr}");
+    assert!(requests(&server).await.is_empty());
 }
