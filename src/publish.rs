@@ -262,8 +262,9 @@ pub struct PublishRun {
     /// none.
     pub shortfalls: Vec<pending::Shortfall>,
     /// What the release proof found beyond a pass: its notices, the checks it
-    /// skipped, and, in a dry run only, its failures. Empty when the run
-    /// found nothing to release, which runs no proof.
+    /// skipped, and, in a dry run only, its failures. A run that created a
+    /// crate leaves out that crate's notices, which it resolved. Empty when the
+    /// run found nothing to release, which runs no proof.
     pub proof: Vec<ProofRow>,
     /// The crates the run created with the registry token, or, in a dry run,
     /// would create, by the name crates.io knows them.
@@ -450,7 +451,7 @@ pub fn run_pending(
         published: PublishOutcome { packages, releases },
         allowed,
         shortfalls: pending.shortfalls,
-        proof: proof.rows(),
+        proof: proof.rows_after(&created),
         created,
     })
 }

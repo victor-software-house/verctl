@@ -452,6 +452,17 @@ async fn count(server: &MockServer, method: &str) -> usize {
         .count()
 }
 
+/// The notices a report's release proof holds, none of which a real run that
+/// created the crates they name may carry.
+fn proof_notices(report: &Value) -> Vec<&Value> {
+    report["proof"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|row| row["row"] == "notice")
+        .collect()
+}
+
 /// Fail unless every request `server` got was a read, so a dry run opened no
 /// draft, uploaded nothing and made no tag.
 async fn assert_only_reads(server: &MockServer) {
@@ -727,16 +738,7 @@ async fn new_run_creates_a_missing_member_with_the_registry_token() {
         .find(|package| package["name"] == "demo-cli")
         .unwrap();
     assert_eq!(created["note"], "created with the registry token");
-    let notice = json!({
-        "row": "notice",
-        "check": "registry",
-        "message": "demo-cli: crates.io lacks it; this run creates it with the registry token",
-    });
-    assert!(
-        report["proof"].as_array().unwrap().contains(&notice),
-        "{}",
-        report["proof"]
-    );
+    assert_eq!(proof_notices(&report), Vec::<&Value>::new());
     assert_eq!(count(&world.github, "PATCH").await, 1);
 }
 
@@ -846,9 +848,10 @@ async fn new_needs_the_registry_token() {
     assert_eq!(received(&world.github).await, no_requests());
 }
 
-/// With `--new`, the `trust` proof passes a crate crates.io lacks with a
-/// notice to add its entry once the run creates it, where it fails a missing
-/// crate as `Missing` otherwise.
+/// With `--new`, the `trust` proof passes a crate crates.io lacks, where it
+/// fails a missing crate as `Missing` otherwise. Its notice to add the entry
+/// is the plan of a dry run, and a real run that created the crate leaves it
+/// out.
 #[tokio::test]
 async fn new_run_passes_the_trust_proof_for_a_crate_it_creates() {
     let world = World::new().await;
@@ -867,16 +870,7 @@ async fn new_run_passes_the_trust_proof_for_a_crate_it_creates() {
         &["--new"],
     );
     let report = report(&output);
-    let notice = json!({
-        "row": "notice",
-        "check": "trust",
-        "message": "demo: crates.io lacks it; add its entry with `verctl release trust demo` after this run creates it",
-    });
-    assert!(
-        report["proof"].as_array().unwrap().contains(&notice),
-        "{}",
-        report["proof"]
-    );
+    assert_eq!(proof_notices(&report), Vec::<&Value>::new());
     assert_eq!(world.token_calls(), ["demo r3gistry"]);
 }
 
@@ -1001,6 +995,7 @@ async fn bootstrap_creates_a_crate_and_trusts_it() {
         .find(|package| package["name"] == "demo-cli")
         .unwrap();
     assert_eq!(created["note"], "created with the registry token");
+    assert_eq!(proof_notices(&report), Vec::<&Value>::new());
     assert_eq!(count(&world.api, "POST").await, 1);
     assert_eq!(count(&world.github, "PATCH").await, 1);
 }
