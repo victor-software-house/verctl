@@ -412,6 +412,22 @@ pub fn crates_io_lists(base: &str, name: &str, version: &str) -> Result<bool> {
     Ok(false)
 }
 
+/// Whether the crates.io index under `base` has a file for `name`, which it
+/// has once any version of the crate was published.
+///
+/// # Errors
+///
+/// Returns an error when `name` is not ASCII, the request fails, or the index
+/// answers with a status other than 200 or 404.
+pub fn crates_io_has_crate(base: &str, name: &str) -> Result<bool> {
+    ensure!(
+        !name.is_empty() && name.is_ascii(),
+        "{name:?} is not a crates.io crate name"
+    );
+    let url = format!("{}/{}", base.trim_end_matches('/'), index_path(name));
+    Ok(github::block(fetch(&url, None))?.is_some())
+}
+
 /// The release cargo-semver-checks compares `current` of `name` against.
 /// It is the highest version that the crates.io index under `base` lists, is
 /// at most `current`, and is neither a pre-release nor yanked. Otherwise it is

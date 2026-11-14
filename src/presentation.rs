@@ -223,6 +223,9 @@ fn registry_details(report: &registry_check::RegistryReport, document: Document)
                     ("missing", "-".to_owned(), "-".to_owned())
                 }
                 registry_check::RegistryState::New => ("new", "-".to_owned(), "-".to_owned()),
+                registry_check::RegistryState::Creates => {
+                    ("created by this run", "-".to_owned(), "-".to_owned())
+                }
                 registry_check::RegistryState::NotAtZero { .. } => {
                     ("not at 0.0.0", "-".to_owned(), "-".to_owned())
                 }
@@ -281,6 +284,9 @@ fn trust_details(report: &registry_check::TrustReport, document: Document) -> Do
                         ),
                         registry_check::TrustState::Missing => ("missing", "-".to_owned()),
                         registry_check::TrustState::New => ("new", "-".to_owned()),
+                        registry_check::TrustState::Creates => {
+                            ("created by this run", "-".to_owned())
+                        }
                         registry_check::TrustState::Refused { detail } => {
                             ("refused", detail.clone())
                         }

@@ -76,6 +76,7 @@ Moving to `0.1.0` or `1.0.0` is a separate operator decision.
 To open at `0.1.0` on purpose, set `first_minor: true` on the package in `.ctl/ver.yaml`.
 
 `release` and `status` leave a package at `0.0.0` out, so a repo can adopt the release workflow before its first release.  
+A standalone crates.io package at `0.0.0` joins the plan when crates.io lists that version and its tag is missing, or when `--bootstrap` is set and crates.io lacks the crate.  
 A crate crates.io lacks first publishes through `verctl release bootstrap`, at the version the default branch holds, which is `0.0.0` for a standalone package.  
 `check registry` fails a standalone package that crates.io lacks at any other version, and a workspace member is exempt.
 
@@ -391,10 +392,12 @@ Only the `publish` job runs in the environment, and it receives the environment'
 The workflow reads no secret by a computed name, so a caller never passes `secrets: inherit`.  
 The App secrets stay in the same `secrets:` map.  
 `registry-token-env` names only the variable the publisher reads the token from (`CARGO_REGISTRY_TOKEN` by default).  
-A crate's first publish maps the token and turns `crates-io-trusted-publishing` off for that one release, because the workflow refuses both.
+A crate's first publish maps the token and turns `crates-io-trusted-publishing` off for that one release, because verctl refuses both tokens.  
+With `bootstrap: true` the two combine: the `registry-token` secret creates each crate crates.io lacks, and trusted publishing publishes the rest.  
+`bootstrap` defaults to `false`, and a run without the secret fails before any upload, naming `registry-token`.
 
 The publish step sets `VERCTL_REGISTRY_TOKEN` from the secret and `VERCTL_TRUSTED_PUBLISHING_TOKEN` from trusted publishing.  
-`verctl release` fails when both are set.  
+`verctl release` fails when both are set, unless `--bootstrap` is set.  
 It gives the token to each publisher and its registry `query` under `--registry-token-env` (`VERCTL_REGISTRY_TOKEN_ENV`).  
 No other command it starts gets either variable, or `VERCTL_OWNER_TOKEN`.
 
@@ -453,6 +456,8 @@ A manifest that opts out of publishing needs no `publisher: none`: a `Cargo.toml
 `verctl release bootstrap [CRATE]...` publishes each crate crates.io lacks, from the default branch's tip, with the operator's token in `VERCTL_REGISTRY_TOKEN`.  
 It needs `VERCTL_OWNER_TOKEN` too, checked before any request, tags each published standalone package, and adds each published crate's trusted publisher entry.  
 It waits out crates.io's new-crate rate limit, and `--dry-run` lists what it would publish and tag with no token.  
+Inside a release run, `release --bootstrap` (`VERCTL_BOOTSTRAP`) creates each crate crates.io lacks with `VERCTL_REGISTRY_TOKEN`, which it requires, and only uploads: it runs no `release trust` and tags nothing outside the draft's publish.  
+`release --dry-run --bootstrap` plans the same and needs no token, and a notice names `VERCTL_REGISTRY_TOKEN` when it is unset.  
 `verctl release trust [CRATE]...` adds this repository's entry to each crate that has none, never edits another, and with `--dry-run` sends no `POST`.
 
 Before its draft, `release` runs the checks `release_checks` names, `[registry, trust]` when omitted, and stops with nothing published when one fails.  

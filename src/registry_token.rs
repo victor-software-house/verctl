@@ -12,6 +12,10 @@
 //! [`crate::process`] removes both source variables, and the owner's token in
 //! [`OWNER`], from every command it starts, and only the publisher and its
 //! query get the registry token back under the named variable.
+//!
+//! `release --bootstrap` may hold both tokens. A crate crates.io lacks is
+//! created with [`SECRET`], and every other upload takes [`TRUSTED`] when it
+//! is set. [`RegistryToken::env_for`] makes that choice.
 
 use std::{env, fmt};
 
@@ -48,6 +52,9 @@ pub fn owner_token() -> Option<String> {
 pub struct RegistryToken {
     variable: String,
     value: String,
+    /// The token that creates a crate, when `value` is another: the
+    /// registry-token secret next to a trusted-publishing token.
+    creation: Option<String>,
 }
 
 impl fmt::Debug for RegistryToken {
@@ -113,13 +120,71 @@ impl RegistryToken {
         Ok(Some(Self {
             variable: variable.to_owned(),
             value,
+            creation: None,
         }))
+    }
+
+    /// The tokens of a run under `--bootstrap`, for the publisher to read
+    /// from `variable`: the one in [`SECRET`], which creates a crate, and the
+    /// one in [`TRUSTED`] when it is set, which every other upload uses.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when [`SECRET`] is unset or empty, naming it and the
+    /// workflow secret `registry-token` that sets it.
+    pub fn from_env_bootstrap(variable: &str) -> Result<Self> {
+        let read = |key| {
+            env::var(key)
+                .ok()
+                .filter(|value: &String| !value.is_empty())
+        };
+        Self::resolve_bootstrap(read(SECRET), read(TRUSTED), variable)
+    }
+
+    /// [`Self::from_env_bootstrap`] over values already read.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `secret` holds no token.
+    pub(crate) fn resolve_bootstrap(
+        secret: Option<String>,
+        trusted: Option<String>,
+        variable: &str,
+    ) -> Result<Self> {
+        let Some(secret) = secret else {
+            bail!(
+                "--bootstrap needs {SECRET}, which the release workflow sets from its `registry-token` secret: set it to the crates.io token that creates new crates"
+            );
+        };
+        Ok(match trusted {
+            Some(value) => Self {
+                variable: variable.to_owned(),
+                value,
+                creation: Some(secret),
+            },
+            None => Self {
+                variable: variable.to_owned(),
+                value: secret,
+                creation: None,
+            },
+        })
     }
 
     /// The one variable the publisher runs with: its name and the token.
     #[must_use]
     pub fn env(&self) -> (&str, &str) {
         (&self.variable, &self.value)
+    }
+
+    /// [`Self::env`] for an upload that creates its crate when `creating`:
+    /// the registry token, where a trusted-publishing token would otherwise
+    /// be the one.
+    #[must_use]
+    pub fn env_for(&self, creating: bool) -> (&str, &str) {
+        match (&self.creation, creating) {
+            (Some(creation), true) => (&self.variable, creation),
+            (Some(_) | None, _) => self.env(),
+        }
     }
 }
 
@@ -157,6 +222,62 @@ mod tests {
             RegistryToken::resolve(None, None, "CARGO_REGISTRY_TOKEN").expect("none"),
             None
         );
+    }
+
+    /// Under bootstrap both tokens resolve: a crate that is created gets the
+    /// registry token, and every other upload the trusted one.
+    #[test]
+    fn bootstrap_gives_each_upload_its_token() {
+        let token = RegistryToken::resolve_bootstrap(
+            Some("secr3t".into()),
+            Some("trust3d".into()),
+            "CARGO_REGISTRY_TOKEN",
+        )
+        .expect("both");
+        assert_eq!(token.env_for(true), ("CARGO_REGISTRY_TOKEN", "secr3t"));
+        assert_eq!(token.env_for(false), ("CARGO_REGISTRY_TOKEN", "trust3d"));
+        assert_eq!(token.env(), ("CARGO_REGISTRY_TOKEN", "trust3d"));
+        let alone =
+            RegistryToken::resolve_bootstrap(Some("secr3t".into()), None, "NODE_AUTH_TOKEN")
+                .expect("registry token alone");
+        assert_eq!(alone.env_for(true), ("NODE_AUTH_TOKEN", "secr3t"));
+        assert_eq!(alone.env_for(false), ("NODE_AUTH_TOKEN", "secr3t"));
+    }
+
+    /// Without bootstrap, both tokens still fail.
+    #[test]
+    fn both_tokens_still_fail_without_bootstrap() {
+        assert!(
+            RegistryToken::resolve(Some("secr3t".into()), Some("trust3d".into()), "X").is_err()
+        );
+    }
+
+    /// Bootstrap without the registry token fails naming the variable and the
+    /// workflow secret, whether or not a trusted token is set, and never
+    /// names a token's value.
+    #[test]
+    fn bootstrap_needs_the_registry_token() {
+        for trusted in [None, Some("trust3d".to_owned())] {
+            let error = RegistryToken::resolve_bootstrap(None, trusted, "CARGO_REGISTRY_TOKEN")
+                .expect_err("no registry token");
+            let message = format!("{error:#}");
+            assert!(message.contains(SECRET), "{message}");
+            assert!(message.contains("`registry-token`"), "{message}");
+            assert!(!message.contains("trust3d"), "{message}");
+        }
+    }
+
+    #[test]
+    fn bootstrap_debug_hides_both_tokens() {
+        let token = RegistryToken::resolve_bootstrap(
+            Some("secr3t".into()),
+            Some("trust3d".into()),
+            "CARGO_REGISTRY_TOKEN",
+        )
+        .expect("both");
+        let shown = format!("{token:?}");
+        assert!(!shown.contains("secr3t"), "{shown}");
+        assert!(!shown.contains("trust3d"), "{shown}");
     }
 
     #[test]

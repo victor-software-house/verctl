@@ -80,7 +80,7 @@ Whether a package was ever published is registry state, so the rule that a never
 
 **Decision.**
 The reusable `release.yml` takes a boolean input `bootstrap`, defaulting to `false`, beside `publish` and `assets`.
-With it and the `registry-token` secret, the release job runs `release bootstrap` for a package the registry lacks.
+With it and the `registry-token` secret, the release job runs `release --bootstrap`, which creates each package the registry lacks.
 Trusted publishing stays the default.
 
 **Alternative.**

@@ -112,6 +112,11 @@ pub struct ReleaseArgs {
     /// The proofs `release` may go past.
     #[command(flatten)]
     pub allow: AllowArgs,
+    /// Create each crate crates.io lacks with `VERCTL_REGISTRY_TOKEN`, which
+    /// is then required. Trusted publishing, `VERCTL_TRUSTED_PUBLISHING_TOKEN`,
+    /// still publishes every other crate, and both may be set.
+    #[arg(long)]
+    pub bootstrap: bool,
     /// The variable each publisher reads the registry token from, such as
     /// `CARGO_REGISTRY_TOKEN` for crates.io or `CARGO_REGISTRIES_<NAME>_TOKEN`
     /// for another cargo registry. The token itself comes from
@@ -386,6 +391,10 @@ pub struct StatusArgs {
     /// index, `https://index.staging.crates.io`, for a staging release.
     #[arg(long, value_name = "URL", default_value = crate::registry::CRATES_IO_INDEX)]
     pub crates_io_index: String,
+    /// Plan a standalone package at `0.0.0` that crates.io lacks, as
+    /// `release --bootstrap` creates it.
+    #[arg(long)]
+    pub bootstrap: bool,
 }
 
 /// Arguments of `check`.

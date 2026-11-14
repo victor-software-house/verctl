@@ -72,6 +72,18 @@ impl World {
             .collect()
     }
 
+    /// Each upload with the registry token its publisher got, as
+    /// `<crate> <token>`, sorted.
+    fn token_calls(&self) -> Vec<String> {
+        let mut calls: Vec<String> = fs::read_to_string(self.tools.path().join("tokens.log"))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        calls.sort();
+        calls
+    }
+
     /// A `cargo` first on `PATH`: `metadata` goes to the real one, and every
     /// other call is logged, marks the crate it names as published, and, with
     /// `limit_once`, first fails once with crates.io's rate limit.
@@ -102,6 +114,7 @@ impl World {
                 esac
                 prev=$arg
             done
+            echo "$crate $CARGO_REGISTRY_TOKEN" >> "{tools}/tokens.log"
             {limit}touch "{tools}/$crate.up"
         "#};
         let bin = self.tools.path().join("bin");
@@ -146,6 +159,11 @@ fn standalone(root: &Path, crates: &[(&str, &str)]) {
 /// share the version `0.7.0`, committed as the tip of `main`.
 fn workspace(root: &Path, members: &[&str]) {
     common::write_config(root, "packages:\n  - name: demo\n    path: Cargo.toml\n");
+    fs::write(
+        root.join("CHANGELOG.md"),
+        "# Changelog\n\n## demo 0.7.0\n\n- First.\n",
+    )
+    .unwrap();
     let listed = members
         .iter()
         .map(|name| format!("\"{name}\""))
@@ -220,6 +238,34 @@ async fn on_crates_io(world: &World, name: &str, version: &str, live: bool) {
         })
         .mount(&world.api)
         .await;
+    index_after_publish(world, name, version).await;
+    newest_version(world, name, version).await;
+}
+
+/// `name` is on crates.io, with another version or none listed: its owners
+/// answer from the start, and `version` appears in the index once the
+/// stand-in `cargo` publishes it.
+async fn known_on_crates_io(world: &World, name: &str, version: &str) {
+    let owners = json!({
+        "users": [{
+            "id": 1,
+            "login": "any-victor",
+            "kind": "user",
+            "url": "https://github.com/any-victor",
+            "name": null,
+        }]
+    });
+    Mock::given(method("GET"))
+        .and(path(format!("/crates/{name}/owners")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(owners))
+        .mount(&world.api)
+        .await;
+    index_after_publish(world, name, version).await;
+    newest_version(world, name, version).await;
+}
+
+/// The index lists `version` of `name` once its marker exists.
+async fn index_after_publish(world: &World, name: &str, version: &str) {
     let record = json!({ "name": name, "vers": version }).to_string();
     Mock::given(method("GET"))
         .and(path(format!("/{}/{}/{name}", &name[..2], &name[2..4])))
@@ -228,6 +274,19 @@ async fn on_crates_io(world: &World, name: &str, version: &str, live: bool) {
             body: ResponseTemplate::new(200).set_body_string(record),
         })
         .mount(&world.index)
+        .await;
+}
+
+/// The newest version of `name`, which the registry proof reads as evidence,
+/// came by a token.
+async fn newest_version(world: &World, name: &str, version: &str) {
+    Mock::given(method("GET"))
+        .and(path(format!("/crates/{name}/versions")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "versions": [{ "num": version, "trustpub_data": null }],
+            "meta": { "total": 1, "next_page": null },
+        })))
+        .mount(&world.api)
         .await;
 }
 
@@ -344,6 +403,32 @@ fn off_actions() -> Command {
 /// `release <step> <extra...>` in the world's repository, with the stand-in
 /// `cargo` first on `PATH`, the API at the world's servers, and `envs` set.
 fn run(world: &World, step: &str, envs: &[(&str, &str)], extra: &[&str]) -> Output {
+    let mut command = base(world, envs);
+    command
+        .args(["--format", "json", "--color", "never", "release", step])
+        .args(extra)
+        .args(["--crates-io-api", &world.api.uri()]);
+    if step == "bootstrap" {
+        command.args(["--crates-io-index", &world.index.uri()]);
+    }
+    command.output().unwrap()
+}
+
+/// `release <extra...>`, the run itself, in the world's repository, reading
+/// both crates.io servers.
+fn release(world: &World, envs: &[(&str, &str)], extra: &[&str]) -> Output {
+    let mut command = base(world, envs);
+    command
+        .args(["--format", "json", "--color", "never", "release"])
+        .args(extra)
+        .args(["--crates-io-api", &world.api.uri()])
+        .args(["--crates-io-index", &world.index.uri()]);
+    command.output().unwrap()
+}
+
+/// verctl in the world's repository, with the stand-in `cargo` first on
+/// `PATH`, GitHub at the world's server, and `envs` set.
+fn base(world: &World, envs: &[(&str, &str)]) -> Command {
     let path = format!(
         "{}:{}",
         world.tools.path().join("bin").display(),
@@ -355,14 +440,8 @@ fn run(world: &World, step: &str, envs: &[(&str, &str)], extra: &[&str]) -> Outp
         .env("PATH", path)
         .env("GITHUB_API_URL", world.github.uri())
         .env("COLUMNS", "400")
-        .envs(envs.iter().copied())
-        .args(["--format", "json", "--color", "never", "release", step])
-        .args(extra)
-        .args(["--crates-io-api", &world.api.uri()]);
-    if step == "bootstrap" {
-        command.args(["--crates-io-index", &world.index.uri()]);
-    }
-    command.output().unwrap()
+        .envs(envs.iter().copied());
+    command
 }
 
 fn trust(world: &World, envs: &[(&str, &str)], extra: &[&str]) -> Output {
@@ -626,6 +705,64 @@ async fn bootstrap_skips_a_named_listed_crate() {
     assert_eq!(world.cargo_calls(), Vec::<String>::new());
 }
 
+/// The index lists a crate that the owners API still answers 404 for, as on a
+/// rerun. It is reported as already published, and still gets its tag and its
+/// trusted publisher entry, which the run needs to count as done.
+#[tokio::test]
+async fn bootstrap_tags_and_trusts_a_crate_the_index_already_lists() {
+    let world = World::new().await;
+    world.fake_cargo(false);
+    standalone(world.repo(), &[("demo", "0.0.0")]);
+    let tip = common::git(world.repo(), &["rev-parse", "HEAD"]);
+    let owners = json!({
+        "users": [{
+            "id": 1,
+            "login": "any-victor",
+            "kind": "user",
+            "url": "https://github.com/any-victor",
+            "name": null,
+        }]
+    });
+    Mock::given(method("GET"))
+        .and(path("/crates/demo/owners"))
+        .respond_with(ResponseTemplate::new(404))
+        .up_to_n_times(1)
+        .mount(&world.api)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/crates/demo/owners"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(owners))
+        .mount(&world.api)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/de/mo/demo"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(json!({ "name": "demo", "vers": "0.0.0" }).to_string()),
+        )
+        .mount(&world.index)
+        .await;
+    entries(&world.api, "demo", Vec::new()).await;
+    accepts(&world.api, "demo").await;
+    takes_tag(&world, "v0.0.0", &tip).await;
+    let output = bootstrap(
+        &world,
+        &[BOTH[0], BOTH[1], ("GITHUB_TOKEN", "gh-token")],
+        &[],
+    );
+    assert_eq!(
+        rows(&output),
+        [
+            json!({ "name": "demo", "version": "0.0.0", "state": "already-published" }),
+            json!({ "name": "demo", "version": "0.0.0", "state": "tagged", "tag": "v0.0.0" }),
+            json!({ "name": "demo", "version": "0.0.0", "state": "added" }),
+        ]
+    );
+    assert_eq!(world.cargo_calls(), Vec::<String>::new());
+    assert_eq!(count(&world.github, "POST").await, 1);
+    assert_eq!(count(&world.api, "POST").await, 1);
+}
+
 /// Each token a real run needs is checked before any request: each missing
 /// one is named, and nothing is read or uploaded.
 #[tokio::test]
@@ -711,4 +848,355 @@ async fn bootstrap_waits_out_a_rate_limit() {
         ]
     );
     assert_eq!(world.cargo_calls().len(), 2);
+}
+
+/// GitHub answers 404 as it does for a tag or a Release it lacks.
+fn gh_not_found() -> ResponseTemplate {
+    ResponseTemplate::new(404).set_body_json(json!({
+        "message": "Not Found",
+        "documentation_url": "https://docs.github.com",
+    }))
+}
+
+/// A Release as GitHub returns it, complete enough for octocrab to read.
+fn release_json(uri: &str, tag: &str, target: &str, draft: bool) -> Value {
+    json!({
+        "url": format!("{uri}/repos/acme/demo/releases/1"),
+        "html_url": format!("https://github.com/acme/demo/releases/tag/{tag}"),
+        "assets_url": format!("{uri}/repos/acme/demo/releases/1/assets"),
+        "upload_url": format!("{uri}/upload/repos/acme/demo/releases/1/assets{{?name,label}}"),
+        "tarball_url": null,
+        "zipball_url": null,
+        "id": 1,
+        "node_id": "R",
+        "tag_name": tag,
+        "target_commitish": target,
+        "name": tag,
+        "body": "notes",
+        "draft": draft,
+        "prerelease": false,
+        "created_at": "2026-11-13T00:00:00Z",
+        "published_at": null,
+        "assets": [],
+    })
+}
+
+/// GitHub holds no tag and no Release for `tag`. It takes a new draft, id 1,
+/// and the update that publishes it, and serves the tag at `head` once the
+/// plan and the run have read it missing.
+async fn new_release(world: &World, tag: &str, head: &str) {
+    let uri = world.github.uri();
+    let server = &world.github;
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/git/ref/tags/{tag}")))
+        .respond_with(gh_not_found())
+        .up_to_n_times(2)
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/git/ref/tags/{tag}")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ref": format!("refs/tags/{tag}"),
+            "node_id": "R",
+            "url": format!("https://api.github.com/repos/acme/demo/git/refs/tags/{tag}"),
+            "object": {
+                "type": "commit",
+                "sha": head,
+                "url": format!("https://api.github.com/repos/acme/demo/git/commits/{head}"),
+            },
+        })))
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("/repos/acme/demo/releases/tags/{tag}")))
+        .respond_with(gh_not_found())
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/releases"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .mount(server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/repos/acme/demo/releases"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(release_json(&uri, tag, head, true)))
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/demo/releases/1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(release_json(&uri, tag, head, true)))
+        .mount(server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path("/repos/acme/demo/releases/1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(release_json(&uri, tag, head, false)),
+        )
+        .mount(server)
+        .await;
+}
+
+/// The body of the first request with `method` to `path` that `server` got.
+async fn body_of(server: &MockServer, method: &str, path: &str) -> Value {
+    let requests = server.received_requests().await.unwrap();
+    let request = requests
+        .iter()
+        .find(|request| request.method.as_str() == method && request.url.path() == path)
+        .unwrap_or_else(|| panic!("no {method} {path}"));
+    serde_json::from_slice(&request.body).unwrap()
+}
+
+/// The report of a run that printed JSON on stdout.
+fn report(output: &Output) -> Value {
+    assert!(output.status.success(), "{}", printed(output));
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+/// With both tokens set, `--bootstrap` creates the missing member with the
+/// registry token and uploads the listed crate's other member with the
+/// trusted one, notes the creation, and passes the proof with a notice.
+#[tokio::test]
+async fn bootstrap_run_creates_a_missing_member_with_the_registry_token() {
+    let world = World::new().await;
+    world.fake_cargo(false);
+    workspace(world.repo(), &["demo-core", "demo-cli"]);
+    let head = common::git(world.repo(), &["rev-parse", "HEAD"]);
+    known_on_crates_io(&world, "demo-core", "0.7.0").await;
+    on_crates_io(&world, "demo-cli", "0.7.0", false).await;
+    new_release(&world, "v0.7.0", &head).await;
+    let output = release(
+        &world,
+        &[
+            ("VERCTL_REGISTRY_TOKEN", "r3gistry"),
+            ("VERCTL_TRUSTED_PUBLISHING_TOKEN", "trust3d"),
+            ("GITHUB_TOKEN", "gh-token"),
+        ],
+        &["--bootstrap"],
+    );
+    let report = report(&output);
+    assert_eq!(
+        world.token_calls(),
+        ["demo-cli r3gistry", "demo-core trust3d"]
+    );
+    let created = report["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|package| package["name"] == "demo-cli")
+        .unwrap();
+    assert_eq!(created["note"], "created with the registry token");
+    let notice = json!({
+        "row": "notice",
+        "check": "registry",
+        "message": "demo-cli: crates.io lacks it; this run creates it with the registry token",
+    });
+    assert!(
+        report["proof"].as_array().unwrap().contains(&notice),
+        "{}",
+        report["proof"]
+    );
+    assert_eq!(count(&world.github, "PATCH").await, 1);
+}
+
+/// A standalone package at `0.0.0` that crates.io lacks joins the plan under
+/// `--bootstrap`: it is uploaded with the registry token, and the draft
+/// Release publishes last and creates tag `v0.0.0`.
+#[tokio::test]
+async fn bootstrap_run_plans_a_new_standalone_package() {
+    let world = World::new().await;
+    world.fake_cargo(false);
+    standalone(world.repo(), &[("demo", "0.0.0")]);
+    let head = common::git(world.repo(), &["rev-parse", "HEAD"]);
+    on_crates_io(&world, "demo", "0.0.0", false).await;
+    new_release(&world, "v0.0.0", &head).await;
+    let output = release(
+        &world,
+        &[
+            ("VERCTL_REGISTRY_TOKEN", "r3gistry"),
+            ("GITHUB_TOKEN", "gh-token"),
+        ],
+        &["--bootstrap"],
+    );
+    let report = report(&output);
+    assert_eq!(world.token_calls(), ["demo r3gistry"]);
+    assert_eq!(report["packages"][0]["name"], "demo");
+    assert_eq!(
+        report["packages"][0]["note"],
+        "created with the registry token"
+    );
+    let draft = body_of(&world.github, "POST", "/repos/acme/demo/releases").await;
+    assert_eq!(draft["tag_name"], "v0.0.0", "{draft}");
+    assert_eq!(draft["draft"], true, "{draft}");
+    let published = body_of(&world.github, "PATCH", "/repos/acme/demo/releases/1").await;
+    assert_eq!(published["draft"], false, "{published}");
+    assert_eq!(count(&world.github, "POST").await, 1);
+}
+
+/// A `0.0.0` crates.io lists, with no tag, is planned without the flag: no
+/// upload runs, and the run publishes its draft, which creates the tag.
+#[tokio::test]
+async fn a_listed_zero_without_a_tag_is_planned() {
+    let world = World::new().await;
+    world.fake_cargo(false);
+    standalone(world.repo(), &[("demo", "0.0.0")]);
+    let head = common::git(world.repo(), &["rev-parse", "HEAD"]);
+    on_crates_io(&world, "demo", "0.0.0", true).await;
+    new_release(&world, "v0.0.0", &head).await;
+    let output = release(&world, &[("GITHUB_TOKEN", "gh-token")], &[]);
+    let report = report(&output);
+    assert_eq!(report["packages"][0]["name"], "demo");
+    assert_eq!(report["packages"][0]["note"], "already");
+    assert_eq!(world.cargo_calls(), Vec::<String>::new());
+    let draft = body_of(&world.github, "POST", "/repos/acme/demo/releases").await;
+    assert_eq!(draft["tag_name"], "v0.0.0", "{draft}");
+    assert_eq!(count(&world.github, "PATCH").await, 1);
+}
+
+/// Without `--bootstrap`, a crate crates.io lacks fails the proof before the
+/// draft: nothing is uploaded and GitHub takes no write.
+#[tokio::test]
+async fn without_bootstrap_a_missing_crate_still_fails_the_proof() {
+    let world = World::new().await;
+    world.fake_cargo(false);
+    workspace(world.repo(), &["demo-core", "demo-cli"]);
+    let head = common::git(world.repo(), &["rev-parse", "HEAD"]);
+    known_on_crates_io(&world, "demo-core", "0.7.0").await;
+    absent(&world, "demo-cli").await;
+    new_release(&world, "v0.7.0", &head).await;
+    let output = release(
+        &world,
+        &[
+            ("VERCTL_REGISTRY_TOKEN", "r3gistry"),
+            ("GITHUB_TOKEN", "gh-token"),
+        ],
+        &[],
+    );
+    assert!(!output.status.success(), "{}", printed(&output));
+    let text = printed(&output);
+    assert!(text.contains("the release proof failed"), "{text}");
+    assert!(text.contains("demo-cli: missing from crates.io"), "{text}");
+    assert_eq!(world.cargo_calls(), Vec::<String>::new());
+    assert_eq!(count(&world.github, "POST").await, 0);
+    assert_eq!(count(&world.github, "PATCH").await, 0);
+}
+
+/// `--bootstrap` without `VERCTL_REGISTRY_TOKEN` fails before any request,
+/// naming the variable and the workflow secret, whether or not a trusted
+/// token is set.
+#[tokio::test]
+async fn bootstrap_needs_the_registry_token() {
+    let world = World::new().await;
+    world.fake_cargo(false);
+    standalone(world.repo(), &[("demo", "0.0.0")]);
+    absent(&world, "demo").await;
+    for envs in [
+        &[][..],
+        &[("VERCTL_TRUSTED_PUBLISHING_TOKEN", "trust3d")][..],
+    ] {
+        let output = release(&world, envs, &["--bootstrap"]);
+        assert!(!output.status.success(), "{}", printed(&output));
+        let text = printed(&output);
+        assert!(text.contains("VERCTL_REGISTRY_TOKEN"), "{text}");
+        assert!(text.contains("`registry-token`"), "{text}");
+    }
+    assert_eq!(world.cargo_calls(), Vec::<String>::new());
+    assert_eq!(received(&world.api).await, no_requests());
+    assert_eq!(received(&world.github).await, no_requests());
+}
+
+/// With `--bootstrap`, the `trust` proof passes a crate crates.io lacks with a
+/// notice to add its entry once the run creates it, where it fails a missing
+/// crate as `Missing` otherwise.
+#[tokio::test]
+async fn bootstrap_run_passes_the_trust_proof_for_a_crate_it_creates() {
+    let world = World::new().await;
+    world.fake_cargo(false);
+    standalone(world.repo(), &[("demo", "0.0.0")]);
+    let head = common::git(world.repo(), &["rev-parse", "HEAD"]);
+    on_crates_io(&world, "demo", "0.0.0", false).await;
+    new_release(&world, "v0.0.0", &head).await;
+    let output = release(
+        &world,
+        &[
+            ("VERCTL_REGISTRY_TOKEN", "r3gistry"),
+            ("VERCTL_OWNER_TOKEN", OWNER_TOKEN),
+            ("GITHUB_TOKEN", "gh-token"),
+        ],
+        &["--bootstrap"],
+    );
+    let report = report(&output);
+    let notice = json!({
+        "row": "notice",
+        "check": "trust",
+        "message": "demo: crates.io lacks it; add its entry with `verctl release trust demo` after this run creates it",
+    });
+    assert!(
+        report["proof"].as_array().unwrap().contains(&notice),
+        "{}",
+        report["proof"]
+    );
+    assert_eq!(world.token_calls(), ["demo r3gistry"]);
+}
+
+/// `release --dry-run --bootstrap` plans what `release --bootstrap` plans: a
+/// standalone `0.0.0` package crates.io lacks, read from the index, with its
+/// tag. Without the flag the same dry run plans nothing.
+#[tokio::test]
+async fn dry_run_bootstrap_plans_what_the_run_plans() {
+    let world = World::new().await;
+    standalone(world.repo(), &[("demo", "0.0.0")]);
+    on_crates_io(&world, "demo", "0.0.0", false).await;
+    let output = release(
+        &world,
+        &[("VERCTL_REGISTRY_TOKEN", "r3gistry")],
+        &["--dry-run", "--bootstrap"],
+    );
+    let planned = report(&output);
+    assert_eq!(planned["outcome"], "released");
+    assert_eq!(planned["packages"][0]["name"], "demo");
+    assert_eq!(planned["releases"], json!(["would create v0.0.0"]));
+    let notice = json!({
+        "row": "notice",
+        "check": "registry",
+        "message": "demo: crates.io lacks it; this run creates it with the registry token",
+    });
+    assert!(
+        planned["proof"].as_array().unwrap().contains(&notice),
+        "{}",
+        planned["proof"]
+    );
+    assert!(
+        received(&world.index)
+            .await
+            .contains(&("GET".to_owned(), "/de/mo/demo".to_owned()))
+    );
+    let plain = report(&release(&world, &[], &["--dry-run"]));
+    assert_eq!(plain["outcome"], "nothing-to-release");
+    assert_eq!(world.cargo_calls(), Vec::<String>::new());
+    assert_eq!(received(&world.github).await, no_requests());
+}
+
+/// Under `--dry-run`, `--bootstrap` needs no token: the dry run plans as the
+/// real run would, and a notice names `VERCTL_REGISTRY_TOKEN` when it is
+/// unset. Only a real run fails without it.
+#[tokio::test]
+async fn dry_run_bootstrap_needs_no_token() {
+    let world = World::new().await;
+    standalone(world.repo(), &[("demo", "0.0.0")]);
+    on_crates_io(&world, "demo", "0.0.0", false).await;
+    let output = release(&world, &[], &["--dry-run", "--bootstrap"]);
+    let planned = report(&output);
+    assert_eq!(planned["packages"][0]["name"], "demo");
+    let notices = planned["notices"].as_array().unwrap();
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert!(
+        notices[0]
+            .as_str()
+            .unwrap()
+            .contains("VERCTL_REGISTRY_TOKEN"),
+        "{notices:?}"
+    );
+    let real = release(&world, &[], &["--bootstrap"]);
+    assert!(!real.status.success(), "{}", printed(&real));
+    assert!(printed(&real).contains("VERCTL_REGISTRY_TOKEN"));
 }

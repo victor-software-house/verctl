@@ -214,7 +214,10 @@ fn tags(config: &Config, crate_: &Planned) -> Result<Vec<String>> {
 }
 
 /// Upload each of `lacking` in order, pushing a row for each, and return the
-/// crates published. The first upload that fails ends the run of uploads.
+/// crates the run published or found in the index. The index can list a crate
+/// whose owners crates.io does not serve yet, as on a rerun, and such a crate
+/// still needs its tag and its entry. The first upload that fails ends the
+/// run of uploads.
 fn publish_all<'a>(
     lacking: &[&'a Planned],
     request: &Request<'_>,
@@ -225,7 +228,7 @@ fn publish_all<'a>(
         let (outcome, note) = upload(crate_, request);
         match outcome {
             Ok(state) => {
-                if state == State::Published {
+                if matches!(state, State::Published | State::AlreadyPublished) {
                     published.push(*crate_);
                 }
                 rows.push(versioned(crate_, state, note));
@@ -260,6 +263,7 @@ fn upload(crate_: &Planned, request: &Request<'_>) -> (Result<State>, Option<Str
             request.registry_token,
             request.crates_io.index,
             &registry::LISTING_DELAYS,
+            true,
         ) {
             Ok(Some(_)) => return (Ok(State::AlreadyPublished), note(&waited)),
             Ok(None) => return (Ok(State::Published), note(&waited)),

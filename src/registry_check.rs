@@ -196,7 +196,7 @@ pub(crate) fn planned_from_env(
 /// resolve.
 pub fn registry(config: &Config, root: &Path, api: &str) -> Result<RegistryReport> {
     match crates_from_env(config, root)? {
-        (crates, Some(repository)) => prove_registry(&crates, api, &repository),
+        (crates, Some(repository)) => prove_registry(&crates, api, &repository, false),
         (_, None) => Ok(RegistryReport { crates: Vec::new() }),
     }
 }
@@ -204,11 +204,20 @@ pub fn registry(config: &Config, root: &Path, api: &str) -> Result<RegistryRepor
 /// The `registry` proof of each of `crates` against the crates.io API at
 /// `api`, with `repository` as the source trusted publishing should name.
 ///
+/// With `bootstrap`, a run that creates each crate crates.io lacks, such a
+/// crate passes with a notice. The `0.0.0` rule still fails a standalone
+/// package off `0.0.0`.
+///
 /// # Errors
 ///
 /// Returns an error when an owners or versions request fails, as described
 /// for [`registry::crates_io_user_owners`].
-pub fn prove_registry(crates: &[Crate], api: &str, repository: &Repo) -> Result<RegistryReport> {
+pub fn prove_registry(
+    crates: &[Crate],
+    api: &str,
+    repository: &Repo,
+    bootstrap: bool,
+) -> Result<RegistryReport> {
     let slug = slug(repository);
     let mut rows = Vec::with_capacity(crates.len());
     for listed in crates {
@@ -218,6 +227,7 @@ pub fn prove_registry(crates: &[Crate], api: &str, repository: &Repo) -> Result<
                     version: listed.version.clone(),
                 }
             }
+            None if bootstrap => RegistryState::Creates,
             None if listed.held => RegistryState::Missing,
             None => RegistryState::New,
             Some(found) => {
@@ -271,13 +281,22 @@ pub fn trust(config: &Config, root: &Path, api: &str, token: Option<&str>) -> Re
             crates: Vec::new(),
         });
     };
-    prove_trust(&crates, api, token, &repository, &config.release_workflow)
+    prove_trust(
+        &crates,
+        api,
+        token,
+        &repository,
+        &config.release_workflow,
+        false,
+    )
 }
 
 /// The release proof: each of `checks` against the crates.io API at `api`,
 /// in the order [`ReleaseCheck::ALL`] declares them.
 ///
-/// `registry` runs as `check registry` does. `trust` runs as `check trust`
+/// `registry` runs as `check registry` does, and with `bootstrap`, a run that
+/// creates each crate crates.io lacks, passes such a crate with a notice.
+/// `trust` runs as `check trust`
 /// does when `owner_token` holds an owner's token, and is skipped otherwise,
 /// because a release under trusted publishing holds no such token. Both read
 /// the crates and the default branch once. With nothing to run, it reads
@@ -292,6 +311,7 @@ pub fn prove(
     api: &str,
     checks: &[ReleaseCheck],
     owner_token: Option<&str>,
+    bootstrap: bool,
 ) -> Result<Proof> {
     let listed = |check| checks.contains(&check);
     let token = owner_token.filter(|_| listed(ReleaseCheck::Trust));
@@ -305,7 +325,7 @@ pub fn prove(
     }
     let (crates, repository) = crates_from_env(config, root)?;
     let registry = match (&repository, listed(ReleaseCheck::Registry)) {
-        (Some(repository), true) => Some(prove_registry(&crates, api, repository)?),
+        (Some(repository), true) => Some(prove_registry(&crates, api, repository, bootstrap)?),
         (None, true) => Some(RegistryReport { crates: Vec::new() }),
         (_, false) => None,
     };
@@ -316,6 +336,7 @@ pub fn prove(
             token,
             repository,
             &config.release_workflow,
+            bootstrap,
         )?),
         (None, Some(_)) => Some(TrustReport::Set {
             repository: None,
@@ -435,6 +456,9 @@ pub enum ProofRow {
 /// it, and its entries are not read. A crate whose entries crates.io refuses
 /// to the token fails alone, and the other crates are still checked.
 ///
+/// With `bootstrap`, a run that creates each crate crates.io lacks, such a
+/// crate passes with a notice to add its entry once the run creates it.
+///
 /// # Errors
 ///
 /// Returns an error when an owners request fails, as described for
@@ -446,10 +470,12 @@ pub fn prove_trust(
     token: &str,
     repository: &Repo,
     workflow: &str,
+    bootstrap: bool,
 ) -> Result<TrustReport> {
     let mut rows = Vec::with_capacity(crates.len());
     for listed in crates {
         let state = match registry::crates_io_user_owners(api, &listed.name)? {
+            None if bootstrap => TrustState::Creates,
             None if listed.held => TrustState::Missing,
             None => TrustState::New,
             Some(_) => match registry::crates_io_github_configs(api, &listed.name, token)? {
@@ -573,7 +599,7 @@ impl RegistryRow {
                     owners.join(", ")
                 },
             )),
-            RegistryState::New | RegistryState::Present { .. } => None,
+            RegistryState::New | RegistryState::Creates | RegistryState::Present { .. } => None,
         }
     }
 
@@ -582,6 +608,10 @@ impl RegistryRow {
     pub fn notice(&self) -> Option<String> {
         match &self.state {
             RegistryState::New => Some(bootstrap_notice(&self.name)),
+            RegistryState::Creates => Some(format!(
+                "{name}: crates.io lacks it; this run creates it with the registry token",
+                name = self.name
+            )),
             RegistryState::Present { expected: None, .. } => Some(format!(
                 "{name}: owner proof skipped; set owners in .ctl/ver.yaml to prove them",
                 name = self.name
@@ -612,6 +642,9 @@ pub enum RegistryState {
         /// The version the package holds.
         version: String,
     },
+    /// crates.io lacks the crate and the run, started with `--bootstrap`,
+    /// creates it with the registry token: the check passes with a notice.
+    Creates,
     /// crates.io holds the crate.
     Present {
         /// The user logins crates.io lists as owners.
@@ -730,21 +763,31 @@ impl TrustReport {
                         "{name}: crates.io refused to list its trusted publishers ({detail}); the token's user must be an owner of the crate",
                         name = row.name,
                     )),
-                    TrustState::New | TrustState::Trusted => None,
+                    TrustState::New | TrustState::Creates | TrustState::Trusted => None,
                 })
                 .collect(),
         }
     }
 
-    /// One notice per crate that needs its bootstrap.
+    /// One notice per crate that needs its bootstrap, and one per crate the
+    /// run creates, which then needs its entry.
     #[must_use]
     pub fn notices(&self) -> Vec<String> {
         match self {
             Self::Unset { .. } => Vec::new(),
             Self::Set { crates, .. } => crates
                 .iter()
-                .filter(|row| row.state == TrustState::New)
-                .map(|row| bootstrap_notice(&row.name))
+                .filter_map(|row| match row.state {
+                    TrustState::New => Some(bootstrap_notice(&row.name)),
+                    TrustState::Creates => Some(format!(
+                        "{name}: crates.io lacks it; add its entry with `verctl release trust {name}` after this run creates it",
+                        name = row.name
+                    )),
+                    TrustState::Trusted
+                    | TrustState::Untrusted { .. }
+                    | TrustState::Missing
+                    | TrustState::Refused { .. } => None,
+                })
                 .collect(),
         }
     }
@@ -782,6 +825,10 @@ pub enum TrustState {
     /// crates.io lacks a crate only the checked commit adds: the check
     /// passes, and the crate needs its bootstrap once it lands.
     New,
+    /// crates.io lacks a crate the run, started with `--bootstrap`, creates:
+    /// the check passes, and the crate needs its entry once the run creates
+    /// it.
+    Creates,
     /// crates.io refused to list the entries to the token, because its user
     /// does not own the crate: the check fails for this crate alone.
     Refused {
