@@ -384,7 +384,7 @@ pub fn run_pending(
         pending,
     };
     let reads = match read_release(config, root, &planned, scope, crates_io, dry_run, gate)? {
-        Read::Stopped(run) => return Ok(run),
+        Read::Stopped(run) => return Ok(*run),
         Read::Ready(reads) => *reads,
     };
     if dry_run {
@@ -479,7 +479,7 @@ struct Reads<'a> {
 enum Read<'a> {
     /// A run that ends here: nothing to release, or a dry run whose release
     /// proof failed.
-    Stopped(PublishRun),
+    Stopped(Box<PublishRun>),
     /// A run that goes on to its writes.
     Ready(Box<Reads<'a>>),
 }
@@ -504,10 +504,8 @@ fn read_release<'a>(
         pending,
     } = gate;
     if pending.is_empty() {
-        return Ok(Read::Stopped(nothing_to_release(
-            allowed,
-            pending.shortfalls,
-        )));
+        let run = nothing_to_release(allowed, pending.shortfalls);
+        return Ok(Read::Stopped(Box::new(run)));
     }
     let proof = release_proof(config, root, crates_io, &scope.new_crates)?;
     let failures = proof.failures();
@@ -517,9 +515,8 @@ fn read_release<'a>(
             "the release proof failed, and nothing was published:\n{}",
             failures.join("\n")
         );
-        return Ok(Read::Stopped(proof_failed(
-            planned, pending, allowed, &proof,
-        )));
+        let run = proof_failed(planned, pending, allowed, &proof);
+        return Ok(Read::Stopped(Box::new(run)));
     }
     let head = git::head_sha(root)?;
     let here = at_head(&pending, &head)?;
@@ -1082,20 +1079,19 @@ fn dry_run_of(
     shortfalls: Vec<pending::Shortfall>,
     proof: &Proof,
 ) -> PublishRun {
-    let lines = uploads.iter().flat_map(|(entry, runs)| {
+    let mut lines = Vec::new();
+    for (entry, runs) in uploads {
         if entry.argv.is_empty() {
-            vec![PublishLine::from(*entry)]
-        } else {
-            runs.iter()
-                .map(|upload| PublishLine {
-                    name: upload.name.clone(),
-                    version: upload.version.clone(),
-                    via: entry.label.clone(),
-                    note: None,
-                })
-                .collect()
+            lines.push(PublishLine::from(*entry));
+            continue;
         }
-    });
+        lines.extend(runs.iter().map(|upload| PublishLine {
+            name: upload.name.clone(),
+            version: upload.version.clone(),
+            via: entry.label.clone(),
+            note: None,
+        }));
+    }
     let releases = tags
         .iter()
         .map(
