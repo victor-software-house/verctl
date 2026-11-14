@@ -85,7 +85,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up mise
-        uses: victor-software-house/actions/mise@4f2318e8587711ead93246fc6a73174803264c3c # main, 2026-11-13
+        uses: victor-software-house/actions/mise@5ad08e7382a53bd35c65fc1e1aaa1c2fae427ed9 # main, 2026-11-14
         with:
           mirror-url: ${{ secrets.RELEASE_MIRROR_URL }}
           mirror-key: ${{ secrets.RELEASE_MIRROR_CI_KEY }}
@@ -124,7 +124,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - name: Set up mise
-        uses: victor-software-house/actions/mise@4f2318e8587711ead93246fc6a73174803264c3c # main, 2026-11-13
+        uses: victor-software-house/actions/mise@5ad08e7382a53bd35c65fc1e1aaa1c2fae427ed9 # main, 2026-11-14
         with:
           mirror-url: ${{ secrets.RELEASE_MIRROR_URL }}
           mirror-key: ${{ secrets.RELEASE_MIRROR_CI_KEY }}
