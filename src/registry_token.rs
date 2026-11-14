@@ -76,6 +76,23 @@ impl RegistryToken {
         Self::resolve(read(SECRET), read(TRUSTED), variable)
     }
 
+    /// The token in [`SECRET`] alone, for the publisher to read from
+    /// `variable`. `None` when it is unset or empty.
+    ///
+    /// `release bootstrap` takes the operator's token and never a
+    /// trusted-publishing token, because a trusted publisher cannot create a
+    /// crate.
+    #[must_use]
+    pub fn operator(variable: &str) -> Option<Self> {
+        Self::resolve(
+            env::var(SECRET).ok().filter(|value| !value.is_empty()),
+            None,
+            variable,
+        )
+        .ok()
+        .flatten()
+    }
+
     /// [`Self::from_env`] over values already read.
     ///
     /// # Errors

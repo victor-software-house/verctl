@@ -75,7 +75,9 @@ Moving to `0.1.0` or `1.0.0` is a separate operator decision.
 `version` and `check` refuse a `minor` or `major` fragment on a package at `0.0.0`, including its pre-releases and builds.  
 To open at `0.1.0` on purpose, set `first_minor: true` on the package in `.ctl/ver.yaml`.
 
-`release` and `status` leave a package at `0.0.0` out, so a repo can adopt the release workflow before its first release.
+`release` and `status` leave a package at `0.0.0` out, so a repo can adopt the release workflow before its first release.  
+A crate crates.io lacks first publishes through `verctl release bootstrap`, at the version the default branch holds, which is `0.0.0` for a standalone package.  
+`check registry` fails a standalone package that crates.io lacks at any other version, and a workspace member is exempt.
 
 ## Release candidates
 
@@ -447,6 +449,11 @@ A manifest that opts out of publishing needs no `publisher: none`: a `Cargo.toml
 
 `check registry` proves, with no token, that each crates.io crate the default branch holds exists and lists every login the top-level or per-package `owners` names.  
 `check trust` reads an owner's token from `VERCTL_OWNER_TOKEN` and proves that a trusted publisher entry names this repository and `release_workflow`, which is `release.yml` when omitted.
+
+`verctl release bootstrap [CRATE]...` publishes each crate crates.io lacks, from the default branch's tip, with the operator's token in `VERCTL_REGISTRY_TOKEN`.  
+It needs `VERCTL_OWNER_TOKEN` too, checked before any request, tags each published standalone package, and adds each published crate's trusted publisher entry.  
+It waits out crates.io's new-crate rate limit, and `--dry-run` lists what it would publish and tag with no token.  
+`verctl release trust [CRATE]...` adds this repository's entry to each crate that has none, never edits another, and with `--dry-run` sends no `POST`.
 
 Before its draft, `release` runs the checks `release_checks` names, `[registry, trust]` when omitted, and stops with nothing published when one fails.  
 `trust` runs only with `VERCTL_OWNER_TOKEN`, and is reported as skipped otherwise.  

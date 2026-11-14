@@ -1,6 +1,6 @@
 use ctl_core::prelude::{Document, Fields, Notice, NoticeLevel, Outcome, Present, Table};
 use serde::Serialize;
-use verctl::{assets, ci, publish, registry_check, semver_check, stop, versions};
+use verctl::{assets, ci, first_publish, publish, registry_check, semver_check, stop, versions};
 
 #[derive(Serialize)]
 #[serde(untagged)]
@@ -10,6 +10,7 @@ pub(super) enum Report {
     Status(StatusReport),
     Version(VersionReport),
     Release(ReleaseReport),
+    Crates(CratesReport),
     Render(RenderReport),
     Assets(AssetsReport),
     Vendored(VendoredReport),
@@ -25,6 +26,7 @@ impl Present for Report {
             Self::Status(report) => report.present(),
             Self::Version(report) => report.present(),
             Self::Release(report) => report.present(),
+            Self::Crates(report) => report.present(),
             Self::Render(report) => report.present(),
             Self::Assets(report) => report.present(),
             Self::Vendored(report) => report.present(),
@@ -37,6 +39,7 @@ impl Present for Report {
         match self {
             Self::Check(report) => report.outcome(),
             Self::Release(report) => report.outcome(),
+            Self::Crates(report) => report.outcome(),
             Self::Instructions(_)
             | Self::Status(_)
             | Self::Version(_)
@@ -220,6 +223,9 @@ fn registry_details(report: &registry_check::RegistryReport, document: Document)
                     ("missing", "-".to_owned(), "-".to_owned())
                 }
                 registry_check::RegistryState::New => ("new", "-".to_owned(), "-".to_owned()),
+                registry_check::RegistryState::NotAtZero { .. } => {
+                    ("not at 0.0.0", "-".to_owned(), "-".to_owned())
+                }
                 registry_check::RegistryState::Present {
                     owners,
                     lacking,
@@ -823,6 +829,62 @@ impl Present for ReleaseReport {
             .iter()
             .any(|row| matches!(row, registry_check::ProofRow::Failed { .. }))
         {
+            Outcome::Error
+        } else {
+            Outcome::Success
+        }
+    }
+}
+
+/// What `release bootstrap` and `release trust` did: one row per crate and
+/// step.
+#[derive(Serialize)]
+pub(super) struct CratesReport {
+    pub(super) crates: Vec<first_publish::Row>,
+}
+
+impl Present for CratesReport {
+    /// A table of the rows, with a `version` column when any row has one and a
+    /// `note` column when any row has one, then one error per failed row.
+    fn present(&self) -> Document {
+        if self.crates.is_empty() {
+            return Document::new().fields(Fields::new().row("no-op", "no crate to handle"));
+        }
+        let versions = self.crates.iter().any(|row| row.version.is_some());
+        let notes = self.crates.iter().any(|row| row.note.is_some());
+        let mut headers = vec!["name"];
+        if versions {
+            headers.push("version");
+        }
+        headers.push("state");
+        if notes {
+            headers.push("note");
+        }
+        let table = self
+            .crates
+            .iter()
+            .fold(Table::new(headers).id_column(0), |table, row| {
+                let mut cells = vec![row.name.clone()];
+                if versions {
+                    cells.push(row.version.clone().unwrap_or_else(|| "-".to_owned()));
+                }
+                cells.push(row.state.label());
+                if notes {
+                    cells.push(row.note.clone().unwrap_or_default());
+                }
+                table.row(cells)
+            });
+        let failures: Vec<String> = self
+            .crates
+            .iter()
+            .filter_map(|row| row.failure().map(str::to_owned))
+            .collect();
+        with_findings(Document::new().table(table), &[], &failures)
+    }
+
+    /// An error when any row failed, after every row is shown.
+    fn outcome(&self) -> Outcome {
+        if self.crates.iter().any(|row| row.failure().is_some()) {
             Outcome::Error
         } else {
             Outcome::Success

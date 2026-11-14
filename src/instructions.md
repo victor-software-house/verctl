@@ -22,7 +22,7 @@ The `--` in `#USAGE mount` is mise's completion bootstrap.
 | `status` | — | List pending fragments, the asset plan, and HEAD's incomplete releases. `--github-output` writes the release workflow's plan |
 | `check` | — | Run the named checks, or `fragments` and `served` when none is named |
 | `version` | — | Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews |
-| `release` | — | Release the versions on HEAD: publish with cargo or bun, and create the GitHub Release. `release asset <target>` builds one asset |
+| `release` | — | Release the versions on HEAD: publish with cargo or bun, and create the GitHub Release. `release asset <target>` builds one asset, `release bootstrap` publishes the crates crates.io lacks, and `release trust` registers the trusted publisher |
 | `render` | — | Rewrite pins and render served templates at the versions on HEAD |
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
 | `semver` | — | Check the API of each crates.io crate whose next release is a patch |
@@ -110,6 +110,10 @@ So a repo can adopt the release workflow before its first release.
 To open at `0.1.0` on purpose, the operator sets `first_minor: true` on that package in `.ctl/ver.yaml`.
 The key does nothing once the package has released.
 
+A crate crates.io lacks first publishes through `verctl release bootstrap` ([First publish](#first-publish)), at the version the default branch holds.  
+For a standalone package that version is `0.0.0`, so `check registry` fails a standalone package that crates.io lacks at any other version.  
+A member of a shared-version group, such as a workspace member with `version.workspace = true`, first publishes at the group's version, and the rule leaves it out.
+
 ### Release candidates
 
 `prerelease: <tag>` on a package makes each Version PR write a candidate, `<base>-<tag>.<count>`, such as `0.8.2-rc.1`.
@@ -172,6 +176,11 @@ A crate the default branch holds and crates.io lacks fails, naming `verctl relea
 A crate only the checked commit adds passes while crates.io lacks it.  
 Its notice names `verctl release bootstrap` as the step once it lands.  
 When crates.io holds that name, the owner proof applies to it as to any crate.
+
+A standalone package that crates.io lacks fails when its version is not `0.0.0`, whether the default branch holds it or only the checked commit adds it.  
+The failure names the crate, its version, and `0.0.0`, and says `verctl release bootstrap` publishes it there.  
+A workspace member is exempt.  
+The release proof runs `registry`, so it inherits the rule.
 
 `check trust` reads an owner's crates.io token with the `trusted-publishing` scope from `VERCTL_OWNER_TOKEN`, because crates.io serves trusted publisher entries to owners alone.  
 It fails each crate with no entry naming this repository and the workflow file `release_workflow` names.  
@@ -572,6 +581,47 @@ The report lists each under `allowed`: a row in the human view, and `allowed: [{
 A check that cannot run, as with no `origin` or no default-branch ref, refuses even with a flag set.
 
 The reusable `release.yml` takes the `allow-workflow-change` and `allow-off-default-branch` boolean inputs, default `false`, and passes them through `env:`.
+
+### First publish
+
+crates.io's trusted publishing cannot create a crate, and an entry can only be added to a crate that exists.  
+Two steps under `release` cover that, and each takes crate names (`CRATE...`) as the manifests spell them, or every crate when none is named.  
+A name that no crate of the repository has fails before any request and lists the crates that exist.
+
+`verctl release bootstrap [CRATE]...` publishes each crate crates.io lacks, in upload order, at the version the default branch's tip holds.  
+A named crate crates.io lists gets an `already published` row.  
+It publishes only the real code at that version, and no command takes another version.  
+It needs two tokens, both checked before any request, each missing one named:
+
+- `VERCTL_REGISTRY_TOKEN`, the operator's crates.io token that can publish new crates, which only the upload under `--registry-token-env` sees;
+- `VERCTL_OWNER_TOKEN`, an owner's token with the `trusted-publishing` scope, for the entries.
+
+It fetches the default branch as `check versions` does, and HEAD must be that branch's tip.  
+Otherwise it fails naming both commits before any upload.  
+A published standalone package, one that is not a workspace package, gets a lightweight tag at the tip through the GitHub API, which needs `GITHUB_TOKEN` or `GH_TOKEN`.  
+A tag already at the tip is fine, and a tag at another commit fails naming both.  
+A workspace member gets no tag, because its tag belongs to the group's release.  
+Then it adds the trusted publisher entry of each crate it published, as `release trust` does.
+
+An upload that crates.io stops for its new-crate rate limit is run again once the time cargo prints after "try again after" has passed, at most 10 times per crate, and the row notes each wait.  
+A limit that gives no time that parses fails as `release` does.  
+An upload that fails stops the uploads, and the crates published before it still get their tags and entries.
+
+`verctl release bootstrap --dry-run` (`-n`) needs neither token, reads only crates.io and git, and lists what it would publish and tag.  
+`--registry-token-env`, `--crates-io-api`, and `--crates-io-index` (`VERCTL_REGISTRY_TOKEN_ENV`, `VERCTL_CRATES_IO_API`, `VERCTL_CRATES_IO_INDEX`) mean what they do for `release`.
+
+`verctl release trust [CRATE]...` lists each crate's trusted publisher entries and adds this repository's entry only when none names it, because crates.io accepts duplicates.  
+The entry names the `origin` repository, the workflow file `release_workflow` names, and no environment, so it is the entry `check trust` proves.  
+It reports `already set` for a crate whose entry matches, and never edits or deletes another entry.  
+It needs `VERCTL_OWNER_TOKEN` before any request, a dry run included.  
+A crate crates.io lacks fails with the bootstrap that publishes it, a crate that holds 5 entries, the crates.io limit, fails naming the limit, and the other crates are still handled.  
+The run exits non-zero when any row failed.  
+On a 429 it waits for the `Retry-After` header, seconds or an HTTP date, and sends the request again, at most 10 times.
+
+`verctl release trust --dry-run` (`-n`) lists the entries it would add and sends no `POST`.  
+`--crates-io-api` (`VERCTL_CRATES_IO_API`) names the API both steps read.
+
+Both steps print a table of crates with `name`, `version` (bootstrap only), and `state`: `added`, `already set`, `would add`, `published`, `would publish`, `already published`, `tagged <tag>`, `would tag <tag>`, or `failed`.
 
 ### Registry tokens
 

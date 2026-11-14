@@ -931,7 +931,7 @@ fn at_head<'a>(pending: &'a pending::Pending, head: &str) -> Result<&'a pending:
 /// Without a check, a zero exit or that stderr is enough.
 /// A publisher stopped by a registry rate limit fails with the time the
 /// registry gives for the next attempt (see [`rate_limited`]).
-fn publish_checked(
+pub(crate) fn publish_checked(
     upload: &Upload,
     registry_token: Option<&RegistryToken>,
     index: &str,
@@ -974,10 +974,10 @@ const RATE_LIMIT: &str = "429 Too Many Requests";
 
 /// What a registry reported when it refused an upload for its rate limit.
 #[derive(Debug)]
-struct RateLimit {
+pub(crate) struct RateLimit {
     /// The time it gave after "try again after", or `None` when it gave the
     /// status alone.
-    retry_after: Option<String>,
+    pub(crate) retry_after: Option<String>,
 }
 
 impl fmt::Display for RateLimit {
@@ -991,10 +991,11 @@ impl fmt::Display for RateLimit {
 
 /// An upload the registry's rate limit stopped.
 #[derive(Debug)]
-struct RateLimited {
+pub(crate) struct RateLimited {
     /// The package and version, as `name@version`.
     coord: String,
-    limit: RateLimit,
+    /// What the registry reported.
+    pub(crate) limit: RateLimit,
 }
 
 impl fmt::Display for RateLimited {

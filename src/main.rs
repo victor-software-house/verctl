@@ -6,22 +6,22 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use ctl_core::prelude::*;
 use verctl::cli::{
-    AssetArgs, Check, CheckArgs, CiArgs, Cli, Command, ReleaseArgs, ReleaseStep, RenderArgs,
-    SemverArgs, StatusArgs, VersionArgs,
+    AssetArgs, BootstrapArgs, Check, CheckArgs, CiArgs, Cli, Command, ReleaseArgs, ReleaseStep,
+    RenderArgs, SemverArgs, StatusArgs, TrustArgs, VersionArgs,
 };
 use verctl::config::{self, Config};
 use verctl::content::Inputs;
 use verctl::fragment::{self, Bump};
 use verctl::registry_token::RegistryToken;
 use verctl::{
-    assets, ci, git, github, lookup, pending, pins, prepare, publish, registry, registry_check,
-    registry_token, release, semver_check, templates, versions,
+    assets, bootstrap, ci, git, github, lookup, pending, pins, prepare, publish, registry,
+    registry_check, registry_token, release, semver_check, templates, trust, versions,
 };
 
 mod presentation;
 
 use presentation::{
-    AssetsReport, CheckReport, CheckResult, CiReport, InstructionsReport, PartialRow,
+    AssetsReport, CheckReport, CheckResult, CiReport, CratesReport, InstructionsReport, PartialRow,
     ReleaseReport, ReleaseRow, RenderReport, Report, SemverReport, StatusAssets, StatusFragment,
     StatusPackage, StatusReport, Unchecked, VendoredReport, VersionBump, VersionCheckReport,
     VersionReport,
@@ -47,6 +47,8 @@ fn execute(cli: Cli) -> Result<Report> {
                 Some(name) => vendored_report(asset, &args, name).map(Report::Vendored),
                 None => asset_report(asset, &args).map(Report::Assets),
             },
+            Some(ReleaseStep::Bootstrap(step)) => bootstrap_report(step, &args).map(Report::Crates),
+            Some(ReleaseStep::Trust(step)) => trust_report(step, &args).map(Report::Crates),
             None => release_report(&args).map(Report::Release),
         },
         Command::Render(args) => render_report(&args).map(Report::Render),
@@ -443,6 +445,52 @@ fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
         dry_run: args.dry_run(),
         notices,
         proof: run.proof,
+    })
+}
+
+/// `release bootstrap`: publish the crates crates.io lacks. A real run needs
+/// `VERCTL_REGISTRY_TOKEN`, `VERCTL_OWNER_TOKEN`, and, to tag a standalone
+/// package, a GitHub token. `--dry-run` needs none.
+fn bootstrap_report(args: &BootstrapArgs, release: &ReleaseArgs) -> Result<CratesReport> {
+    let path = args.config_under(release);
+    let config = Config::load(path)?;
+    let root = &config::root_of(path);
+    let registry_token = RegistryToken::operator(&args.registry_token_env);
+    let owner_token = registry_token::owner_token();
+    let github_token = release::env_token();
+    let crates_io = registry::CratesIo {
+        index: &args.crates_io_index,
+        api: &args.crates_io_api,
+        owner_token: owner_token.as_deref(),
+    };
+    let request = bootstrap::Request::new(
+        &args.crates,
+        args.dry_run_under(release),
+        crates_io,
+        registry_token.as_ref(),
+        github_token.as_deref(),
+    );
+    Ok(CratesReport {
+        crates: bootstrap::run(&config, root, &request)?,
+    })
+}
+
+/// `release trust`: add this repository's trusted publisher entry to each
+/// crate that lacks one. It needs `VERCTL_OWNER_TOKEN`, dry run included,
+/// because the list of entries needs it.
+fn trust_report(args: &TrustArgs, release: &ReleaseArgs) -> Result<CratesReport> {
+    let path = args.config_under(release);
+    let config = Config::load(path)?;
+    let root = &config::root_of(path);
+    let owner_token = registry_token::owner_token();
+    let crates_io = registry::CratesIo {
+        index: registry::CRATES_IO_INDEX,
+        api: &args.crates_io_api,
+        owner_token: owner_token.as_deref(),
+    };
+    let request = trust::Request::new(&args.crates, args.dry_run_under(release), crates_io);
+    Ok(CratesReport {
+        crates: trust::run(&config, root, &request)?,
     })
 }
 

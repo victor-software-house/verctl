@@ -10,6 +10,8 @@ The operator made each decision on 2026-11-13.
 It publishes the real code of each named package the registry lacks, or of every such declared package when none is named, at the version the default branch holds.
 
 It tags each standalone package, then runs `release trust`.
+It runs at the default branch's tip, fetched first, and refuses any other HEAD, so the version it publishes is the one the default branch holds.
+Run on its own, it also needs `VERCTL_OWNER_TOKEN` for its `release trust` step and checks both tokens before any upload, so no crate is created without its entry.
 A member of a shared-version group gets no tag, because its tag belongs to the group's release.
 
 It is a step under `release`, as `release asset <target>` is.
@@ -31,7 +33,10 @@ crates.io accepts duplicate entries, up to 5 per crate, so a create without the 
 It never edits or deletes another entry.
 `release trust --dry-run` (`-n`) lists what it would add, as `release --dry-run` and `render --dry-run` preview.
 
-It takes no provider argument: the repository comes from the `origin` remote, the workflow file and environment from the one workflow that calls the reusable `release.yml`.
+It takes no provider argument: the repository comes from the `origin` remote and the workflow file from `release_workflow`, the key `check trust` reads ([`release-checks`][checks] section 3.2).
+The entry names no environment, so it matches a run in any environment, as `check trust` compares it.
+It reads the owner's token from `VERCTL_OWNER_TOKEN`: crates.io's create endpoint requires the `trusted-publishing` token scope, the scope `check trust` already uses, and a `publish-new` token cannot add an entry.
+crates.io refuses a sixth entry with 409, so a crate at that limit fails naming it.
 
 The step acts and the `trust` check of [`release-checks`][checks] proves, so both share the noun and differ in the verb: `check trust`, `release trust`.
 
@@ -63,12 +68,18 @@ None: a package that should start elsewhere sets `first_minor: true` for its fir
 ## 4. Rate limits
 
 Only a first publish meets the crates.io new-crate limit of 5, then 1 every 10 minutes.
-`release bootstrap` and `release trust` wait until `Retry-After` on a 429, then try again, so one run creates any number of crates.
+`release bootstrap` and `release trust` wait on a 429 until the time crates.io gives, then try again, so one run creates any number of crates.
+cargo prints that time after "try again after" as an HTTP date, which verctl already parses for a release's stop record; the trust endpoint sends it in `Retry-After`.
+verctl parses the fixed HTTP date form itself, with no new dependency.
+
+## 6. The `0.0.0` rule lives in `check registry`
+
+Whether a package was ever published is registry state, so the rule that a never-published standalone package sits at `0.0.0` runs in `check registry`, the one check that reads crates.io, and bare `check` stays offline.
 
 ## 5. A token in CI is opt-in
 
 **Decision.**
-The reusable `release.yml` takes a boolean input `bootstrap`, defaulting to `false`, beside `publish`, `assets` and `docs`.
+The reusable `release.yml` takes a boolean input `bootstrap`, defaulting to `false`, beside `publish` and `assets`.
 With it and the `registry-token` secret, the release job runs `release bootstrap` for a package the registry lacks.
 Trusted publishing stays the default.
 

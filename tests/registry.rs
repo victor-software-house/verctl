@@ -47,11 +47,16 @@ fn write_crate(root: &Path, dir: &str, name: &str, version: &str) {
     .unwrap();
 }
 
-/// A repository whose default branch holds a package for each of `held`,
-/// at `<name>/Cargo.toml`, and whose working tree adds one for each of
-/// `added`, as a pull request would. `.ctl/ver.yaml` declares them all, after
-/// the top-level `top`.
+/// [`repository_at`] with each held package at `0.1.0`.
 fn repository(top: &str, held: &[&str], added: &[&str]) -> TempDir {
+    repository_at(top, held, added, "0.1.0")
+}
+
+/// A repository whose default branch holds a package for each of `held`,
+/// at `<name>/Cargo.toml` and `held_version`, and whose working tree adds one
+/// at `0.0.0` for each of `added`, as a pull request would. `.ctl/ver.yaml`
+/// declares them all, after the top-level `top`.
+fn repository_at(top: &str, held: &[&str], added: &[&str], held_version: &str) -> TempDir {
     let dir = TempDir::new().unwrap();
     let packages: String = held
         .iter()
@@ -71,13 +76,51 @@ fn repository(top: &str, held: &[&str], added: &[&str]) -> TempDir {
             {packages}"},
     );
     for name in held {
-        write_crate(dir.path(), name, name, "0.1.0");
+        write_crate(dir.path(), name, name, held_version);
     }
     common::on_default_branch(dir.path());
     for name in added {
         write_crate(dir.path(), name, name, "0.0.0");
     }
     dir
+}
+
+/// A virtual workspace at `root` whose members are `members`, each at the
+/// shared version `0.7.0`.
+fn write_workspace(root: &Path, members: &[&str]) {
+    let listed = members
+        .iter()
+        .map(|name| format!("\"{name}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    fs::write(
+        root.join("Cargo.toml"),
+        formatdoc! {r#"
+            [workspace]
+            resolver = "3"
+            members = [{listed}]
+
+            [workspace.package]
+            version = "0.7.0"
+            edition = "2024"
+        "#},
+    )
+    .unwrap();
+    for name in members {
+        let member = root.join(name);
+        fs::create_dir_all(member.join("src")).unwrap();
+        fs::write(member.join("src/lib.rs"), "").unwrap();
+        fs::write(
+            member.join("Cargo.toml"),
+            formatdoc! {r#"
+                [package]
+                name = "{name}"
+                version.workspace = true
+                edition.workspace = true
+            "#},
+        )
+        .unwrap();
+    }
 }
 
 /// The crates of the repository at `root`, placed against `origin/main`.
@@ -221,7 +264,9 @@ async fn every_crate_is_ready() {
         .iter()
         .map(|row| match &row.state {
             RegistryState::Present { trusted, .. } => trusted,
-            RegistryState::Missing | RegistryState::New => panic!("{row:?}"),
+            RegistryState::Missing | RegistryState::New | RegistryState::NotAtZero { .. } => {
+                panic!("{row:?}")
+            }
         })
         .collect();
     assert_eq!(
@@ -372,12 +417,12 @@ async fn a_new_crate_whose_name_crates_io_holds() {
     );
 }
 
-/// A crate the default branch holds and the registry lacks fails, named as
-/// missing from crates.io, with `verctl release bootstrap <name>` as the fix.
-/// It is also the shrub case: a crate the registry lacks.
+/// A crate the default branch holds at `0.0.0` and the registry lacks fails,
+/// named as missing from crates.io, with `verctl release bootstrap <name>` as
+/// the fix.
 #[tokio::test]
 async fn a_crate_the_default_branch_holds_and_the_registry_lacks() {
-    let repo = repository("owners: [any-victor]", &["demo-extra"], &[]);
+    let repo = repository_at("owners: [any-victor]", &["demo-extra"], &[], "0.0.0");
     let server = MockServer::start().await;
     absent(&server, "demo-extra").await;
     let report = registry(&server, crates_of(repo.path())).await;
@@ -390,11 +435,91 @@ async fn a_crate_the_default_branch_holds_and_the_registry_lacks() {
     );
 }
 
+/// A standalone package neither crates.io nor the default branch has, at a
+/// version other than `0.0.0`, fails naming the crate, the version, and
+/// `0.0.0`, and says `verctl release bootstrap` publishes it there.
+#[tokio::test]
+async fn registry_fails_a_new_standalone_crate_off_zero() {
+    let repo = repository(
+        indoc! {r#"
+            owners: [any-victor]
+            tags:
+              template: "{name}@{version}"
+        "#},
+        &["demo"],
+        &["demo-extra"],
+    );
+    write_crate(repo.path(), "demo-extra", "demo-extra", "0.2.0");
+    let server = MockServer::start().await;
+    owned_by(&server, "demo", &["any-victor"]).await;
+    newest(&server, "demo", Value::Null).await;
+    absent(&server, "demo-extra").await;
+    let report = registry(&server, crates_of(repo.path())).await;
+    assert!(!report.crates[1].held);
+    assert_eq!(
+        report.crates[1].state,
+        RegistryState::NotAtZero {
+            version: "0.2.0".into()
+        }
+    );
+    assert_eq!(
+        report.failures(),
+        [
+            "demo-extra: not on crates.io, and its version 0.2.0 is not 0.0.0; a never-published standalone package starts at 0.0.0, which `verctl release bootstrap demo-extra` publishes"
+        ]
+    );
+}
+
+/// A workspace member first publishes at the group's version, so the `0.0.0`
+/// rule leaves it out: one the default branch holds fails as missing, one it
+/// does not hold passes with the bootstrap notice, both at `0.7.0`.
+#[tokio::test]
+async fn registry_exempts_a_workspace_member() {
+    let dir = TempDir::new().unwrap();
+    common::write_config(
+        dir.path(),
+        indoc! {"
+            packages:
+              - name: demo
+                path: Cargo.toml
+        "},
+    );
+    write_workspace(dir.path(), &["demo-core"]);
+    common::on_default_branch(dir.path());
+    write_workspace(dir.path(), &["demo-core", "demo-cli"]);
+    let crates = crates_of(dir.path());
+    assert_eq!(crates.len(), 2);
+    for listed in &crates {
+        assert_eq!(listed.version, "0.7.0");
+        assert!(!listed.standalone);
+    }
+    let server = MockServer::start().await;
+    absent(&server, "demo-core").await;
+    absent(&server, "demo-cli").await;
+    let report = registry(&server, crates).await;
+    let state = |name: &str| {
+        &report
+            .crates
+            .iter()
+            .find(|row| row.name == name)
+            .unwrap()
+            .state
+    };
+    assert_eq!(state("demo-core"), &RegistryState::Missing);
+    assert_eq!(state("demo-cli"), &RegistryState::New);
+    assert_eq!(
+        report.failures(),
+        [
+            "demo-core: missing from crates.io, though the default branch holds it; run `verctl release bootstrap demo-core` at the default branch's tip"
+        ]
+    );
+}
+
 /// A rerun repeats the proof: after the bootstrap, the same check repeats
 /// every request and passes.
 #[tokio::test]
 async fn a_rerun_repeats_the_proof() {
-    let repo = repository("owners: [any-victor]", &["demo-extra"], &[]);
+    let repo = repository_at("owners: [any-victor]", &["demo-extra"], &[], "0.0.0");
     let server = MockServer::start().await;
     absent(&server, "demo-extra").await;
     assert_eq!(

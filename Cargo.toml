@@ -200,6 +200,10 @@ name = "examples"
 path = "tests/examples.rs"
 
 [[test]]
+name = "first_publish"
+path = "tests/first_publish.rs"
+
+[[test]]
 name = "fragment"
 path = "tests/fragment.rs"
 
