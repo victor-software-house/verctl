@@ -107,9 +107,12 @@ The operator decided these on 2026-11-13.
    5. `check --versions` goes, with no hidden flag; `check versions` replaces it.
       The hidden renamed verbs `prepare`, `pin`, `publish` and `assets`, and the hidden `release --plan`, go too, reversing that part of the 2026-11-09 renames.
    6. A person types a short form for each flag, such as `-a` for `--all` and `-n` for `--dry-run`; a flag only CI sets through `VERCTL_*` stays long-only.
-8. **First publish: `verctl release bootstrap`, then `verctl release trust`.**
-   1. Run locally with the operator's crates.io token, `release bootstrap [PACKAGE]...` publishes the real code of each package the registry lacks, tags each standalone one, and runs `release trust`.
-      It is a step under `release`, as `release asset <target>` is, and the name the state model of `derived-release-state` already plans, so no two names cover one step.
+8. **First publish: `verctl release --new`, then `verctl release trust`.**
+   1. `release --new` lets a release create the crates crates.io lacks, with the operator's crates.io token, at the version main holds.
+      It started as `release --first` and became `release --new`, with the input `publish-new` (operator, 2026-11-13).
+      It runs locally and in CI, and everything else is the release: its proofs, its draft Release and the tag the draft's publish creates.
+      `release bootstrap [CRATE]...` is the shorthand for `release --new` then `release trust` for each crate that run created, and takes every option `release` takes (operator, 2026-11-14).
+      It replaced a step with its own upload and tag code, which duplicated the release, and the name the state model of `derived-release-state` plans stays.
    2. `verctl release trust` lists each crate's trusted publisher entries and adds the repository's entry only when it is missing, because crates.io accepts duplicates, up to 5 per crate ([create.rs][cio-trustpub-create]).
       `release trust --dry-run` shows what it would add.
       The step reads the repository, workflow file and environment from the repository, so it takes no provider argument.
@@ -121,7 +124,7 @@ The operator decided these on 2026-11-13.
    A member of a shared-version group, such as a crate whose manifest sets `version.workspace = true`, first publishes at the group's current version.
 10. **Tokens in CI are opt-in.**
     Trusted publishing stays the default.
-    A repository may opt in with the boolean `bootstrap` input, beside `publish`, `assets` and `docs`, and the `registry-token` secret; `check registry` then counts a missing crate as one the run can create.
+    A repository may opt in with the boolean `publish-new` input, beside `publish`, `assets` and `docs`, and the `registry-token` secret; the release proof then counts a missing crate as one the run can create.
 11. **Every break ships in a 0.8.x patch.**
     A `patch!` fragment carries it, and the CHANGELOG lists it under `### Breaking`, as 0.8.4 did.
 
@@ -209,8 +212,8 @@ crates.io limits each user, keyed by user id and action, not by token or crate (
 What follows for the design:
 
 1. A release by trusted publishing creates no crate, so it meets no rate limit.
-2. `release bootstrap`, and a release with the `bootstrap` opt-in, can meet one.
-   On a 429 each waits until `Retry-After`, then uploads again, so one run creates any number of crates.
+2. `release --new`, alone or through `release bootstrap`, can meet one.
+   A release the limit stops records the time in its draft, and a rerun resumes it.
 3. A release that still stops on an external failure, such as an outage, is a partial release.
    `status` and the job summary name it, and a rerun, by dispatch or by "Re-run failed jobs", skips every crate the index lists.
 4. Where the Version PR sits in its merge group does not matter.

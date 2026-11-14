@@ -2,7 +2,7 @@
 
 ### Requirement: A new package releases 0.0.1 first
 
-A new standalone package SHALL first publish at `0.0.0` through `verctl release bootstrap`.
+A new standalone package SHALL first publish at `0.0.0` through `verctl release --new`.
 Its first Version PR release SHALL be `0.0.1`.
 
 verctl SHALL refuse a `minor` or `major` bump on a package whose current version
@@ -38,7 +38,7 @@ A member of a shared-version group, a workspace member with `version.workspace =
 
 #### Scenario: A new standalone package first publishes at 0.0.0
 
-- **WHEN** package `demo` at `0.0.0` is absent from crates.io and `verctl release bootstrap` runs
+- **WHEN** package `demo` at `0.0.0` is absent from crates.io and `verctl release --new` runs
 - **THEN** it publishes `demo` `0.0.0`
 - **AND** the first Version PR for `demo`, with `.changeset/first.md` holding `demo: patch`, plans `0.0.0` to `0.0.1`
 
@@ -50,5 +50,5 @@ A member of a shared-version group, a workspace member with `version.workspace =
 #### Scenario: A member of a shared-version group
 
 - **WHEN** workspace member `demo-cli` sets `version.workspace = true`, the workspace version is `0.7.0`, and `demo-cli` is absent from crates.io
-- **THEN** `verctl release bootstrap` publishes `demo-cli` `0.7.0`
+- **THEN** `verctl release --new` publishes `demo-cli` `0.7.0`
 - **AND** `verctl check registry` does not apply the `0.0.0` rule to `demo-cli`
