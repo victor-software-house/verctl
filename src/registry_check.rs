@@ -373,20 +373,16 @@ impl Proof {
 
     /// [`rows`](Self::rows) after a run that created `created`, by the name
     /// crates.io knows them.
-    /// The run resolved the notice of each such crate, that it creates it and
-    /// that its entry is still to add, so none is left to report.
+    /// The run resolved every notice of each such crate, so no row of either
+    /// check is left for it.
     #[must_use]
     pub fn rows_after(&self, created: &[String]) -> Vec<ProofRow> {
         let mut resolved = self.clone();
         if let Some(report) = &mut resolved.registry {
-            report.crates.retain(|row| {
-                !(row.state == RegistryState::Creates && created.contains(&row.name))
-            });
+            report.crates.retain(|row| !created.contains(&row.name));
         }
         if let Some(TrustReport::Set { crates, .. }) = &mut resolved.trust {
-            crates.retain(|row| {
-                !(matches!(row.state, TrustState::Creates) && created.contains(&row.name))
-            });
+            crates.retain(|row| !created.contains(&row.name));
         }
         resolved.rows()
     }
