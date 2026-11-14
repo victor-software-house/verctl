@@ -10,8 +10,10 @@ is `0.0.0`, with or without a pre-release or build suffix.
 A package that declares `first_minor: true` is the one exception.
 The refusal SHALL name the package and the `first_minor` key.
 
-`verctl check registry` SHALL fail a standalone package that crates.io lacks and whose version is not `0.0.0`, because only that check reads crates.io.
-A member of a shared-version group, a workspace member with `version.workspace = true`, SHALL first publish at the group's current version, and `check registry` SHALL NOT apply the `0.0.0` rule to it.
+`verctl check registry` SHALL fail a standalone package that crates.io lacks and whose version is not `0.0.0`.
+The rule lives in that check because only it reads crates.io.
+A member of a shared-version group, a workspace member with `version.workspace = true`, SHALL first publish at the group's current version.
+`check registry` SHALL NOT apply the `0.0.0` rule to it.
 
 #### Scenario: A patch fragment on a new package
 

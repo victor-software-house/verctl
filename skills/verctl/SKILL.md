@@ -34,7 +34,7 @@ The `--` in `#USAGE mount` is mise's completion bootstrap.
 | `status` | — | List pending fragments, the asset plan, and HEAD's incomplete releases. `--github-output` writes the release workflow's plan |
 | `check` | — | Run the named checks, or `fragments` and `served` when none is named |
 | `version` | — | Apply fragment bumps. `--pr` opens the Version PR. `--dry-run` previews |
-| `release` | — | Release the versions on HEAD: publish with cargo or bun, and create the GitHub Release. `release asset <target>` builds one asset |
+| `release` | — | Release the versions on HEAD: publish with cargo or bun, and create the GitHub Release. `release asset <target>` builds one asset, `release bootstrap` publishes the crates crates.io lacks, and `release trust` registers the trusted publisher |
 | `render` | — | Rewrite pins and render served templates at the versions on HEAD |
 | `ci` | — | Plan the validation jobs declared in `[ci]` |
 | `semver` | — | Check the API of each crates.io crate whose next release is a patch |
@@ -82,7 +82,9 @@ Moving to `0.1.0` or `1.0.0` is a separate operator decision, never the first fr
 
 `version` and `check` refuse a `minor` or `major` fragment on a `0.0.0` package.  
 Only the operator sets a package's `first_minor: true` in `.ctl/ver.yaml`, which opens the package at `0.1.0`.  
-`release` and `status` leave a package at `0.0.0` out, so a repo can adopt the release workflow before its first release.
+`release` and `status` leave a package at `0.0.0` out, so a repo can adopt the release workflow before its first release.  
+A crate crates.io lacks first publishes through `verctl release bootstrap`, which publishes a standalone package at `0.0.0`.  
+`check registry` fails a standalone package that crates.io lacks at any other version, and a workspace member, which first publishes at the group's version, is exempt.
 
 ### Release candidates
 
@@ -126,9 +128,19 @@ It also fails when it changes whether a package publishes without a fragment tha
 
 `check registry` needs no token: each crates.io crate the default branch holds exists and lists every login `owners` names.  
 It reports the newest version's trusted publishing as evidence.  
-A crate only the pull request adds passes with a notice to run `verctl release bootstrap` once it lands.  
+A crate only the pull request adds passes with a notice to run `verctl release bootstrap` once it lands, unless it is a standalone package at a version other than `0.0.0`, which fails.  
 `check trust` needs an owner's token in `VERCTL_OWNER_TOKEN`.  
 It proves that a trusted publisher entry names the repository and `release_workflow` (`release.yml` when omitted).
+
+## First publish
+
+crates.io's trusted publishing cannot create a crate, so two steps under `release` do it, each taking crate names (`CRATE...`) or every crate.  
+`release bootstrap` publishes each crate crates.io lacks, from HEAD at the default branch's tip, at the version it holds.  
+It needs `VERCTL_REGISTRY_TOKEN` and `VERCTL_OWNER_TOKEN`, both checked before any request, and `GITHUB_TOKEN` or `GH_TOKEN` to tag a standalone package.  
+It tags each published standalone package, gives a workspace member no tag, adds each published crate's trusted publisher entry, and waits out the new-crate rate limit.  
+`release trust` lists each crate's entries and adds this repository's only when none matches, with `VERCTL_OWNER_TOKEN`, and never edits another.  
+`--dry-run` (`-n`) lists what either would do: `release bootstrap --dry-run` needs no token, and `release trust --dry-run` still needs the owner's.  
+No command takes a version to publish.
 
 ## Release
 

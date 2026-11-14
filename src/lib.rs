@@ -55,6 +55,7 @@
 //! verctl has no Cargo features. Every module is always built.
 
 pub mod assets;
+pub mod bootstrap;
 /// The next version for a bump.
 pub mod bump;
 /// Changelog entries rendered from a release.
@@ -68,6 +69,8 @@ pub mod content;
 pub mod detect;
 /// Reading and writing a version in a manifest.
 pub mod driver;
+/// What `release bootstrap` and `release trust` report.
+pub mod first_publish;
 /// Changeset fragments.
 pub mod fragment;
 /// Git history the release reads.
@@ -76,6 +79,8 @@ pub mod git;
 pub mod github;
 /// A Go module's version on its `go.mod` module line.
 pub(crate) mod gomod;
+/// The IMF-fixdate a registry gives for a retry.
+pub(crate) mod http_date;
 pub mod lockfile;
 /// Lookups outside the commit, and the error for one that could not run.
 pub mod lookup;
@@ -103,6 +108,7 @@ pub mod runners;
 pub mod semver_check;
 pub mod stop;
 pub mod templates;
+pub mod trust;
 pub mod versions;
 
 #[cfg(test)]

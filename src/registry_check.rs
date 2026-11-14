@@ -18,6 +18,11 @@
 //! holds. A crate that only the checked commit adds cannot be on crates.io
 //! before it lands, so it passes with a notice to run `verctl release
 //! bootstrap` once it does.
+//!
+//! `registry` also holds a standalone package that crates.io lacks to the
+//! version where it starts, `0.0.0`, which `verctl release bootstrap`
+//! publishes. A member of a shared-version group first publishes at the
+//! group's version and is exempt.
 
 use std::path::Path;
 
@@ -27,9 +32,11 @@ use toml_edit::{DocumentMut, Item};
 
 use crate::config::{Config, ReleaseCheck};
 use crate::github::{self, Repo};
+use crate::publish::PublishEntry;
+use crate::publisher::Upload;
 use crate::registry::{self, GithubConfig, RegistryCheck, TrustedPublishers, TrustedUpload};
 use crate::registry_token::OWNER;
-use crate::{git, publish, publisher};
+use crate::{bump, git, publish, publisher};
 
 /// A crate the repository uploads to crates.io.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,6 +50,23 @@ pub struct Crate {
     /// The logins its package expects among the owners, or `None` when the
     /// package has no owner proof ([`Config::owners_of`]).
     pub owners: Option<Vec<String>>,
+    /// The version its upload sends.
+    pub version: String,
+    /// Whether the crate is its package's only upload, as opposed to a member
+    /// of a workspace package, whose version its group shares.
+    pub standalone: bool,
+}
+
+/// A [`Crate`] with the upload that sends it to crates.io and the package
+/// entry the upload belongs to.
+#[derive(Debug, Clone)]
+pub(crate) struct Planned {
+    /// The crate, placed against the default branch.
+    pub(crate) listed: Crate,
+    /// The upload `release` would run for it.
+    pub(crate) upload: Upload,
+    /// The package the upload belongs to, as `publish::plan` resolves it.
+    pub(crate) entry: PublishEntry,
 }
 
 /// Every crate an `Upload` of `config` sends to crates.io, in upload order:
@@ -59,16 +83,37 @@ pub struct Crate {
 /// when the default branch does not resolve, or when a manifest cannot be
 /// read in the working tree or parsed at the default branch's tip.
 pub fn crates(config: &Config, root: &Path, candidates: &[String]) -> Result<Vec<Crate>> {
-    let planned = publish::plan(config, root)?;
+    Ok(planned(config, root, candidates)?
+        .into_iter()
+        .map(|planned| planned.listed)
+        .collect())
+}
+
+/// [`crates`], each with its upload and package entry.
+///
+/// # Errors
+///
+/// Returns an error under the conditions of [`crates`].
+pub(crate) fn planned(config: &Config, root: &Path, candidates: &[String]) -> Result<Vec<Planned>> {
+    let resolved = publish::plan(config, root)?;
     let mut found = Vec::new();
-    for (spec, entry) in config.packages.iter().zip(&planned.packages) {
+    for (spec, entry) in config.packages.iter().zip(&resolved.packages) {
         if entry.argv.is_empty() {
             continue;
         }
-        for upload in publisher::uploads(config, spec, root, entry)? {
-            if let RegistryCheck::CratesIo { name } = upload.check {
-                found.push((name, upload.manifest, config.owners_of(spec)));
-            }
+        let on_crates_io: Vec<(String, Upload)> = publisher::uploads(config, spec, root, entry)?
+            .into_iter()
+            .filter_map(|upload| match &upload.check {
+                RegistryCheck::CratesIo { name } => Some((name.clone(), upload)),
+                RegistryCheck::Query { .. } | RegistryCheck::Unchecked => None,
+            })
+            .collect();
+        if on_crates_io.is_empty() {
+            continue;
+        }
+        let standalone = publisher::workspace_members(config, spec, root)?.is_none();
+        for (name, upload) in on_crates_io {
+            found.push((name, upload, entry, standalone, config.owners_of(spec)));
         }
     }
     if found.is_empty() {
@@ -77,11 +122,17 @@ pub fn crates(config: &Config, root: &Path, candidates: &[String]) -> Result<Vec
     let tip = git::default_tip(root, candidates)?;
     found
         .into_iter()
-        .map(|(name, manifest, owners)| {
-            Ok(Crate {
-                held: held_at(root, &tip, &manifest, &name)?,
-                name,
-                owners: owners.map(<[String]>::to_vec),
+        .map(|(name, upload, entry, standalone, owners)| {
+            Ok(Planned {
+                listed: Crate {
+                    held: held_at(root, &tip, &upload.manifest, &name)?,
+                    name,
+                    owners: owners.map(<[String]>::to_vec),
+                    version: upload.version.clone(),
+                    standalone,
+                },
+                upload,
+                entry: entry.clone(),
             })
         })
         .collect()
@@ -110,15 +161,27 @@ fn held_at(root: &Path, tip: &str, manifest: &Path, name: &str) -> Result<bool> 
 /// The crates of `config` against the default branch, fetched first as
 /// `check versions` fetches it, and the repository they release from.
 fn crates_from_env(config: &Config, root: &Path) -> Result<(Vec<Crate>, Option<Repo>)> {
+    let (planned, repository) = planned_from_env(config, root)?;
+    Ok((
+        planned.into_iter().map(|planned| planned.listed).collect(),
+        repository,
+    ))
+}
+
+/// [`crates_from_env`], each crate with its upload and package entry.
+pub(crate) fn planned_from_env(
+    config: &Config,
+    root: &Path,
+) -> Result<(Vec<Planned>, Option<Repo>)> {
     let fetch = git::FetchDefault::from_env();
     for branch in git::comparison_branches() {
         git::ensure_comparable(root, &branch, &fetch)?;
     }
-    let crates = crates(config, root, &git::release_branch_candidates())?;
-    if crates.is_empty() {
-        return Ok((crates, None));
+    let planned = planned(config, root, &git::release_branch_candidates())?;
+    if planned.is_empty() {
+        return Ok((planned, None));
     }
-    Ok((crates, Some(github::repo(root)?)))
+    Ok((planned, Some(github::repo(root)?)))
 }
 
 /// `check registry`: each crate of `config` against the crates.io API at
@@ -150,6 +213,11 @@ pub fn prove_registry(crates: &[Crate], api: &str, repository: &Repo) -> Result<
     let mut rows = Vec::with_capacity(crates.len());
     for listed in crates {
         let state = match registry::crates_io_user_owners(api, &listed.name)? {
+            None if listed.standalone && !bump::unreleased(&listed.version) => {
+                RegistryState::NotAtZero {
+                    version: listed.version.clone(),
+                }
+            }
             None if listed.held => RegistryState::Missing,
             None => RegistryState::New,
             Some(found) => {
@@ -411,7 +479,7 @@ pub fn prove_trust(
 
 /// Whether `entry` names `repository`, compared as GitHub compares names,
 /// without case, and exactly `workflow`.
-fn names(entry: &GithubConfig, repository: &Repo, workflow: &str) -> bool {
+pub(crate) fn names(entry: &GithubConfig, repository: &Repo, workflow: &str) -> bool {
     entry
         .repository_owner
         .eq_ignore_ascii_case(&repository.owner)
@@ -420,7 +488,7 @@ fn names(entry: &GithubConfig, repository: &Repo, workflow: &str) -> bool {
 }
 
 /// `owner/name`.
-fn slug(repository: &Repo) -> String {
+pub(crate) fn slug(repository: &Repo) -> String {
     format!("{}/{}", repository.owner, repository.name)
 }
 
@@ -428,6 +496,13 @@ fn slug(repository: &Repo) -> String {
 fn bootstrap_fix(name: &str) -> String {
     format!(
         "{name}: missing from crates.io, though the default branch holds it; run `verctl release bootstrap {name}` at the default branch's tip"
+    )
+}
+
+/// The failure for a never-published standalone package off `0.0.0`.
+fn zero_fix(name: &str, version: &str) -> String {
+    format!(
+        "{name}: not on crates.io, and its version {version} is not 0.0.0; a never-published standalone package starts at 0.0.0, which `verctl release bootstrap {name}` publishes"
     )
 }
 
@@ -485,6 +560,7 @@ impl RegistryRow {
     pub fn failure(&self) -> Option<String> {
         match &self.state {
             RegistryState::Missing => Some(bootstrap_fix(&self.name)),
+            RegistryState::NotAtZero { version } => Some(zero_fix(&self.name, version)),
             RegistryState::Present {
                 owners, lacking, ..
             } if !lacking.is_empty() => Some(format!(
@@ -510,7 +586,9 @@ impl RegistryRow {
                 "{name}: owner proof skipped; set owners in .ctl/ver.yaml to prove them",
                 name = self.name
             )),
-            RegistryState::Missing | RegistryState::Present { .. } => None,
+            RegistryState::Missing
+            | RegistryState::NotAtZero { .. }
+            | RegistryState::Present { .. } => None,
         }
     }
 }
@@ -527,6 +605,13 @@ pub enum RegistryState {
     /// crates.io lacks a crate only the checked commit adds: the check
     /// passes, and the crate needs its bootstrap once it lands.
     New,
+    /// crates.io lacks a standalone package whose version is not `0.0.0`,
+    /// where a never-published package starts: the check fails, whether the
+    /// default branch holds the crate or not.
+    NotAtZero {
+        /// The version the package holds.
+        version: String,
+    },
     /// crates.io holds the crate.
     Present {
         /// The user logins crates.io lists as owners.

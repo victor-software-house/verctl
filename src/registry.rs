@@ -16,11 +16,12 @@ use std::{env, fmt, fs, thread};
 
 use anyhow::{Context, Result, bail, ensure};
 use reqwest::StatusCode;
-use reqwest::header::{AUTHORIZATION, HeaderValue};
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderValue, RETRY_AFTER};
 use semver::Version;
 use toml_edit::{DocumentMut, Item};
 
-use crate::{github, lookup, process};
+use crate::github::Repo;
+use crate::{github, http_date, lookup, process};
 
 /// The root URL of the crates.io sparse index.
 ///
@@ -664,12 +665,173 @@ pub fn crates_io_github_configs(base: &str, name: &str, token: &str) -> Result<T
     }
 }
 
+/// What crates.io answered to a request to add a trusted publisher entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Added {
+    /// 200: the entry exists now.
+    Created,
+    /// 409: the crate holds the most entries crates.io allows, which is 5.
+    AtLimit {
+        /// crates.io's reason.
+        detail: String,
+    },
+    /// 400: crates.io refused the entry, as it does for a token whose user
+    /// owns no such crate.
+    Refused {
+        /// crates.io's reason.
+        detail: String,
+    },
+}
+
+/// How often one request for a new entry is sent again after a 429, so one
+/// entry takes at most 11 requests.
+const MAX_RETRIES: usize = 10;
+
+/// What one request to add an entry came back with.
+enum Posted {
+    /// An answer that ends the request.
+    Answered(Added),
+    /// 429, with the `Retry-After` header's text.
+    Limited(String),
+}
+
+/// Add a GitHub trusted publisher entry for `repository` and `workflow` to
+/// `name`, through the crates.io API under `base`, with no environment, so a
+/// run in any environment matches it.
+///
+/// `POST /trusted_publishing/github_configs` takes a token with the
+/// `trusted-publishing` endpoint scope, which goes in the `Authorization`
+/// header and nowhere else (`create` in crates.io's
+/// `src/controllers/trustpub/github_configs/create.rs`). crates.io answers
+/// 200, 409 for a crate that holds 5 entries, and 400 for a token whose user
+/// does not own the crate.
+///
+/// On a 429 the call waits until the time `Retry-After` gives, as seconds or
+/// as an HTTP date, and sends the request again, at most 10 times.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - `name` is not ASCII;
+/// - `token` cannot be an HTTP header value;
+/// - the request fails;
+/// - the API answers with a status other than 200, 400, 409, and 429;
+/// - a 429 has no `Retry-After` that is seconds or an HTTP date;
+/// - the API answers 429 to the request and each of its 10 repeats, which names
+///   the last `Retry-After`.
+///
+/// Only an API that gave no answer is a [`lookup::Unavailable`], under the
+/// conditions of [`RegistryCheck::lists`].
+pub fn crates_io_add_github_config(
+    base: &str,
+    name: &str,
+    token: &str,
+    repository: &Repo,
+    workflow: &str,
+) -> Result<Added> {
+    ensure!(
+        !name.is_empty() && name.is_ascii(),
+        "{name:?} is not a crates.io crate name"
+    );
+    let url = format!(
+        "{}/trusted_publishing/github_configs",
+        base.trim_end_matches('/')
+    );
+    let body = serde_json::json!({
+        "github_config": {
+            "crate": name,
+            "repository_owner": repository.owner,
+            "repository_name": repository.name,
+            "workflow_filename": workflow,
+            "environment": null,
+        }
+    })
+    .to_string();
+    let mut last = String::new();
+    for retry in 0..=MAX_RETRIES {
+        match github::block(post(&url, token, &body))? {
+            Posted::Answered(added) => return Ok(added),
+            Posted::Limited(retry_after) => {
+                let wait = http_date::wait(&retry_after).with_context(|| {
+                    format!(
+                        "POST {url}: {}: Retry-After {retry_after:?} is neither seconds nor an HTTP date",
+                        StatusCode::TOO_MANY_REQUESTS
+                    )
+                })?;
+                if retry < MAX_RETRIES {
+                    thread::sleep(wait);
+                }
+                last = retry_after;
+            }
+        }
+    }
+    bail!(
+        "POST {url}: {}: crates.io limited the request {} times; the last Retry-After was {last}",
+        StatusCode::TOO_MANY_REQUESTS,
+        MAX_RETRIES + 1
+    )
+}
+
+/// One request to add an entry, with `body` as its JSON.
+async fn post(url: &str, token: &str, body: &str) -> Result<Posted> {
+    let response = client()?
+        .post(url)
+        .header(AUTHORIZATION, sensitive(token)?)
+        .header(CONTENT_TYPE, "application/json")
+        .body(body.to_owned())
+        .send()
+        .await
+        .map_err(|error| unanswered(error, url))?;
+    let status = response.status();
+    if status == StatusCode::TOO_MANY_REQUESTS {
+        let header = response
+            .headers()
+            .get(RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .with_context(|| format!("POST {url}: {status} with no Retry-After header"))?;
+        return Ok(Posted::Limited(header.to_owned()));
+    }
+    if lookup::no_answer(status, Some(response.headers())) {
+        return Err(lookup::unavailable(anyhow::anyhow!("POST {url}: {status}")));
+    }
+    let outcome = match status {
+        StatusCode::OK => return Ok(Posted::Answered(Added::Created)),
+        StatusCode::CONFLICT | StatusCode::BAD_REQUEST => status,
+        other => bail!("POST {url}: {other}"),
+    };
+    let text = response
+        .text()
+        .await
+        .map_err(|error| unanswered(error, url))?;
+    let detail = Some(reason(&text))
+        .filter(|found| !found.is_empty())
+        .unwrap_or_else(|| outcome.to_string());
+    Ok(Posted::Answered(if outcome == StatusCode::CONFLICT {
+        Added::AtLimit { detail }
+    } else {
+        Added::Refused { detail }
+    }))
+}
+
 /// The reason in a crates.io error response, `{"errors":[{"detail":"..."}]}`:
 /// each non-blank `detail`, trimmed, joined by `; `. A body of another shape is
 /// its own reason, trimmed, and an empty one reads as the status, so the
 /// message never names an empty reason.
 fn refusal(body: &str) -> String {
-    let reason = serde_json::from_str::<ApiErrors>(body).map_or_else(
+    let reason = reason(body);
+    if reason.is_empty() {
+        StatusCode::BAD_REQUEST.to_string()
+    } else {
+        reason
+    }
+}
+
+/// The reason in a crates.io error response, as [`refusal`] reads it, or an
+/// empty string when the response gives none.
+fn reason(body: &str) -> String {
+    serde_json::from_str::<ApiErrors>(body).map_or_else(
         |_| body.trim().to_owned(),
         |parsed| {
             parsed
@@ -680,12 +842,7 @@ fn refusal(body: &str) -> String {
                 .collect::<Vec<_>>()
                 .join("; ")
         },
-    );
-    if reason.is_empty() {
-        StatusCode::BAD_REQUEST.to_string()
-    } else {
-        reason
-    }
+    )
 }
 
 /// The crates.io owners response.
@@ -788,17 +945,9 @@ async fn fetch(url: &str, token: Option<&str>) -> Result<Option<String>> {
 /// sensitive so no debug output shows it. Any status but 200, 400, and 404 is
 /// an error, a [`lookup::Unavailable`] when the server gave no answer.
 async fn answer(url: &str, token: Option<&str>) -> Result<Answer> {
-    let client = reqwest::Client::builder()
-        .user_agent(user_agent())
-        .timeout(INDEX_TIMEOUT)
-        .build()
-        .context("HTTP client")?;
-    let mut request = client.get(url);
+    let mut request = client()?.get(url);
     if let Some(token) = token {
-        let mut value = HeaderValue::from_str(token)
-            .context("the crates.io token holds a character an HTTP header cannot carry")?;
-        value.set_sensitive(true);
-        request = request.header(AUTHORIZATION, value);
+        request = request.header(AUTHORIZATION, sensitive(token)?);
     }
     let response = request
         .send()
@@ -823,6 +972,24 @@ async fn answer(url: &str, token: Option<&str>) -> Result<Answer> {
         }
         status => bail!("GET {url}: {status}"),
     }
+}
+
+/// The HTTP client every crates.io request uses.
+fn client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .user_agent(user_agent())
+        .timeout(INDEX_TIMEOUT)
+        .build()
+        .context("HTTP client")
+}
+
+/// `token` as an `Authorization` value, the raw token as cargo sends it,
+/// marked sensitive so no debug output shows it.
+fn sensitive(token: &str) -> Result<HeaderValue> {
+    let mut value = HeaderValue::from_str(token)
+        .context("the crates.io token holds a character an HTTP header cannot carry")?;
+    value.set_sensitive(true);
+    Ok(value)
 }
 
 /// `error` from a request to `url`, marked as a [`lookup::Unavailable`] when
@@ -917,18 +1084,21 @@ mod tests {
     use std::time::Duration;
 
     use indoc::{formatdoc, indoc};
+    use serde_json::{Value, json};
     use tempfile::TempDir;
     use tokio::task;
-    use wiremock::matchers::{header, method, path, query_param, query_param_is_missing};
+    use wiremock::matchers::{
+        body_json, header, method, path, query_param, query_param_is_missing,
+    };
     use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
     use super::{
-        CRATES_IO_INDEX, CargoEnv, CargoTarget, MAX_TRUSTED_PUBLISHER_PAGES, RegistryCheck,
-        TrustedPublishers, TrustedUpload, cargo_target, crates_io_baseline,
-        crates_io_github_configs, crates_io_lists, crates_io_newest_trust, crates_io_user_owners,
-        index_path, refusal, wait_listed,
+        Added, CRATES_IO_INDEX, CargoEnv, CargoTarget, MAX_RETRIES, MAX_TRUSTED_PUBLISHER_PAGES,
+        RegistryCheck, TrustedPublishers, TrustedUpload, cargo_target, crates_io_add_github_config,
+        crates_io_baseline, crates_io_github_configs, crates_io_lists, crates_io_newest_trust,
+        crates_io_user_owners, index_path, refusal, wait_listed,
     };
-    use crate::lookup;
+    use crate::{github, lookup};
 
     #[test]
     fn index_paths_follow_the_cargo_layout() {
@@ -1342,6 +1512,193 @@ mod tests {
                 "GET {base}/trusted_publishing/github_configs?crate=demo&seek=abc: 400 Bad Request: invalid seek"
             )
         );
+    }
+
+    /// The body crates.io's create endpoint takes for `demo`, `acme/demo`,
+    /// and `release.yml`, with no environment.
+    fn entry_body() -> Value {
+        json!({
+            "github_config": {
+                "crate": "demo",
+                "repository_owner": "acme",
+                "repository_name": "demo",
+                "workflow_filename": "release.yml",
+                "environment": null,
+            }
+        })
+    }
+
+    /// Add the entry to `demo` through the API at `server`, off the async
+    /// runtime as the command runs it.
+    async fn add_entry(server: &MockServer) -> anyhow::Result<Added> {
+        let base = server.uri();
+        task::spawn_blocking(move || {
+            crates_io_add_github_config(
+                &base,
+                "demo",
+                "t0ken",
+                &github::parse_slug("acme/demo").unwrap(),
+                "release.yml",
+            )
+        })
+        .await
+        .unwrap()
+    }
+
+    /// `POST /trusted_publishing/github_configs` with the token and the body
+    /// above, answering `response`, at most `times` times.
+    async fn accepting(server: &MockServer, response: ResponseTemplate, times: Option<u64>) {
+        let mock = Mock::given(method("POST"))
+            .and(path("/trusted_publishing/github_configs"))
+            .and(header("authorization", "t0ken"))
+            .and(body_json(entry_body()))
+            .respond_with(response);
+        match times {
+            Some(times) => mock.up_to_n_times(times).mount(server).await,
+            None => mock.mount(server).await,
+        }
+    }
+
+    fn limited(retry_after: &str) -> ResponseTemplate {
+        ResponseTemplate::new(429).insert_header("Retry-After", retry_after)
+    }
+
+    /// A 200 adds the entry, and the one request carries the exact JSON
+    /// body, the raw token, and no other header that holds it.
+    #[tokio::test]
+    async fn a_200_adds_the_entry() {
+        let server = MockServer::start().await;
+        accepting(
+            &server,
+            ResponseTemplate::new(200).set_body_json(json!({
+                "github_config": {
+                    "id": 1,
+                    "crate": "demo",
+                    "repository_owner": "acme",
+                    "repository_owner_id": 9,
+                    "repository_name": "demo",
+                    "workflow_filename": "release.yml",
+                    "environment": null,
+                    "created_at": "2026-11-13T00:00:00Z",
+                }
+            })),
+            None,
+        )
+        .await;
+        assert_eq!(add_entry(&server).await.unwrap(), Added::Created);
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&requests[0].body).unwrap(),
+            entry_body()
+        );
+        assert_eq!(
+            requests[0].headers.get("content-type").unwrap(),
+            "application/json"
+        );
+    }
+
+    /// A 409 is the crate at its limit of 5 entries, with crates.io's reason.
+    #[tokio::test]
+    async fn a_409_is_the_limit() {
+        let server = MockServer::start().await;
+        accepting(
+            &server,
+            ResponseTemplate::new(409).set_body_json(json!({
+                "errors": [{ "detail": "This crate already has the maximum of 5 trusted publishers" }],
+            })),
+            None,
+        )
+        .await;
+        assert_eq!(
+            add_entry(&server).await.unwrap(),
+            Added::AtLimit {
+                detail: "This crate already has the maximum of 5 trusted publishers".into()
+            }
+        );
+    }
+
+    /// A 400 is a refusal with crates.io's reason, and an empty 409 reads as
+    /// its status.
+    #[tokio::test]
+    async fn a_400_is_a_refusal() {
+        let server = MockServer::start().await;
+        accepting(
+            &server,
+            ResponseTemplate::new(400).set_body_json(json!({
+                "errors": [{ "detail": "You are not an owner of this crate" }],
+            })),
+            None,
+        )
+        .await;
+        assert_eq!(
+            add_entry(&server).await.unwrap(),
+            Added::Refused {
+                detail: "You are not an owner of this crate".into()
+            }
+        );
+        let server = MockServer::start().await;
+        accepting(&server, ResponseTemplate::new(409), None).await;
+        assert_eq!(
+            add_entry(&server).await.unwrap(),
+            Added::AtLimit {
+                detail: "409 Conflict".into()
+            }
+        );
+    }
+
+    /// A 429 with `Retry-After: 0` is sent again at once, and the second
+    /// request adds the entry.
+    #[tokio::test]
+    async fn a_429_with_zero_seconds_is_sent_again() {
+        let server = MockServer::start().await;
+        accepting(&server, limited("0"), Some(1)).await;
+        accepting(&server, ResponseTemplate::new(200), None).await;
+        assert_eq!(add_entry(&server).await.unwrap(), Added::Created);
+        assert_eq!(server.received_requests().await.unwrap().len(), 2);
+    }
+
+    /// A 429 whose `Retry-After` is an HTTP date already past waits no time.
+    #[tokio::test]
+    async fn a_429_with_a_past_date_is_sent_again() {
+        let server = MockServer::start().await;
+        accepting(&server, limited("Fri, 13 Nov 2026 15:10:00 GMT"), Some(1)).await;
+        accepting(&server, ResponseTemplate::new(200), None).await;
+        assert_eq!(add_entry(&server).await.unwrap(), Added::Created);
+        assert_eq!(server.received_requests().await.unwrap().len(), 2);
+    }
+
+    /// The request and its 10 repeats all answered 429 fail, naming the last
+    /// `Retry-After`.
+    #[tokio::test]
+    async fn eleven_429s_fail_naming_the_last_retry_after() {
+        let server = MockServer::start().await;
+        accepting(&server, limited("0"), None).await;
+        let error = add_entry(&server).await.unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains("429 Too Many Requests"), "{message}");
+        assert!(message.contains("the last Retry-After was 0"), "{message}");
+        assert_eq!(
+            server.received_requests().await.unwrap().len(),
+            MAX_RETRIES + 1
+        );
+    }
+
+    /// A 429 with no usable `Retry-After` fails at once.
+    #[tokio::test]
+    async fn a_429_without_a_retry_after_fails() {
+        let server = MockServer::start().await;
+        accepting(&server, ResponseTemplate::new(429), None).await;
+        let message = format!("{:#}", add_entry(&server).await.unwrap_err());
+        assert!(message.contains("no Retry-After header"), "{message}");
+        let server = MockServer::start().await;
+        accepting(&server, limited("soon"), None).await;
+        let message = format!("{:#}", add_entry(&server).await.unwrap_err());
+        assert!(
+            message.contains("neither seconds nor an HTTP date"),
+            "{message}"
+        );
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
     }
 
     /// Error details that are all blank read as the status.

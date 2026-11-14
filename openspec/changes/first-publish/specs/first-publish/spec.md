@@ -77,6 +77,7 @@ It SHALL report a crate whose entry matches as `already set`, and SHALL never ed
 
 `verctl release trust` SHALL take no provider argument.
 It SHALL read the repository from the `origin` remote and the workflow file from `release_workflow`, the file `check trust` compares, and SHALL add the entry with no environment, so a run in any environment matches it.
+
 #### Scenario: The default workflow
 
 - **WHEN** the `origin` remote is `github.com/acme/demo` and `.ctl/ver.yaml` sets no `release_workflow`
