@@ -9,4 +9,5 @@ Such refusals include a tag at another commit, a published Release at another co
 A failed release proof stops the dry run there, listing the proof rows beside the packages still to release.
 Its rows come from the real plan: each upload it would make, each version the registry already lists as `already`, and each tag as `would create`, `would create draft` or `would complete`.
 It needs `GITHUB_TOKEN` for the tag and Release reads and fails without it naming the variable, and it still needs no registry or owner token.
-A real `release --new` or `release bootstrap` no longer reports the registry and trust notices of a crate it created, since the run resolved them; a dry run keeps them as the plan.
+A real run no longer reports the `registry` notices of a crate it created, and `release bootstrap` no longer reports the `trust` notice of a crate whose entry it added.
+A dry run keeps those notices as the plan, and a plain `release --new` keeps the `trust` notice as the prompt to run `release trust`.

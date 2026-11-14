@@ -371,18 +371,22 @@ impl Proof {
             .collect()
     }
 
-    /// [`rows`](Self::rows) after a run that created `created`, by the name
-    /// crates.io knows them.
-    /// The run resolved every notice of each such crate, so no row of either
-    /// check is left for it.
+    /// [`rows`](Self::rows) after a run that created `created` and added the
+    /// trusted publisher entry of `trusted`, each by the name crates.io knows
+    /// it.
+    /// The run resolved every `registry` notice of a created crate, and the
+    /// `trust` notice of a crate whose entry it added, so none is left to
+    /// report.
+    /// A created crate whose entry is not added keeps its `trust` notice,
+    /// which is then the only prompt to add it.
     #[must_use]
-    pub fn rows_after(&self, created: &[String]) -> Vec<ProofRow> {
+    pub fn rows_after(&self, created: &[String], trusted: &[String]) -> Vec<ProofRow> {
         let mut resolved = self.clone();
         if let Some(report) = &mut resolved.registry {
             report.crates.retain(|row| !created.contains(&row.name));
         }
         if let Some(TrustReport::Set { crates, .. }) = &mut resolved.trust {
-            crates.retain(|row| !created.contains(&row.name));
+            crates.retain(|row| !trusted.contains(&row.name));
         }
         resolved.rows()
     }
