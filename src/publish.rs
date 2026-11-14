@@ -69,7 +69,8 @@ pub struct PublishEntry {
 pub struct PublishOutcome {
     /// One line per package.
     pub packages: Vec<PublishLine>,
-    /// The Release URL for each tag, or `would create <tag>` in a dry run.
+    /// The Release URL for each tag, or in a dry run `would create <tag>`,
+    /// `would create draft <tag>`, or `would complete <tag>`.
     pub releases: Vec<String>,
 }
 
@@ -125,7 +126,7 @@ pub fn plan(config: &Config, root: &Path) -> Result<PublishPlan> {
 }
 
 /// Open a draft Release per tag, publish each package, then publish the
-/// drafts. A dry run only plans.
+/// drafts. A dry run makes every read and no write.
 ///
 /// This is [`run_pending`] with assets counted toward completeness, no
 /// assets directory, and no registry token, so each publisher finds its own
@@ -299,8 +300,12 @@ pub struct PublishRun {
 /// [`pending::pending`] describes: a standalone crate that crates.io lists
 /// without a tag, or, with `scope.new_crates`, one that crates.io lacks. Its
 /// tag renders over that package alone (`zero_tags`).
-/// A dry run plans every other package and runs the release proof. It reads
-/// no registry listing.
+/// A dry run takes this path through every read and stops before the first
+/// write: no draft, asset upload, registry upload or tag step.
+/// It needs a GitHub token for those reads and no registry or owner token,
+/// and it fails where the run would, with the same message, except that a
+/// failed release proof is listed in [`PublishRun::proof`] beside the plan.
+/// It does not look for the declared tarballs, which only an upload needs.
 ///
 /// Before any publisher, tag, or Release call, the run proves HEAD in two
 /// ways:
@@ -350,16 +355,6 @@ pub fn run_pending(
 ) -> Result<PublishRun> {
     let planned = plan(config, root)?;
     let declared = declared_assets(config, root, scope)?;
-    if dry_run {
-        return dry_run_plan(
-            config,
-            root,
-            &planned,
-            &declared,
-            crates_io,
-            &scope.new_crates,
-        );
-    }
     full_history(root)?;
     let allowed = prove_version_commit(config, root, &planned, allow)?;
     let token = release::resolve_token()?;
@@ -382,7 +377,7 @@ pub fn run_pending(
     let proof = release_proof(config, root, crates_io, &scope.new_crates)?;
     let failures = proof.failures();
     ensure!(
-        failures.is_empty(),
+        dry_run || failures.is_empty(),
         "the release proof failed, and nothing was published:\n{}",
         failures.join("\n")
     );
@@ -406,6 +401,17 @@ pub fn run_pending(
         })
         .map(|tag| TagRelease::read(config, root, &token, &repo, tag, &head, &release_list))
         .collect::<Result<Vec<_>>>()?;
+    if dry_run {
+        return Ok(dry_run_of(
+            &tags,
+            &declared,
+            already,
+            &uploads,
+            allowed,
+            pending.shortfalls,
+            &proof,
+        ));
+    }
     let files = asset_files(&tags, &declared, scope.assets_dir.as_deref())?;
     let drafts = tags
         .iter()
@@ -927,73 +933,61 @@ impl<'a> TagRelease<'a> {
     }
 }
 
-/// What a dry run would publish: every package not at `0.0.0`, a workspace
-/// package as its members in publish order, and every tag.
-/// It reads no registry listing for those.
-/// A standalone package at `0.0.0` joins the plan as [`pending::pending`]
-/// plans it: crates.io lists that version, or `new_crates` allows the crate and
-/// crates.io lacks it. Only those packages are read from the crates.io index at
-/// `crates_io`, and the dry run cannot tell whether such a package's tag
-/// exists, which needs a GitHub token.
-/// With every package at `0.0.0` that is left out, there is nothing to
-/// release.
-///
-/// With something to release, it then runs the release proof as `release`
-/// does, and its rows carry every failure beside the plan, so the run fails
+/// What a dry run reports from the plan [`run_pending`] built, once every
+/// read has passed: the registry's versions as present, each upload it would
+/// start, and for each tag the Release it would create or complete.
+/// The proof's failures stay in its rows, beside the plan, so the run fails
 /// having written nothing.
-fn dry_run_plan(
-    config: &Config,
-    root: &Path,
-    planned: &PublishPlan,
+fn dry_run_of(
+    tags: &[TagRelease<'_>],
     declared: &DeclaredAssets,
-    crates_io: CratesIo<'_>,
-    new_crates: &NewCrates,
-) -> Result<PublishRun> {
-    let mut packages = Vec::new();
-    let mut zero = Vec::new();
-    for (spec, entry) in config.packages.iter().zip(&planned.packages) {
-        if bump::unreleased(&entry.version) {
-            if !pending::zero_planned(config, root, spec, entry, crates_io.index, new_crates)? {
-                continue;
-            }
-            zero.push(entry);
+    already: Vec<PublishLine>,
+    uploads: &[(&PublishEntry, Vec<Upload>)],
+    allowed: Vec<Allowed>,
+    shortfalls: Vec<pending::Shortfall>,
+    proof: &Proof,
+) -> PublishRun {
+    let lines = uploads.iter().flat_map(|(entry, runs)| {
+        if entry.argv.is_empty() {
+            vec![PublishLine::from(*entry)]
+        } else {
+            runs.iter()
+                .map(|upload| PublishLine {
+                    name: upload.name.clone(),
+                    version: upload.version.clone(),
+                    via: entry.label.clone(),
+                    note: None,
+                })
+                .collect()
         }
-        match publisher::workspace_members(config, spec, root)? {
-            Some(members) => packages.extend(members.into_iter().map(|member| PublishLine {
-                name: member.name,
-                version: member.version,
-                via: entry.label.clone(),
-                note: None,
-            })),
-            None => packages.push(PublishLine::from(entry)),
-        }
-    }
-    let releases = planned
-        .tags
+    });
+    let releases = tags
         .iter()
-        .chain(&zero_tags(config, &zero)?)
-        .map(|tag| {
-            if assets_of(declared, &tag.tag).is_empty() {
-                formatdoc!("would create {tag}", tag = tag.tag)
-            } else {
-                formatdoc!("would create draft {tag}", tag = tag.tag)
-            }
-        })
+        .map(
+            |tag| match (&tag.found, assets_of(declared, &tag.plan.tag)) {
+                (github::Found::Published(_), _) => {
+                    formatdoc!("would complete {tag}", tag = tag.plan.tag)
+                }
+                (github::Found::Unpublished(_), []) => {
+                    formatdoc!("would create {tag}", tag = tag.plan.tag)
+                }
+                (github::Found::Unpublished(_), _) => {
+                    formatdoc!("would create draft {tag}", tag = tag.plan.tag)
+                }
+            },
+        )
         .collect();
-    let (outcome, proof, created) = if packages.is_empty() {
-        (Outcome::NothingToRelease, Vec::new(), Vec::new())
-    } else {
-        let proof = release_proof(config, root, crates_io, new_crates)?;
-        (Outcome::Released, proof.rows(), proof.created())
-    };
-    Ok(PublishRun {
-        outcome,
-        published: PublishOutcome { packages, releases },
-        allowed: Vec::new(),
-        shortfalls: Vec::new(),
-        proof,
-        created,
-    })
+    PublishRun {
+        outcome: Outcome::Released,
+        published: PublishOutcome {
+            packages: already.into_iter().chain(lines).collect(),
+            releases,
+        },
+        allowed,
+        shortfalls,
+        proof: proof.rows(),
+        created: proof.created(),
+    }
 }
 
 /// The pending commit at `head`.

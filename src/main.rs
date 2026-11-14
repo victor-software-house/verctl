@@ -430,8 +430,8 @@ fn preview_pr(root: &Path) -> String {
 
 /// The registry token of a run that may create crates, and the notice a dry
 /// run gives when `VERCTL_REGISTRY_TOKEN` is unset. A dry run uploads nothing,
-/// so it needs no token. A real run fails without it, unless `defer` leaves
-/// the failure to the caller, which names every token it lacks.
+/// so it needs no registry token. A real run fails without it, unless `defer`
+/// leaves the failure to the caller, which names every token it lacks.
 fn new_token(
     options: &ReleaseOptions,
     defer: bool,
