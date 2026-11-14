@@ -32,7 +32,7 @@ use crate::git::{self, VersionCommit};
 use crate::github::{self, ReleaseList, ReleaseState};
 use crate::publish::{self, PublishEntry};
 use crate::publisher::Upload;
-use crate::registry::RegistryCheck;
+use crate::registry::{self, RegistryCheck};
 use crate::registry_token::RegistryToken;
 use crate::{bump, publisher, stop};
 
@@ -189,6 +189,15 @@ struct PackageState {
 /// A package at `0.0.0` is left out before any lookup: it has never been
 /// released, and its first release is the `0.0.1` a Version PR prepares (see
 /// [`bump::unreleased`]).
+/// A standalone crates.io package at `0.0.0` joins the plan in two cases, and
+/// is then planned as any other incomplete version, so its draft Release
+/// publishes last and creates its tag:
+///
+/// - crates.io lists that version, as a first publish left it, and the tag does
+///   not exist yet;
+/// - `bootstrap` is set, and crates.io lacks the crate, so the run creates it.
+///
+/// A workspace member releases with its group and is unaffected.
 ///
 /// Every package is planned at HEAD, whichever commit set its version.
 /// A version HEAD's manifests do not hold is never looked up.
@@ -239,6 +248,7 @@ pub fn pending(
     declared_assets: &[String],
     registry_token: Option<&RegistryToken>,
     crates_io_index: &str,
+    bootstrap: bool,
     list: &ReleaseList,
 ) -> Result<Pending> {
     if config.packages.is_empty() {
@@ -265,11 +275,16 @@ pub fn pending(
     let mut releases: BTreeMap<String, ReleaseState> = BTreeMap::new();
     let mut counts: BTreeMap<String, Count> = BTreeMap::new();
     for (index, (spec, entry)) in config.packages.iter().zip(&planned.packages).enumerate() {
-        if bump::unreleased(&entry.version) {
+        let zero = bump::unreleased(&entry.version);
+        if zero && !zero_planned(config, root, spec, entry, crates_io_index, bootstrap)? {
             continue;
         }
         let driver = spec.resolve(config, root)?;
-        let tag = tag_of(&planned, entry)?;
+        let tag = if zero {
+            zero_tag(config, entry)?
+        } else {
+            tag_of(&planned, entry)?
+        };
         let release = match releases.entry(tag.clone()) {
             Entry::Occupied(found) => found.into_mut(),
             Entry::Vacant(slot) => {
@@ -498,6 +513,46 @@ fn version_in(driver: &Driver, raw: &str) -> Option<String> {
         .read(raw)
         .ok()
         .map(|version| version.trim().to_owned())
+}
+
+/// Whether a package at `0.0.0` joins the plan: it is a standalone crates.io
+/// crate, and either the index at `index` lists that version or `bootstrap` is
+/// set and the index has no file for the crate.
+fn zero_planned(
+    config: &Config,
+    root: &Path,
+    spec: &PackageSpec,
+    entry: &PublishEntry,
+    index: &str,
+    bootstrap: bool,
+) -> Result<bool> {
+    if entry.argv.is_empty() || publisher::workspace_members(config, spec, root)?.is_some() {
+        return Ok(false);
+    }
+    let uploads = publisher::uploads(config, spec, root, entry)?;
+    let [
+        Upload {
+            check: RegistryCheck::CratesIo { name },
+            ..
+        },
+    ] = uploads.as_slice()
+    else {
+        return Ok(false);
+    };
+    if registry::crates_io_lists(index, name, &entry.version)? {
+        return Ok(true);
+    }
+    Ok(bootstrap && !registry::crates_io_has_crate(index, name)?)
+}
+
+/// The tag `release` creates for `entry`, a package at `0.0.0` that the plan
+/// holds ([`publish::zero_tags`]).
+fn zero_tag(config: &Config, entry: &PublishEntry) -> Result<String> {
+    publish::zero_tags(config, &[entry])?
+        .into_iter()
+        .next()
+        .map(|plan| plan.tag)
+        .with_context(|| format!("no release tag for {}", entry.name))
 }
 
 /// The tag `release` would create for `entry`.

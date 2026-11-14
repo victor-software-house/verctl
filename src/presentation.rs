@@ -223,6 +223,9 @@ fn registry_details(report: &registry_check::RegistryReport, document: Document)
                     ("missing", "-".to_owned(), "-".to_owned())
                 }
                 registry_check::RegistryState::New => ("new", "-".to_owned(), "-".to_owned()),
+                registry_check::RegistryState::Creates => {
+                    ("created by this run", "-".to_owned(), "-".to_owned())
+                }
                 registry_check::RegistryState::NotAtZero { .. } => {
                     ("not at 0.0.0", "-".to_owned(), "-".to_owned())
                 }

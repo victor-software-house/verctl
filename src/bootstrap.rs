@@ -263,6 +263,7 @@ fn upload(crate_: &Planned, request: &Request<'_>) -> (Result<State>, Option<Str
             request.registry_token,
             request.crates_io.index,
             &registry::LISTING_DELAYS,
+            true,
         ) {
             Ok(Some(_)) => return (Ok(State::AlreadyPublished), note(&waited)),
             Ok(None) => return (Ok(State::Published), note(&waited)),

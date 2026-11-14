@@ -407,7 +407,11 @@ fn preview_pr(root: &Path) -> String {
 }
 
 fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
-    let registry_token = RegistryToken::from_env(&args.registry_token_env)?;
+    let registry_token = if args.bootstrap {
+        Some(RegistryToken::from_env_bootstrap(&args.registry_token_env)?)
+    } else {
+        RegistryToken::from_env(&args.registry_token_env)?
+    };
     let config = Config::load(&args.config)?;
     let root = &config::root_of(&args.config);
     let allow = publish::Allow {
@@ -419,6 +423,7 @@ fn release_report(args: &ReleaseArgs) -> Result<ReleaseReport> {
         declared_assets: args.declared_assets.clone(),
         releases_only: args.releases_only,
         assets_dir: args.assets_dir.clone(),
+        bootstrap: args.bootstrap,
     };
     let owner_token = registry_token::owner_token();
     let crates_io = registry::CratesIo {
@@ -702,6 +707,7 @@ fn unreleased_state(args: &StatusArgs, config: &Config, root: &Path) -> Result<U
                 &[],
                 None,
                 &args.crates_io_index,
+                args.bootstrap,
                 &github::ReleaseList::default(),
             ) {
                 Ok(planned) => {

@@ -65,6 +65,16 @@ on:
           matrix and leaves assets out of the completeness check.
         type: boolean
         default: true
+      bootstrap:
+        description: >-
+          Create each crate crates.io lacks with the registry-token secret,
+          which this input then requires, where trusted publishing publishes
+          every other crate. A standalone package at 0.0.0 that crates.io
+          lacks joins the plan, and the draft Release's publish creates its
+          tag. Trusted publishing stays the default. crates-io-trusted-publishing
+          and bootstrap combine.
+        type: boolean
+        default: false
       allow-workflow-change:
         description: >-
           Publish from a commit whose .github/workflows/ differs from the
@@ -281,6 +291,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           VERCTL_SKIP_ASSETS: ${{ !inputs.assets }}
+          # A standalone package at 0.0.0 that crates.io lacks is planned only
+          # when the publish job will create it.
+          VERCTL_BOOTSTRAP: ${{ inputs.bootstrap }}
         run: mise run ver status --github-output "$GITHUB_OUTPUT"
 
   assets:
@@ -474,6 +487,17 @@ jobs:
           pattern: verctl-asset-*
           merge-multiple: true
           path: ${{ runner.temp }}/assets
+      # bootstrap creates a crate with the registry-token secret, so a run
+      # without it fails here, before any token is minted or any upload runs.
+      - name: Require the registry-token secret
+        if: inputs.bootstrap
+        env:
+          REGISTRY_TOKEN: ${{ secrets.registry-token }}
+        run: |
+          if [ -z "${REGISTRY_TOKEN}" ]; then
+            echo "::error::bootstrap creates a crate with the registry-token secret, which is empty: pass it to the workflow, or leave bootstrap out"
+            exit 1
+          fi
       # crates.io matches the token's repository and the caller's workflow
       # file against the crate's trusted publishers, and the action's post
       # step revokes the token when the job ends.
@@ -498,11 +522,14 @@ jobs:
           # token lives in an environment maps the stored name to
           # registry-token, and this job, running in that environment,
           # receives the environment's value. verctl refuses both tokens
-          # at once, checks registry-token-env, and hands the token to each
-          # publisher under that name alone.
+          # at once unless bootstrap is set, checks registry-token-env, and
+          # hands one token to each publisher under that name alone: the
+          # registry token for a crate it creates, the trusted one for the
+          # rest.
           VERCTL_REGISTRY_TOKEN: ${{ secrets.registry-token }}
           VERCTL_TRUSTED_PUBLISHING_TOKEN: ${{ steps.crates-io.outputs.token }}
           VERCTL_REGISTRY_TOKEN_ENV: ${{ inputs.registry-token-env }}
+          VERCTL_BOOTSTRAP: ${{ inputs.bootstrap }}
         # The plan's verctl, not the one this commit's served task pins, which
         # may predate this workflow. VERCTL_BIN is unset with verctl-artifact,
         # and this run's build runs from PATH.

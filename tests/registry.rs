@@ -222,7 +222,7 @@ async fn refused(server: &MockServer, name: &str) {
 /// command runs it.
 async fn registry(server: &MockServer, crates: Vec<Crate>) -> RegistryReport {
     let api = server.uri();
-    task::spawn_blocking(move || registry_check::prove_registry(&crates, &api, &acme_demo()))
+    task::spawn_blocking(move || registry_check::prove_registry(&crates, &api, &acme_demo(), false))
         .await
         .unwrap()
         .unwrap()
@@ -264,7 +264,10 @@ async fn every_crate_is_ready() {
         .iter()
         .map(|row| match &row.state {
             RegistryState::Present { trusted, .. } => trusted,
-            RegistryState::Missing | RegistryState::New | RegistryState::NotAtZero { .. } => {
+            RegistryState::Missing
+            | RegistryState::New
+            | RegistryState::Creates
+            | RegistryState::NotAtZero { .. } => {
                 panic!("{row:?}")
             }
         })
