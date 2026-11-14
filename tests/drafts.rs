@@ -1406,10 +1406,10 @@ async fn a_dry_run_fails_on_a_tag_at_another_commit() {
         .await;
     let output = release(root.path(), &server, &["--dry-run"]);
     assert!(!output.status.success(), "{output:?}");
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let said = printed(&output);
     assert!(
-        stderr.contains(&format!("tag {TAG} names {older}, not HEAD {head}")),
-        "{stderr}"
+        said.contains(&format!("tag {TAG} names {older}, not HEAD {head}")),
+        "{said}"
     );
     assert_only_reads(&requests(&server).await);
 }
