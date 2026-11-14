@@ -421,9 +421,13 @@ fn read_changelog(path: &Path) -> Result<String> {
 }
 
 /// Whether the Version PR already wrote a `patch!` release: `version` is above
-/// `baseline` in the same minor, and its CHANGELOG section holds the Breaking
-/// heading. The Version PR consumed the fragment, so the section is where the
-/// mark is left until the release reaches crates.io.
+/// `baseline` in the same minor, and the CHANGELOG section of some version `v`
+/// with `baseline < v <= version` holds the Breaking heading.
+/// The baseline is the last stable release, so the sections of a pre-release
+/// train above it are all in the compared delta, and each one's mark counts.
+/// The Version PR consumed the fragments, so the sections are where the mark is
+/// left until a stable release at or above the train reaches crates.io and
+/// becomes the baseline.
 fn released_mark(
     changelog: &str,
     package: &str,
@@ -431,10 +435,19 @@ fn released_mark(
     baseline: Option<&Version>,
 ) -> bool {
     let heading = format!("### {}", release::BREAKING);
-    baseline.is_some_and(|baseline| {
-        version > baseline && (version.major, version.minor) == (baseline.major, baseline.minor)
-    }) && release::changelog_section_for(changelog, package, &version.to_string())
-        .is_some_and(|section| section.lines().any(|line| line.trim() == heading))
+    let Some(baseline) = baseline else {
+        return false;
+    };
+    if (version.major, version.minor) != (baseline.major, baseline.minor) {
+        return false;
+    }
+    release::changelog_versions(changelog, package)
+        .into_iter()
+        .filter(|listed| {
+            Version::parse(listed).is_ok_and(|listed| listed > *baseline && listed <= *version)
+        })
+        .filter_map(|listed| release::changelog_section_for(changelog, package, listed))
+        .any(|section| section.lines().any(|line| line.trim() == heading))
 }
 
 /// Whether a fragment in `fragments` bumps `package` by `patch!`.
@@ -589,6 +602,88 @@ mod tests {
             "verctl",
             &version("0.8.0"),
             Some(&version("0.7.4"))
+        ));
+    }
+
+    /// The baseline is the last stable release, so the Breaking sections of
+    /// the pre-release train above it are in the compared delta: the mark
+    /// holds for the train's last release, and ends at the baseline.
+    #[test]
+    fn the_mark_of_an_earlier_release_in_the_train_counts() {
+        let changelog = indoc! {"
+            # Changelog
+
+            ## verctl 0.8.6-rc.5
+
+            - Fixed.
+
+            ## verctl 0.8.6-rc.3
+
+            - Changed.
+
+            ## verctl 0.8.6-rc.2
+
+            ### Breaking
+
+            - Replace a public field.
+
+            ## verctl 0.8.6-rc.1
+
+            - First.
+
+            ## verctl 0.8.5
+
+            ### Breaking
+
+            - Released with the baseline.
+
+            ## verctl 0.8.4
+
+            ### Breaking
+
+            - Earlier still.
+        "};
+        let rc5 = version("0.8.6-rc.5");
+        assert!(released_mark(
+            changelog,
+            "verctl",
+            &rc5,
+            Some(&version("0.8.5"))
+        ));
+        assert!(!released_mark(
+            changelog,
+            "verctl",
+            &version("0.8.6-rc.1"),
+            Some(&version("0.8.5"))
+        ));
+        let below = indoc! {"
+            ## verctl 0.8.6-rc.5
+
+            - Fixed.
+
+            ## verctl 0.8.5
+
+            ### Breaking
+
+            - Released with the baseline.
+
+            ## verctl 0.8.4
+
+            ### Breaking
+
+            - Earlier still.
+        "};
+        assert!(!released_mark(
+            below,
+            "verctl",
+            &rc5,
+            Some(&version("0.8.5"))
+        ));
+        assert!(!released_mark(
+            changelog,
+            "verctl",
+            &rc5,
+            Some(&version("0.7.9"))
         ));
     }
 

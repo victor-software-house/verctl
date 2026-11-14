@@ -544,6 +544,17 @@ pub fn write_changelogs_with(
     Ok(written)
 }
 
+/// The version of each `## name version` or `## version` heading in a
+/// changelog body, as written, newest first when the changelog is.
+#[must_use]
+pub fn changelog_versions<'a>(body: &'a str, name: &str) -> Vec<&'a str> {
+    let named = format!("{name} ");
+    body.lines()
+        .filter_map(|line| line.trim().strip_prefix("## "))
+        .map(|heading| heading.strip_prefix(&named).unwrap_or(heading))
+        .collect()
+}
+
 /// First `## name version` or `## version` section from a changelog body.
 #[must_use]
 pub fn changelog_section_for(body: &str, name: &str, version: &str) -> Option<String> {
