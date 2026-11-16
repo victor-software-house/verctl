@@ -1164,6 +1164,21 @@ horizon:
       - 'PyPI pending publishers configure trusted publishing before a project exists, and reserve no name: prior art for a first publish without a token.'
       - The operator asked for horizon rows for the other registries, with no decision yet (operator, 2026-11-13).
 
+  - id: VER-141
+    title: Bump Homebrew casks and formulae from a release
+    scope: verctl
+    outcome: >-
+      A verctl release updates its Homebrew cask or formula in the tap it names, with
+      no per-repository dispatch job or tap workflow.
+    kind: deferred
+    open: >-
+      The shared tap workflows in victor-software-house/actions run today; verctl
+      takes the job over once its release model can name a tap.
+    notes:
+      - 2026-11-16, today a release job sends a repository_dispatch to its tap, and the tap calls the shared homebrew-bump.yml workflow, which sets the cask version and sha256, then opens and auto-merges the pull request as a GitHub App.
+      - 2026-11-16, a verctl backend would read the tap, the cask or formula name and the asset from the release config, and write the bump after the release asset exists, so the tag comes from the release itself.
+      - 2026-11-16, homebrew-forks bumps herdr-vsh with its own update-herdr-vsh.yml, a second consumer.
+
 archive:
   - id: VER-130
     title: Decide which commit a release publishes from, and which versions a run releases
