@@ -2228,44 +2228,56 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_tag_on_a_commit_before_the_package_file_existed_is_the_release() {
-        let dir = tempfile::TempDir::new().unwrap();
-        init(dir.path());
-        fs::write(dir.path().join("README"), "start\n").unwrap();
-        let before = commit_all(dir.path(), "chore: start");
-        write_version(dir.path(), "0.0.16");
-        commit_all(dir.path(), "chore: move the version to Cargo.toml");
-        let found = tagged_commit(
-            dir.path(),
-            &dir.path().join("Cargo.toml"),
-            &before,
-            &version_line,
+    /// An app's `project.yml`, whose `MARKETING_VERSION` line held its
+    /// version before the version moved to a `VERSION` file.
+    fn write_project(dir: &Path, version: &str) {
+        fs::write(
+            dir.join("project.yml"),
+            indoc::formatdoc! {r#"
+                name: Demo
+                targets:
+                  Demo:
+                    settings:
+                      base:
+                        MARKETING_VERSION: "{version}"
+            "#},
         )
         .unwrap();
-        assert_eq!(
-            found,
-            Some(VersionCommit {
-                sha: before,
-                depth: 1,
-            })
-        );
     }
 
-    #[test]
-    fn a_merged_tag_on_a_commit_before_the_package_file_existed_is_the_release() {
-        let dir = tempfile::TempDir::new().unwrap();
-        init(dir.path());
-        fs::write(dir.path().join("README"), "start\n").unwrap();
-        let base = commit_all(dir.path(), "chore: start");
-        git(dir.path(), &["checkout", "-q", "--detach", &base]);
-        fs::write(dir.path().join("publish.yml"), "published\n").unwrap();
-        let published = commit_all(dir.path(), "ci: publish");
-        git(dir.path(), &["checkout", "-q", "main"]);
-        write_version(dir.path(), "0.0.16");
-        commit_all(dir.path(), "chore: move the version to Cargo.toml");
+    /// An app released at `0.0.16` from `project.yml`, then versioned through
+    /// a new `VERSION` file at the same version. Returns the release commit,
+    /// which holds no `VERSION`.
+    fn released_before_the_version_file(dir: &Path) -> String {
+        init(dir);
+        write_project(dir, "0.0.16");
+        let released = commit_all(dir, "chore(release): version packages");
+        fs::write(dir.join("VERSION"), "0.0.16\n").unwrap();
+        commit_all(dir, "chore: version the app through a VERSION file");
+        released
+    }
+
+    /// A release commit beside `main`, made before `main` gained its
+    /// `VERSION` file at `0.0.16`. HEAD is `main`, which holds the release
+    /// commit only once [`keep_merged`] merges it. Returns the release commit.
+    fn released_beside_the_version_file(dir: &Path) -> String {
+        init(dir);
+        write_project(dir, "0.0.16");
+        let start = commit_all(dir, "chore: start");
+        git(dir, &["checkout", "-q", "--detach", &start]);
+        fs::write(dir.join("publish.yml"), "published\n").unwrap();
+        let released = commit_all(dir, "ci: publish");
+        git(dir, &["checkout", "-q", "main"]);
+        fs::write(dir.join("VERSION"), "0.0.16\n").unwrap();
+        commit_all(dir, "chore: version the app through a VERSION file");
+        released
+    }
+
+    /// Merge `sha` into HEAD as its second parent, keeping HEAD's tree, as a
+    /// forkctl append publish does.
+    fn keep_merged(dir: &Path, sha: &str) {
         git(
-            dir.path(),
+            dir,
             &[
                 "merge",
                 "-q",
@@ -2273,73 +2285,84 @@ mod tests {
                 "ours",
                 "-m",
                 "forkctl: keep published history",
-                &published,
+                sha,
             ],
         );
+    }
+
+    #[test]
+    fn a_tag_on_a_commit_before_the_version_file_existed_is_the_release() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let released = released_before_the_version_file(dir.path());
         let found = tagged_commit(
             dir.path(),
-            &dir.path().join("Cargo.toml"),
-            &published,
-            &version_line,
+            &dir.path().join("VERSION"),
+            &released,
+            &version_file,
         )
         .unwrap();
         assert_eq!(
             found,
             Some(VersionCommit {
-                sha: published,
+                sha: released,
+                depth: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn a_merged_tag_on_a_commit_before_the_version_file_existed_is_the_release() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let released = released_beside_the_version_file(dir.path());
+        keep_merged(dir.path(), &released);
+        let found = tagged_commit(
+            dir.path(),
+            &dir.path().join("VERSION"),
+            &released,
+            &version_file,
+        )
+        .unwrap();
+        assert_eq!(
+            found,
+            Some(VersionCommit {
+                sha: released,
                 depth: 0,
             })
         );
     }
 
     #[test]
-    fn a_tag_on_a_commit_with_a_directory_at_the_package_path_is_not_the_release() {
+    fn an_unreached_tag_before_the_version_file_existed_is_not_the_release() {
         let dir = tempfile::TempDir::new().unwrap();
-        init(dir.path());
-        fs::create_dir(dir.path().join("Cargo.toml")).unwrap();
-        fs::write(
-            dir.path().join("Cargo.toml").join("README"),
-            "a directory\n",
+        let released = released_beside_the_version_file(dir.path());
+        let found = tagged_commit(
+            dir.path(),
+            &dir.path().join("VERSION"),
+            &released,
+            &version_file,
         )
         .unwrap();
-        let tagged = commit_all(dir.path(), "chore: a directory at the path");
-        fs::remove_dir_all(dir.path().join("Cargo.toml")).unwrap();
-        write_version(dir.path(), "0.0.16");
-        commit_all(dir.path(), "chore: move the version to Cargo.toml");
-        assert_eq!(
-            tagged_commit(
-                dir.path(),
-                &dir.path().join("Cargo.toml"),
-                &tagged,
-                &version_line,
-            )
-            .unwrap(),
-            None
-        );
+        assert_eq!(found, None);
     }
 
     #[test]
-    fn an_unreached_tag_before_the_package_file_existed_is_not_the_release() {
+    fn a_tag_on_a_commit_with_a_directory_at_the_version_path_is_not_the_release() {
         let dir = tempfile::TempDir::new().unwrap();
         init(dir.path());
-        fs::write(dir.path().join("README"), "start\n").unwrap();
-        let base = commit_all(dir.path(), "chore: start");
-        git(dir.path(), &["checkout", "-q", "--detach", &base]);
-        fs::write(dir.path().join("publish.yml"), "abandoned\n").unwrap();
-        let abandoned = commit_all(dir.path(), "ci: publish");
-        git(dir.path(), &["checkout", "-q", "main"]);
-        write_version(dir.path(), "0.0.16");
-        commit_all(dir.path(), "chore: move the version to Cargo.toml");
-        assert_eq!(
-            tagged_commit(
-                dir.path(),
-                &dir.path().join("Cargo.toml"),
-                &abandoned,
-                &version_line,
-            )
-            .unwrap(),
-            None
-        );
+        fs::create_dir(dir.path().join("VERSION")).unwrap();
+        fs::write(dir.path().join("VERSION").join("README"), "a directory\n").unwrap();
+        let tagged = commit_all(dir.path(), "chore: a directory at the path");
+        fs::remove_dir_all(dir.path().join("VERSION")).unwrap();
+        fs::write(dir.path().join("VERSION"), "0.0.16\n").unwrap();
+        commit_all(dir.path(), "chore: version the app through a VERSION file");
+        let found = tagged_commit(
+            dir.path(),
+            &dir.path().join("VERSION"),
+            &tagged,
+            &version_file,
+        )
+        .unwrap();
+        assert_eq!(found, None);
     }
 
     /// A history in the shape a forkctl append publish leaves. `set` starts at
@@ -2359,18 +2382,7 @@ mod tests {
         git(dir, &["checkout", "-q", "--detach", &set]);
         fs::write(dir.join("publish.yml"), "three\n").unwrap();
         commit_all(dir, "ci: rewritten publish");
-        git(
-            dir,
-            &[
-                "merge",
-                "-q",
-                "-s",
-                "ours",
-                "-m",
-                "forkctl: keep published history",
-                &published,
-            ],
-        );
+        keep_merged(dir, &published);
         published
     }
 
