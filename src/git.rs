@@ -683,6 +683,36 @@ enum PackageFile {
     Present(Option<String>),
 }
 
+/// What `commit` holds at `rel`. Only a path with no tree entry is
+/// [`PackageFile::Missing`]. A directory, submodule or symlink there holds
+/// no version, and a lookup or read failure is an error, so neither passes
+/// as a commit made before the file existed.
+fn package_file_at(
+    commit: &gix::Commit<'_>,
+    rel: &Path,
+    read: &dyn Fn(&str) -> Option<String>,
+) -> Result<PackageFile> {
+    let tree = commit.tree()?;
+    let Some(entry) = tree
+        .lookup_entry_by_path(rel)
+        .with_context(|| format!("reading {} at commit {}", rel.display(), commit.id()))?
+    else {
+        return Ok(PackageFile::Missing);
+    };
+    match entry.mode().kind() {
+        EntryKind::Blob | EntryKind::BlobExecutable => {
+            let blob = entry
+                .object()
+                .with_context(|| format!("reading {} at commit {}", rel.display(), commit.id()))?
+                .detach();
+            Ok(PackageFile::Present(read(&String::from_utf8_lossy(
+                &blob.data,
+            ))))
+        }
+        EntryKind::Tree | EntryKind::Link | EntryKind::Commit => Ok(PackageFile::Present(None)),
+    }
+}
+
 impl PackageFile {
     /// Whether a release tag on a commit holding this names `wanted`. A commit
     /// made before the file existed does, because the tag's name renders the
@@ -743,12 +773,8 @@ pub fn tagged_commit(
     let repo = discover(root).context("reading a tagged commit needs a git repository")?;
     let rel = git_path(root, path, repo.workdir())
         .with_context(|| format!("{} is not in the repository", path.display()))?;
-    let version_at = |commit: &gix::Commit<'_>| -> Result<PackageFile> {
-        Ok(match blob_at(&commit.tree()?, &rel) {
-            None => PackageFile::Missing,
-            Some(raw) => PackageFile::Present(read(&raw)),
-        })
-    };
+    let version_at =
+        |commit: &gix::Commit<'_>| -> Result<PackageFile> { package_file_at(commit, &rel, read) };
     let mut commit = repo
         .head_commit()
         .context("reading a tagged commit needs HEAD")?;
@@ -2263,6 +2289,32 @@ mod tests {
                 sha: published,
                 depth: 0,
             })
+        );
+    }
+
+    #[test]
+    fn a_tag_on_a_commit_with_a_directory_at_the_package_path_is_not_the_release() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        fs::create_dir(dir.path().join("Cargo.toml")).unwrap();
+        fs::write(
+            dir.path().join("Cargo.toml").join("README"),
+            "a directory\n",
+        )
+        .unwrap();
+        let tagged = commit_all(dir.path(), "chore: a directory at the path");
+        fs::remove_dir_all(dir.path().join("Cargo.toml")).unwrap();
+        write_version(dir.path(), "0.0.16");
+        commit_all(dir.path(), "chore: move the version to Cargo.toml");
+        assert_eq!(
+            tagged_commit(
+                dir.path(),
+                &dir.path().join("Cargo.toml"),
+                &tagged,
+                &version_line,
+            )
+            .unwrap(),
+            None
         );
     }
 
