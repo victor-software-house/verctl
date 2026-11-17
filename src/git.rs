@@ -673,11 +673,63 @@ pub struct VersionCommit {
     pub depth: usize,
 }
 
+/// What a commit holds at a package's path.
+#[derive(Debug)]
+enum PackageFile {
+    /// The commit holds no file at the path.
+    Missing,
+    /// The commit holds a file there, and `read` finds this version in it, or
+    /// none.
+    Present(Option<String>),
+}
+
+/// What `commit` holds at `rel`. Only a path with no tree entry is
+/// [`PackageFile::Missing`]. A directory, submodule or symlink there holds
+/// no version, and a lookup or read failure is an error, so neither passes
+/// as a commit made before the file existed.
+fn package_file_at(
+    commit: &gix::Commit<'_>,
+    rel: &Path,
+    read: &dyn Fn(&str) -> Option<String>,
+) -> Result<PackageFile> {
+    let tree = commit.tree()?;
+    let Some(entry) = tree
+        .lookup_entry_by_path(rel)
+        .with_context(|| format!("reading {} at commit {}", rel.display(), commit.id()))?
+    else {
+        return Ok(PackageFile::Missing);
+    };
+    match entry.mode().kind() {
+        EntryKind::Blob | EntryKind::BlobExecutable => {
+            let blob = entry
+                .object()
+                .with_context(|| format!("reading {} at commit {}", rel.display(), commit.id()))?
+                .detach();
+            Ok(PackageFile::Present(read(&String::from_utf8_lossy(
+                &blob.data,
+            ))))
+        }
+        EntryKind::Tree | EntryKind::Link | EntryKind::Commit => Ok(PackageFile::Present(None)),
+    }
+}
+
+impl PackageFile {
+    /// Whether a release tag on a commit holding this names `wanted`. A commit
+    /// made before the file existed does, because the tag's name renders the
+    /// version. A file that holds another version, or none, does not.
+    fn is_release_of(&self, wanted: &str) -> bool {
+        match self {
+            Self::Missing => true,
+            Self::Present(version) => version.as_deref() == Some(wanted),
+        }
+    }
+}
+
 /// `sha` as the release commit of the version `read` finds in `path` at HEAD,
 /// when HEAD contains `sha` and `sha` carries that version.
 ///
 /// A release tag can name a commit other than HEAD and still be that
-/// version's release. Three cases qualify:
+/// version's release. Four cases qualify:
 ///
 /// - A publish rerun after later commits tagged a newer HEAD at the same
 ///   version.
@@ -687,9 +739,13 @@ pub struct VersionCommit {
 ///   forkctl append publish rewrites a branch and merges it back with its old
 ///   tip as the second parent. Only that parent then holds the tagged commit.
 ///   The new first-parent commit at the same version may change other files.
+/// - A tag on a commit made before the package's file existed, such as one
+///   before the version moved to a `VERSION` file. The tag's name renders the
+///   version, so that commit is the release.
 ///
 /// In every case the registry already has the version, so the tag's commit is
-/// the release. Only the version is compared, never the tree.
+/// the release. Only the version is compared, never the tree, and a commit
+/// with no file at `path` has no version to compare.
 ///
 /// On the first-parent history the depth is the tagged commit's own. Off it,
 /// the depth is that of the oldest first-parent commit that contains the
@@ -717,26 +773,29 @@ pub fn tagged_commit(
     let repo = discover(root).context("reading a tagged commit needs a git repository")?;
     let rel = git_path(root, path, repo.workdir())
         .with_context(|| format!("{} is not in the repository", path.display()))?;
-    let version_at = |commit: &gix::Commit<'_>| -> Result<Option<String>> {
-        Ok(blob_at(&commit.tree()?, &rel).and_then(|raw| read(&raw)))
-    };
+    let version_at =
+        |commit: &gix::Commit<'_>| -> Result<PackageFile> { package_file_at(commit, &rel, read) };
     let mut commit = repo
         .head_commit()
         .context("reading a tagged commit needs HEAD")?;
-    let wanted = version_at(&commit)?
-        .with_context(|| format!("HEAD has no version in {}", rel.display()))?;
+    let wanted = match version_at(&commit)? {
+        PackageFile::Present(Some(version)) => version,
+        PackageFile::Missing | PackageFile::Present(None) => {
+            bail!("HEAD has no version in {}", rel.display())
+        }
+    };
     let boundary: Vec<gix::ObjectId> = repo
         .shallow_commits()?
         .map_or_default(|commits| commits.iter().copied().collect());
     let mut line = Vec::new();
     loop {
         if commit.id().to_string().eq_ignore_ascii_case(sha) {
-            return Ok(
-                (version_at(&commit)?.as_deref() == Some(wanted.as_str())).then(|| VersionCommit {
+            return Ok(version_at(&commit)?
+                .is_release_of(&wanted)
+                .then(|| VersionCommit {
                     sha: commit.id().to_string(),
                     depth: line.len(),
-                }),
-            );
+                }));
         }
         if boundary.contains(&commit.id().detach()) {
             return Err(lookup::unavailable(anyhow!(
@@ -763,13 +822,14 @@ pub fn tagged_commit(
 /// finding a merge `d` commits below HEAD takes O(log d) merge-base walks.
 ///
 /// `None` when `sha` names no commit, carries another version, or HEAD does
-/// not contain it.
+/// not contain it. A commit with no file at the package's path carries no
+/// version and counts as `wanted`.
 fn merged_release(
     repo: &gix::Repository,
     line: &[gix::ObjectId],
     sha: &str,
     wanted: &str,
-    version_at: &dyn Fn(&gix::Commit<'_>) -> Result<Option<String>>,
+    version_at: &dyn Fn(&gix::Commit<'_>) -> Result<PackageFile>,
 ) -> Result<Option<VersionCommit>> {
     let Ok(tagged) = gix::ObjectId::from_hex(sha.as_bytes()) else {
         return Ok(None);
@@ -777,7 +837,7 @@ fn merged_release(
     let Ok(commit) = repo.find_commit(tagged) else {
         return Ok(None);
     };
-    if version_at(&commit)?.as_deref() != Some(wanted) {
+    if !version_at(&commit)?.is_release_of(wanted) {
         return Ok(None);
     }
     let contains = |at: gix::ObjectId| -> Result<bool> {
@@ -2168,6 +2228,143 @@ mod tests {
         );
     }
 
+    /// An app's `project.yml`, whose `MARKETING_VERSION` line held its
+    /// version before the version moved to a `VERSION` file.
+    fn write_project(dir: &Path, version: &str) {
+        fs::write(
+            dir.join("project.yml"),
+            indoc::formatdoc! {r#"
+                name: Demo
+                targets:
+                  Demo:
+                    settings:
+                      base:
+                        MARKETING_VERSION: "{version}"
+            "#},
+        )
+        .unwrap();
+    }
+
+    /// An app released at `0.0.16` from `project.yml`, then versioned through
+    /// a new `VERSION` file at the same version. Returns the release commit,
+    /// which holds no `VERSION`.
+    fn released_before_the_version_file(dir: &Path) -> String {
+        init(dir);
+        write_project(dir, "0.0.16");
+        let released = commit_all(dir, "chore(release): version packages");
+        fs::write(dir.join("VERSION"), "0.0.16\n").unwrap();
+        commit_all(dir, "chore: version the app through a VERSION file");
+        released
+    }
+
+    /// A release commit beside `main`, made before `main` gained its
+    /// `VERSION` file at `0.0.16`. HEAD is `main`, which holds the release
+    /// commit only once [`keep_merged`] merges it. Returns the release commit.
+    fn released_beside_the_version_file(dir: &Path) -> String {
+        init(dir);
+        write_project(dir, "0.0.16");
+        let start = commit_all(dir, "chore: start");
+        git(dir, &["checkout", "-q", "--detach", &start]);
+        fs::write(dir.join("publish.yml"), "published\n").unwrap();
+        let released = commit_all(dir, "ci: publish");
+        git(dir, &["checkout", "-q", "main"]);
+        fs::write(dir.join("VERSION"), "0.0.16\n").unwrap();
+        commit_all(dir, "chore: version the app through a VERSION file");
+        released
+    }
+
+    /// Merge `sha` into HEAD as its second parent, keeping HEAD's tree, as a
+    /// forkctl append publish does.
+    fn keep_merged(dir: &Path, sha: &str) {
+        git(
+            dir,
+            &[
+                "merge",
+                "-q",
+                "-s",
+                "ours",
+                "-m",
+                "forkctl: keep published history",
+                sha,
+            ],
+        );
+    }
+
+    #[test]
+    fn a_tag_on_a_commit_before_the_version_file_existed_is_the_release() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let released = released_before_the_version_file(dir.path());
+        let found = tagged_commit(
+            dir.path(),
+            &dir.path().join("VERSION"),
+            &released,
+            &version_file,
+        )
+        .unwrap();
+        assert_eq!(
+            found,
+            Some(VersionCommit {
+                sha: released,
+                depth: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn a_merged_tag_on_a_commit_before_the_version_file_existed_is_the_release() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let released = released_beside_the_version_file(dir.path());
+        keep_merged(dir.path(), &released);
+        let found = tagged_commit(
+            dir.path(),
+            &dir.path().join("VERSION"),
+            &released,
+            &version_file,
+        )
+        .unwrap();
+        assert_eq!(
+            found,
+            Some(VersionCommit {
+                sha: released,
+                depth: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn an_unreached_tag_before_the_version_file_existed_is_not_the_release() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let released = released_beside_the_version_file(dir.path());
+        let found = tagged_commit(
+            dir.path(),
+            &dir.path().join("VERSION"),
+            &released,
+            &version_file,
+        )
+        .unwrap();
+        assert_eq!(found, None);
+    }
+
+    #[test]
+    fn a_tag_on_a_commit_with_a_directory_at_the_version_path_is_not_the_release() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        fs::create_dir(dir.path().join("VERSION")).unwrap();
+        fs::write(dir.path().join("VERSION").join("README"), "a directory\n").unwrap();
+        let tagged = commit_all(dir.path(), "chore: a directory at the path");
+        fs::remove_dir_all(dir.path().join("VERSION")).unwrap();
+        fs::write(dir.path().join("VERSION"), "0.0.16\n").unwrap();
+        commit_all(dir.path(), "chore: version the app through a VERSION file");
+        let found = tagged_commit(
+            dir.path(),
+            &dir.path().join("VERSION"),
+            &tagged,
+            &version_file,
+        )
+        .unwrap();
+        assert_eq!(found, None);
+    }
+
     /// A history in the shape a forkctl append publish leaves. `set` starts at
     /// `0.0.1`, and `published` follows it with a workflow change. Then the
     /// branch is rewritten from `set` and merged back with `published` as the
@@ -2185,18 +2382,7 @@ mod tests {
         git(dir, &["checkout", "-q", "--detach", &set]);
         fs::write(dir.join("publish.yml"), "three\n").unwrap();
         commit_all(dir, "ci: rewritten publish");
-        git(
-            dir,
-            &[
-                "merge",
-                "-q",
-                "-s",
-                "ours",
-                "-m",
-                "forkctl: keep published history",
-                &published,
-            ],
-        );
+        keep_merged(dir, &published);
         published
     }
 

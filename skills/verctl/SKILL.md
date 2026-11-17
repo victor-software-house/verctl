@@ -168,6 +168,7 @@ A Release with declared assets is a draft until every asset is uploaded, and `re
 A hand-written workflow that runs `actions/publish` and then `actions/asset` runs `verctl release` again after its uploads.  
 `--skip-assets` also publishes an existing draft without its assets.  
 A release tag on a commit HEAD holds only through a merge passes when the version there matches HEAD's.
+A release tag on a commit that holds no file at the package's path, such as one made before the version moved to a `VERSION` file, passes too, because the tag's name already says the version.
 
 ### Proofs and refusals
 
