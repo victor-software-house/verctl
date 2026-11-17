@@ -1,4 +1,4 @@
-//! The lockfiles a Version PR may change, read to prove it moved only
+//! Lockfiles that a Version PR may change, read to prove it moved only
 //! workspace versions.
 //!
 //! verctl never writes a lockfile: each moves through its owner
