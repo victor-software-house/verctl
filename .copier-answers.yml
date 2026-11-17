@@ -10,11 +10,7 @@ clippy_disallowed_methods: []
 clippy_disallowed_types: []
 default_branch: main
 deny_bans: []
-deny_ignore:
--   id: RUSTSEC-2026-0543
-    reason: chrono is unmaintained and reaches verctl only through octocrab, which
-        has no release without it; remove when octocrab drops chrono or verctl drops
-        octocrab
+deny_ignore: []
 deny_licenses:
 -   license: BSD-3-Clause
     reason: subtle, curve25519-dalek, ed25519-dalek (octocrab's JWT signing), encoding_rs,
