@@ -1,4 +1,4 @@
-//! A Go module's version, kept as a `// vX.Y.Z` comment at the end of its
+//! A Go module version, kept as a `// vX.Y.Z` comment at the end of its
 //! `module` line.
 //!
 //! Go itself records no version in `go.mod`: a release is a tag. The comment
