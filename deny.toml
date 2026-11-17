@@ -5,7 +5,9 @@ all-features = true
 yanked = "deny"
 unmaintained = "all"
 # RUSTSEC ids and yanked crates that cannot be upgraded yet. Not a lint-level downgrade.
-ignore = []
+ignore = [
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained and reaches verctl only through octocrab, which has no release without it; remove when octocrab drops chrono or verctl drops octocrab" },
+]
 
 [licenses]
 allow = [
