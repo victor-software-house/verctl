@@ -1,4 +1,4 @@
-//! The HTTP date a registry gives for a retry.
+//! The HTTP date a registry gives for a retry. (mbx measurement edit 1)
 //!
 //! crates.io names the time of its next new-crate slot as an IMF-fixdate.
 //! It appears in cargo's "try again after" message and in a `Retry-After`
