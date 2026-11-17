@@ -518,6 +518,7 @@ A version HEAD's manifests do not hold stays unreleased: no run releases it.
 Its release tag may instead sit on a commit that HEAD holds only through a merge.  
 An example is a forkctl append publish on a merge's second parent.  
 That passes when the package's version there equals its version at HEAD.  
+A release tag on a commit that holds no file at the package's path, such as one made before the version moved to a `VERSION` file, passes too, because the tag's name already says the version.  
 A tag on a commit HEAD does not contain, or at another version, fails.
 
 A release is complete when the registry lists the version, its tag and published Release exist, and the Release holds every declared asset.  

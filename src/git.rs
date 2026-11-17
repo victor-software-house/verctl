@@ -673,11 +673,33 @@ pub struct VersionCommit {
     pub depth: usize,
 }
 
+/// What a commit holds at a package's path.
+#[derive(Debug)]
+enum PackageFile {
+    /// The commit holds no file at the path.
+    Missing,
+    /// The commit holds a file there, and `read` finds this version in it, or
+    /// none.
+    Present(Option<String>),
+}
+
+impl PackageFile {
+    /// Whether a release tag on a commit holding this names `wanted`. A commit
+    /// made before the file existed does, because the tag's name renders the
+    /// version. A file that holds another version, or none, does not.
+    fn is_release_of(&self, wanted: &str) -> bool {
+        match self {
+            Self::Missing => true,
+            Self::Present(version) => version.as_deref() == Some(wanted),
+        }
+    }
+}
+
 /// `sha` as the release commit of the version `read` finds in `path` at HEAD,
 /// when HEAD contains `sha` and `sha` carries that version.
 ///
 /// A release tag can name a commit other than HEAD and still be that
-/// version's release. Three cases qualify:
+/// version's release. Four cases qualify:
 ///
 /// - A publish rerun after later commits tagged a newer HEAD at the same
 ///   version.
@@ -687,9 +709,13 @@ pub struct VersionCommit {
 ///   forkctl append publish rewrites a branch and merges it back with its old
 ///   tip as the second parent. Only that parent then holds the tagged commit.
 ///   The new first-parent commit at the same version may change other files.
+/// - A tag on a commit made before the package's file existed, such as one
+///   before the version moved to a `VERSION` file. The tag's name renders the
+///   version, so that commit is the release.
 ///
 /// In every case the registry already has the version, so the tag's commit is
-/// the release. Only the version is compared, never the tree.
+/// the release. Only the version is compared, never the tree, and a commit
+/// with no file at `path` has no version to compare.
 ///
 /// On the first-parent history the depth is the tagged commit's own. Off it,
 /// the depth is that of the oldest first-parent commit that contains the
@@ -717,26 +743,33 @@ pub fn tagged_commit(
     let repo = discover(root).context("reading a tagged commit needs a git repository")?;
     let rel = git_path(root, path, repo.workdir())
         .with_context(|| format!("{} is not in the repository", path.display()))?;
-    let version_at = |commit: &gix::Commit<'_>| -> Result<Option<String>> {
-        Ok(blob_at(&commit.tree()?, &rel).and_then(|raw| read(&raw)))
+    let version_at = |commit: &gix::Commit<'_>| -> Result<PackageFile> {
+        Ok(match blob_at(&commit.tree()?, &rel) {
+            None => PackageFile::Missing,
+            Some(raw) => PackageFile::Present(read(&raw)),
+        })
     };
     let mut commit = repo
         .head_commit()
         .context("reading a tagged commit needs HEAD")?;
-    let wanted = version_at(&commit)?
-        .with_context(|| format!("HEAD has no version in {}", rel.display()))?;
+    let wanted = match version_at(&commit)? {
+        PackageFile::Present(Some(version)) => version,
+        PackageFile::Missing | PackageFile::Present(None) => {
+            bail!("HEAD has no version in {}", rel.display())
+        }
+    };
     let boundary: Vec<gix::ObjectId> = repo
         .shallow_commits()?
         .map_or_default(|commits| commits.iter().copied().collect());
     let mut line = Vec::new();
     loop {
         if commit.id().to_string().eq_ignore_ascii_case(sha) {
-            return Ok(
-                (version_at(&commit)?.as_deref() == Some(wanted.as_str())).then(|| VersionCommit {
+            return Ok(version_at(&commit)?
+                .is_release_of(&wanted)
+                .then(|| VersionCommit {
                     sha: commit.id().to_string(),
                     depth: line.len(),
-                }),
-            );
+                }));
         }
         if boundary.contains(&commit.id().detach()) {
             return Err(lookup::unavailable(anyhow!(
@@ -763,13 +796,14 @@ pub fn tagged_commit(
 /// finding a merge `d` commits below HEAD takes O(log d) merge-base walks.
 ///
 /// `None` when `sha` names no commit, carries another version, or HEAD does
-/// not contain it.
+/// not contain it. A commit with no file at the package's path carries no
+/// version and counts as `wanted`.
 fn merged_release(
     repo: &gix::Repository,
     line: &[gix::ObjectId],
     sha: &str,
     wanted: &str,
-    version_at: &dyn Fn(&gix::Commit<'_>) -> Result<Option<String>>,
+    version_at: &dyn Fn(&gix::Commit<'_>) -> Result<PackageFile>,
 ) -> Result<Option<VersionCommit>> {
     let Ok(tagged) = gix::ObjectId::from_hex(sha.as_bytes()) else {
         return Ok(None);
@@ -777,7 +811,7 @@ fn merged_release(
     let Ok(commit) = repo.find_commit(tagged) else {
         return Ok(None);
     };
-    if version_at(&commit)?.as_deref() != Some(wanted) {
+    if !version_at(&commit)?.is_release_of(wanted) {
         return Ok(None);
     }
     let contains = |at: gix::ObjectId| -> Result<bool> {
@@ -2164,6 +2198,94 @@ mod tests {
         );
         assert_eq!(
             tagged_commit(dir.path(), &manifest, &"0".repeat(40), &version_line).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn a_tag_on_a_commit_before_the_package_file_existed_is_the_release() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        fs::write(dir.path().join("README"), "start\n").unwrap();
+        let before = commit_all(dir.path(), "chore: start");
+        write_version(dir.path(), "0.0.16");
+        commit_all(dir.path(), "chore: move the version to Cargo.toml");
+        let found = tagged_commit(
+            dir.path(),
+            &dir.path().join("Cargo.toml"),
+            &before,
+            &version_line,
+        )
+        .unwrap();
+        assert_eq!(
+            found,
+            Some(VersionCommit {
+                sha: before,
+                depth: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn a_merged_tag_on_a_commit_before_the_package_file_existed_is_the_release() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        fs::write(dir.path().join("README"), "start\n").unwrap();
+        let base = commit_all(dir.path(), "chore: start");
+        git(dir.path(), &["checkout", "-q", "--detach", &base]);
+        fs::write(dir.path().join("publish.yml"), "published\n").unwrap();
+        let published = commit_all(dir.path(), "ci: publish");
+        git(dir.path(), &["checkout", "-q", "main"]);
+        write_version(dir.path(), "0.0.16");
+        commit_all(dir.path(), "chore: move the version to Cargo.toml");
+        git(
+            dir.path(),
+            &[
+                "merge",
+                "-q",
+                "-s",
+                "ours",
+                "-m",
+                "forkctl: keep published history",
+                &published,
+            ],
+        );
+        let found = tagged_commit(
+            dir.path(),
+            &dir.path().join("Cargo.toml"),
+            &published,
+            &version_line,
+        )
+        .unwrap();
+        assert_eq!(
+            found,
+            Some(VersionCommit {
+                sha: published,
+                depth: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn an_unreached_tag_before_the_package_file_existed_is_not_the_release() {
+        let dir = tempfile::TempDir::new().unwrap();
+        init(dir.path());
+        fs::write(dir.path().join("README"), "start\n").unwrap();
+        let base = commit_all(dir.path(), "chore: start");
+        git(dir.path(), &["checkout", "-q", "--detach", &base]);
+        fs::write(dir.path().join("publish.yml"), "abandoned\n").unwrap();
+        let abandoned = commit_all(dir.path(), "ci: publish");
+        git(dir.path(), &["checkout", "-q", "main"]);
+        write_version(dir.path(), "0.0.16");
+        commit_all(dir.path(), "chore: move the version to Cargo.toml");
+        assert_eq!(
+            tagged_commit(
+                dir.path(),
+                &dir.path().join("Cargo.toml"),
+                &abandoned,
+                &version_line,
+            )
+            .unwrap(),
             None
         );
     }
