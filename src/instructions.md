@@ -862,6 +862,17 @@ With no publisher, a `VERSION` package releases on GitHub only.
 Its version is the one line such as `# version: 1.2.0`, `// version: 1.2.0`, or `<!-- version: 1.2.0 -->`, and no such line, or two, fails.  
 It takes no driver, and with no publisher it releases on GitHub only.
 
+### Files verctl cannot read
+
+Some files hold a version in a form verctl cannot read, such as a Swift constant or an XcodeGen `project.yml`.  
+Keep that package's version in a `VERSION` file, and move the other file in one of two ways:
+
+- Generate it from a served template that reads `versions["<package>"]`.
+- When a person edits it, list it under `pins` with a pattern, such as `MARKETING_VERSION: "{version}"`.
+
+Never declare a `drivers` entry whose tasks rewrite that line with `sed` or another regular expression.  
+Such a script repeats the match a pattern declares, without the boundary checks that keep a longer version from matching by its numeric head.
+
 ## Pins and templates
 
 ### Pins
