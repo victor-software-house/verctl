@@ -12,17 +12,19 @@ name: mbx measure
 # pull request labelled mbx-measure. The mirror grants read-write remote
 # credentials only to a push on the default branch, so a cold write is a push.
 #
-# A run's generation is the dispatch input, the pull request's base commit, or
-# the pushed or dispatched commit. A push, the dispatch runs on its commit and
-# the pull requests based on it share one generation; a dispatch with a new
-# generation starts every arm empty. The change that records the numbers
-# removes this file and the marker.
+# A run's generation is the dispatch input, or the first 12 characters of the
+# pull request's base commit or of the pushed or dispatched commit. A push, the
+# dispatch runs on its commit and the pull requests based on it share one
+# generation; a dispatch with a new generation starts every arm empty. The
+# mirror takes a generation of at most 32 lowercase letters, digits and dashes,
+# and each arm adds a 10-character prefix, so a dispatch input holds at most 22.
+# The change that records the numbers removes this file and the marker.
 
 on:
   workflow_dispatch:
     inputs:
       generation:
-        description: Cache generation; leave empty for the commit, or pass a new value to start every arm empty
+        description: Cache generation, up to 22 lowercase letters, digits and dashes; leave empty for the commit, or pass a new value to start every arm empty
         required: false
         default: ""
   push:
@@ -66,8 +68,20 @@ jobs:
       id-token: write # the release mirror's tools, and arm C's remote credentials
     env:
       MISE_ENV: ci
-      GENERATION: ${{ inputs.generation || github.event.pull_request.base.sha || github.sha }}
+      GENERATION_INPUT: ${{ inputs.generation }}
+      GENERATION_COMMIT: ${{ github.event.pull_request.base.sha || github.sha }}
     steps:
+      - name: Choose the cache generation
+        run: |
+          if [ -z "$GENERATION_INPUT" ]; then
+            generation=${GENERATION_COMMIT:0:12}
+          elif printf '%s' "$GENERATION_INPUT" | grep -Eqx '[a-z0-9-]{1,22}'; then
+            generation=$GENERATION_INPUT
+          else
+            echo "::error::The generation input must be 1 to 22 lowercase letters, digits and dashes"
+            exit 1
+          fi
+          echo "GENERATION=$generation" >> "$GITHUB_ENV"
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -81,7 +95,9 @@ jobs:
           cache: true
       - run: mise install --locked
       - name: Mark the cache step's start
-        run: date +%s > "$RUNNER_TEMP/mbx-measure-start"
+        run: |
+          mkdir -p "$RUNNER_TEMP/mbx-report"
+          date +%s > "$RUNNER_TEMP/mbx-measure-start"
       - name: Cache with GitHub, target payload
         if: matrix.arm == 'A'
         uses: jdx/mr-boxington-action@88acf2bb50552c7c508cbac13e5f8c576b95b1de # v1.7.3
@@ -108,9 +124,22 @@ jobs:
           ttl-minutes: 60
           generation: measure-c-${{ env.GENERATION }}
           version: "1.30.0"
+      # mbx-cache falls back to the local store when the mirror refuses the
+      # credentials, which would make arm C measure nothing. mbx's report
+      # covers one Cargo command, and verify runs several, so the job also
+      # keeps mbx's lifetime totals from before and after the build.
+      - name: Record mbx totals before the build
+        env:
+          ARM: ${{ matrix.arm }}
+        run: |
+          if [ "$ARM" = C ] && [ -z "${MBX_REMOTE_URL:-}" ]; then
+            echo "::error::Arm C has no remote cache credentials, so it would measure the local store"
+            exit 1
+          fi
+          mbx stats --json > "$RUNNER_TEMP/mbx-report/stats-before.json"
       - name: Build
         env:
-          MBX_STATS_REPORT: ${{ runner.temp }}/mbx-report.json
+          MBX_STATS_REPORT: ${{ runner.temp }}/mbx-report/last-command.json
         run: mise run ${{ matrix.build.task }}
       - name: Report the wall time and mbx counters
         if: always()
@@ -121,12 +150,13 @@ jobs:
         run: |
           start=$(cat "$RUNNER_TEMP/mbx-measure-start")
           echo "arm $ARM, $BUILD on $RUNNER_LABEL, generation $GENERATION: $(( $(date +%s) - start )) s from the cache step to the build's end"
-          cat "$RUNNER_TEMP/mbx-report.json" 2>/dev/null || echo "no mbx report"
+          mbx stats --json > "$RUNNER_TEMP/mbx-report/stats-after.json" || echo "no mbx totals"
+          cat "$RUNNER_TEMP/mbx-report/last-command.json" 2>/dev/null || echo "no mbx report"
       - name: Upload the mbx report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mbx-report-${{ matrix.arm }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.build.task }}
-          path: ${{ runner.temp }}/mbx-report.json
+          path: ${{ runner.temp }}/mbx-report/
           if-no-files-found: warn
           retention-days: 30
