@@ -256,6 +256,15 @@ With no publisher it releases on GitHub only.
 
 `marker: true` versions any one file, such as a reusable workflow, on its one `# version: X.Y.Z` line, and also releases on GitHub only.
 
+Some files hold a version in a form verctl cannot read, such as a Swift constant or an XcodeGen `project.yml`.  
+Keep that package's version in a `VERSION` file, and move the other file in one of two ways:
+
+- Generate it from a served template that reads `versions["<package>"]`.
+- When a person edits it, list it under `pins` with a pattern, such as `MARKETING_VERSION: "{version}"`.
+
+Never declare a `drivers` entry whose tasks rewrite that line with `sed` or another regular expression.  
+Such a script repeats the match a pattern declares, without the boundary checks that keep a longer version from matching by its numeric head.
+
 ## Pins and templates
 
 ### Served templates
