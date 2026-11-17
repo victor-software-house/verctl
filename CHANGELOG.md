@@ -1,5 +1,16 @@
 # Changelog
 
+## verctl 0.8.6-rc.6
+
+### Changed
+
+- The instructions and the skill gain a section on versions held in a form that verctl cannot read, such as a Swift constant. Such a package keeps a `VERSION` file with a served template or a `pins` pattern, never a `sed` driver ([#414](https://github.com/victor-software-house/verctl/pull/414)).
+
+### Fixed
+
+- A release tag on a commit that holds no file at the package's path, such as one made before the version moved to a `VERSION` file, now counts as that version's release when HEAD's history holds it.
+  `status` and `release` no longer fail on a repository that moved its version source after a release ([#416](https://github.com/victor-software-house/verctl/pull/416)).
+
 ## verctl 0.8.6-rc.5
 
 ### Fixed
