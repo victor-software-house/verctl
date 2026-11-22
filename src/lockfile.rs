@@ -14,8 +14,8 @@
 //! - `uv.lock`: a member has an `editable` or `virtual` source.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::{fmt, fs};
 
 use anyhow::{Context, Result, bail};
 use serde_json::{Map, Value};
@@ -87,6 +87,129 @@ pub struct Lockfile {
     header: String,
     /// Entries by a key unique within the file.
     entries: BTreeMap<String, Entry>,
+}
+
+impl Entry {
+    /// Whether a bump of the member this entry records changes the entry.
+    ///
+    /// The root workspace of a `bun.lock` records no `version` key, so a
+    /// bump leaves it as it is. Every other member entry follows its
+    /// manifest's version, even one that records none, because the lockfile
+    /// cannot say it never will.
+    #[must_use]
+    pub fn follows_version(&self, format: Format) -> bool {
+        !(format == Format::Bun && self.member && self.label == "." && self.version.is_none())
+    }
+}
+
+/// A workspace member whose version a bump moves.
+///
+/// One rule decides which lockfile entry records it, for `check` when it
+/// explains a lockfile change and for the version step when it decides whether
+/// a lockfile owner has anything to do.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Member {
+    /// The member's manifest. It and the lockfile directory passed to
+    /// [`Member::records`] are relative to one root, or absolute under it.
+    manifest: PathBuf,
+    /// The names a lockfile may record it under: the configured name and the
+    /// name its manifest declares.
+    names: BTreeSet<String>,
+}
+
+impl Member {
+    /// The member whose manifest is `manifest`, recorded under any of
+    /// `names`.
+    #[must_use]
+    pub fn new(manifest: impl Into<PathBuf>, names: BTreeSet<String>) -> Self {
+        Self {
+            manifest: manifest.into(),
+            names,
+        }
+    }
+
+    /// The member's manifest.
+    #[must_use]
+    pub fn manifest(&self) -> &Path {
+        &self.manifest
+    }
+
+    /// The directory a JavaScript lockfile at `lock_dir` names this member
+    /// by: `.` for the lockfile's own directory.
+    fn label(&self, lock_dir: &Path) -> Option<String> {
+        let dir = self.manifest.parent()?;
+        let label = dir.strip_prefix(lock_dir).ok()?;
+        Some(if label.as_os_str().is_empty() {
+            ".".to_owned()
+        } else {
+            label.display().to_string()
+        })
+    }
+
+    /// Whether the entry called `name`, labelled `label`, in the `format`
+    /// lockfile at `lock_dir` records this member.
+    ///
+    /// `Cargo.lock` and `uv.lock` name a member, `uv.lock` by its [PEP 503]
+    /// normalised name. `bun.lock` and `package-lock.json` name it by its
+    /// directory.
+    ///
+    /// [PEP 503]: https://peps.python.org/pep-0503/#normalized-names
+    #[must_use]
+    pub fn records(&self, format: Format, lock_dir: &Path, name: &str, label: &str) -> bool {
+        match format {
+            Format::Cargo => self.names.contains(name),
+            Format::Uv => {
+                let name = pep503(name);
+                self.names.iter().any(|known| pep503(known) == name)
+            }
+            Format::Bun | Format::Npm => self.label(lock_dir).as_deref() == Some(label),
+        }
+    }
+}
+
+/// A Python project name as uv writes it in `uv.lock`: lowercase, with each
+/// run of `-`, `_`, and `.` as one `-` ([PEP 503]).
+///
+/// [PEP 503]: https://peps.python.org/pep-0503/#normalized-names
+fn pep503(name: &str) -> String {
+    let mut normalized = String::with_capacity(name.len());
+    for character in name.chars() {
+        if matches!(character, '-' | '_' | '.') {
+            if !normalized.ends_with('-') {
+                normalized.push('-');
+            }
+        } else {
+            normalized.extend(character.to_lowercase());
+        }
+    }
+    normalized
+}
+
+/// The package name a manifest declares, when its format has one verctl
+/// reads: `package.name` in `Cargo.toml`, `project.name` in
+/// `pyproject.toml`, and `name` in `package.json`.
+#[must_use]
+pub fn declared_name(manifest: &Path) -> Option<String> {
+    let text = fs::read_to_string(manifest).ok()?;
+    match manifest.file_name()?.to_str()? {
+        "Cargo.toml" => toml_name(&text, "package"),
+        "pyproject.toml" => toml_name(&text, "project"),
+        "package.json" => serde_json::from_str::<Value>(&text)
+            .ok()?
+            .get("name")?
+            .as_str()
+            .map(str::to_owned),
+        _ => None,
+    }
+}
+
+fn toml_name(text: &str, table: &str) -> Option<String> {
+    let document = text.parse::<toml_edit::DocumentMut>().ok()?;
+    document
+        .get(table)?
+        .get("name")?
+        .as_str()
+        .map(str::to_owned)
 }
 
 /// One difference between two copies of a lockfile.
@@ -168,6 +291,26 @@ impl Lockfile {
     /// The workspace members.
     pub fn members(&self) -> impl Iterator<Item = &Entry> {
         self.entries().filter(|entry| entry.member)
+    }
+
+    /// Whether a bump of `member` cannot change this `format` lockfile at
+    /// `lock_dir`, so its owner has nothing to do.
+    ///
+    /// That holds only when the lockfile has an entry for the member and no
+    /// such entry follows the member's version. A member with no entry stays
+    /// uncertain in every format, so the owner runs. A `Cargo.lock` or
+    /// `uv.lock` may name it by a name this check does not know. That happens
+    /// when a virtual workspace's bump moves members that inherit its version.
+    /// In a `bun.lock` or `package-lock.json`, a directory that fails to
+    /// match must not skip a needed refresh either.
+    #[must_use]
+    pub fn is_idle_for(&self, format: Format, lock_dir: &Path, member: &Member) -> bool {
+        let mut recorded = self
+            .members()
+            .filter(|entry| member.records(format, lock_dir, &entry.name, &entry.label))
+            .peekable();
+        let found = recorded.peek().is_some();
+        found && recorded.all(|entry| !entry.follows_version(format))
     }
 
     /// What changed from `self` to `newer`, in key order. An entry whose key

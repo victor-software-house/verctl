@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -6,8 +6,10 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 
 use crate::config::Config;
+use crate::detect::Owner;
 use crate::driver::Driver;
 use crate::fragment::{Bump, Fragment};
+use crate::lockfile::{self, Kind, Lockfile, Member};
 use crate::{bump, detect, process};
 
 /// One package's planned version change.
@@ -148,9 +150,13 @@ impl Step {
 /// package's own `after`, then `prepare.after`.
 ///
 /// A lockfile refresh belongs to the version step, so a lockfile on the
-/// Version PR comes from its owner and never from a hand edit. A package's
-/// own `after` and `prepare.after` run in `cwd`, as `prepare.after` always
-/// has; a command already listed for the same directory runs once.
+/// Version PR comes from its owner and never from a hand edit. An owner whose
+/// lockfile verctl parses and records no version for the bumped package has
+/// nothing to refresh, so it does not run and its lockfile stays out of the
+/// Version PR ([`Lockfile::is_idle_for`]). A lockfile verctl cannot read or
+/// parse leaves the owner in. A package's own `after` and `prepare.after` run
+/// in `cwd`, as `prepare.after` always has; a command already listed for the
+/// same directory runs once.
 #[must_use]
 pub fn steps(entries: &[PlanEntry], prepare_after: Option<&[String]>, cwd: &Path) -> Vec<Step> {
     let mut steps: Vec<Step> = Vec::new();
@@ -170,11 +176,15 @@ pub fn steps(entries: &[PlanEntry], prepare_after: Option<&[String]>, cwd: &Path
             continue;
         };
         match detect::owner(&entry.path) {
-            Some(owner) if owner.command() == after => push(Step {
-                argv: owner.argv,
-                dir: owner.dir,
-                lockfile: owner.lockfile,
-            }),
+            Some(owner) if owner.command() == after => {
+                if idle(entry, &owner) != Some(true) {
+                    push(Step {
+                        argv: owner.argv,
+                        dir: owner.dir,
+                        lockfile: owner.lockfile,
+                    });
+                }
+            }
             Some(_) | None => push(Step {
                 argv: after.split_whitespace().map(str::to_owned).collect(),
                 dir: cwd.to_path_buf(),
@@ -190,6 +200,21 @@ pub fn steps(entries: &[PlanEntry], prepare_after: Option<&[String]>, cwd: &Path
         });
     }
     steps
+}
+
+/// Whether the bump of `entry` cannot change the lockfile of `owner`, or
+/// `None` when that is not known: the owner has no lockfile, or verctl does
+/// not parse it, or a file cannot be read.
+fn idle(entry: &PlanEntry, owner: &Owner) -> Option<bool> {
+    let lock = owner.lockfile.as_deref()?;
+    let Kind::Parsed(format) = lockfile::kind(lock)? else {
+        return None;
+    };
+    let parsed = Lockfile::parse(format, &fs::read_to_string(lock).ok()?).ok()?;
+    let manifest = entry.path.canonicalize().ok()?;
+    let mut names = BTreeSet::from([entry.name.clone()]);
+    names.extend(lockfile::declared_name(&manifest));
+    Some(parsed.is_idle_for(format, lock.parent()?, &Member::new(manifest, names)))
 }
 
 /// Run each step in order, streaming its output to stderr.

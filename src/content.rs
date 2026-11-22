@@ -31,7 +31,7 @@ use toml_edit::{DocumentMut, Item};
 
 use crate::config::Config;
 use crate::git::{self, MergeBase};
-use crate::lockfile::{self, Change, Format, Kind, Lockfile};
+use crate::lockfile::{self, Change, Format, Kind, Lockfile, Member};
 use crate::prepare::{self, PlanEntry};
 use crate::{detect, fragment, members, pins, release, templates};
 
@@ -193,59 +193,12 @@ struct Replay {
 /// A workspace version the plan moves, directly or through workspace
 /// inheritance.
 struct Moved {
-    /// The manifest that declares it, or the planned manifest whose workspace
-    /// version it inherits, relative to the working tree.
-    manifest: String,
-    /// The names a lockfile may record it under: the configured name and the
-    /// name its manifest declares.
-    names: BTreeSet<String>,
+    /// The member, with its manifest relative to the working tree: the manifest
+    /// that declares the version, or the planned manifest whose workspace
+    /// version it inherits.
+    member: Member,
     from: String,
     to: String,
-}
-
-impl Moved {
-    /// The directory a JavaScript lockfile at `lock_dir` names this member
-    /// by: `.` for the lockfile's own directory.
-    fn label(&self, lock_dir: &Path) -> Option<String> {
-        let dir = Path::new(&self.manifest).parent()?;
-        let label = dir.strip_prefix(lock_dir).ok()?;
-        Some(if label.as_os_str().is_empty() {
-            ".".to_owned()
-        } else {
-            label.display().to_string()
-        })
-    }
-
-    /// Whether `entry` in the `format` lockfile at `lock_dir` records this
-    /// member.
-    fn records(&self, format: Format, lock_dir: &Path, name: &str, label: &str) -> bool {
-        match format {
-            Format::Cargo => self.names.contains(name),
-            Format::Uv => {
-                let name = pep503(name);
-                self.names.iter().any(|known| pep503(known) == name)
-            }
-            Format::Bun | Format::Npm => self.label(lock_dir).as_deref() == Some(label),
-        }
-    }
-}
-
-/// A Python project name as uv writes it in `uv.lock`: lowercase, with each
-/// run of `-`, `_`, and `.` as one `-` ([PEP 503]).
-///
-/// [PEP 503]: https://peps.python.org/pep-0503/#normalized-names
-fn pep503(name: &str) -> String {
-    let mut normalized = String::with_capacity(name.len());
-    for character in name.chars() {
-        if matches!(character, '-' | '_' | '.') {
-            if !normalized.ends_with('-') {
-                normalized.push('-');
-            }
-        } else {
-            normalized.extend(character.to_lowercase());
-        }
-    }
-    normalized
 }
 
 impl Replay {
@@ -297,10 +250,9 @@ impl Replay {
         for entry in &plan {
             let manifest = relative(&entry.path, scratch)?;
             let mut names = BTreeSet::from([entry.name.clone()]);
-            names.extend(declared_name(&entry.path));
+            names.extend(lockfile::declared_name(&entry.path));
             moved.push(Moved {
-                manifest,
-                names,
+                member: Member::new(manifest, names),
                 from: entry.from.clone(),
                 to: entry.to.clone(),
             });
@@ -312,8 +264,7 @@ impl Replay {
                     && from != to
                 {
                     moved.push(Moved {
-                        manifest: manifest.clone(),
-                        names: BTreeSet::from([name.clone()]),
+                        member: Member::new(manifest.clone(), BTreeSet::from([name.clone()])),
                         from: from.clone(),
                         to: to.clone(),
                     });
@@ -356,32 +307,6 @@ fn cargo_versions(manifests: &[PathBuf]) -> Result<BTreeMap<PathBuf, BTreeMap<St
                 .map(|versions| (manifest.clone(), versions))
         })
         .collect()
-}
-
-/// The package name a manifest declares, when its format has one verctl
-/// reads: `package.name` in `Cargo.toml`, `project.name` in
-/// `pyproject.toml`, and `name` in `package.json`.
-fn declared_name(manifest: &Path) -> Option<String> {
-    let text = fs::read_to_string(manifest).ok()?;
-    match manifest.file_name()?.to_str()? {
-        "Cargo.toml" => toml_name(&text, "package"),
-        "pyproject.toml" => toml_name(&text, "project"),
-        "package.json" => serde_json::from_str::<Value>(&text)
-            .ok()?
-            .get("name")?
-            .as_str()
-            .map(str::to_owned),
-        _ => None,
-    }
-}
-
-fn toml_name(text: &str, table: &str) -> Option<String> {
-    let document = text.parse::<DocumentMut>().ok()?;
-    document
-        .get(table)?
-        .get("name")?
-        .as_str()
-        .map(str::to_owned)
 }
 
 /// The served files, relative to the working tree. Each one that differs
@@ -463,10 +388,10 @@ fn explained(change: &Change, format: Format, lock_dir: &Path, moved: &[Moved]) 
     else {
         return false;
     };
-    moved.iter().any(|member| {
-        from.as_deref() == Some(member.from.as_str())
-            && to.as_deref() == Some(member.to.as_str())
-            && member.records(format, lock_dir, name, label)
+    moved.iter().any(|bump| {
+        from.as_deref() == Some(bump.from.as_str())
+            && to.as_deref() == Some(bump.to.as_str())
+            && bump.member.records(format, lock_dir, name, label)
     })
 }
 
@@ -476,9 +401,9 @@ fn stale_locks(base: &MergeBase, moved: &[Moved]) -> Result<Vec<String>> {
     let workdir = base.workdir();
     let mut problems = Vec::new();
     let mut parsed: BTreeMap<String, Option<(Format, Lockfile)>> = BTreeMap::new();
-    for member in moved {
+    for bump in moved {
         let Some(lock) =
-            detect::owner(&workdir.join(&member.manifest)).and_then(|owner| owner.lockfile)
+            detect::owner(&workdir.join(bump.member.manifest())).and_then(|owner| owner.lockfile)
         else {
             continue;
         };
@@ -497,18 +422,19 @@ fn stale_locks(base: &MergeBase, moved: &[Moved]) -> Result<Vec<String>> {
         };
         let lock_dir = Path::new(&rel).parent().unwrap_or_else(|| Path::new(""));
         for entry in lockfile.members() {
-            if !member.records(*format, lock_dir, &entry.name, &entry.label) {
+            if !bump
+                .member
+                .records(*format, lock_dir, &entry.name, &entry.label)
+                || !entry.follows_version(*format)
+            {
                 continue;
             }
-            if *format == Format::Bun && entry.label == "." && entry.version.is_none() {
-                continue;
-            }
-            if entry.version.as_deref() != Some(member.to.as_str()) {
+            if entry.version.as_deref() != Some(bump.to.as_str()) {
                 problems.push(format!(
                     "{rel}: records `{}` at {}, and the version step moves it to {}",
                     entry.label,
                     entry.version.as_deref().unwrap_or("no version"),
-                    member.to
+                    bump.to
                 ));
             }
         }
