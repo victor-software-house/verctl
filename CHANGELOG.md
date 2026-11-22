@@ -1,5 +1,12 @@
 # Changelog
 
+## verctl 0.8.6-rc.7
+
+### Fixed
+
+- The version step skips a lockfile owner when the lockfile records no version for the bumped package, as the root workspace of a `bun.lock` does.
+  A private dependency that needs a token verctl withholds cannot fail the Version PR job through that install, and the lockfile stays out of the Version PR ([#420](https://github.com/victor-software-house/verctl/pull/420)).
+
 ## verctl 0.8.6-rc.6
 
 ### Changed
