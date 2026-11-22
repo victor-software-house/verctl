@@ -631,6 +631,20 @@ queue:
     notes:
       - '2026-11-22, ctl-core 0.8.0-rc.1: release published ctl-text, then cargo refused ctl-layout because ctl-text was 4 seconds old under the template v0.0.102 cooldown. ctl-layout, ctl-term and ctl-core were published by hand from the version commit, and a rerun of the release workflow made the tag and Release.'
 
+  - id: VER-143
+    title: Close the Version PR when nothing is pending
+    scope: release
+    outcome: >-
+      When a push to the default branch leaves no pending fragments, the release
+      workflow closes an open Version PR with a comment that names the release commit,
+      instead of leaving a PR whose tree equals the branch.
+    blocked_by: []
+    acceptance:
+      - version --pr closes the open verctl/release/<base> pull request, with a comment naming the commit that released its versions, when status finds no pending fragment.
+      - A test covers a Version PR opened before the release commit landed, then closed by the next run.
+    notes:
+      - '2026-11-22, firescale: the run for PR 966 opened Version PR 968 from main just before Version PR 949 merged in the same queue group. The run for 949 released v0.1.0-rc.1 and left 968 open with a tree identical to main; it was closed by hand (operator, 2026-11-22).'
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
