@@ -296,12 +296,13 @@ impl Lockfile {
     /// Whether a bump of `member` cannot change this `format` lockfile at
     /// `lock_dir`, so its owner has nothing to do.
     ///
-    /// That holds when no entry that follows the member's version records it.
-    /// A `bun.lock` or `package-lock.json` names a member by its directory,
-    /// so a member with no entry there is recorded nowhere. A `Cargo.lock` or
-    /// `uv.lock` names it by a name this check may not know, as when a
-    /// virtual workspace's bump moves members that inherit its version, so a
-    /// member with no entry there stays uncertain and the owner runs.
+    /// That holds only when the lockfile has an entry for the member and no
+    /// such entry follows the member's version. A member with no entry stays
+    /// uncertain in every format, so the owner runs. A `Cargo.lock` or
+    /// `uv.lock` may name it by a name this check does not know. That happens
+    /// when a virtual workspace's bump moves members that inherit its version.
+    /// In a `bun.lock` or `package-lock.json`, a directory that fails to
+    /// match must not skip a needed refresh either.
     #[must_use]
     pub fn is_idle_for(&self, format: Format, lock_dir: &Path, member: &Member) -> bool {
         let mut recorded = self
@@ -309,8 +310,7 @@ impl Lockfile {
             .filter(|entry| member.records(format, lock_dir, &entry.name, &entry.label))
             .peekable();
         let found = recorded.peek().is_some();
-        let named_by_directory = matches!(format, Format::Bun | Format::Npm);
-        (found || named_by_directory) && recorded.all(|entry| !entry.follows_version(format))
+        found && recorded.all(|entry| !entry.follows_version(format))
     }
 
     /// What changed from `self` to `newer`, in key order. An entry whose key
