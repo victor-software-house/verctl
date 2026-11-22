@@ -709,7 +709,8 @@ const WORKSPACE_LOCK: &str = indoc! {r#"
 "#};
 
 /// A committed repository that holds `files`, a config naming package `name` at
-/// the first of them, and a pending patch for it.
+/// the first of them with no publisher, and a pending patch for it. uv has no
+/// stock publisher, so a package without `publisher: none` fails the load.
 fn repo_with(root: &Path, name: &str, files: &[(&str, &str)]) {
     common::write_config(
         root,
@@ -717,6 +718,7 @@ fn repo_with(root: &Path, name: &str, files: &[(&str, &str)]) {
             packages:
               - name: {name}
                 path: {path}
+                publisher: none
         ", path = files[0].0},
     );
     for (path, body) in files {
