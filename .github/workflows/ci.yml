@@ -93,7 +93,7 @@ jobs:
           cache: true
       - run: mise install --locked
       - name: Cache builds with mbx
-        uses: jdx/mr-boxington-action@88acf2bb50552c7c508cbac13e5f8c576b95b1de # v1.7.3
+        uses: victor-software-house/mr-boxington-action@535e3459742146fa60f90ac2752e9e524c92e0f7 # v1.7.4-vsh.1
         with:
           # The daily dispatch run on main saves the cache pull requests
           # restore from; a merge_group run saves on its queue branch.
@@ -132,7 +132,7 @@ jobs:
           cache: true
       - run: mise install --locked
       - name: Cache builds with mbx
-        uses: jdx/mr-boxington-action@88acf2bb50552c7c508cbac13e5f8c576b95b1de # v1.7.3
+        uses: victor-software-house/mr-boxington-action@535e3459742146fa60f90ac2752e9e524c92e0f7 # v1.7.4-vsh.1
         with:
           # The daily dispatch run on main saves the cache pull requests
           # restore from; a merge_group run saves on its queue branch.
