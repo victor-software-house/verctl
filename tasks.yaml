@@ -615,6 +615,22 @@ queue:
     notes:
       - 2026-11-13, the operator chose removal; no other release tool waits for docs.rs.
 
+  - id: VER-142
+    title: Publish workspace members past the cooldown
+    scope: release
+    outcome: >-
+      verctl release publishes every member of a multi-crate workspace in one run,
+      although each member depends on one it published seconds earlier.
+    blocked_by: []
+    acceptance:
+      - cargo publish in verctl release runs with CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow when every crate the cooldown rejects is a member of the release being published, or is owned by a CARGO_TRUSTED_OWNERS login as VER-139 does for semver.
+      - A test publishes a two-crate workspace whose second crate requires the first at the exact new version, under a 3-day CARGO_REGISTRY_GLOBAL_MIN_PUBLISH_AGE, and both publish.
+      - Any other cooldown rejection still fails the release and names the crate.
+    links:
+      - https://github.com/victor-software-house/ctl-core/actions/runs/44977007643
+    notes:
+      - '2026-11-22, ctl-core 0.8.0-rc.1: release published ctl-text, then cargo refused ctl-layout because ctl-text was 4 seconds old under the template v0.0.102 cooldown. ctl-layout, ctl-term and ctl-core were published by hand from the version commit, and a rerun of the release workflow made the tag and Release.'
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
