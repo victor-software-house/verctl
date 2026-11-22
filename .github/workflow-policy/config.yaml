@@ -20,6 +20,11 @@ workflow_policy:
   #   allowed: [corp-runner-large]
   # concurrency:
   #   endings: ["${{ github.ref }}"]
+  # The policy at the pinned commit takes no prerelease in a pin comment, so
+  # it refuses the mr-boxington fork's # v1.7.4-vsh.1. This is the pattern of
+  # newer policy commits; drop it once the template pins one of them.
+  pins:
+    pattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40} # (v[0-9]+(\.[0-9]+)*(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?|[A-Za-z0-9_./-]+, [0-9]{4}-[0-9]{2}-[0-9]{2})$'
   exceptions: []
   # exceptions:
   #   - rule: permissions
