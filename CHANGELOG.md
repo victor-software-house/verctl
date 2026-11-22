@@ -1,5 +1,10 @@
 # Changelog
 
+## verctl 0.8.6-rc.8
+
+- The reusable release workflow runs `victor-software-house/mr-boxington-action` v1.7.4-vsh.1 in place of `jdx/mr-boxington-action` v1.7.3.
+  The fork skips a cache save that another job reserved, where upstream failed the step ([#422](https://github.com/victor-software-house/verctl/pull/422)).
+
 ## verctl 0.8.6-rc.7
 
 ### Fixed
