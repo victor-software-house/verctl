@@ -385,7 +385,9 @@ It runs the lockfile's owner in the lockfile's directory:
 - the package manager's install for a JavaScript lockfile;
 - `uv lock` for `uv.lock`.
 
-`version` commits that lockfile with no `prepare.stage` entry.
+`version` commits that lockfile with no `prepare.stage` entry.  
+A lockfile that verctl parses and that records no version for the bumped package cannot change, as with the root workspace of a `bun.lock`, so its owner does not run and `version` does not commit it.  
+A lockfile that verctl cannot read or parse keeps its owner.
 
 ### Branch, title, and auth
 
