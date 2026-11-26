@@ -80,7 +80,7 @@ row [VER-044][ver-044] decides that identity and whether verctl should.
 1. **Manifests by replay.** `check` writes the planned version into the
    merge-base text with the package's driver, applies its pins, and compares
    bytes with HEAD. On a mismatch, a TOML or JSON manifest is compared key by
-   key, so the error names the key, such as an added dependency.
+   key, so the error shows the key, such as an added dependency.
    - The alternative is a per-format comparison that ignores version fields.
      It needs a differ for every driver and still has to decide which
      requirement lines a pin may move. Replay answers both with the code the

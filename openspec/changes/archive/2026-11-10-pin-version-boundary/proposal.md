@@ -10,7 +10,7 @@ The release carried on with a half-rewritten pin.
 A match that ends in literal text already refuses, through the arity check.
 `whole_line: true` supplies the boundary for a line the match owns.
 What remains is an inline pattern with no text on one side of `{version}`, or with a digit or `.` next to it.
-The same holds on the left: `{version} today` against `1.0.0-rc.1.2 today` matches `1.2 today`.
+The same applies on the left: `{version} today` against `1.0.0-rc.1.2 today` matches `1.2 today`.
 
 A lone `-` or `+` after the placeholder fails the same way, since it opens a prerelease or build: `v{version}-` against `v1.2.3-rc1` matches `1.2.3-`.
 The `tool` form has the defect too: an include ending `?ref=v1.2.3-rc1` would become `?ref=v<new>-rc1`.
