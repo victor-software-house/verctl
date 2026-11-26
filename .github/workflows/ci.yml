@@ -28,12 +28,15 @@ env:
   MISE_ENV: ci
 
 concurrency:
-  # Every merge queue entry shares one group, so a newer entry's run cancels the
-  # runs of the entries ahead of it: the queue merges on the newest entry's
-  # result, whose merge-group commit holds every entry ahead of it. That holds
-  # only while the queue groups HEADGREEN; under ALLGREEN a cancelled entry
-  # fails. Outside the queue, a draft run gets a group of its own, so it never
-  # cancels the ready run.
+  # Every merge queue entry shares one group.
+  # A newer entry's run therefore cancels the runs of the entries ahead of it.
+  # The queue merges on the result of the newest entry, whose merge-group
+  # commit contains every entry ahead of it.
+  #
+  # That works only while the queue groups HEADGREEN. Under ALLGREEN, a
+  # cancelled entry fails.
+  # Outside the queue, a draft run gets a group of its own, so it never cancels
+  # the ready run.
   group: >-
     ci-${{ github.workflow }}-${{ github.event_name == 'merge_group' && format('queue-{0}',
     github.event.merge_group.base_ref) || format('{0}-{1}{2}', github.event_name,
@@ -85,11 +88,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up mise
-        uses: victor-software-house/actions/mise@0c64886d642612fa5f1dcc6920fcb12c51c4b1eb # main, 2026-11-14
+        uses: victor-software-house/actions/mise@e9cf7ef0da4f4a9a7a6f978f5dd54be0d0d539bc # main, 2026-11-26
         with:
           mirror-url: ${{ secrets.RELEASE_MIRROR_URL }}
           mirror-key: ${{ secrets.RELEASE_MIRROR_CI_KEY }}
-          version: 2026.11.6
+          version: 2026.11.12
           cache: true
       - run: mise install --locked
       - name: Cache builds with mbx
@@ -124,11 +127,11 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - name: Set up mise
-        uses: victor-software-house/actions/mise@0c64886d642612fa5f1dcc6920fcb12c51c4b1eb # main, 2026-11-14
+        uses: victor-software-house/actions/mise@e9cf7ef0da4f4a9a7a6f978f5dd54be0d0d539bc # main, 2026-11-26
         with:
           mirror-url: ${{ secrets.RELEASE_MIRROR_URL }}
           mirror-key: ${{ secrets.RELEASE_MIRROR_CI_KEY }}
-          version: 2026.11.6
+          version: 2026.11.12
           cache: true
       - run: mise install --locked
       - name: Cache builds with mbx

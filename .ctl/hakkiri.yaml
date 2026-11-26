@@ -1,0 +1,19 @@
+# Prose style, checked by `mise run lint:prose`.
+# The rules come from the ProseStyle package, which hakkiri downloads on its
+# first run and checks against the hash below. Every alert level is shown,
+# and an alert at fail_level or above fails the check.
+level: suggestion
+fail_level: error
+# The pre-push hook passes every pushed file, and a file no glob selects is
+# not prose, so it draws no warning.
+on_unmatched: ignore
+packages:
+  - url: https://github.com/victor-software-house/prose-style/releases/download/v0.0.20/ProseStyle.zip
+    sha256: dd25b21c9cd134a6a1aaacdd41823b01430d1649f9ecfc89e39b393be4d7bc48
+files:
+  # Copier writes this file; nobody edits it by hand.
+  .copier-answers.yml: {styles: []}
+  # A tool writes target/**; nobody edits it by hand.
+  "target/**": {styles: []}
+  # A tool writes CHANGELOG.md; nobody edits it by hand.
+  "CHANGELOG.md": {styles: []}
