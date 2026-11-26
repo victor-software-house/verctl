@@ -50,11 +50,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up mise
-        uses: victor-software-house/actions/mise@bead5c01b61e14ecf1e923a5bcff97e8c421f151 # main, 2026-11-11
+        uses: victor-software-house/actions/mise@e9cf7ef0da4f4a9a7a6f978f5dd54be0d0d539bc # main, 2026-11-26
         with:
           mirror-url: ${{ secrets.RELEASE_MIRROR_URL }}
           mirror-key: ${{ secrets.RELEASE_MIRROR_CI_KEY }}
-          version: 2026.11.6
+          version: 2026.11.12
           cache: true
       - run: mise install --locked
       - name: Cache builds with mbx
