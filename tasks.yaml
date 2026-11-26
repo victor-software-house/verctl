@@ -645,6 +645,20 @@ queue:
     notes:
       - '2026-11-22, firescale: the run for PR 966 opened Version PR 968 from main just before Version PR 949 merged in the same queue group. The run for 949 released v0.1.0-rc.1 and left 968 open with a tree identical to main; it was closed by hand (operator, 2026-11-22).'
 
+  - id: VER-144
+    title: Publish a workspace member added after its group was tagged
+    scope: release bootstrap, check registry
+    outcome: >-
+      A workspace crate added to a group whose current version is already tagged
+      reaches crates.io through verctl, and its pull request passes check registry.
+    blocked_by: []
+    acceptance:
+      - release bootstrap publishes a new workspace member at the version the default branch holds when the tag for that version names an earlier commit.
+      - check registry does not count a workspace member that only the checked commit adds against a release that was complete before it.
+      - A pull request that adds a workspace member at an already released version passes check registry with no label.
+    notes:
+      - '2026-11-26, found in ctl-core: adding the ctl-input member at 0.8.0-rc.1 made every pull request fail check registry. The freeze named ctl-core@0.8.0-rc.1 incomplete, the verctl unfreeze label cleared only the freeze, and release bootstrap refused because tag v0.8.0-rc.1 names a commit before the member existed. The crate was published with cargo publish and its trusted publisher added with release trust.'
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
