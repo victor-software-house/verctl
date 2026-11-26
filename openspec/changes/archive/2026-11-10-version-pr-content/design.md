@@ -27,10 +27,13 @@ be the version step applied to its base, and nothing else. It is one part of
      - consumed fragments;
      - the paths `prepare.stage` names, read from the configuration at the
        merge-base.
+
    - A manifest equals its merge-base text with the planned version written
      by its driver and its pins applied.
+
    - Every changed version equals the plan of the fragments present at the
      merge-base and absent at HEAD.
+
    - Every lockfile matches its manifests. Its parsed entries and header
      differ from the merge-base only in two places:
      - the versions of workspace members whose version the plan moves,
@@ -38,19 +41,24 @@ be the version step applied to its base, and nothing else. It is one part of
      - references that resolve to those members.
 
      No entry is added or removed.
+
    - Every served file equals its template's render.
+
    - A workspace entry is told from a registry entry of the same name by its
      source:
      - no `source` in `Cargo.lock`;
      - a workspace key in `bun.lock`;
      - a member path in `package-lock.json`;
      - an `editable` or `virtual` source in `uv.lock`.
+
    - If an owner command re-resolves more than the bump, `version` fails its
      own postcondition, and the release branch needs a lockfile refresh
      first.
+
    - The content of a path `prepare.stage` names is trusted to
      `prepare.after` and reviewed on the Version PR. `check` constrains only
      which paths may change.
+
    - A `version` step that declares its own `writes` belongs to
      [building-blocks][blocks]. When it ships, those declarations join the
      write set beside `prepare.stage`.

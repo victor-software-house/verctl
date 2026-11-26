@@ -4,7 +4,7 @@
 
 See [proposal.md](proposal.md) for why, and [`release-workflow-verctl`](specs/release-workflow-verctl/spec.md) for what.
 
-The served `ver` task holds `#MISE tools = { "github:victor-software-house/verctl" = "<version>" }` and runs `exec verctl "$@"`.
+The served `ver` task contains `#MISE tools = { "github:victor-software-house/verctl" = "<version>" }` and runs `exec verctl "$@"`.
 mise puts a task's own tools first on its PATH, so `mise run ver` always runs the version that the checked-out commit pins.
 The plan job runs at HEAD, and the publish, asset, and docs jobs run at a version commit.
 The version commit's `mise.lock` lists the verctl that commit pins, and HEAD's lists the verctl the plan job ran.
@@ -35,6 +35,7 @@ A run with `verctl-artifact` leaves it empty, because that build is already the 
 Each of the publish, asset, and docs jobs adds two steps after the version commit's checkout, only when `verctl-artifact` is empty and `verctl-version` is not:
 
 1. `actions/checkout` of `${{ github.sha }}` into `.verctl-head`, a sparse, non-cone checkout of the places mise reads its config and locks (`mise.toml`, `.mise.toml`, `.config/mise.toml`, `.config/mise/`, `.mise/`, `mise/`, their `*.toml` and `*.lock` variants, and `.miserc.toml`), with `persist-credentials: false`.
+
 2. A step that runs, under the workflow's `MISE_ENV`:
 
    ```sh

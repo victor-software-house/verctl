@@ -135,14 +135,14 @@ A `pins` entry is a standing admission that a file is hand-authored.
   `versions["<package name>"]`, keyed by the names in `packages`.  
   No bare `version` shorthand, even for a single-package repo: the served file should name what it pins.
 - **Every package is in it**, including the ones this release does not bump.  
-  It holds the manifests as they read now, with the release's versions over them.  
+  It contains the manifests as they read now, with the release's versions over them.  
   A whole file cannot be rendered from half a map.  
-  A served file may name a package no fragment bumped, and then it holds that package's current version.
+  A served file may name a package no fragment bumped, and then it contains that package's current version.
 
 ## 4. What a pattern is allowed to be
 
 A pattern is a named spelling.  
-It is declared once and **listed by every file that holds it**.  
+It is declared once and **listed by every file that contains it**.  
 A spelling two files share is written once.  
 Which files hold it is written down, rather than implied by where an entry sits:
 
@@ -164,16 +164,18 @@ pins:
 - `match` is **literal text** instead of a regex, with `{version}` where the version goes.  
   Exactly one placeholder.  
   `.`, `?`, `//`, and `$` mean themselves, so a pattern is readable by whoever maintains the file it describes.
+
 - A **version** is dotted numerics (`0.0.2`, `1.2.3`, `0.0.10`).  
   Nothing else.
+
 - **Each side of the version needs a boundary.**  
   `{version}` matches digits and dots, so an open side lets a longer version match by its numeric head.  
   `version: {version}` would rewrite `version: 0.1.1-rc1` to `0.1.2-rc1`.
   - A side's literal is the text between `{version}` and the pattern's edge, on that side.
-  - A side is bounded when its literal holds at least one character that is not a digit, `.`, `-`, or `+`.  
+  - A side is bounded when its literal contains at least one character that is not a digit, `.`, `-`, or `+`.  
     A version and its prerelease or build hold only those four.
   - The character next to `{version}` must not be a digit, or a `.` with a digit beyond it.  
-    This holds even when the rest of the literal bounds the side.  
+    This contains even when the rest of the literal bounds the side.  
     `v{version}.5x` against `v1.2.3.5x` would pin 1.2.3 and keep `.5x`.
   - Under `whole_line`, the line start or end bounds the side, unless the literal on that side is made only of those four characters.
 
@@ -188,19 +190,24 @@ pins:
 
 - Every verb that reads `.ctl/ver.yaml` refuses a pattern with an open side, naming the pattern and the side.  
   With both boundaries, a longer version fails to match, and the arity stops the release.
+
 - **The file cannot decide the boundary for you.**  
   `download/v{version}-linux` against `download/v1.2.3-linux-x64.tar.gz` is correct and pins 1.2.3.  
   A rule that refused every `-` in the file would stop real releases.  
   One case stays open, and only the author can close it: a prerelease that starts with the pattern's own text.  
   `download/v{version}-linux` against `download/v1.2.3-linux.1-linux.tar.gz` pins 1.2.3 and keeps `-linux.1`.
+
 - `whole_line` marks a match that **owns its line** instead of sitting inside one.  
   A frontmatter key or a shell assignment owns its line.  
   Declaring that beats naming a neighbour, because a match that spells out the text after it breaks when that text moves.
+
 - Without `whole_line`, a pattern matches anywhere.  
   That suits an inline spelling: `github:org/tool@1.2.3` is part of a longer line.
+
 - `whole_line` also decides two cases the version alphabet cannot:
   - The same words inside a sentence are not the line.
   - A line ending in `0.1.1-rc1` does not end where the version does, so it fails to match, and the declared arity stops the release.
+
 - `occurrences` is **how often the file must hold the spelling**.  
   A bare count is not always the useful shape, so the vocabulary is explicit:
 
@@ -210,17 +217,19 @@ pins:
   | `"once"` | exactly one | the same thing, said out loud |
   | `"many"` | one or more, count unknown | a document whose examples come and go, where only "still tracked" is worth asserting |
   | `"never"` | none | a spelling that was retired and must stay gone |
-  | `{exactly: 2}` | exactly that many | a file that holds it a known number of times |
+  | `{exactly: 2}` | exactly that many | a file that contains it a known number of times |
   | `{at_least: 2}` | that many or more | a floor without a ceiling |
 
   verctl never infers arity.  
   Each pin declares it, and too few or too many both stop the release.  
   Too few means the pin tracks nothing, and too many means a version spelling nobody accounted for.  
   When a document gains a mention, someone has to raise its arity on purpose.
+
 - `tool` is the one structural form.  
   It covers a mise `[tools]` entry in a file that parses as TOML.  
   It also covers every `?ref=v…` include in that file whose URL path names the tool's own repository.  
   A sibling repo's include is not ours to move.
+
 - A `tool` include whose ref starts with a version and goes on, such as `?ref=v1.2.3-rc1`, fails the release and leaves the file as it was.  
   A ref that is not a version, such as a branch, is not a pin and stays put.
 

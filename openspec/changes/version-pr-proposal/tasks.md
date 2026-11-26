@@ -25,6 +25,7 @@ Compile, format, lint, and test tasks run in pull request CI with
 ## 4. Bundle
 
 - [ ] 4.1 `src/instructions.md`, `skills/verctl/SKILL.md`, `README.md`, `AGENTS.md`, and rustdoc name the keys and no removed name; proof: `rg 'VERCTL_PR_TITLE|VERCTL_COMMIT_MESSAGE|version_label|commit-message'` outside `CHANGELOG.md` and archived changes prints nothing
+
 - [ ] 4.2 A `minor` fragment lists the migration.
   - `VERCTL_PR_TITLE` and the `title` input map to `proposal.title`.
   - `VERCTL_COMMIT_MESSAGE` and the `commit-message` input map to `proposal.commit_message`.

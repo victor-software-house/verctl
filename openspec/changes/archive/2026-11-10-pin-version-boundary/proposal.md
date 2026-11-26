@@ -30,13 +30,16 @@ Queue row: [VER-031][ledger].
 1. **BREAKING:** loading `.ctl/ver.yaml` fails on a pattern with an open side of `{version}`.
    A side's literal is the text between `{version}` and the pattern's edge, on that side.
    A side is bounded when both of these hold:
-   - its literal holds at least one character that is not a digit, `.`, `-`, or `+`;
+   - its literal contains at least one character that is not a digit, `.`, `-`, or `+`;
    - its character next to `{version}` is neither a digit nor a `.` with a digit beyond it.
 
    Under `whole_line: true`, the line start or end bounds the side, unless that literal is only those four.
+
 2. **BREAKING:** a `tool` pin fails when its own include's `?ref=v` starts with a version and goes on, and leaves the file untouched.
    A ref that is not a version, such as a branch, stays put as before.
+
 3. A test writes a prerelease into a pinned file and asserts that `version` fails and leaves the file untouched.
+
 4. [docs/served-files.md](../../../../docs/served-files.md) section 4 states the enforced rule in place of the advice it gives now.
 
 ## Impact

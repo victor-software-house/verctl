@@ -14,6 +14,7 @@ Compile, format, lint, and test tasks run in pull request CI with
 ## 2. Callers in this repository
 
 - [ ] 2.1 `.github/workflows/release.yml`, `actions/version-pr/action.yml`, `actions/publish/action.yml`, `actions/asset/action.yml`, `.ctl/ver.yaml`, and `.ctl/operator/instructions.md.jinja` call `version`, `render`, `release`, `release asset`, and `status --github-output`; proof: `rg --hidden '\b(ver|verctl) (prepare|pin)\b'` outside `CHANGELOG.md` and archived changes and `rg --hidden '\b(ver|verctl) (publish|assets)\b|publish --plan'` outside `CHANGELOG.md`, `openspec/`, and `tasks.yaml` print nothing, except the removed-verb tests and scenarios
+
 - [ ] 2.2 After `version-files`, `derived-version-pr-branch`, `version-pr-proposal`, and this change are archived, in that order, no spec names the old verbs. The archive also rewrites the `versioning` Purpose to use `version` where it uses `prepare`, and the `release-plan` Purpose to use `status` and `release`, since no delta can change a Purpose. Proof: `rg -nw 'prepare|pin' openspec/specs/ openspec/changes/ --glob '**/spec.md' --glob '!**/archive/**'` prints only these matches:
   - the `prepare:` block and its `prepare.version_label` and `prepare.stages` keys in `version-pr-proposal`, which the config refusal names;
   - the noun "the verctl pin" in `version-pr-proposal`'s older-verctl requirement, which quotes the workflow error;

@@ -1,7 +1,7 @@
 # Atomic, idempotent releases: analysis
 
 Status: analysis, 2026-11-13.  
-Section 4 holds what the operator decided; section 9 holds what is still open.  
+Section 4 contains what the operator decided; section 9 contains what is still open.  
 Four OpenSpec changes carry the decisions: [`release-from-head`][ch-head], [`release-order`][ch-order], [`release-checks`][ch-checks] and [`first-publish`][ch-first].
 
 ## Contents
@@ -30,7 +30,7 @@ Four OpenSpec changes carry the decisions: [`release-from-head`][ch-head], [`rel
 5. Each later push retried the release at the version commit `1ecc0b5`.
    From 2026-11-11, each retry failed earlier, at `mise install --locked`, because mise 2026.11.6 refuses a locked download without a checksum, and that commit's lock has none for taplo.
 6. verctl refuses to release a newer version while an older one is unreleased, so shrub can release nothing until 0.7.0 completes.
-7. On 2026-11-13, shrub's `main` still holds 0.7.0, 24 commits past the version commit, with 3 fragments pending.
+7. On 2026-11-13, shrub's `main` still contains 0.7.0, 24 commits past the version commit, with 3 fragments pending.
 
 The first failure was knowable before any upload: the crate did not exist, and the run used trusted publishing.
 
@@ -81,23 +81,29 @@ The operator decided these on 2026-11-13.
 
 1. **Check everything first, and fail closed.**
    Before any upload, the run proves:
-   1. every crate already exists on the registry and lists the repository's workflow as a trusted publisher, or the run holds a token that may create it;
+   1. every crate already exists on the registry and lists the repository's workflow as a trusted publisher, or the run contains a token that may create it;
    2. every crate has the owners the `owners` key lists, through the crates.io owners API.
 
    That packages build is proven by `cargo package` in CI, that tarballs build by the release workflow's asset matrix, and that the Version PR matches a replay of `version` by `check versions`, so the release proves none of them again.
+
 2. **Order.**
    Build the assets and upload them to a draft Release, then publish to the registries in dependency order, then publish the tag and the Release last.
+
 3. **A partial release is its own state.**
    `status` reports, for example, "partially published: 1 of 9 crates live", with the cause and the resume time when there is one.
    A rerun resumes it once the cause is gone.
+
 4. **HEAD is the release reference.**
    A run releases the versions HEAD's manifests hold, from HEAD.
    It never releases an older version, before a new one or in the same run.
    Releasing a skipped version later is opt-in and separate, and Releases are immutable by default.
+
 5. **The Version PR's merge is the signal.**
    The release starts on the push that lands it, with no manual step.
+
 6. **A bump lands only with its release.**
    If a release cannot happen, nothing is bumped; section 5 is the mechanism.
+
 7. **Checks are named, and add up.**
    1. `verctl check [CHECK]...` runs `fragments`, `served`, `versions`, `registry` and `trust`, as `cargo deny check` runs its named checks; bare `check` runs `fragments` and `served`, offline, and `--all` runs every check.
    2. `check registry` runs on every pull request with no token: each crate exists, has the owners the `owners` key lists, and shows whether its latest version came through trusted publishing.
@@ -107,6 +113,7 @@ The operator decided these on 2026-11-13.
    5. `check --versions` goes, with no hidden flag; `check versions` replaces it.
       The hidden renamed verbs `prepare`, `pin`, `publish` and `assets`, and the hidden `release --plan`, go too, reversing that part of the 2026-11-09 renames.
    6. A person types a short form for each flag, such as `-a` for `--all` and `-n` for `--dry-run`; a flag only CI sets through `VERCTL_*` stays long-only.
+
 8. **First publish: `verctl release --new`, then `verctl release trust`.**
    1. `release --new` lets a release create the crates crates.io lacks, with the operator's crates.io token, at the version main holds.
       It started as `release --first` and became `release --new`, with the input `publish-new` (operator, 2026-11-13).
@@ -119,12 +126,15 @@ The operator decided these on 2026-11-13.
    3. `check trust` proves the entry and `release trust` adds it: `check` proves, and a `release` step acts.
    4. This follows npm, where the first publish is by hand and `npm trust` follows.
    5. Nothing is published only to hold a name: crates.io and npm both forbid it (section 10).
+
 9. **The first version is the one main holds.**
    A standalone package first publishes at `0.0.0`, where verctl already starts it, and `check` fails a never-published package at any other version.
    A member of a shared-version group, such as a crate whose manifest sets `version.workspace = true`, first publishes at the group's current version.
+
 10. **Tokens in CI are opt-in.**
     Trusted publishing stays the default.
     A repository may opt in with the boolean `publish-new` input, beside `publish`, `assets` and `docs`, and the `registry-token` secret; the release proof then counts a missing crate as one the run can create.
+
 11. **Every break ships in a 0.8.x patch.**
     A `patch!` fragment carries it, and the CHANGELOG lists it under `### Breaking`, as 0.8.4 did.
 
@@ -145,7 +155,7 @@ A version bump reaches the default branch only with its release, and nothing lan
    3. It uploads to the registries by trusted publishing, which meets no rate limit (section 6).
    4. It then publishes the draft Release, and that creates the tag.
 3. **The default branch freezes until the release completes.**
-   1. While the default branch holds a version whose release is incomplete, `check registry` fails every other pull request and names the pending release.
+   1. While the default branch contains a version whose release is incomplete, `check registry` fails every other pull request and names the pending release.
    2. So HEAD never moves past an unreleased version commit, and a retry always runs at the version commit.
    3. The check first waits for the running release to finish, within its timeout.
       A pull request checked during a normal release then passes.
@@ -168,7 +178,7 @@ What it can enforce depends on the plan (section 10):
 2. **Tier 2, rulesets without a queue.**
    Public repositories on every plan have them, and private ones on Pro or Team.
    1. The job that runs `check registry` is required on every pull request, with "require branches to be up to date".
-      The tested head then holds the default branch's tip, and the merge commit has the same tree.
+      The tested head then contains the default branch's tip, and the merge commit has the same tree.
       The release on the landing push runs at the merge commit (`github.sha`), so its draft and its tag name that commit, never the Version PR's head.
    2. The up-to-date rule makes each pull request run it again after the Version PR lands, which enforces the freeze.
 3. **Tier 3, neither.**

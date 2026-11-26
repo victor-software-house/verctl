@@ -17,7 +17,7 @@ used tools. Each marks a release done from one signal, such as a label, a
 tag, or a registry entry. Each then loses a step after a partial failure.
 
 Queue row: [VER-011][ver-011].
-This change is one part of [release-state-machine][rsm], which holds the shared
+This change is one part of [release-state-machine][rsm], which contains the shared
 goals, decisions, and migration.
 
 ## Changes
@@ -32,15 +32,18 @@ goals, decisions, and migration.
    - the GitHub Release, and its assets
 
    It keeps no state file, label, or event payload.
+
 2. Every transition is guarded and repeatable: `propose`, `publish`, `tag`,
    `release`, `asset`, `finalize`. Publish precedes tag for a package with
    an unchecked upload, and a registry-checked package is tagged first
    ([tag-at-merge](../archive/2026-10-24-tag-at-merge/proposal.md)). Tags land on the
    release commit in one atomic push.
+
 3. **BREAKING:** commands become `status`, `check`, `version`, `propose`,
    `release`, `release asset`, `release bootstrap`, `render`, `ci`, and
    `instructions`. Not started; `docs` and `semver` shipped since and need a
    place in this list ([audit][audit]).
+
 4. **BREAKING:** two workflows replace three, and the proposal branch becomes
    `verctl/release/<base>`. Partly shipped: the branch and one reusable
    `release.yml` are on main; the three actions remain ([audit][audit]).
