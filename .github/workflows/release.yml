@@ -3,6 +3,7 @@ name: Release
 # verctl's reusable release workflow. A repository calls it from a thin caller
 # that triggers on push to the default branch and on workflow_dispatch:
 #
+# ```yaml
 #   jobs:
 #     release:
 #       uses: victor-software-house/verctl/.github/workflows/release.yml@<sha>
@@ -15,33 +16,35 @@ name: Release
 #       secrets:
 #         app-client-id: ${{ secrets.CHANGESET_VERSION_APP_CLIENT_ID }}
 #         app-private-key: ${{ secrets.CHANGESET_VERSION_APP_PRIVATE_KEY }}
+# ```
 #
-# GitHub checks each called job's permissions when the run starts, so every
-# caller grants id-token: write, which every job requests: publish for
-# crates.io trusted publishing, and each job for the organization's mise
-# action, which downloads tools through the release mirror. A job without
-# the grant downloads from GitHub and logs a notice.
+# GitHub checks each called job's permissions when the run starts.
+# Every caller therefore grants id-token: write, which every job requests.
+# The publish job requests it for crates.io trusted publishing, and each job
+# requests it for the organization's mise action, which downloads tools
+# through the release mirror.
+# A job without the grant downloads from GitHub and logs a notice.
 #
 # Every caller also grants contents: write, which plan, publish, and propose
 # request. plan needs it to list draft Releases, which GitHub shows only to a
 # token with push access.
 #
 # One flow, at the commit that started the run: plan every incomplete
-# release of the versions that commit holds, build the tarballs the draft
+# release of the versions that commit contains, build the tarballs the draft
 # Release lacks, then release in one job. There verctl uploads the tarballs
 # to the draft, publishes to the registries, and publishes the draft last,
 # which creates the tag. Then it opens or updates the Version PR. Every job
 # checks out that one commit.
 # A failure before the draft is published leaves no tag, and a rerun, by
 # dispatch or by "Re-run failed jobs", resumes: the registries skip every
-# version they list, and the draft keeps the tarballs it holds. Every job is
+# version they list, and the draft keeps the tarballs it has. Every job is
 # safe to rerun, and every step sets its settings in env. plan and propose
 # run `mise run ver <verb>`, where the served task execs the verctl the
 # caller pins; the other jobs install and run that same version. verctl's own release passes verctl-artifact
 # instead, so each job runs the verctl that run built once for its platform.
 #
 # Every other job needs plan, so plan alone checks what they share: the
-# pinned verctl is 0.8.6-rc.2 or later, and each mise-ignored-config-paths
+# pinned verctl is 0.8.6-rc.2 or later, and each `mise-ignored-config-paths`
 # entry is a plain relative path. assets and publish take the checked paths
 # from plan's outputs.
 #
@@ -204,7 +207,7 @@ jobs:
       pending: ${{ steps.plan.outputs.pending }}
       assets: ${{ steps.plan.outputs.assets }}
       # The comma-separated asset file names the run's Release is expected to
-      # hold. publish declares exactly these, so it agrees with the plan that
+      # hold. publish declares exactly these, so it matches the plan that
       # scheduled the asset jobs.
       declared: ${{ steps.plan.outputs.declared }}
       # The verctl every later job runs, whatever its checked-out commit pins.
@@ -309,10 +312,10 @@ jobs:
     permissions:
       contents: read # builds the tarball; publish uploads it to the draft
       id-token: write # downloads tools through the release mirror
-    # One tool at a time, in every mise command of the job: on macOS runners
-    # rustup fails to rename a component download ("could not rename
-    # 'downloaded' file") when mise installs two Rust toolchains at once,
-    # which failed the darwin-arm64 asset of verctl 0.6.0 (run 40147490485).
+    # One tool at a time, in every mise command of the job.
+    # On macOS runners, rustup fails to rename a component download ("could not
+    # rename 'downloaded' file") when mise installs two Rust toolchains at once.
+    # That failed the darwin-arm64 asset of verctl 0.6.0 (run 40147490485).
     env:
       MISE_JOBS: 1
     strategy:
@@ -514,7 +517,7 @@ jobs:
           VERCTL_SKIP_ASSETS: ${{ !inputs.assets || needs.plan.outputs.declared == '' }}
           VERCTL_DECLARED_ASSETS: ${{ needs.plan.outputs.declared }}
           # The tarballs the asset jobs built. A declared tarball the draft
-          # already holds may be absent: the plan built only those it lacks.
+          # already has may be absent: the plan built only those it lacks.
           VERCTL_ASSETS_DIR: ${{ needs.assets.result == 'success' && format('{0}/assets', runner.temp) || '' }}
           VERCTL_ALLOW_WORKFLOW_CHANGE: ${{ inputs.allow-workflow-change }}
           VERCTL_ALLOW_OFF_DEFAULT_BRANCH: ${{ inputs.allow-off-default-branch }}
@@ -530,16 +533,16 @@ jobs:
           VERCTL_TRUSTED_PUBLISHING_TOKEN: ${{ steps.crates-io.outputs.token }}
           VERCTL_REGISTRY_TOKEN_ENV: ${{ inputs.registry-token-env }}
           VERCTL_NEW: ${{ inputs.publish-new }}
-        # The plan's verctl, not the one this commit's served task pins, which
-        # may predate this workflow. VERCTL_BIN is unset with verctl-artifact,
-        # and this run's build runs from PATH.
+        # The verctl of the plan, instead of the one this commit's served task
+        # pins, which may predate this workflow. VERCTL_BIN is unset with
+        # verctl-artifact, and this run's build runs from PATH.
         run: mise exec -- "${VERCTL_BIN:-verctl}" release
 
   propose:
     name: Open or update the Version PR
     needs: [plan, publish]
-    # A failed publish holds the next Version PR back, so the failure is
-    # fixed before another version lands on top of it.
+    # A failed publish blocks the next Version PR, so the failure is fixed
+    # before another version lands on top of it.
     if: >-
       !cancelled() &&
       github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&

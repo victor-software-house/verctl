@@ -1,7 +1,7 @@
 name: CI
 
 on:
-  # The version check knows the Version PR by its head repository, head
+  # The version check finds the Version PR by its head repository, head
   # branch, and base, read through the API when it runs, so no label event
   # needs a run. Changing a pull request's base starts no run: re-run the
   # workflow by hand after retargeting one.
