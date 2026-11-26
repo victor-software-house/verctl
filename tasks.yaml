@@ -646,7 +646,7 @@ queue:
       - '2026-11-22, firescale: the run for PR 966 opened Version PR 968 from main just before Version PR 949 merged in the same queue group. The run for 949 released v0.1.0-rc.1 and left 968 open with a tree identical to main; it was closed by hand (operator, 2026-11-22).'
 
   - id: VER-144
-    title: Publish a workspace member added after its group was tagged
+    title: Publish a crate added to a workspace after its version was tagged
     scope: release bootstrap, check registry
     outcome: >-
       A workspace crate added to a group whose current version is already tagged
