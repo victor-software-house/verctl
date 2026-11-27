@@ -737,6 +737,9 @@ A package has no check with `query: []`, with an overridden command, or as a car
 A stock cargo package whose `path` is a virtual workspace manifest publishes each workspace member that publishes, dependencies first.  
 A virtual workspace manifest has a `[workspace]` table and no `[package]`.  
 Each member publishes as `cargo publish --package <member>` and is checked against the index on its own.  
+When a member's upload fails on the publish-age cooldown for members of the same workspace alone, such as a sibling released seconds earlier in the run, `release` runs that upload once more with `CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow`, and that run decides.  
+When the cooldown refuses any other crate, the upload fails without a second run, and the error names each refused crate that is not a member.  
+The second run happens only when the upload passes `--locked` or `--frozen`, which keep every other dependency at its locked version.  
 A `publish` list on the package runs that one command instead, and `publish` options apply to each member.
 
 A registry rate limit (status 429) stops the run before any tag and names the crate and the time the registry gives.  
@@ -954,6 +957,7 @@ The rule covers 0.x: a crate with a library target at 1.0 or later fails the run
 Reaching 1.0 is an operator decision that revisits the rule.  
 It needs `cargo-semver-checks` on `PATH` and reads the crates.io index.  
 When the publish-age cooldown rejects only crates that a `CARGO_TRUSTED_OWNERS` login owns on crates.io, `semver` checks once more with `CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow`.  
+`release` does the same for a workspace member's upload when every rejected crate is a member of that workspace, with no owners lookup.  
 Otherwise the check fails and names the rejected crates.
 
 ## Stop conditions

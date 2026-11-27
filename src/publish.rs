@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::ffi::OsStr;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use std::{fmt, slice};
@@ -16,6 +17,7 @@ use ctl_core::formatdoc;
 use serde::Serialize;
 
 use crate::config::{Config, NAME_PLACEHOLDER, PackageSpec};
+use crate::cooldown::{COOLDOWN_OFF, cooldown_rejections};
 use crate::publisher::Upload;
 use crate::registry::{self, CratesIo, RegistryCheck};
 use crate::registry_check::{Proof, ProofRow};
@@ -697,6 +699,7 @@ fn run_uploads(
             packages.push(PublishLine::from(entry));
             continue;
         }
+        let siblings: Vec<String> = uploads.iter().map(|upload| upload.name.clone()).collect();
         for upload in uploads {
             let creating = creates(&upload, new_crates, crates_io.api)
                 .map_err(|error| stopped(entry, &upload, error))?;
@@ -706,6 +709,7 @@ fn run_uploads(
                 crates_io.index,
                 &registry::LISTING_DELAYS,
                 creating,
+                &siblings,
             )
             .map_err(|error| stopped(entry, &upload, error))?;
             if let (true, RegistryCheck::CratesIo { name }) = (creating, &upload.check) {
@@ -1160,12 +1164,17 @@ fn at_head<'a>(pending: &'a pending::Pending, head: &str) -> Result<&'a pending:
 /// Without a check, a zero exit or that stderr is enough.
 /// A publisher stopped by a registry rate limit fails with the time the
 /// registry gives for the next attempt (see [`rate_limited`]).
+///
+/// `siblings` names the crates of the workspace the upload belongs to.
+/// A publisher that fails on the publish-age cooldown for those crates alone
+/// runs once more without it (see [`past_cooldown`]), and that run decides.
 fn publish_checked(
     upload: &Upload,
     registry_token: Option<&RegistryToken>,
     index: &str,
     delays: &[Duration],
     creating: bool,
+    siblings: &[String],
 ) -> Result<Option<String>> {
     let already = || Some("already".to_owned());
     let check = &upload.check;
@@ -1179,7 +1188,9 @@ fn publish_checked(
     {
         return Ok(already());
     }
-    let Err(error) = process::run_inherit_env(&upload.argv, env, PUBLISH_TIMEOUT) else {
+    let published = process::run_inherit_env(&upload.argv, env, PUBLISH_TIMEOUT)
+        .or_else(|error| past_cooldown(upload, env, siblings, error));
+    let Err(error) = published else {
         if !matches!(check, RegistryCheck::Unchecked) {
             registry::wait_listed(check, index, &coord, &upload.version, env, delays)?;
         }
@@ -1197,6 +1208,67 @@ fn publish_checked(
         return Err(RateLimited { coord, limit }.into());
     }
     Err(error).context(coord)
+}
+
+/// The result of `upload`'s publisher after `error`, its first failure.
+///
+/// A member of a workspace that depends on a sibling released seconds earlier
+/// in the same run fails on the cooldown: cargo calls the sibling too new.
+/// When cargo names at least one crate the cooldown refused and every one is
+/// in `siblings`, this runs the publisher once more with `env` and the
+/// cooldown off, and returns that run's result.
+///
+/// Any other failure comes back as it is.
+/// A refusal of a crate outside `siblings` also names each such crate in the
+/// error.
+///
+/// Cargo stops at the first requirement it cannot meet, so an error that names
+/// only siblings can hide a third-party crate the cooldown would also refuse.
+/// `--locked` keeps every other dependency at the version the lock holds, and
+/// `--frozen` implies it.
+/// So the second run happens only when the publisher passes one of them, and
+/// a `publish` list that drops both gets none.
+fn past_cooldown(
+    upload: &Upload,
+    env: &[(&str, &str)],
+    siblings: &[String],
+    error: anyhow::Error,
+) -> Result<()> {
+    let rejected = cooldown_rejections(&format!("{error:#}"));
+    if rejected.is_empty() {
+        return Err(error);
+    }
+    let others: Vec<&str> = rejected
+        .iter()
+        .filter(|name| !siblings.contains(name))
+        .map(String::as_str)
+        .collect();
+    if !others.is_empty() {
+        return Err(error.context(format!(
+            "the publish-age cooldown refused {}; not members of this workspace: {}; no second run",
+            rejected.join(", "),
+            others.join(", ")
+        )));
+    }
+    if !upload
+        .argv
+        .iter()
+        .any(|arg| arg == "--locked" || arg == "--frozen")
+    {
+        return Err(error.context(format!(
+            "the publish-age cooldown refused {}, members of this workspace, but the publisher runs without --locked or --frozen; no second run",
+            rejected.join(", ")
+        )));
+    }
+    let _ = writeln!(
+        io::stderr(),
+        "verctl: cargo publish for {}@{} hit the publish-age cooldown on {}, all members of this workspace; publishing again without it",
+        upload.name,
+        upload.version,
+        rejected.join(", ")
+    );
+    let again = [env, &[COOLDOWN_OFF]].concat();
+    process::run_inherit_env(&upload.argv, &again, PUBLISH_TIMEOUT)
 }
 
 /// The tag plans of the standalone packages at `0.0.0` that a run plans.
@@ -1676,10 +1748,10 @@ mod tests {
         use indoc::{formatdoc, indoc};
         use tempfile::TempDir;
 
-        use super::super::{publish_checked, rate_limited};
+        use super::super::{PublishEntry, publish_checked, rate_limited, run_uploads};
         use crate::publisher::Upload;
-        use crate::registry::{CRATES_IO_INDEX, RegistryCheck};
-        use crate::registry_token::RegistryToken;
+        use crate::registry::{CRATES_IO_INDEX, CratesIo, RegistryCheck};
+        use crate::registry_token::{NewCrates, RegistryToken};
 
         const NO_WAIT: [Duration; 2] = [Duration::ZERO, Duration::ZERO];
 
@@ -1766,6 +1838,7 @@ mod tests {
                 CRATES_IO_INDEX,
                 &NO_WAIT,
                 false,
+                &[],
             )
             .unwrap();
             assert_eq!(note.as_deref(), Some("already"));
@@ -1782,6 +1855,7 @@ mod tests {
                 CRATES_IO_INDEX,
                 &NO_WAIT,
                 false,
+                &[],
             )
             .unwrap_err();
             assert!(ran(dir.path()));
@@ -1798,6 +1872,7 @@ mod tests {
                 CRATES_IO_INDEX,
                 &NO_WAIT,
                 false,
+                &[],
             )
             .unwrap();
             assert_eq!(note, None);
@@ -1814,6 +1889,7 @@ mod tests {
                 CRATES_IO_INDEX,
                 &NO_WAIT,
                 false,
+                &[],
             )
             .unwrap_err();
             assert!(format!("{error:#}").contains("demo@0.4.6"), "{error:#}");
@@ -1823,7 +1899,8 @@ mod tests {
         fn without_a_check_a_zero_exit_publishes() {
             let dir = TempDir::new().unwrap();
             let upload = upload(dir.path(), 0, "", RegistryCheck::Unchecked);
-            let note = publish_checked(&upload, None, CRATES_IO_INDEX, &NO_WAIT, false).unwrap();
+            let note =
+                publish_checked(&upload, None, CRATES_IO_INDEX, &NO_WAIT, false, &[]).unwrap();
             assert_eq!(note, None);
             assert!(ran(dir.path()));
         }
@@ -1866,8 +1943,15 @@ mod tests {
             let token =
                 RegistryToken::resolve(Some("t0ken".into()), None, "CARGO_REGISTRIES_DEMO_TOKEN")
                     .unwrap();
-            let note =
-                publish_checked(&upload, token.as_ref(), CRATES_IO_INDEX, &NO_WAIT, false).unwrap();
+            let note = publish_checked(
+                &upload,
+                token.as_ref(),
+                CRATES_IO_INDEX,
+                &NO_WAIT,
+                false,
+                &[],
+            )
+            .unwrap();
             assert_eq!(note, None);
             assert_eq!(fs::read_to_string(&seen).unwrap(), "t0ken");
             assert_eq!(fs::read_to_string(&queried).unwrap(), "t0ken".repeat(2));
@@ -1879,7 +1963,7 @@ mod tests {
             let check = query(dir.path(), 99);
             let upload = upload(dir.path(), 101, RATE_LIMITED, check);
             let error =
-                publish_checked(&upload, None, CRATES_IO_INDEX, &NO_WAIT, false).unwrap_err();
+                publish_checked(&upload, None, CRATES_IO_INDEX, &NO_WAIT, false, &[]).unwrap_err();
             let message = format!("{error:#}");
             assert!(message.contains("demo@0.4.6"), "{message}");
             assert!(
@@ -1891,6 +1975,222 @@ mod tests {
                 message.contains("skips every crate the registry already lists"),
                 "{message}"
             );
+        }
+
+        /// What cargo 1.100 prints when the cooldown refuses a sibling.
+        const SIBLING_TOO_NEW: &str =
+            include_str!("../tests/testdata/cooldown/member-requirement.stderr");
+
+        /// What cargo 1.100 prints when the cooldown refuses a third-party
+        /// crate.
+        const SERDE_TOO_NEW: &str = indoc! {"
+            error: failed to prepare local package for uploading
+
+            Caused by:
+              failed to select a version for the requirement `serde = \"^1.0.230\"`
+                version 1.0.230 is too new (published 4 seconds ago, minimum age 3 days)
+              location searched: crates.io index
+              required by package `ctl-layout v0.8.0-rc.2 (/work/ctl-layout)`
+        "};
+
+        /// An upload of `ctl-layout` whose publisher appends the cooldown
+        /// setting it runs under to `runs`, or `unset`.
+        /// It exits zero only under `allow` and when `passes_past_cooldown`
+        /// is set. Any other run prints `stderr` and exits 101.
+        /// Its argv ends in `--locked`, as the stock cargo publisher's does.
+        fn cooldown_upload(dir: &Path, stderr: &str, passes_past_cooldown: bool) -> Upload {
+            let said = dir.join("stderr");
+            fs::write(&said, stderr).unwrap();
+            let mut argv = script(
+                dir,
+                "publisher",
+                &formatdoc! {r#"
+                    #!/bin/sh
+                    v="$CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE"
+                    [ -n "$v" ] || v=unset
+                    echo "$v" >> "{runs}"
+                    if [ "$v" = allow ] && [ "{passes_past_cooldown}" = true ]; then
+                      exit 0
+                    fi
+                    cat "{said}" >&2
+                    exit 101
+                "#, runs = dir.join("runs").display(), said = said.display()},
+            );
+            argv.push("--locked".to_owned());
+            Upload {
+                name: "ctl-layout".into(),
+                version: "0.8.0-rc.2".into(),
+                manifest: dir.join("Cargo.toml"),
+                argv,
+                check: RegistryCheck::Unchecked,
+            }
+        }
+
+        /// The cooldown setting each run of the publisher saw, one per line.
+        fn runs(dir: &Path) -> String {
+            fs::read_to_string(dir.join("runs")).unwrap()
+        }
+
+        fn members(names: &[&str]) -> Vec<String> {
+            names.iter().map(|name| (*name).to_owned()).collect()
+        }
+
+        #[test]
+        fn a_publisher_without_locked_gets_no_second_run() {
+            let dir = TempDir::new().unwrap();
+            let mut upload = cooldown_upload(dir.path(), SIBLING_TOO_NEW, true);
+            upload.argv.retain(|arg| arg != "--locked");
+            let error = publish_checked(
+                &upload,
+                None,
+                CRATES_IO_INDEX,
+                &NO_WAIT,
+                false,
+                &members(&["ctl-text", "ctl-layout"]),
+            )
+            .unwrap_err();
+            assert_eq!(runs(dir.path()), "unset\n");
+            assert!(
+                format!("{error:#}").contains("without --locked"),
+                "{error:#}"
+            );
+        }
+
+        #[test]
+        fn a_publisher_under_frozen_gets_the_second_run() {
+            let dir = TempDir::new().unwrap();
+            let mut upload = cooldown_upload(dir.path(), SIBLING_TOO_NEW, true);
+            for arg in &mut upload.argv {
+                if arg == "--locked" {
+                    "--frozen".clone_into(arg);
+                }
+            }
+            let note = publish_checked(
+                &upload,
+                None,
+                CRATES_IO_INDEX,
+                &NO_WAIT,
+                false,
+                &members(&["ctl-text", "ctl-layout"]),
+            )
+            .unwrap();
+            assert_eq!(note, None);
+            assert_eq!(runs(dir.path()), "unset\nallow\n");
+        }
+
+        #[test]
+        fn a_sibling_published_seconds_earlier_passes_the_cooldown_on_a_second_run() {
+            let dir = TempDir::new().unwrap();
+            let upload = cooldown_upload(dir.path(), SIBLING_TOO_NEW, true);
+            let note = publish_checked(
+                &upload,
+                None,
+                CRATES_IO_INDEX,
+                &NO_WAIT,
+                false,
+                &members(&["ctl-text", "ctl-layout"]),
+            )
+            .unwrap();
+            assert_eq!(note, None);
+            assert_eq!(runs(dir.path()), "unset\nallow\n");
+        }
+
+        /// The two members of one entry, as `release` runs them: `ctl-text`
+        /// uploads, and `ctl-layout` meets the cooldown on it.
+        #[test]
+        fn an_entry_passes_the_cooldown_for_its_own_members() {
+            let dir = TempDir::new().unwrap();
+            let text = Upload {
+                name: "ctl-text".into(),
+                version: "0.8.0-rc.2".into(),
+                manifest: dir.path().join("Cargo.toml"),
+                argv: script(dir.path(), "text", "#!/bin/sh\nexit 0\n"),
+                check: RegistryCheck::Unchecked,
+            };
+            let layout = cooldown_upload(dir.path(), SIBLING_TOO_NEW, true);
+            let entry = PublishEntry {
+                name: "ctl-core".into(),
+                version: "0.8.0-rc.2".into(),
+                noun: "crate".into(),
+                label: "cargo".into(),
+                argv: layout.argv.clone(),
+            };
+            let Ok((lines, created)) = run_uploads(
+                vec![(&entry, vec![text, layout])],
+                None,
+                CratesIo::PUBLIC,
+                &NewCrates::default(),
+            ) else {
+                panic!("the uploads stopped");
+            };
+            let names: Vec<&str> = lines.iter().map(|line| line.name.as_str()).collect();
+            assert_eq!(names, ["ctl-text", "ctl-layout"]);
+            assert_eq!(created, Vec::<String>::new());
+            assert_eq!(runs(dir.path()), "unset\nallow\n");
+        }
+
+        #[test]
+        fn the_second_run_decides_and_a_third_never_starts() {
+            let dir = TempDir::new().unwrap();
+            let upload = cooldown_upload(dir.path(), SIBLING_TOO_NEW, false);
+            let error = publish_checked(
+                &upload,
+                None,
+                CRATES_IO_INDEX,
+                &NO_WAIT,
+                false,
+                &members(&["ctl-text", "ctl-layout"]),
+            )
+            .unwrap_err();
+            assert!(
+                format!("{error:#}").contains("ctl-layout@0.8.0-rc.2"),
+                "{error:#}"
+            );
+            assert_eq!(runs(dir.path()), "unset\nallow\n");
+        }
+
+        #[test]
+        fn a_third_party_crate_too_new_fails_without_a_second_run_and_is_named() {
+            let dir = TempDir::new().unwrap();
+            let upload = cooldown_upload(dir.path(), SERDE_TOO_NEW, true);
+            let error = publish_checked(
+                &upload,
+                None,
+                CRATES_IO_INDEX,
+                &NO_WAIT,
+                false,
+                &members(&["ctl-text", "ctl-layout"]),
+            )
+            .unwrap_err();
+            let message = format!("{error:#}");
+            assert!(message.contains("ctl-layout@0.8.0-rc.2"), "{message}");
+            assert!(
+                message.contains("not members of this workspace: serde;"),
+                "{message}"
+            );
+            assert_eq!(runs(dir.path()), "unset\n");
+        }
+
+        #[test]
+        fn a_sibling_and_a_third_party_crate_together_name_only_the_third_party() {
+            let dir = TempDir::new().unwrap();
+            let both = format!("{SIBLING_TOO_NEW}{SERDE_TOO_NEW}");
+            let upload = cooldown_upload(dir.path(), &both, true);
+            let error = publish_checked(
+                &upload,
+                None,
+                CRATES_IO_INDEX,
+                &NO_WAIT,
+                false,
+                &members(&["ctl-text", "ctl-layout"]),
+            )
+            .unwrap_err();
+            let message = format!("{error:#}");
+            assert!(
+                message.contains("refused ctl-text, serde; not members of this workspace: serde;"),
+                "{message}"
+            );
+            assert_eq!(runs(dir.path()), "unset\n");
         }
 
         #[test]

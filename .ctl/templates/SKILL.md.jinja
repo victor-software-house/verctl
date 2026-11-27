@@ -190,6 +190,10 @@ A listed version is `already`.
 A publisher that exits zero while the registry never lists the version fails.  
 Set `query` on a package or a `publishers` entry for another registry, and `query: []` to turn the check off.
 
+A workspace member whose upload fails on the publish-age cooldown for members of the same workspace alone, such as a sibling released seconds earlier in the run, is uploaded once more with `CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow`, and that run decides.  
+Any other crate the cooldown refuses fails the upload, and the error names each one that is not a member.
+The second run happens only when the upload passes `--locked` or `--frozen`, which keep every other dependency at its locked version.
+
 `publish` as a mapping holds options of the package's publisher and keeps its registry check.  
 `publish: {verify: false}` makes cargo upload with `--no-verify`, for a crate CI already packs on every commit to the default branch.  
 `publish` as a list replaces the whole upload command.  
