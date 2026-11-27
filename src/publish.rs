@@ -1221,6 +1221,12 @@ fn publish_checked(
 /// Any other failure comes back as it is.
 /// A refusal of a crate outside `siblings` also names each such crate in the
 /// error.
+///
+/// Cargo stops at the first requirement it cannot meet, so an error that names
+/// only siblings can hide a third-party crate the cooldown would also refuse.
+/// `--locked` keeps every other dependency at the version the lock holds.
+/// So the second run happens only when the publisher passes it, and a
+/// `publish` list that drops it gets none.
 fn past_cooldown(
     upload: &Upload,
     env: &[(&str, &str)],
@@ -1241,6 +1247,12 @@ fn past_cooldown(
             "the publish-age cooldown refused {}; not members of this workspace: {}; no second run",
             rejected.join(", "),
             others.join(", ")
+        )));
+    }
+    if !upload.argv.iter().any(|arg| arg == "--locked") {
+        return Err(error.context(format!(
+            "the publish-age cooldown refused {}, members of this workspace, but the publisher runs without --locked; no second run",
+            rejected.join(", ")
         )));
     }
     let _ = writeln!(
@@ -1980,10 +1992,11 @@ mod tests {
         /// setting it runs under to `runs`, or `unset`.
         /// It exits zero only under `allow` and when `passes_past_cooldown`
         /// is set. Any other run prints `stderr` and exits 101.
+        /// Its argv ends in `--locked`, as the stock cargo publisher's does.
         fn cooldown_upload(dir: &Path, stderr: &str, passes_past_cooldown: bool) -> Upload {
             let said = dir.join("stderr");
             fs::write(&said, stderr).unwrap();
-            let argv = script(
+            let mut argv = script(
                 dir,
                 "publisher",
                 &formatdoc! {r#"
@@ -1998,6 +2011,7 @@ mod tests {
                     exit 101
                 "#, runs = dir.join("runs").display(), said = said.display()},
             );
+            argv.push("--locked".to_owned());
             Upload {
                 name: "ctl-layout".into(),
                 version: "0.8.0-rc.2".into(),
@@ -2014,6 +2028,27 @@ mod tests {
 
         fn members(names: &[&str]) -> Vec<String> {
             names.iter().map(|name| (*name).to_owned()).collect()
+        }
+
+        #[test]
+        fn a_publisher_without_locked_gets_no_second_run() {
+            let dir = TempDir::new().unwrap();
+            let mut upload = cooldown_upload(dir.path(), SIBLING_TOO_NEW, true);
+            upload.argv.retain(|arg| arg != "--locked");
+            let error = publish_checked(
+                &upload,
+                None,
+                CRATES_IO_INDEX,
+                &NO_WAIT,
+                false,
+                &members(&["ctl-text", "ctl-layout"]),
+            )
+            .unwrap_err();
+            assert_eq!(runs(dir.path()), "unset\n");
+            assert!(
+                format!("{error:#}").contains("without --locked"),
+                "{error:#}"
+            );
         }
 
         #[test]
