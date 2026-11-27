@@ -692,8 +692,7 @@ queue:
       Cargo.toml, Cargo.lock, src/presentation.rs, src/cli.rs, tests, skills/verctl,
       src/instructions.md
     outcome: >-
-      verctl builds on ctl-core 0.8.0-rc.2 with every 0.8 break migrated, and every
-      command takes its arguments from --input as YAML, JSON or TOML.
+      verctl builds on ctl-core 0.8.0-rc.2 with every 0.8 break migrated, and every command takes its arguments from --input as YAML or JSON.
     blocked_by: []
     acceptance:
       - Cargo.toml pins ctl-core =0.8.0-rc.2 with input-document and input-json, and Cargo.lock holds one copy of each ctl crate.

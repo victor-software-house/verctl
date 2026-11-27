@@ -3,9 +3,9 @@
 ## Motivation
 
 verctl pins ctl-core 0.7.3, and ctl-core 0.8.0-rc.2 is published ([changelog][changelog]).
-ctl-core row CTC-043 asks each ctl CLI to take a command's arguments from an input document, with a golden test, and that needs 0.8.
+The [ctl-core ledger][ctl-tasks] row CTC-043 lists, among its acceptance items, that each ctl CLI takes a command's arguments from an input document, with a golden test, and that needs 0.8.
 The 0.8 releases also break the output API verctl calls: `OutputFormat` is gone, `View::new` takes a format value, and `OutputArgs` gains `--json` and `--stream`.
-The queue row is VER-147.
+The queue row is VER-147 in [`tasks.yaml`](../../../tasks.yaml).
 
 ## Changes
 
@@ -31,3 +31,4 @@ The queue row is VER-147.
 3. Release: a `verctl: patch!` changeset, since output a script reads changes.
 
 [changelog]: https://github.com/victor-software-house/ctl-core/blob/4453827c9771269b450b70a18ac8fe2a4cffd4c6/CHANGELOG.md
+[ctl-tasks]: https://github.com/victor-software-house/ctl-core/blob/4453827c9771269b450b70a18ac8fe2a4cffd4c6/tasks.yaml
