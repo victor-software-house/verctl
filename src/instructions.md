@@ -757,6 +757,7 @@ A virtual workspace manifest has a `[workspace]` table and no `[package]`.
 Each member publishes as `cargo publish --package <member>` and is checked against the index on its own.  
 When a member's upload fails on the publish-age cooldown for members of the same workspace alone, such as a sibling released seconds earlier in the run, `release` runs that upload once more with `CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow`, and that run decides.  
 When the cooldown refuses any other crate, the upload fails without a second run, and the error names each refused crate that is not a member.  
+The second run happens only when the upload passes `--locked`, which keeps every other dependency at its locked version.  
 A `publish` list on the package runs that one command instead, and `publish` options apply to each member.
 
 A registry rate limit (status 429) stops the run before any tag and names the crate and the time the registry gives.  
