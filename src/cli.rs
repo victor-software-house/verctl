@@ -630,6 +630,7 @@ mod tests {
     use clap::error::ErrorKind;
     use clap::{CommandFactory, FromArgMatches};
     use ctl_core::flags;
+    use ctl_core::format::FormatName;
 
     use super::{AfterVerb, Check, Cli, Command, Valued};
     use crate::registry::CRATES_IO_API;
@@ -760,7 +761,7 @@ mod tests {
             ["verctl", "-f", "json", "render"].as_slice(),
         ] {
             let cli = parse(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
-            assert!(cli.format.format.is_json(), "{args:?}");
+            assert_eq!(cli.format.format, Some(FormatName::JSON), "{args:?}");
         }
     }
 

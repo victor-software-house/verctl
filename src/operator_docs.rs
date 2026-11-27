@@ -5,6 +5,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::{env, fs};
 
+use clap::CommandFactory;
+use ctl_core::format::Formats;
 use ctl_core::surface;
 use minijinja::{Value, context};
 
@@ -43,7 +45,7 @@ fn assert_committed(relative: &str, rendered: &str) {
 }
 
 fn surface() -> ctl_core::Surface {
-    ctl_core::Surface::new::<Cli>("ver")
+    ctl_core::Surface::from_command(Formats::builtin().augment(Cli::command()), "ver")
 }
 
 #[test]

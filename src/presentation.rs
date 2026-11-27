@@ -1016,7 +1016,8 @@ impl Present for CiReport {
 
 #[cfg(test)]
 mod tests {
-    use ctl_core::prelude::{ColorMode, Destination, Outcome, OutputFormat, Present, View};
+    use ctl_core::format;
+    use ctl_core::prelude::{ColorMode, Destination, Outcome, Present, View};
     use indoc::{formatdoc, indoc};
     use verctl::{freeze, publish, registry_check, stop, versions};
 
@@ -1056,7 +1057,7 @@ mod tests {
             proof: Vec::new(),
             trust: Vec::new(),
         });
-        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+        let pretty = View::new(&format::PRETTY, ColorMode::Never)
             .width(120)
             .capture(&report)
             .expect("pretty");
@@ -1067,7 +1068,7 @@ mod tests {
                 allowed  workflow-change: .github/workflows/ at HEAD aaa differs from the default branch at bbb
             "},
         );
-        let json = View::new(OutputFormat::Json, ColorMode::Never)
+        let json = View::new(&format::JSON, ColorMode::Never)
             .width(80)
             .capture(&report)
             .expect("json");
@@ -1082,7 +1083,7 @@ mod tests {
     #[test]
     fn nothing_to_release_says_so_in_both_shapes() {
         let report = release_report(publish::Outcome::NothingToRelease);
-        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+        let pretty = View::new(&format::PRETTY, ColorMode::Never)
             .width(80)
             .capture(&report)
             .expect("pretty");
@@ -1092,7 +1093,7 @@ mod tests {
                 outcome  nothing to release
             "},
         );
-        let json = View::new(OutputFormat::Json, ColorMode::Never)
+        let json = View::new(&format::JSON, ColorMode::Never)
             .width(80)
             .capture(&report)
             .expect("json");
@@ -1114,7 +1115,7 @@ mod tests {
                 }),
             ],
         });
-        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+        let pretty = View::new(&format::PRETTY, ColorMode::Never)
             .width(80)
             .capture(&report)
             .expect("pretty report");
@@ -1128,7 +1129,7 @@ mod tests {
             "},
         );
 
-        let json = View::new(OutputFormat::Json, ColorMode::Always)
+        let json = View::new(&format::JSON, ColorMode::Always)
             .capture(&report)
             .expect("JSON report");
         assert_eq!(json.stream(), Destination::Stdout);
@@ -1166,7 +1167,7 @@ mod tests {
             ],
         });
         assert_eq!(report.outcome(), Outcome::Error);
-        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+        let pretty = View::new(&format::PRETTY, ColorMode::Never)
             .width(120)
             .capture(&report)
             .expect("pretty report");
@@ -1212,7 +1213,7 @@ mod tests {
             })],
         });
         assert_eq!(report.outcome(), Outcome::Error);
-        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+        let pretty = View::new(&format::PRETTY, ColorMode::Never)
             .width(120)
             .capture(&report)
             .expect("pretty report");
@@ -1233,7 +1234,7 @@ mod tests {
                 in .ctl/ver.yaml
             "}
         );
-        let json = View::new(OutputFormat::Json, ColorMode::Never)
+        let json = View::new(&format::JSON, ColorMode::Never)
             .capture(&report)
             .expect("JSON report");
         assert_eq!(
@@ -1296,7 +1297,7 @@ mod tests {
             after: Vec::new(),
             dry_run: true,
         });
-        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+        let pretty = View::new(&format::PRETTY, ColorMode::Never)
             .width(80)
             .capture(&report)
             .expect("version report");
@@ -1319,7 +1320,7 @@ mod tests {
             proof: Vec::new(),
             trust: Vec::new(),
         });
-        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+        let pretty = View::new(&format::PRETTY, ColorMode::Never)
             .width(80)
             .capture(&report)
             .expect("publish report");
@@ -1342,7 +1343,7 @@ mod tests {
             proof: Vec::new(),
             trust: Vec::new(),
         });
-        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+        let pretty = View::new(&format::PRETTY, ColorMode::Never)
             .width(80)
             .capture(&report)
             .expect("publish report");
@@ -1378,7 +1379,7 @@ mod tests {
             tier: freeze::Tier::MergeQueue,
             notices: Vec::new(),
         });
-        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+        let pretty = View::new(&format::PRETTY, ColorMode::Never)
             .width(80)
             .capture(&report)
             .expect("pretty report");
@@ -1404,7 +1405,7 @@ mod tests {
                       tier  merge queue
             "},
         );
-        let json = View::new(OutputFormat::Json, ColorMode::Never)
+        let json = View::new(&format::JSON, ColorMode::Never)
             .capture(&report)
             .expect("JSON report");
         assert_eq!(
@@ -1457,7 +1458,7 @@ mod tests {
             tier: freeze::Tier::MergeQueue,
             notices: Vec::new(),
         });
-        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+        let pretty = View::new(&format::PRETTY, ColorMode::Never)
             .width(120)
             .capture(&report)
             .expect("pretty");
@@ -1480,7 +1481,7 @@ mod tests {
                       tier  merge queue
             "},
         );
-        let json = View::new(OutputFormat::Json, ColorMode::Never)
+        let json = View::new(&format::JSON, ColorMode::Never)
             .capture(&report)
             .expect("json");
         assert_eq!(
@@ -1522,7 +1523,7 @@ mod tests {
             tier: freeze::Tier::MergeQueue,
             notices: Vec::new(),
         });
-        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+        let pretty = View::new(&format::PRETTY, ColorMode::Never)
             .width(120)
             .capture(&report)
             .expect("pretty");
@@ -1554,7 +1555,7 @@ mod tests {
             tier: freeze::Tier::MergeQueue,
             notices: Vec::new(),
         });
-        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+        let pretty = View::new(&format::PRETTY, ColorMode::Never)
             .width(80)
             .capture(&report)
             .expect("pretty");
@@ -1567,7 +1568,7 @@ mod tests {
                       tier  merge queue
             "},
         );
-        let json = View::new(OutputFormat::Json, ColorMode::Never)
+        let json = View::new(&format::JSON, ColorMode::Never)
             .capture(&report)
             .expect("json");
         let value: serde_json::Value = serde_json::from_str(json.text()).expect("JSON");
@@ -1592,7 +1593,7 @@ mod tests {
             tier: freeze::Tier::MergeQueue,
             notices: Vec::new(),
         });
-        let pretty = View::new(OutputFormat::Pretty, ColorMode::Never)
+        let pretty = View::new(&format::PRETTY, ColorMode::Never)
             .width(80)
             .capture(&report)
             .expect("pretty");
@@ -1605,7 +1606,7 @@ mod tests {
                       tier  merge queue
             "},
         );
-        let json = View::new(OutputFormat::Json, ColorMode::Never)
+        let json = View::new(&format::JSON, ColorMode::Never)
             .capture(&report)
             .expect("json");
         let value: serde_json::Value = serde_json::from_str(json.text()).expect("JSON");

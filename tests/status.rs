@@ -33,7 +33,7 @@ fn status_lists_mixed_packages() {
     .expect("write");
     let output = common::verctl()
         .current_dir(root.path())
-        .args(["status", "--color", "never", "-d"])
+        .args(["status", "--format", "pretty", "--color", "never", "-d"])
         .arg(&dir)
         .output()
         .expect("spawn");
@@ -260,8 +260,8 @@ async fn a_misplaced_release_tag_fails_status() {
     ))
     .await;
     assert!(!output.status.success(), "{output:?}");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("tag v1.0.0 names"), "{stdout}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("tag v1.0.0 names"), "{stderr}");
 }
 
 /// A release tag on a tree is a wrong answer too.
@@ -270,8 +270,8 @@ async fn a_release_tag_on_a_tree_fails_status() {
     let output =
         status_with_tag_lookup(tag_ref("tree", "2222222222222222222222222222222222222222")).await;
     assert!(!output.status.success(), "{output:?}");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("tag v1.0.0 names Tree"), "{stdout}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("tag v1.0.0 names Tree"), "{stderr}");
 }
 
 /// A 401 is GitHub's answer to a bad token, and a 403 without a spent rate
@@ -288,8 +288,8 @@ async fn a_rejected_token_fails_status() {
         ))
         .await;
         assert!(!output.status.success(), "{status}: {output:?}");
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(stdout.contains("read tag v1.0.0"), "{status}: {stdout}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("read tag v1.0.0"), "{status}: {stderr}");
     }
 }
 
@@ -329,7 +329,7 @@ fn quiet_suppresses_only_successful_pretty_status() {
 }
 
 #[test]
-fn json_errors_use_stdout_and_one_envelope() {
+fn json_errors_use_stderr_and_one_envelope() {
     let root = TempDir::new().expect("tempdir");
     let dir = root.path().join(".changeset");
     fs::create_dir_all(&dir).expect("dir");
@@ -340,8 +340,8 @@ fn json_errors_use_stdout_and_one_envelope() {
         .output()
         .expect("spawn");
     assert!(!output.status.success());
-    assert_eq!(output.stderr, Vec::<u8>::new());
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("JSON");
+    assert_eq!(output.stdout, Vec::<u8>::new());
+    let value: serde_json::Value = serde_json::from_slice(&output.stderr).expect("JSON");
     assert_eq!(value["status"], "err");
     assert_eq!(value["error"]["bin"], "verctl");
 }
@@ -384,8 +384,13 @@ fn json_output_holds_no_escape_byte_under_forced_colour() {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        serde_json::from_slice::<serde_json::Value>(&output.stdout)
-            .unwrap_or_else(|error| panic!("{args:?}: stdout is not JSON: {error}"));
+        let json = if output.status.success() {
+            &output.stdout
+        } else {
+            &output.stderr
+        };
+        serde_json::from_slice::<serde_json::Value>(json)
+            .unwrap_or_else(|error| panic!("{args:?}: not JSON: {error}"));
     }
 }
 
@@ -448,7 +453,7 @@ fn prepare_dry_run_writes_nothing() {
     let root = demo_root();
     let output = common::verctl()
         .current_dir(root.path())
-        .args(["version", "-n", "--color", "never"])
+        .args(["version", "-n", "--format", "pretty", "--color", "never"])
         .output()
         .expect("spawn");
     assert!(
@@ -597,7 +602,7 @@ fn help_has_short_and_long() {
 fn check_ok_when_dir_missing() {
     let root = TempDir::new().expect("tempdir");
     let output = common::verctl()
-        .args(["check", "--color", "never", "-d"])
+        .args(["check", "--format", "pretty", "--color", "never", "-d"])
         .arg(root.path().join("missing"))
         .output()
         .expect("spawn");
@@ -818,7 +823,7 @@ fn docs_is_an_unknown_command() {
 }
 
 /// `release --plan` is an unknown flag, and under `--format json` the
-/// failure is the JSON error on stdout.
+/// failure is the JSON error on stderr.
 #[test]
 fn release_plan_is_an_unknown_flag_in_json() {
     let root = TempDir::new().expect("tempdir");
@@ -828,8 +833,8 @@ fn release_plan_is_an_unknown_flag_in_json() {
         .output()
         .expect("spawn");
     assert_eq!(output.status.code(), Some(2));
-    assert_eq!(output.stderr, Vec::<u8>::new());
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("JSON");
+    assert_eq!(output.stdout, Vec::<u8>::new());
+    let value: serde_json::Value = serde_json::from_slice(&output.stderr).expect("JSON");
     assert_eq!(value["status"], "err");
     let message = value["error"]["message"].as_str().expect("message");
     assert!(
@@ -1351,7 +1356,7 @@ async fn status_for_rules(token: bool, rules: ResponseTemplate) -> String {
         .env("GITHUB_API_URL", server.uri())
         .env("VERCTL_DEFAULT_BRANCH", "main")
         .env("COLUMNS", "400")
-        .args(["status", "--color", "never"]);
+        .args(["status", "--format", "pretty", "--color", "never"]);
     if token {
         command.env("GITHUB_TOKEN", "test");
     }

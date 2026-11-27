@@ -1319,7 +1319,12 @@ async fn a_dry_run_runs_the_proof() {
     let github = MockServer::start().await;
     new_release(&github, &head, &[]).await;
     let registry = crates_io(&["alice"]).await;
-    let output = release_against(root.path(), &github, &registry, &["--dry-run"]);
+    let output = release_against(
+        root.path(),
+        &github,
+        &registry,
+        &["--dry-run", "--format", "pretty"],
+    );
     assert!(!output.status.success(), "{output:?}");
     let said = printed(&output);
     assert!(said.contains("│ demo ┆ 0.4.0 ┆ cargo │"), "{said}");

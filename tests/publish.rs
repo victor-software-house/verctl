@@ -97,7 +97,14 @@ async fn publish_stdout_at(root: &Path, index: &str) -> String {
         .env("GITHUB_REPOSITORY", "acme/demo")
         .env("GITHUB_TOKEN", "test")
         .env("GITHUB_API_URL", github.uri())
-        .args(["release", "--dry-run", "--color", "never"])
+        .args([
+            "release",
+            "--dry-run",
+            "--format",
+            "pretty",
+            "--color",
+            "never",
+        ])
         .args(["--crates-io-index", index])
         .output()
         .unwrap_or_else(|error| panic!("spawn verctl: {error}"));

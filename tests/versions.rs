@@ -531,6 +531,7 @@ async fn bare_check_sends_no_request() {
     let server = MockServer::start().await;
     let dir = version_pr();
     let output = pull_request_checks_cmd(dir.path(), &server, &[])
+        .args(["--format", "pretty"])
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -552,6 +553,7 @@ async fn bare_check_sends_no_request() {
 fn the_report_lists_each_check_that_ran() {
     let dir = repo_with_origin_main("1.0.0");
     let output = checks_cmd(dir.path(), &["versions", "fragments", "versions"])
+        .args(["--format", "pretty"])
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
