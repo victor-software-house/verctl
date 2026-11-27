@@ -16,7 +16,7 @@ The retry needs no owner lookup and no `CARGO_TRUSTED_OWNERS`.
 Alternatives considered:
 
 1. Always publish with the cooldown off. It drops the cooldown for a publish whose refusal names a third-party crate.
-2. Reuse the trusted-owner retry of `semver`. It needs a network lookup and a variable for crates the run itself just published.
+2. Reuse the trusted-owner retry of `semver`. It needs a network lookup and a variable for crates the run itself published.
 
 ### 2. One shared cooldown module
 
