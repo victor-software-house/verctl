@@ -673,6 +673,19 @@ queue:
     notes:
       - '2026-11-26, found in ctl-core: adding the ctl-input member at 0.8.0-rc.1 made every pull request fail check registry. The freeze named ctl-core@0.8.0-rc.1 incomplete, the verctl unfreeze label cleared only the freeze, and release bootstrap refused because tag v0.8.0-rc.1 names a commit before the member existed. The crate was published with cargo publish and its trusted publisher added with release trust.'
 
+  - id: VER-146
+    title: Let a release repair pass the release freeze
+    scope: src/check
+    outcome: >-
+      A pull request that repairs an incomplete release, such as a verctl pin bump,
+      merges without a label meant for releases that can never complete.
+    blocked_by: []
+    acceptance:
+      - The freeze names a way to pass it for a pull request whose merge lets the pending release complete.
+      - The freeze still refuses every other pull request while a release is incomplete.
+    notes:
+      - '2026-11-27, ctl-core 0.8.0-rc.2 stopped on the publish-age cooldown; the pin bump to verctl 0.8.6-rc.9 that repairs it failed the freeze, and passed only with the verctl: unfreeze label.'
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
