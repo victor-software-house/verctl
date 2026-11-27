@@ -372,13 +372,16 @@ jobs:
       # tree, so mbx keeps the compiled objects between
       # releases on the same runner. The objects payload with a private store
       # is the shape a remote backend replaces later; a cargo-less build skips
-      # the step.
+      # the step. The key ends in the target, because a cross build runs
+      # on the same runner type as a native one: linux-arm64 builds on an
+      # x64 runner, and two jobs that save one key race, failing the loser.
       - name: Cache builds with mbx
         if: hashFiles('**/Cargo.toml') != ''
         uses: victor-software-house/mr-boxington-action@535e3459742146fa60f90ac2752e9e524c92e0f7 # v1.7.4-vsh.1
         with:
           github-cache-mode: objects
           isolate-objects-cache: true
+          cache-key-suffix: ${{ matrix.id }}
       - name: Build the tarball
         env:
           VERCTL_TARGET: ${{ matrix.id }}

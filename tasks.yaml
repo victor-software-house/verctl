@@ -702,6 +702,16 @@ queue:
     notes:
       - 2026-11-27, ctl-core 0.8.0-rc.2 published; ctl-core row CTC-043 asks qctl, verctl and forkctl each to accept an input document for at least one command, with a golden test.
 
+  - id: VER-148
+    title: Key each release asset cache by its target
+    scope: ci
+    outcome: Two release asset jobs on one runner type never save the same cache key.
+    blocked_by: []
+    acceptance:
+      - The asset job passes its matrix id as the mbx cache key suffix.
+    notes:
+      - '2026-11-27 (UTC), the qctl 0.8.0-rc.1 and forkctl 0.1.2 releases each failed on linux-arm64: it cross-builds on an x64 runner, computed the linux-x64 key, lost the save race, and mr-boxington-action failed the job.'
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
