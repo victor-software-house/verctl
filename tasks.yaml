@@ -686,22 +686,6 @@ queue:
     notes:
       - '2026-11-27, ctl-core 0.8.0-rc.2 stopped on the publish-age cooldown; the pin bump to verctl 0.8.6-rc.9 that repairs it failed the freeze, and passed only with the verctl: unfreeze label.'
 
-  - id: VER-147
-    title: Build on ctl-core 0.8 and take a command from an input document
-    scope: >-
-      Cargo.toml, Cargo.lock, src/presentation.rs, src/cli.rs, tests, skills/verctl,
-      src/instructions.md
-    outcome: >-
-      verctl builds on ctl-core 0.8.0-rc.2 with every 0.8 break migrated, and every command takes its arguments from --input as YAML or JSON.
-    blocked_by: []
-    acceptance:
-      - Cargo.toml pins ctl-core =0.8.0-rc.2 with input-document and input-json, and Cargo.lock holds one copy of each ctl crate.
-      - verctl status --input doc.json --format json writes the same report as the flags the document names, and a golden test proves it.
-      - The skill and the installed instructions describe --input, --input-format, VERCTL_INPUT and the precedence, and the piped default output.
-    plan: openspec/changes/ctl-core-0-8/proposal.md
-    notes:
-      - 2026-11-27, ctl-core 0.8.0-rc.2 published; ctl-core row CTC-043 asks qctl, verctl and forkctl each to accept an input document for at least one command, with a golden test.
-
   - id: VER-148
     title: Key each release asset cache by its target
     scope: ci
@@ -1277,6 +1261,21 @@ horizon:
       - 2026-11-16, homebrew-forks bumps herdr-vsh with its own update-herdr-vsh.yml, a second consumer.
 
 archive:
+  - id: VER-147
+    title: Build on ctl-core 0.8 and take a command from an input document
+    scope: >-
+      Cargo.toml, Cargo.lock, src/presentation.rs, src/cli.rs, tests, skills/verctl,
+      src/instructions.md
+    outcome: >-
+      verctl builds on ctl-core 0.8.0-rc.2 with every 0.8 break migrated, and every command takes its arguments from --input as YAML or JSON.
+    plan: openspec/changes/archive/2026-11-27-ctl-core-0-8/proposal.md
+    notes:
+      - 2026-11-27, ctl-core 0.8.0-rc.2 published; ctl-core row CTC-043 asks qctl, verctl and forkctl each to accept an input document for at least one command, with a golden test.
+    completed: 2026-11-27T15:21:53
+    evidence:
+      - openspec/changes/archive/2026-11-27-ctl-core-0-8/
+    disposition: completed
+
   - id: VER-130
     title: Decide which commit a release publishes from, and which versions a run releases
     scope: release workflow, pending
