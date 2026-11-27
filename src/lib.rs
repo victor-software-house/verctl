@@ -66,6 +66,8 @@ pub mod cli;
 /// The `.ctl/ver.yaml` schema.
 pub mod config;
 pub mod content;
+/// What cargo's publish-age cooldown refuses.
+pub(crate) mod cooldown;
 pub mod detect;
 /// Reading and writing a version in a manifest.
 pub mod driver;
