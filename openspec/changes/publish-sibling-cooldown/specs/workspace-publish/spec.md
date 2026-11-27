@@ -4,7 +4,7 @@
 
 When a workspace member's `cargo publish` fails and cargo names as too new only crates that are members of the same workspace, verctl SHALL run that upload once more with `CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow`, and that run SHALL decide.
 When cargo names any other crate, the upload SHALL fail with an error that names each refused crate that is not a member.
-The second run SHALL happen only when the upload's command passes `--locked`.
+The second run SHALL happen only when the upload's command passes `--locked` or `--frozen`.
 
 #### Scenario: A sibling published seconds earlier
 
@@ -13,7 +13,7 @@ The second run SHALL happen only when the upload's command passes `--locked`.
 
 #### Scenario: A publisher without --locked
 
-- **WHEN** a `publish` list replaces the command with one that drops `--locked`, and the cooldown refuses a sibling
+- **WHEN** a `publish` list replaces the command with one that passes neither `--locked` nor `--frozen`, and the cooldown refuses a sibling
 - **THEN** the upload fails without a second run, and the error names the missing `--locked`
 
 #### Scenario: A third-party crate too new

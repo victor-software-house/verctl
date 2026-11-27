@@ -1224,9 +1224,10 @@ fn publish_checked(
 ///
 /// Cargo stops at the first requirement it cannot meet, so an error that names
 /// only siblings can hide a third-party crate the cooldown would also refuse.
-/// `--locked` keeps every other dependency at the version the lock holds.
-/// So the second run happens only when the publisher passes it, and a
-/// `publish` list that drops it gets none.
+/// `--locked` keeps every other dependency at the version the lock holds, and
+/// `--frozen` implies it.
+/// So the second run happens only when the publisher passes one of them, and
+/// a `publish` list that drops both gets none.
 fn past_cooldown(
     upload: &Upload,
     env: &[(&str, &str)],
@@ -1249,9 +1250,13 @@ fn past_cooldown(
             others.join(", ")
         )));
     }
-    if !upload.argv.iter().any(|arg| arg == "--locked") {
+    if !upload
+        .argv
+        .iter()
+        .any(|arg| arg == "--locked" || arg == "--frozen")
+    {
         return Err(error.context(format!(
-            "the publish-age cooldown refused {}, members of this workspace, but the publisher runs without --locked; no second run",
+            "the publish-age cooldown refused {}, members of this workspace, but the publisher runs without --locked or --frozen; no second run",
             rejected.join(", ")
         )));
     }
@@ -2049,6 +2054,28 @@ mod tests {
                 format!("{error:#}").contains("without --locked"),
                 "{error:#}"
             );
+        }
+
+        #[test]
+        fn a_publisher_under_frozen_gets_the_second_run() {
+            let dir = TempDir::new().unwrap();
+            let mut upload = cooldown_upload(dir.path(), SIBLING_TOO_NEW, true);
+            for arg in &mut upload.argv {
+                if arg == "--locked" {
+                    "--frozen".clone_into(arg);
+                }
+            }
+            let note = publish_checked(
+                &upload,
+                None,
+                CRATES_IO_INDEX,
+                &NO_WAIT,
+                false,
+                &members(&["ctl-text", "ctl-layout"]),
+            )
+            .unwrap();
+            assert_eq!(note, None);
+            assert_eq!(runs(dir.path()), "unset\nallow\n");
         }
 
         #[test]
