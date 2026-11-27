@@ -659,6 +659,21 @@ queue:
     notes:
       - '2026-11-26, found in ctl-core: adding the ctl-input member at 0.8.0-rc.1 made every pull request fail check registry. The freeze named ctl-core@0.8.0-rc.1 incomplete, the verctl unfreeze label cleared only the freeze, and release bootstrap refused because tag v0.8.0-rc.1 names a commit before the member existed. The crate was published with cargo publish and its trusted publisher added with release trust.'
 
+  - id: VER-145
+    title: Publish a signed packslip with each Release that has assets
+    scope: verctl release, reusable release workflow
+    outcome: >-
+      A repository that names a packslip manifest in .ctl/ver.yaml gets a
+      signed packslip.sigstore.json on each Release with assets, built by the
+      reusable workflow, so mise installs, locks and completes the CLI through
+      its packslip backend.
+    blocked_by: []
+    acceptance:
+      - The packslip-release OpenSpec change's tasks pass, with the evidence under each.
+      - A new platform, such as a musl build beside a glibc one, needs only declarations in .ctl/ver.yaml and no verctl code.
+    notes:
+      - '2026-11-27, the operator asked that every ctl release publish a packslip through the shared release path, that platform combinations need no verctl code, that musl builds ship only where a repository declares them, and that each release declare its skill.'
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all

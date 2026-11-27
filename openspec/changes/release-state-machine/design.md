@@ -89,6 +89,7 @@ refuses unknown keys. A removed key fails the load and names its replacement.
 | Changelog | `packages[].changelog` | `CHANGELOG.md` beside the manifest |
 | First release policy | `packages[].first_minor` | `false` |
 | Native binaries | `packages[].assets.<target>`, naming a runner | none |
+| Signed release manifest | `packages[].packslip`, naming a packslip release.toml | none |
 | Machines | `runners.<name>.labels` | built-in hosted runners |
 | Validation jobs | `ci.<job>.runners` | one `verify` on `ubuntu-latest` |
 | Tag shape | `tags` | `v{version}` |
@@ -108,6 +109,7 @@ Removed, each with what replaces it:
 | `pins`, `patterns` | templates |
 | `tags.template` | `tags` |
 | top-level `assets` | `packages[].assets` |
+| top-level `packslip` | `packages[].packslip` |
 
 Templates receive the versions map, a `tags` map from package name to its tag,
 and the verctl surface. They render through `ctl_core::served` (ctl-core
