@@ -8,7 +8,6 @@ use std::{env, fs};
 use ctl_core::surface;
 use minijinja::{Value, context};
 
-use crate::cli::Cli;
 use crate::config::Config;
 use crate::{git, release, templates};
 
@@ -43,7 +42,7 @@ fn assert_committed(relative: &str, rendered: &str) {
 }
 
 fn surface() -> ctl_core::Surface {
-    ctl_core::Surface::new::<Cli>("ver")
+    templates::operator_surface()
 }
 
 #[test]

@@ -686,6 +686,22 @@ queue:
     notes:
       - '2026-11-27, ctl-core 0.8.0-rc.2 stopped on the publish-age cooldown; the pin bump to verctl 0.8.6-rc.9 that repairs it failed the freeze, and passed only with the verctl: unfreeze label.'
 
+  - id: VER-147
+    title: Build on ctl-core 0.8 and take a command from an input document
+    scope: >-
+      Cargo.toml, Cargo.lock, src/presentation.rs, src/cli.rs, tests, skills/verctl,
+      src/instructions.md
+    outcome: >-
+      verctl builds on ctl-core 0.8.0-rc.2 with every 0.8 break migrated, and every command takes its arguments from --input as YAML or JSON.
+    blocked_by: []
+    acceptance:
+      - Cargo.toml pins ctl-core =0.8.0-rc.2 with input-document and input-json, and Cargo.lock holds one copy of each ctl crate.
+      - verctl status --input doc.json --format json writes the same report as the flags the document names, and a golden test proves it.
+      - The skill and the installed instructions describe --input, --input-format, VERCTL_INPUT and the precedence, and the piped default output.
+    plan: openspec/changes/ctl-core-0-8/proposal.md
+    notes:
+      - 2026-11-27, ctl-core 0.8.0-rc.2 published; ctl-core row CTC-043 asks qctl, verctl and forkctl each to accept an input document for at least one command, with a golden test.
+
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all

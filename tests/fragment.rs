@@ -152,7 +152,10 @@ fn rejects_sequence_front_matter() {
         "},
         "list.md",
     ));
-    assert!(error.contains("list.md:2:1: expected mapping"), "{error}");
+    assert!(
+        error.contains("list.md:2:1: expected a mapping, found a sequence"),
+        "{error}"
+    );
 }
 
 #[test]

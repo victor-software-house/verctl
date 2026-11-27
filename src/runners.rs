@@ -340,7 +340,7 @@ mod tests {
         "})
         .unwrap_err();
         assert!(
-            format!("{err:#}").contains(".ctl/ver.yaml:5:10: expected mapping"),
+            format!("{err:#}").contains(".ctl/ver.yaml:5:10: expected a mapping, found a sequence"),
             "{err:#}"
         );
     }

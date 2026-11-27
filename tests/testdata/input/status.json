@@ -1,0 +1,24 @@
+{
+  "pending": 1,
+  "max": "patch",
+  "fragments": [
+    {
+      "file": "change.md",
+      "max": "patch",
+      "packages": [
+        {
+          "name": "demo",
+          "bump": "patch"
+        }
+      ]
+    }
+  ],
+  "assets": null,
+  "unreleased": null,
+  "unreleased_unchecked": "no GITHUB_TOKEN or GH_TOKEN",
+  "partial": null,
+  "tier": {
+    "state": "unknown",
+    "reason": "no GITHUB_TOKEN or GH_TOKEN"
+  }
+}

@@ -30,8 +30,27 @@ A workflow or action sets them in `env:` and runs the bare verb; never rebuild a
 
 Every command returns one typed report.  
 Use `--format json` for the same data without ANSI, whatever `CLICOLOR_FORCE` or `FORCE_COLOR` hold.  
-JSON errors use stdout, while human errors use stderr.  
+Piped output is `tsv` unless a flag or variable names a format: `--format pretty` or `VERCTL_FORMAT=pretty` gives the table a terminal shows.  
+A failed run writes its error to stderr and nothing to stdout, as one JSON object under `--format json`.  
 `--quiet` suppresses only successful human output.
+
+## Input document
+
+Every command takes `--input FILE`, or `--input -` for stdin, and `--input-format NAME`.  
+`VERCTL_INPUT` and `VERCTL_INPUT_FORMAT` set them.  
+The document is YAML or JSON: a file's extension names its format, and stdin needs `--input-format`.  
+Its keys are the long option names and positional ids of the selected command, such as `dir` and `config` for `status`.
+
+The command line beats the environment, the environment beats the document, and the document beats the default.  
+A key that loses is dropped.  
+An unknown key fails the run with exit code 2, naming the file, the line, and the key.
+
+```yaml
+# doc.yaml
+dir: other/.changeset
+```
+
+`verctl status --input doc.yaml` then runs as `verctl status --dir other/.changeset`.
 
 ## Workflow
 
