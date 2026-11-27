@@ -84,6 +84,73 @@ fn status_json_uses_the_same_report_without_ansi() {
     assert_eq!(value["unreleased_unchecked"], "no GITHUB_TOKEN or GH_TOKEN");
 }
 
+/// `--input` fills `status` from a document as the flags the document names
+/// do: the same bytes, whose shape the recorded file pins. `App` adds the flag
+/// to every command, so verctl declares none of its own.
+#[test]
+fn an_input_document_fills_status_as_its_flags_do() {
+    let root = TempDir::new().expect("tempdir");
+    common::write_demo_package(root.path());
+    let dir = root.path().join("other/.changeset");
+    fs::create_dir_all(&dir).expect("dir");
+    fs::write(
+        dir.join("change.md"),
+        indoc! {"
+            ---
+            demo: patch
+            ---
+
+            Patch.
+        "},
+    )
+    .expect("write");
+    fs::write(
+        root.path().join("doc.json"),
+        r#"{"dir": "other/.changeset"}"#,
+    )
+    .expect("document");
+    let status = |args: &[&str]| {
+        let output = common::verctl()
+            .current_dir(root.path())
+            .arg("status")
+            .args(args)
+            .output()
+            .expect("spawn");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output.stdout
+    };
+    let from_flags = status(&["--dir", "other/.changeset", "--format", "json"]);
+    let from_document = status(&["--input", "doc.json", "--format", "json"]);
+    assert_eq!(from_document, from_flags);
+    assert_eq!(
+        String::from_utf8(from_document).expect("utf-8"),
+        include_str!("testdata/input/status.json")
+    );
+}
+
+/// A key the command does not declare refuses the document, naming its file,
+/// line, and key, and exits 2 before `status` reads anything.
+#[test]
+fn an_unknown_key_in_an_input_document_names_its_file_and_line() {
+    let root = TempDir::new().expect("tempdir");
+    common::write_demo_package(root.path());
+    fs::write(root.path().join("doc.yaml"), "dirr: other\n").expect("document");
+    let output = common::verctl()
+        .current_dir(root.path())
+        .args(["status", "--input", "doc.yaml"])
+        .output()
+        .expect("spawn");
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, Vec::<u8>::new());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("doc.yaml:1:"), "{stderr}");
+    assert!(stderr.contains("dirr"), "{stderr}");
+}
+
 /// A token is set but the check cannot run, here because the clone has no
 /// GitHub `origin`. `status` still reports, with the failure as the reason;
 /// only the plan for `--github-output` fails on it.
