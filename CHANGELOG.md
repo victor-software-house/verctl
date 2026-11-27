@@ -1,5 +1,15 @@
 # Changelog
 
+## verctl 0.8.6-rc.9
+
+### Fixed
+
+- A workspace release publishes each member past the publish-age cooldown for its own siblings.
+  When a member's upload fails because cargo calls a sibling released seconds earlier too new, `release` runs that upload once more with `CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow`, and that run decides ([#429](https://github.com/victor-software-house/verctl/pull/429)).
+
+  A cooldown refusal of any other crate still fails the upload, and the error names each refused crate that is not a member.
+  The second run happens only when the upload passes `--locked` or `--frozen`.
+
 ## verctl 0.8.6-rc.8
 
 - The reusable release workflow runs `victor-software-house/mr-boxington-action` v1.7.4-vsh.1 in place of `jdx/mr-boxington-action` v1.7.3.
