@@ -28,7 +28,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use clap::CommandFactory;
 use ctl_core::Surface;
+use ctl_core::format::Formats;
 use ctl_core::surface::add_fragments;
 use ctl_core::validate::{inside_the_repo, one_file_name};
 use garde::Validate;
@@ -191,13 +193,21 @@ struct Served {
 /// Render every template in memory. Nothing is written here, so a template
 /// that fails, or a target a `pins` entry also rewrites, stops the run before
 /// any file changes.
+/// The surface verctl's operator documents describe: the root command with
+/// the output flags and formats ctl-core's `App` adds, mounted as `ver`.
+/// `verctl render` and the operator docs test both read it, so the served
+/// skill and the committed one come from one surface.
+pub(crate) fn operator_surface() -> Surface {
+    Surface::from_command(Formats::builtin().augment(Cli::command()), "ver")
+}
+
 fn render(
     root: &Path,
     config: &Templates,
     pins: &[Pin],
     versions: &[(String, String)],
 ) -> Result<Vec<Served>> {
-    let verctl_surface = Surface::new::<Cli>("ver");
+    let verctl_surface = operator_surface();
     let context = context! {
         versions => versions
             .iter()

@@ -5,12 +5,9 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::{env, fs};
 
-use clap::CommandFactory;
-use ctl_core::format::Formats;
 use ctl_core::surface;
 use minijinja::{Value, context};
 
-use crate::cli::Cli;
 use crate::config::Config;
 use crate::{git, release, templates};
 
@@ -45,7 +42,7 @@ fn assert_committed(relative: &str, rendered: &str) {
 }
 
 fn surface() -> ctl_core::Surface {
-    ctl_core::Surface::from_command(Formats::builtin().augment(Cli::command()), "ver")
+    templates::operator_surface()
 }
 
 #[test]
