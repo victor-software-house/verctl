@@ -23,6 +23,32 @@ One typed report feeds ctl-core pretty, colorless, and JSON output.
 JSON is never coloured, whatever `CLICOLOR_FORCE` or `FORCE_COLOR` hold.  
 A parse error under `--format json` is a JSON error even when the bad argument comes first.
 
+Piped output is `tsv`, tab-separated lines, unless a flag or variable names a format.  
+`--format pretty` or `VERCTL_FORMAT=pretty` gives the table a terminal shows.  
+`--format json`, or its shorthand `--json`, gives the report as JSON, and `csv` and `markdown` are built in too.  
+`--stream` writes each record as the command produces it.
+
+A failed run writes its error to stderr and nothing to stdout.  
+Under `--format json` the error is one JSON object, whose `message` is the outermost error and whose `causes` list the rest.
+
+## Input document
+
+Every command takes `--input FILE`, or `--input -` for stdin, and `--input-format NAME`.  
+`VERCTL_INPUT` and `VERCTL_INPUT_FORMAT` set them.  
+The document is YAML or JSON: a file's extension names its format, and stdin needs `--input-format`.  
+Its keys are the long option names and positional ids of the selected command, such as `dir` and `config` for `status`.
+
+The command line beats the environment, the environment beats the document, and the document beats the default.  
+A key that loses is dropped.  
+An unknown key fails the run with exit code 2, naming the file, the line, and the key.
+
+```yaml
+# doc.yaml
+dir: other/.changeset
+```
+
+`verctl status --input doc.yaml` then runs as `verctl status --dir other/.changeset`.
+
 ## Workflow
 
 1. A pull request that changes behaviour adds a fragment ([Fragments](#fragments)).
