@@ -1,5 +1,12 @@
 # Changelog
 
+## verctl 0.8.6-rc.11
+
+### Fixed
+
+- Each release asset job keys its build cache by its target.
+  A cross build such as `linux-arm64` runs on the same runner type as `linux-x64`, so both jobs saved one key, and the job that lost the race failed the release ([#434](https://github.com/victor-software-house/verctl/pull/434)).
+
 ## verctl 0.8.6-rc.10
 
 ### Breaking
