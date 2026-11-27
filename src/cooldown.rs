@@ -97,6 +97,15 @@ mod tests {
         help: to use too-new packages anyways, re-resolve with `CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow`
     "};
 
+    /// What cargo 1.100 prints when a workspace member's package step meets a
+    /// sibling released seconds earlier.
+    const MEMBER: &str = include_str!("../tests/testdata/cooldown/member-requirement.stderr");
+
+    #[test]
+    fn a_member_requirement_on_a_release_candidate_is_rejected() {
+        assert_eq!(cooldown_rejections(MEMBER), ["ctl-text"]);
+    }
+
     #[test]
     fn the_cooldown_names_the_crate_it_rejected() {
         assert_eq!(cooldown_rejections(CTL_TEXT), ["ctl-text"]);

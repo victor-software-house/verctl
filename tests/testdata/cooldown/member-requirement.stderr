@@ -1,0 +1,7 @@
+error: failed to prepare local package for uploading
+
+Caused by:
+  failed to select a version for the requirement `ctl-text = "=0.8.0-rc.2"`
+    version 0.8.0-rc.2 is too new (published 4 seconds ago, minimum age 3 days)
+  location searched: crates.io index
+  required by package `ctl-layout v0.8.0-rc.2 (/home/runner/work/ctl-core/ctl-core/ctl-layout)`
