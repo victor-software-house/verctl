@@ -603,6 +603,20 @@ queue:
     notes:
       - 2026-11-13, ctl-core and qctl template update PRs failed Publish checks on their own releases published under 3 days before.
 
+  - id: VER-145
+    title: Publish a workspace member past the cooldown for its own siblings
+    scope: src/publisher.rs, src/semver_check.rs
+    outcome: >-
+      A workspace release publishes every member in one run, even when a member
+      requires a sibling published seconds earlier under the publish-age cooldown.
+    blocked_by: []
+    acceptance:
+      - A member upload that the cooldown refuses only for workspace members runs once more with the cooldown off and publishes.
+      - A cooldown refusal that names a crate outside the workspace still fails, naming that crate.
+    plan: openspec/changes/publish-sibling-cooldown/proposal.md
+    notes:
+      - 2026-11-27, the ctl-core 0.8.0-rc.2 release stopped at ctl-layout because cargo refused ctl-text, published four seconds earlier in the same run, as too new for the three-day cooldown.
+
   - id: VER-140
     title: Drop the docs.rs wait from releases
     scope: release, workflow
