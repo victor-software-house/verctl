@@ -686,16 +686,6 @@ queue:
     notes:
       - '2026-11-27, ctl-core 0.8.0-rc.2 stopped on the publish-age cooldown; the pin bump to verctl 0.8.6-rc.9 that repairs it failed the freeze, and passed only with the verctl: unfreeze label.'
 
-  - id: VER-148
-    title: Key each release asset cache by its target
-    scope: ci
-    outcome: Two release asset jobs on one runner type never save the same cache key.
-    blocked_by: []
-    acceptance:
-      - The asset job passes its matrix id as the mbx cache key suffix.
-    notes:
-      - '2026-11-27 (UTC), the qctl 0.8.0-rc.1 and forkctl 0.1.2 releases each failed on linux-arm64: it cross-builds on an x64 runner, computed the linux-x64 key, lost the save race, and mr-boxington-action failed the job.'
-
 horizon:
   - id: VER-038
     title: A tag set is created whole or not at all
@@ -1261,6 +1251,17 @@ horizon:
       - 2026-11-16, homebrew-forks bumps herdr-vsh with its own update-herdr-vsh.yml, a second consumer.
 
 archive:
+  - id: VER-148
+    title: Key each release asset cache by its target
+    scope: ci
+    outcome: Two release asset jobs on one runner type never save the same cache key.
+    notes:
+      - '2026-11-27 (UTC), the qctl 0.8.0-rc.1 and forkctl 0.1.2 releases each failed on linux-arm64: it cross-builds on an x64 runner, computed the linux-x64 key, lost the save race, and mr-boxington-action failed the job.'
+    completed: 2026-11-27T15:23:51
+    evidence:
+      - 00e00057968c34ee96ea839113e3c9cac999c7bf
+    disposition: completed
+
   - id: VER-147
     title: Build on ctl-core 0.8 and take a command from an input document
     scope: >-
